@@ -1,0 +1,344 @@
+<!--
+  COOKED — first-party SEO tracker
+  ==================================================================
+  Where to paste this:
+    Wix Studio → Settings → Custom Code → Add Custom Code
+      Code:        the entire <script>…</script> block below
+      Place code:  Head
+      Apply to:    All pages
+      Load on:     Site (production)  + Premium homepage if relevant
+  Privacy / RGPD:
+    • Cookieless, no localStorage, no persistent identifier.
+    • anonymous_id is computed server-side as sha256(IP|UA|daily-salt) and
+      rotates daily — non-identifying, unrecoverable.
+    • session_id lives in sessionStorage (cleared when tab closes).
+    • Approach exempted from cookie banner per CNIL délibération 2020-091
+      (mesure d'audience strictement statistique).
+  ==================================================================
+-->
+<script>
+(function () {
+  'use strict';
+
+  // ----- config -----
+  var ENDPOINT             = '/_functions/track';
+  var SESSION_TIMEOUT_MS   = 30 * 60 * 1000; // 30 min idle → new session
+  var ENGAGEMENT_TICK_MS   = 10 * 1000;       // flush active-time every 10 s
+  var IDLE_THRESHOLD_MS    = 30 * 1000;       // 30 s no input = idle
+  var SCROLL_DEBOUNCE_MS   = 200;
+
+  // ----- session (sessionStorage, no cookies) -----
+  function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+
+  function getSessionId() {
+    try {
+      var raw = sessionStorage.getItem('_ckd');
+      var now = Date.now();
+      if (raw) {
+        var s = JSON.parse(raw);
+        if (s && s.id && (now - s.last) < SESSION_TIMEOUT_MS) {
+          s.last = now;
+          sessionStorage.setItem('_ckd', JSON.stringify(s));
+          return s.id;
+        }
+      }
+      var ns = { id: rid(), start: Date.now(), last: Date.now() };
+      sessionStorage.setItem('_ckd', JSON.stringify(ns));
+      return ns.id;
+    } catch (e) { return rid(); }
+  }
+
+  // ----- query params (for UTM) -----
+  function parseQuery() {
+    var out = {};
+    var q = location.search.replace(/^\?/, '');
+    if (!q) return out;
+    q.split('&').forEach(function (kv) {
+      var i = kv.indexOf('=');
+      if (i < 0) return;
+      try {
+        out[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1));
+      } catch (e) {}
+    });
+    return out;
+  }
+
+  // ----- payload builder -----
+  function basePayload() {
+    var qp = parseQuery();
+    return {
+      session_id:       getSessionId(),
+      url:              location.href,
+      path:             location.pathname || '/',
+      title:            document.title || null,
+      referrer:         document.referrer || null,
+      utm_source:       qp.utm_source   || null,
+      utm_medium:       qp.utm_medium   || null,
+      utm_campaign:     qp.utm_campaign || null,
+      utm_term:         qp.utm_term     || null,
+      utm_content:      qp.utm_content  || null,
+      viewport_width:   window.innerWidth  || 0,
+      viewport_height: window.innerHeight || 0,
+      occurred_at:     new Date().toISOString()
+    };
+  }
+
+  function send(name, props) {
+    var p = basePayload();
+    p.name  = name;
+    p.props = props || {};
+    var body = JSON.stringify(p);
+
+    // sendBeacon survives page unload — preferred for page_exit etc.
+    if (navigator.sendBeacon) {
+      try {
+        var blob = new Blob([body], { type: 'application/json' });
+        if (navigator.sendBeacon(ENDPOINT, blob)) return;
+      } catch (e) {}
+    }
+    try {
+      fetch(ENDPOINT, {
+        method:    'POST',
+        keepalive: true,
+        headers:   { 'content-type': 'application/json' },
+        body:      body
+      });
+    } catch (e) {}
+  }
+
+  // ==============================================================
+  // 1. Pageview (initial + SPA navigations)
+  // ==============================================================
+  var currentPath = location.pathname;
+  function emitPageview() { send('pageview', {}); }
+
+  emitPageview();
+
+  // Wix Studio is a SPA — listen for client-side navigation.
+  function onPathMaybeChanged() {
+    if (location.pathname !== currentPath) {
+      // Flush previous page's exit data first
+      flushExit();
+      currentPath = location.pathname;
+      // Reset per-page state
+      scrollHits = { 25: false, 50: false, 75: false, 100: false };
+      maxScroll  = 0;
+      pageStart  = performance.now();
+      activeMs   = 0;
+      lastTick   = Date.now();
+      vitals.lcp = 0; vitals.cls = 0; vitals.inp = 0; vitals.ttfb = 0;
+      vitalsEmitted = { LCP: false, CLS: false, INP: false, TTFB: false };
+      emitPageview();
+    }
+  }
+
+  window.addEventListener('popstate', onPathMaybeChanged);
+  ['pushState', 'replaceState'].forEach(function (m) {
+    var orig = history[m];
+    if (typeof orig !== 'function') return;
+    history[m] = function () {
+      var ret = orig.apply(this, arguments);
+      setTimeout(onPathMaybeChanged, 0);
+      return ret;
+    };
+  });
+
+  // ==============================================================
+  // 2. Scroll depth (25 / 50 / 75 / 100 %)
+  // ==============================================================
+  var scrollHits = { 25: false, 50: false, 75: false, 100: false };
+  var maxScroll  = 0;
+
+  function computeScrollPct() {
+    var doc      = document.documentElement;
+    var body     = document.body;
+    var scrolled = (window.scrollY || doc.scrollTop || 0) + window.innerHeight;
+    var height   = Math.max(
+      doc.scrollHeight, doc.offsetHeight,
+      body ? body.scrollHeight : 0,
+      body ? body.offsetHeight : 0
+    );
+    if (!height) return 0;
+    return Math.min(100, Math.round((scrolled / height) * 100));
+  }
+
+  function onScroll() {
+    var pct = computeScrollPct();
+    if (pct > maxScroll) maxScroll = pct;
+    [25, 50, 75, 100].forEach(function (t) {
+      if (!scrollHits[t] && pct >= t) {
+        scrollHits[t] = true;
+        send('scroll_depth', { percent: t });
+      }
+    });
+  }
+
+  var scrollTimer;
+  window.addEventListener('scroll', function () {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(onScroll, SCROLL_DEBOUNCE_MS);
+  }, { passive: true });
+
+  // ==============================================================
+  // 3. Engagement (active time only — pauses on idle / hidden tab)
+  // ==============================================================
+  var lastActivity = Date.now();
+  var lastTick     = Date.now();
+  var activeMs     = 0;
+  var pageStart    = performance.now();
+
+  ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (ev) {
+    window.addEventListener(ev, function () { lastActivity = Date.now(); }, { passive: true });
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) {
+      lastActivity = Date.now();
+      lastTick     = Date.now();
+    }
+  });
+
+  setInterval(function () {
+    var now = Date.now();
+    if (!document.hidden && (now - lastActivity) < IDLE_THRESHOLD_MS) {
+      activeMs += (now - lastTick);
+    }
+    lastTick = now;
+  }, 1000);
+
+  setInterval(function () {
+    if (activeMs > 0) {
+      send('engagement_tick', { active_ms: activeMs });
+      activeMs = 0;
+    }
+  }, ENGAGEMENT_TICK_MS);
+
+  // ==============================================================
+  // 4. Outbound link clicks
+  // ==============================================================
+  document.addEventListener('click', function (e) {
+    var el = e.target;
+    while (el && el.nodeType === 1 && el.tagName !== 'A') el = el.parentElement;
+    if (!el || !el.href) return;
+    try {
+      var u = new URL(el.href);
+      if (u.hostname && u.hostname !== location.hostname) {
+        send('click_outbound', {
+          href:     el.href,
+          hostname: u.hostname,
+          anchor:   (el.textContent || '').trim().slice(0, 100)
+        });
+      }
+    } catch (err) {}
+  }, true);
+
+  // ==============================================================
+  // 5. Core Web Vitals — LCP, CLS, INP, TTFB (p75 in SQL views)
+  // ==============================================================
+  var vitals         = { lcp: 0, cls: 0, inp: 0, ttfb: 0 };
+  var vitalsEmitted  = { LCP: false, CLS: false, INP: false, TTFB: false };
+
+  function emitVital(metric, value) {
+    if (vitalsEmitted[metric]) return;
+    vitalsEmitted[metric] = true;
+    send('web_vitals', { metric: metric, value: Math.round(value * 100) / 100 });
+  }
+
+  // TTFB
+  try {
+    var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+    if (nav && nav.responseStart > 0) {
+      vitals.ttfb = nav.responseStart;
+      emitVital('TTFB', vitals.ttfb);
+    }
+  } catch (e) {}
+
+  // LCP
+  try {
+    if (typeof PerformanceObserver !== 'undefined') {
+      var lcpObs = new PerformanceObserver(function (list) {
+        var entries = list.getEntries();
+        if (entries.length) vitals.lcp = entries[entries.length - 1].startTime;
+      });
+      lcpObs.observe({ type: 'largest-contentful-paint', buffered: true });
+    }
+  } catch (e) {}
+
+  // CLS (session-window aggregation, web-vitals-style)
+  var clsSessionValue   = 0;
+  var clsSessionEntries = [];
+  try {
+    if (typeof PerformanceObserver !== 'undefined') {
+      var clsObs = new PerformanceObserver(function (list) {
+        list.getEntries().forEach(function (entry) {
+          if (entry.hadRecentInput) return;
+          var first = clsSessionEntries[0];
+          var last  = clsSessionEntries[clsSessionEntries.length - 1];
+          if (
+            clsSessionValue &&
+            entry.startTime - last.startTime < 1000 &&
+            entry.startTime - first.startTime < 5000
+          ) {
+            clsSessionValue += entry.value;
+            clsSessionEntries.push(entry);
+          } else {
+            clsSessionValue   = entry.value;
+            clsSessionEntries = [entry];
+          }
+          if (clsSessionValue > vitals.cls) vitals.cls = clsSessionValue;
+        });
+      });
+      clsObs.observe({ type: 'layout-shift', buffered: true });
+    }
+  } catch (e) {}
+
+  // INP (worst-case interaction duration)
+  try {
+    if (typeof PerformanceObserver !== 'undefined') {
+      var inpObs = new PerformanceObserver(function (list) {
+        list.getEntries().forEach(function (entry) {
+          if (entry.duration > vitals.inp) vitals.inp = entry.duration;
+        });
+      });
+      inpObs.observe({ type: 'event', buffered: true, durationThreshold: 16 });
+    }
+  } catch (e) {}
+
+  function flushVitals() {
+    if (vitals.lcp)  emitVital('LCP', vitals.lcp);
+    if (vitals.cls)  emitVital('CLS', vitals.cls);
+    if (vitals.inp)  emitVital('INP', vitals.inp);
+  }
+
+  // ==============================================================
+  // 6. Page exit — duration, max scroll, vitals flush
+  // ==============================================================
+  var exitSent = false;
+  function flushExit() {
+    if (exitSent) return;
+    exitSent = true;
+
+    if (activeMs > 0) {
+      send('engagement_tick', { active_ms: activeMs });
+      activeMs = 0;
+    }
+    flushVitals();
+
+    var duration = Math.round((performance.now() - pageStart) / 1000);
+    send('page_exit', {
+      duration_seconds: duration,
+      max_scroll:       maxScroll
+    });
+  }
+
+  // exitSent is per-page; reset on SPA nav
+  function resetExitFlag() { exitSent = false; }
+  window.addEventListener('popstate', resetExitFlag);
+
+  window.addEventListener('pagehide',    flushExit);
+  window.addEventListener('beforeunload', flushExit);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) flushExit();
+  });
+})();
+</script>
