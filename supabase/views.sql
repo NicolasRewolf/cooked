@@ -221,10 +221,18 @@ create table if not exists public.seo_url_snapshot (
   phone_clicks_28d  bigint,
   phone_clicks_90d  bigint,
   phone_clicks_365d bigint,
+  -- email_clicks_* are kept as columns for backward compat but the tracker
+  -- no longer fires cta_email_click events (the site never exposes mailto:).
   email_clicks_7d   bigint,
   email_clicks_28d  bigint,
   email_clicks_90d  bigint,
   email_clicks_365d bigint,
+  -- Sprint 10 Phase 1.5 — booking-CTA clicks (internal links to
+  -- /honoraires-rendez-vous, regardless of anchor text).
+  booking_cta_clicks_7d   bigint,
+  booking_cta_clicks_28d  bigint,
+  booking_cta_clicks_90d  bigint,
+  booking_cta_clicks_365d bigint,
 
   refreshed_at timestamptz not null default now()
 );
@@ -239,7 +247,11 @@ alter table public.seo_url_snapshot
   add column if not exists email_clicks_7d   bigint,
   add column if not exists email_clicks_28d  bigint,
   add column if not exists email_clicks_90d  bigint,
-  add column if not exists email_clicks_365d bigint;
+  add column if not exists email_clicks_365d bigint,
+  add column if not exists booking_cta_clicks_7d   bigint,
+  add column if not exists booking_cta_clicks_28d  bigint,
+  add column if not exists booking_cta_clicks_90d  bigint,
+  add column if not exists booking_cta_clicks_365d bigint;
 
 alter table public.seo_url_snapshot enable row level security;
 
@@ -368,6 +380,20 @@ begin
         and path is not null
         and occurred_at >= now_ts - interval '365 days'
       group by path
+    ),
+    -- Sprint 10 Phase 1.5 — booking-CTA clicks (internal links to /honoraires-rendez-vous)
+    booking_counts as (
+      select
+        path,
+        count(*) filter (where occurred_at >= now_ts - interval '7 days')   as b7,
+        count(*) filter (where occurred_at >= now_ts - interval '28 days')  as b28,
+        count(*) filter (where occurred_at >= now_ts - interval '90 days')  as b90,
+        count(*) filter (where occurred_at >= now_ts - interval '365 days') as b365
+      from public.events
+      where name = 'cta_booking_click'
+        and path is not null
+        and occurred_at >= now_ts - interval '365 days'
+      group by path
     )
   select
     p.path,
@@ -418,7 +444,12 @@ begin
     coalesce(email_counts.e7, 0)::bigint,
     coalesce(email_counts.e28, 0)::bigint,
     coalesce(email_counts.e90, 0)::bigint,
-    coalesce(email_counts.e365, 0)::bigint
+    coalesce(email_counts.e365, 0)::bigint,
+    -- Sprint 10 Phase 1.5 — booking-CTA click counters
+    coalesce(booking_counts.b7, 0)::bigint,
+    coalesce(booking_counts.b28, 0)::bigint,
+    coalesce(booking_counts.b90, 0)::bigint,
+    coalesce(booking_counts.b365, 0)::bigint
   from all_paths p
     left join o7      on o7.path     = p.path
     left join o28     on o28.path    = p.path
@@ -429,8 +460,9 @@ begin
     left join top_src on top_src.path = p.path
     left join top_med on top_med.path = p.path
     left join dev     on dev.path    = p.path
-    left join phone_counts on phone_counts.path = p.path
-    left join email_counts on email_counts.path = p.path;
+    left join phone_counts   on phone_counts.path   = p.path
+    left join email_counts   on email_counts.path   = p.path
+    left join booking_counts on booking_counts.path = p.path;
 end;
 $$;
 

@@ -29,7 +29,14 @@ const ALLOWED_EVENTS = new Set([
   "page_exit",
   // Phase 1 conversion tracking (added Sprint 10):
   "cta_phone_click",   // tap on <a href="tel:...">
-  "cta_email_click",   // tap on <a href="mailto:...">
+  "cta_email_click",   // tap on <a href="mailto:..."> — kept allowed for
+                       // defensive reasons but the tracker no longer
+                       // emits this event since Plouton doesn't expose
+                       // any mailto: link on the site.
+  // Phase 1.5 — internal booking-page CTA (Sprint 10):
+  "cta_booking_click", // click on any internal link pointing to
+                       // /honoraires-rendez-vous (i.e. "Je prends RDV",
+                       // "Contactez-nous", "Honoraires & RDV", …)
 ]);
 
 function dailySalt(): string {

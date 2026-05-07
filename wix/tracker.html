@@ -215,13 +215,38 @@
 
   // ==============================================================
   // 4. Link click delegation
-  //    Captures three click types from one event listener :
-  //      - tel:    → cta_phone_click   (any page)
-  //      - mailto: → cta_email_click   (any page)
-  //      - http(s) cross-origin → click_outbound
-  //    Internal http(s) clicks are NOT tracked here yet (Phase 2 will add
-  //    click_internal once needed for funnel attribution).
+  //    One capture-phase listener routes link clicks to the right event :
+  //      - tel:                         → cta_phone_click
+  //      - http(s) same-origin pointing
+  //        to a "booking" target path   → cta_booking_click
+  //      - http(s) cross-origin         → click_outbound
+  //
+  //    BOOKING_TARGET_PATHS lists the internal URLs whose click counts as
+  //    a conversion intent. The path is normalised (trailing slash dropped,
+  //    case-insensitive) so /honoraires-rendez-vous and
+  //    /honoraires-rendez-vous/ both match. Add new entries here as the
+  //    site grows additional booking-page paths.
+  //
+  //    mailto: clicks are intentionally NOT tracked — the site never
+  //    exposes a mailto: link.
   // ==============================================================
+  var BOOKING_TARGET_PATHS = ['/honoraires-rendez-vous'];
+
+  function normalizePath(p) {
+    if (!p) return '';
+    var s = String(p).toLowerCase();
+    if (s.length > 1 && s.charAt(s.length - 1) === '/') s = s.slice(0, -1);
+    return s;
+  }
+
+  function isBookingTarget(pathname) {
+    var n = normalizePath(pathname);
+    for (var i = 0; i < BOOKING_TARGET_PATHS.length; i++) {
+      if (n === normalizePath(BOOKING_TARGET_PATHS[i])) return true;
+    }
+    return false;
+  }
+
   function placementOf(el) {
     // Best-effort hint of where the link sits in the page. The Wix Studio
     // footer isn't always a real <footer> tag — fall back to a class hint.
@@ -252,20 +277,26 @@
       return;
     }
 
-    // mailto: links — email CTA conversion signal
-    if (rawHref.indexOf('mailto:') === 0) {
-      send('cta_email_click', {
-        email:     rawHref.slice(7).split('?')[0],
-        anchor:    anchor,
-        placement: placementOf(el)
-      });
-      return;
-    }
-
-    // http(s) outbound (cross-origin)
+    // http(s) link — distinguish internal (booking CTA) from outbound
     try {
       var u = new URL(el.href);
-      if (u.hostname && u.hostname !== location.hostname) {
+
+      // Same-origin → check if it's a booking CTA target
+      if (u.hostname === location.hostname) {
+        if (isBookingTarget(u.pathname)) {
+          send('cta_booking_click', {
+            anchor:      anchor,
+            placement:   placementOf(el),
+            target_path: normalizePath(u.pathname),
+            href:        el.href
+          });
+        }
+        // Other internal navigations are NOT tracked here.
+        return;
+      }
+
+      // Cross-origin → outbound click
+      if (u.hostname) {
         send('click_outbound', {
           href:     el.href,
           hostname: u.hostname,
