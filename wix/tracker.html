@@ -218,7 +218,8 @@
   //    One capture-phase listener routes link clicks to the right event :
   //      - tel:                         → cta_phone_click
   //      - http(s) same-origin pointing
-  //        to a "booking" target path   → cta_booking_click
+  //        to a "booking" target path
+  //        AND placement = header|footer → cta_booking_click
   //      - http(s) cross-origin         → click_outbound
   //
   //    BOOKING_TARGET_PATHS lists the internal URLs whose click counts as
@@ -226,6 +227,16 @@
   //    case-insensitive) so /honoraires-rendez-vous and
   //    /honoraires-rendez-vous/ both match. Add new entries here as the
   //    site grows additional booking-page paths.
+  //
+  //    IMPORTANT — placement filter on cta_booking_click :
+  //    Plouton has a dedicated CTA button in the global header AND another
+  //    in the global footer that drive to /honoraires-rendez-vous. But
+  //    inside blog article bodies the same target is also reached via
+  //    neutral inline anchors like "cabinet Plouton" or "notre équipe".
+  //    Those editorial links are NOT a comparable conversion intent and
+  //    would inflate the metric, so we only emit cta_booking_click when
+  //    the click originates from the header or the footer (i.e. the
+  //    deliberate CTAs). Body clicks are silently ignored.
   //
   //    mailto: clicks are intentionally NOT tracked — the site never
   //    exposes a mailto: link.
@@ -281,15 +292,20 @@
     try {
       var u = new URL(el.href);
 
-      // Same-origin → check if it's a booking CTA target
+      // Same-origin → check if it's a deliberate booking CTA
       if (u.hostname === location.hostname) {
         if (isBookingTarget(u.pathname)) {
-          send('cta_booking_click', {
-            anchor:      anchor,
-            placement:   placementOf(el),
-            target_path: normalizePath(u.pathname),
-            href:        el.href
-          });
+          var place = placementOf(el);
+          // Only header/footer clicks count as a CTA conversion intent.
+          // Body editorial inline links are intentionally NOT emitted.
+          if (place === 'header' || place === 'footer') {
+            send('cta_booking_click', {
+              anchor:      anchor,
+              placement:   place,
+              target_path: normalizePath(u.pathname),
+              href:        el.href
+            });
+          }
         }
         // Other internal navigations are NOT tracked here.
         return;
