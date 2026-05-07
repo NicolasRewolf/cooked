@@ -954,6 +954,35 @@ revoke execute on function public.cta_breakdown_for_path(text, int) from anon;
 revoke execute on function public.cta_breakdown_for_path(text, int) from authenticated;
 grant  execute on function public.cta_breakdown_for_path(text, int) to service_role;
 
+-- ---------- 6.5 tracker_first_seen_global -----------------------
+-- Returns the timestamp of the earliest event in the events table —
+-- effectively "when did Cooked start collecting?". The seo audit tool
+-- uses this during the bootstrap phase to pro-rate Cooked sessions
+-- against the 28d GSC window (raw cooked_sessions / gsc_clicks * 100
+-- gives a fake "5% capture rate" when Cooked has only been collecting
+-- for ~36h vs 28 days of GSC data; the right denominator is
+-- min(28, days_since_first_seen)).
+--
+-- Replaces the COOKED_TRACKER_DEPLOY_DATE hardcode in seo's
+-- diagnostic.v1.ts so the deploy date stays single-source-of-truth on
+-- the Cooked side and works automatically when the same seo pipeline
+-- is plugged into a 2nd tracker (different first_seen) or after a
+-- retention purge that drops old events.
+
+create or replace function public.tracker_first_seen_global()
+returns timestamptz
+language sql
+stable
+set search_path = public, pg_catalog
+as $$
+  select min(occurred_at) from public.events;
+$$;
+
+revoke execute on function public.tracker_first_seen_global() from public;
+revoke execute on function public.tracker_first_seen_global() from anon;
+revoke execute on function public.tracker_first_seen_global() from authenticated;
+grant  execute on function public.tracker_first_seen_global() to service_role;
+
 
 -- ---------- 7. Daily refresh via pg_cron ------------------------
 -- pg_cron must be enabled: Supabase Dashboard → Database → Extensions → pg_cron.

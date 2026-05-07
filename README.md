@@ -57,6 +57,7 @@ cooked/
 | `seo_traffic_sources_28d` / `seo_landing_pages_28d` / `seo_daily_summary` views | ✅ Deployed | `security_invoker` |
 | `behavior_pages_for_period(from, to)` RPC (cross-project, Sprint 8) | ✅ Deployed | granted to `service_role` only |
 | Sprint 12 RPCs : `snapshot_pages_export`, `site_context_export`, `outbound_destinations_for_path`, `cta_breakdown_for_path` | ✅ Deployed | full-menu contract for seo audit tool, granted to `service_role` only |
+| `tracker_first_seen_global()` RPC (Sprint 13bis) | ✅ Deployed | Returns `min(occurred_at)` over events. Used by seo to pro-rate Cooked sessions during bootstrap. `service_role` only. |
 | Daily refresh cron (03:00 UTC) | ✅ Scheduled | `refresh_seo_url_snapshot` job |
 | Edge Function `track` | ✅ Deployed v5 | `verify_jwt: false`, `ALLOWED_ORIGIN` baked-in, accepts all Sprint 10 events |
 | Velo proxy `/_functions/track` | ✅ Live | served same-origin from jplouton-avocat.fr |
@@ -115,6 +116,7 @@ keep the per-tab `session_id`.
 | **10 Phase 1.5 — Booking-CTA capture, header/footer scoped** | 2026-05-07 | New event `cta_booking_click` (clicks on header / footer CTAs to `/honoraires-rendez-vous`, body editorial links filtered out at tracker level) + 4 new columns `booking_cta_clicks_*` on `seo_url_snapshot` + Edge Function v5. Mailto branch dropped from the tracker. |
 | **12 — Full-menu RPC contract for seo** | 2026-05-07 | 4 new RPCs published as the cross-project contract for the seo full-menu audit (Sprint 12 SEO-side): `snapshot_pages_export(paths)`, `site_context_export()`, `outbound_destinations_for_path(path, days_back)`, `cta_breakdown_for_path(path, days_back)`. The 4th is the central conversion-intent disambiguation signal (header / footer / body breakdown). All four `granted to service_role only`, signatures aligned on the TS shapes published in `seo/src/lib/cooked.ts`. |
 | **13 — Path-encoding fix** | 2026-05-07 | Edge Function `track` v5 → v6: decodes `e.path` via `decodeURIComponent` before insert, with safe fallback on malformed input. Existing 6531 events with percent-encoded paths backfilled in one UPDATE using a new `public.url_decode()` plpgsql helper (handles multi-byte UTF-8 correctly). Snapshot rebuilt to propagate. Result: French URLs (`/post/durée-…`, `/post/garde-à-vue-…`) now match the decoded paths that GSC returns and the seo audit tool stores — silent fail on any page with non-ASCII characters resolved. The `url` column stays unchanged (original transport form preserved for debugging). |
+| **13bis — Tracker first-seen RPC** | 2026-05-07 | New RPC `tracker_first_seen_global()` returning the min(occurred_at) over all events. Replaces a hardcoded `COOKED_TRACKER_DEPLOY_DATE` in seo's diagnostic helper so the seo audit tool can pro-rate Cooked sessions against the 28d GSC window during bootstrap (avoids spurious "tracker quasi-cassé" verdicts during the first ~28d of collection). Also makes the seo pipeline portable to a 2nd tracker without code changes. Granted to `service_role` only. |
 
 ### Roadmap (not committed yet)
 
@@ -265,6 +267,25 @@ select * from public.cta_breakdown_for_path('/', 28);
 -- phone    | footer    | 05 56 44 35 96     |      2
 -- booking  | header    | Contactez - nous   |      1
 ```
+
+#### `tracker_first_seen_global()` — Sprint 13bis
+
+Returns the timestamp of the earliest event ever captured. Used by the
+seo audit tool to determine how many days the tracker has been
+collecting, in order to pro-rate Cooked sessions against the 28-day
+GSC window during the bootstrap phase (the first ~28 days of
+collection).
+
+```sql
+select public.tracker_first_seen_global();
+-- 2026-05-06 17:14:47.13+00
+```
+
+Without this pro-rating, a freshly-deployed Cooked tracker would be
+classified as "🚫 tracker quasi-cassé" on every page — not because
+anything is broken but because the math compares 1-2 days of Cooked
+collection against 28 days of GSC clicks. Reference implementation
+of the consumer side is in `seo/src/prompts/diagnostic.v1.ts`.
 
 ### Conversion CTAs (Sprint 10 Phase 1 + 1.5)
 
