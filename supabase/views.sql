@@ -145,6 +145,11 @@ $$;
 create table if not exists public.seo_url_snapshot (
   path text primary key,
 
+  -- Per-window CTA conversion counts (Sprint 10 Phase 1).
+  -- Re-declared here so a fresh `views.sql` run on an empty project
+  -- creates the table with these columns; the alter-table block at the
+  -- bottom of this file is the safety net for already-deployed projects.
+
   -- 7d
   views_7d               bigint,
   unique_visitors_7d     bigint,
@@ -211,8 +216,30 @@ create table if not exists public.seo_url_snapshot (
   -- Device split (28d) — {"desktop": 60.0, "mobile": 35.0, "tablet": 5.0}
   device_split_28d jsonb,
 
+  -- Sprint 10 Phase 1 — conversion CTA tracking
+  phone_clicks_7d   bigint,
+  phone_clicks_28d  bigint,
+  phone_clicks_90d  bigint,
+  phone_clicks_365d bigint,
+  email_clicks_7d   bigint,
+  email_clicks_28d  bigint,
+  email_clicks_90d  bigint,
+  email_clicks_365d bigint,
+
   refreshed_at timestamptz not null default now()
 );
+
+-- Safety net for projects that were created before Sprint 10 Phase 1
+-- (CREATE TABLE IF NOT EXISTS skips the new columns on existing tables).
+alter table public.seo_url_snapshot
+  add column if not exists phone_clicks_7d   bigint,
+  add column if not exists phone_clicks_28d  bigint,
+  add column if not exists phone_clicks_90d  bigint,
+  add column if not exists phone_clicks_365d bigint,
+  add column if not exists email_clicks_7d   bigint,
+  add column if not exists email_clicks_28d  bigint,
+  add column if not exists email_clicks_90d  bigint,
+  add column if not exists email_clicks_365d bigint;
 
 alter table public.seo_url_snapshot enable row level security;
 
@@ -313,6 +340,34 @@ begin
         group by path, device_type
       ) d
       group by path
+    ),
+    -- Sprint 10 Phase 1 — phone / email click counts per path × 4 windows.
+    -- Single CTE with FILTER clauses = 1 table scan instead of 4.
+    phone_counts as (
+      select
+        path,
+        count(*) filter (where occurred_at >= now_ts - interval '7 days')   as p7,
+        count(*) filter (where occurred_at >= now_ts - interval '28 days')  as p28,
+        count(*) filter (where occurred_at >= now_ts - interval '90 days')  as p90,
+        count(*) filter (where occurred_at >= now_ts - interval '365 days') as p365
+      from public.events
+      where name = 'cta_phone_click'
+        and path is not null
+        and occurred_at >= now_ts - interval '365 days'
+      group by path
+    ),
+    email_counts as (
+      select
+        path,
+        count(*) filter (where occurred_at >= now_ts - interval '7 days')   as e7,
+        count(*) filter (where occurred_at >= now_ts - interval '28 days')  as e28,
+        count(*) filter (where occurred_at >= now_ts - interval '90 days')  as e90,
+        count(*) filter (where occurred_at >= now_ts - interval '365 days') as e365
+      from public.events
+      where name = 'cta_email_click'
+        and path is not null
+        and occurred_at >= now_ts - interval '365 days'
+      group by path
     )
   select
     p.path,
@@ -353,7 +408,17 @@ begin
     top_ref.top_referrer, top_src.top_source, top_med.top_medium,
     dev.split,
 
-    now_ts
+    now_ts,
+
+    -- Sprint 10 Phase 1 — phone / email click counters
+    coalesce(phone_counts.p7, 0)::bigint,
+    coalesce(phone_counts.p28, 0)::bigint,
+    coalesce(phone_counts.p90, 0)::bigint,
+    coalesce(phone_counts.p365, 0)::bigint,
+    coalesce(email_counts.e7, 0)::bigint,
+    coalesce(email_counts.e28, 0)::bigint,
+    coalesce(email_counts.e90, 0)::bigint,
+    coalesce(email_counts.e365, 0)::bigint
   from all_paths p
     left join o7      on o7.path     = p.path
     left join o28     on o28.path    = p.path
@@ -363,7 +428,9 @@ begin
     left join top_ref on top_ref.path = p.path
     left join top_src on top_src.path = p.path
     left join top_med on top_med.path = p.path
-    left join dev     on dev.path    = p.path;
+    left join dev     on dev.path    = p.path
+    left join phone_counts on phone_counts.path = p.path
+    left join email_counts on email_counts.path = p.path;
 end;
 $$;
 

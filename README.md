@@ -53,13 +53,13 @@ cooked/
 | `events` table + indexes + RLS | ✅ Deployed | RLS on, no policies → only service-role can read/write |
 | `pg_cron` extension | ✅ Enabled | |
 | `seo_pages_overview()` parametric function | ✅ Deployed | with `search_path` pinned |
-| `seo_url_snapshot` table | ✅ Deployed | RLS on, refreshed daily via cron |
+| `seo_url_snapshot` table | ✅ Deployed | RLS on, refreshed daily via cron, includes Sprint 10 phone/email click counts |
 | `seo_traffic_sources_28d` / `seo_landing_pages_28d` / `seo_daily_summary` views | ✅ Deployed | `security_invoker` |
 | `behavior_pages_for_period(from, to)` RPC (cross-project) | ✅ Deployed | granted to `service_role` only |
 | Daily refresh cron (03:00 UTC) | ✅ Scheduled | `refresh_seo_url_snapshot` job |
-| Edge Function `track` | ✅ Deployed v3 | `verify_jwt: false`, `ALLOWED_ORIGIN` baked-in |
+| Edge Function `track` | ✅ Deployed v4 | `verify_jwt: false`, `ALLOWED_ORIGIN` baked-in, accepts Sprint 10 events |
 | Velo proxy `/_functions/track` | ✅ Live | served same-origin from jplouton-avocat.fr |
-| Wix Custom Code `<head>` tracker | ✅ Live | All pages |
+| Wix Custom Code `<head>` tracker | ✅ Live | All pages — Sprint 10 conversion listeners included |
 
 ## Project IDs (reference)
 
@@ -96,6 +96,8 @@ Columns per URL:
   - `bounce_rate`, `avg_dwell_seconds`
   - `scroll_avg`, `scroll_median`, `scroll_complete_pct`
   - `entry_count`, `exit_count`, `outbound_clicks`
+  - `phone_clicks` _(Sprint 10 — taps on `tel:` links)_
+  - `email_clicks` _(Sprint 10 — taps on `mailto:` links)_
 - Core Web Vitals (28d, p75 — the value Google uses for ranking):
   `lcp_p75_28d_ms`, `inp_p75_28d_ms`, `cls_p75_28d`, `ttfb_p75_28d_ms`
 - Sources (28d): `top_referrer_28d`, `top_source_28d`, `top_medium_28d`
@@ -124,10 +126,54 @@ select * from public.seo_daily_summary;         -- site-wide daily aggregates
 ```sql
 -- Returns 1 row per URL with full behavioural + CWV + outbound aggregates
 -- over the [from, to) window. Granted to service_role only.
+-- NOTE: Sprint 10 phone_clicks / email_clicks are NOT yet exposed via this
+-- RPC — query seo_url_snapshot directly until a Sprint 11 broadens the
+-- contract (kept narrow now to avoid coupling the seo tool to Cooked-side
+-- migrations).
 select * from public.behavior_pages_for_period(
   '2026-04-01'::timestamptz,
   '2026-05-01'::timestamptz
 );
+```
+
+### Conversion CTAs (Sprint 10 Phase 1)
+
+```sql
+-- Top pages génératrices d'appels
+select path, phone_clicks_28d, sessions_28d,
+       round(100.0 * phone_clicks_28d / nullif(sessions_28d, 0), 2)
+         as call_rate_pct
+from public.seo_url_snapshot
+where phone_clicks_28d > 0
+order by phone_clicks_28d desc
+limit 20;
+
+-- Pages qui drainent du trafic mais ne génèrent aucun appel ni e-mail
+-- = friction CTA, candidates pour ajout de bouton "Prendre rendez-vous"
+select path, sessions_28d, phone_clicks_28d, email_clicks_28d,
+       avg_dwell_seconds_28d, scroll_avg_28d
+from public.seo_url_snapshot
+where sessions_28d >= 30
+  and phone_clicks_28d = 0
+  and email_clicks_28d = 0
+order by sessions_28d desc;
+
+-- Comparaison des deux canaux de conversion par catégorie de page
+select
+  case
+    when path like '/defense-penale/%'        then 'defense_penale'
+    when path like '/indemnisation-des-victimes/%' then 'indemnisation'
+    when path like '/droit-des-contrats-et-des-personnes/%' then 'droit_contrats'
+    when path = '/honoraires-rendez-vous'     then 'honoraires_rdv'
+    when path like '/post/%'                  then 'blog'
+    else 'other'
+  end as bucket,
+  sum(sessions_28d)      as sessions,
+  sum(phone_clicks_28d)  as phone_clicks,
+  sum(email_clicks_28d)  as email_clicks
+from public.seo_url_snapshot
+group by bucket
+order by phone_clicks desc;
 ```
 
 ## Maintenance

@@ -214,19 +214,62 @@
   }, ENGAGEMENT_TICK_MS);
 
   // ==============================================================
-  // 4. Outbound link clicks
+  // 4. Link click delegation
+  //    Captures three click types from one event listener :
+  //      - tel:    → cta_phone_click   (any page)
+  //      - mailto: → cta_email_click   (any page)
+  //      - http(s) cross-origin → click_outbound
+  //    Internal http(s) clicks are NOT tracked here yet (Phase 2 will add
+  //    click_internal once needed for funnel attribution).
   // ==============================================================
+  function placementOf(el) {
+    // Best-effort hint of where the link sits in the page. The Wix Studio
+    // footer isn't always a real <footer> tag — fall back to a class hint.
+    if (el.closest('footer, [role="contentinfo"], .wixui-footer, [class*="FOOTER"]')) {
+      return 'footer';
+    }
+    if (el.closest('header, nav, [role="navigation"], .wixui-header, [class*="HEADER"]')) {
+      return 'header';
+    }
+    return 'body';
+  }
+
   document.addEventListener('click', function (e) {
     var el = e.target;
     while (el && el.nodeType === 1 && el.tagName !== 'A') el = el.parentElement;
     if (!el || !el.href) return;
+
+    var rawHref = el.getAttribute('href') || '';
+    var anchor = (el.textContent || '').trim().slice(0, 100);
+
+    // tel: links — phone CTA conversion signal
+    if (rawHref.indexOf('tel:') === 0) {
+      send('cta_phone_click', {
+        phone:     rawHref.slice(4).replace(/\s+/g, ''),
+        anchor:    anchor,
+        placement: placementOf(el)
+      });
+      return;
+    }
+
+    // mailto: links — email CTA conversion signal
+    if (rawHref.indexOf('mailto:') === 0) {
+      send('cta_email_click', {
+        email:     rawHref.slice(7).split('?')[0],
+        anchor:    anchor,
+        placement: placementOf(el)
+      });
+      return;
+    }
+
+    // http(s) outbound (cross-origin)
     try {
       var u = new URL(el.href);
       if (u.hostname && u.hostname !== location.hostname) {
         send('click_outbound', {
           href:     el.href,
           hostname: u.hostname,
-          anchor:   (el.textContent || '').trim().slice(0, 100)
+          anchor:   anchor
         });
       }
     } catch (err) {}

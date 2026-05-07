@@ -27,6 +27,9 @@ const ALLOWED_EVENTS = new Set([
   "web_vitals",
   "click_outbound",
   "page_exit",
+  // Phase 1 conversion tracking (added Sprint 10):
+  "cta_phone_click",   // tap on <a href="tel:...">
+  "cta_email_click",   // tap on <a href="mailto:...">
 ]);
 
 function dailySalt(): string {
