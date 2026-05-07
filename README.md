@@ -45,7 +45,7 @@ cooked/
 └── README.md
 ```
 
-## Deployment status (live as of 2026-05-06)
+## Deployment status (live as of 2026-05-07)
 
 | Component | State | Notes |
 |---|---|---|
@@ -53,13 +53,13 @@ cooked/
 | `events` table + indexes + RLS | ✅ Deployed | RLS on, no policies → only service-role can read/write |
 | `pg_cron` extension | ✅ Enabled | |
 | `seo_pages_overview()` parametric function | ✅ Deployed | with `search_path` pinned |
-| `seo_url_snapshot` table | ✅ Deployed | RLS on, refreshed daily via cron, includes Sprint 10 phone/email click counts |
+| `seo_url_snapshot` table | ✅ Deployed | RLS on, refreshed daily via cron, includes Sprint 10 phone + booking CTA counters |
 | `seo_traffic_sources_28d` / `seo_landing_pages_28d` / `seo_daily_summary` views | ✅ Deployed | `security_invoker` |
 | `behavior_pages_for_period(from, to)` RPC (cross-project) | ✅ Deployed | granted to `service_role` only |
 | Daily refresh cron (03:00 UTC) | ✅ Scheduled | `refresh_seo_url_snapshot` job |
-| Edge Function `track` | ✅ Deployed v4 | `verify_jwt: false`, `ALLOWED_ORIGIN` baked-in, accepts Sprint 10 events |
+| Edge Function `track` | ✅ Deployed v5 | `verify_jwt: false`, `ALLOWED_ORIGIN` baked-in, accepts all Sprint 10 events |
 | Velo proxy `/_functions/track` | ✅ Live | served same-origin from jplouton-avocat.fr |
-| Wix Custom Code `<head>` tracker | ✅ Live | All pages — Sprint 10 conversion listeners included |
+| Wix Custom Code `<head>` tracker | ✅ Live | All pages — Sprint 10 Phase 1 + 1.5 conversion listeners |
 
 ## Project IDs (reference)
 
@@ -81,6 +81,48 @@ This setup is **exempted from cookie-banner consent** under CNIL délibération
 2020-091 and the 2022 guidelines (mesure d'audience strictement statistique,
 pas de recoupement, pas de transfert tiers, identifiant non pérenne).
 
+## Tracked events
+
+The browser-side `tracker.html` snippet (Wix Custom Code, head, all pages)
+emits these event types. Anything else is rejected by the Edge Function's
+`ALLOWED_EVENTS` allow-list.
+
+| Event name | When it fires | Useful props |
+|---|---|---|
+| `pageview` | First load + every SPA navigation (push/replace/popstate) | `path`, `title`, `referrer`, `utm_*`, `viewport_*` |
+| `scroll_depth` | Each of 25/50/75/100 % is hit once per page | `percent` |
+| `engagement_tick` | Every 10 s of **active** time (idle / hidden tab paused) | `active_ms` |
+| `web_vitals` | LCP / INP / CLS / TTFB, flushed on tab hide / page unload | `metric`, `value` |
+| `click_outbound` | Click on an `<a>` whose hostname differs from the site | `href`, `hostname`, `anchor` |
+| `page_exit` | `pagehide` / `beforeunload` / tab hidden — once per page life | `duration_seconds`, `max_scroll` |
+| `cta_phone_click` | Click on any `<a href="tel:...">` anywhere on the site | `phone`, `anchor`, `placement` (footer/header/body) |
+| `cta_booking_click` | Click on the deliberate header **or** footer CTA pointing to `/honoraires-rendez-vous`. Editorial body links to the same target are filtered out at the tracker level | `anchor`, `placement` (always `header` or `footer`), `target_path`, `href` |
+
+Anonymisation lives in the Edge Function, not the tracker:
+the `anonymous_id` is computed server-side from
+`sha256(IP | User-Agent | daily-salt)` truncated to 16 hex chars and
+rotates daily — no client-side persistent identifier ever leaves the
+browser, no cookies, no `localStorage`. Only `sessionStorage` is used to
+keep the per-tab `session_id`.
+
+## Sprint history
+
+| Sprint | Date | Scope |
+|---|---|---|
+| **0 — Initial deploy** | 2026-05-06 | Tracker + Velo proxy + Edge Function `track` v1 + `events` table + `seo_url_snapshot` + 28d companion views + `pg_cron` daily refresh + cross-project `behavior_pages_for_period()` RPC |
+| **10 Phase 1 — Phone + email click capture** | 2026-05-07 | New events `cta_phone_click` / `cta_email_click` + 8 new per-window columns on `seo_url_snapshot` (`phone_clicks_*` / `email_clicks_*`) + Edge Function v4 |
+| **10 Phase 1.5 — Booking-CTA capture, header/footer scoped** | 2026-05-07 | New event `cta_booking_click` (clicks on header / footer CTAs to `/honoraires-rendez-vous`, body editorial links filtered out at tracker level) + 4 new columns `booking_cta_clicks_*` on `seo_url_snapshot` + Edge Function v5. Mailto branch dropped from the tracker. |
+
+### Roadmap (not committed yet)
+
+- **Phase 2 — Form funnel** (planned). When Sprint 11 of the seo audit
+  tool ships, instrument the Wix Forms V2 widget on the 14 expertise
+  pages + `/honoraires-rendez-vous` to fire `form_view`,
+  `form_start`, `form_field_blur`, `form_abandon` from the browser, plus
+  `form_submit_success` from a Velo `masterPage.js`
+  `$w('#form').onWixFormSubmitted(...)` handler. That gives a per-page
+  conversion funnel from impression to booked appointment.
+
 ## What the AI gets to query
 
 ### Flat snapshot — 1 row per URL (the "440-line table")
@@ -96,12 +138,18 @@ Columns per URL:
   - `bounce_rate`, `avg_dwell_seconds`
   - `scroll_avg`, `scroll_median`, `scroll_complete_pct`
   - `entry_count`, `exit_count`, `outbound_clicks`
-  - `phone_clicks` _(Sprint 10 — taps on `tel:` links)_
-  - `email_clicks` _(Sprint 10 — kept for compat, never populated since the
-     site has no `mailto:` links)_
-  - `booking_cta_clicks` _(Sprint 10 — internal-link clicks pointing to
-     `/honoraires-rendez-vous`, regardless of anchor text — covers
-     "Je prends rendez-vous", "Contactez-nous", "Honoraires & RDV", …)_
+  - `phone_clicks` _(Sprint 10 — taps on `tel:` links anywhere on the
+     site — every page is a potential conversion point because the
+     phone number sits in the global footer)_
+  - `email_clicks` _(Sprint 10 — kept for backward-compat, never
+     populated since the site has no `mailto:` links and the tracker no
+     longer fires `cta_email_click`)_
+  - `booking_cta_clicks` _(Sprint 10 Phase 1.5 — clicks on the
+     deliberate header / footer CTAs that drive to
+     `/honoraires-rendez-vous`. Editorial inline links in article bodies
+     pointing to the same target ("cabinet Plouton", "notre équipe", …)
+     are intentionally **NOT** counted, so this metric is a clean
+     conversion-intent signal)_
 - Core Web Vitals (28d, p75 — the value Google uses for ranking):
   `lcp_p75_28d_ms`, `inp_p75_28d_ms`, `cls_p75_28d`, `ttfb_p75_28d_ms`
 - Sources (28d): `top_referrer_28d`, `top_source_28d`, `top_medium_28d`
