@@ -55,7 +55,8 @@ cooked/
 | `seo_pages_overview()` parametric function | ✅ Deployed | with `search_path` pinned |
 | `seo_url_snapshot` table | ✅ Deployed | RLS on, refreshed daily via cron, includes Sprint 10 phone + booking CTA counters |
 | `seo_traffic_sources_28d` / `seo_landing_pages_28d` / `seo_daily_summary` views | ✅ Deployed | `security_invoker` |
-| `behavior_pages_for_period(from, to)` RPC (cross-project) | ✅ Deployed | granted to `service_role` only |
+| `behavior_pages_for_period(from, to)` RPC (cross-project, Sprint 8) | ✅ Deployed | granted to `service_role` only |
+| Sprint 12 RPCs : `snapshot_pages_export`, `site_context_export`, `outbound_destinations_for_path`, `cta_breakdown_for_path` | ✅ Deployed | full-menu contract for seo audit tool, granted to `service_role` only |
 | Daily refresh cron (03:00 UTC) | ✅ Scheduled | `refresh_seo_url_snapshot` job |
 | Edge Function `track` | ✅ Deployed v5 | `verify_jwt: false`, `ALLOWED_ORIGIN` baked-in, accepts all Sprint 10 events |
 | Velo proxy `/_functions/track` | ✅ Live | served same-origin from jplouton-avocat.fr |
@@ -112,6 +113,7 @@ keep the per-tab `session_id`.
 | **0 — Initial deploy** | 2026-05-06 | Tracker + Velo proxy + Edge Function `track` v1 + `events` table + `seo_url_snapshot` + 28d companion views + `pg_cron` daily refresh + cross-project `behavior_pages_for_period()` RPC |
 | **10 Phase 1 — Phone + email click capture** | 2026-05-07 | New events `cta_phone_click` / `cta_email_click` + 8 new per-window columns on `seo_url_snapshot` (`phone_clicks_*` / `email_clicks_*`) + Edge Function v4 |
 | **10 Phase 1.5 — Booking-CTA capture, header/footer scoped** | 2026-05-07 | New event `cta_booking_click` (clicks on header / footer CTAs to `/honoraires-rendez-vous`, body editorial links filtered out at tracker level) + 4 new columns `booking_cta_clicks_*` on `seo_url_snapshot` + Edge Function v5. Mailto branch dropped from the tracker. |
+| **12 — Full-menu RPC contract for seo** | 2026-05-07 | 4 new RPCs published as the cross-project contract for the seo full-menu audit (Sprint 12 SEO-side): `snapshot_pages_export(paths)`, `site_context_export()`, `outbound_destinations_for_path(path, days_back)`, `cta_breakdown_for_path(path, days_back)`. The 4th is the central conversion-intent disambiguation signal (header / footer / body breakdown). All four `granted to service_role only`, signatures aligned on the TS shapes published in `seo/src/lib/cooked.ts`. |
 
 ### Roadmap (not committed yet)
 
@@ -173,19 +175,94 @@ select * from public.seo_landing_pages_28d;     -- entry pages
 select * from public.seo_daily_summary;         -- site-wide daily aggregates
 ```
 
-### Cross-project RPC (consumed by seo audit tool)
+### Cross-project RPCs (consumed by the seo audit tool)
+
+5 RPCs exposed to the seo audit tool, all `granted to service_role only`.
+
+#### `behavior_pages_for_period(from, to)` — original (Sprint 8)
+
+Returns 1 row per URL with the 12-column subset over a user-supplied
+window. Kept stable for the original `snapshotBehaviorPages` pipeline in
+seo. Newer signals (Sprint 10 conversion CTAs, multi-window…) are NOT
+exposed here — see the Sprint 12 RPCs below.
 
 ```sql
--- Returns 1 row per URL with full behavioural + CWV + outbound aggregates
--- over the [from, to) window. Granted to service_role only.
--- NOTE: Sprint 10 phone_clicks / email_clicks are NOT yet exposed via this
--- RPC — query seo_url_snapshot directly until a Sprint 11 broadens the
--- contract (kept narrow now to avoid coupling the seo tool to Cooked-side
--- migrations).
 select * from public.behavior_pages_for_period(
   '2026-04-01'::timestamptz,
   '2026-05-01'::timestamptz
 );
+```
+
+#### `snapshot_pages_export(paths text[] default null)` — Sprint 12
+
+Returns the latest pre-computed snapshot rows (full 66 columns of
+`seo_url_snapshot`). Filtering by paths is optional. Used by the seo
+diagnose / fix-gen / issue-render pipelines to surface CWV + multi-window
++ provenance + device + conversion CTAs all at once.
+
+```sql
+-- All pages
+select * from public.snapshot_pages_export();
+
+-- Just the pages that have findings this audit run
+select * from public.snapshot_pages_export(array[
+  '/post/abandon-de-poste-quels-risques',
+  '/honoraires-rendez-vous'
+]);
+```
+
+#### `site_context_export()` — Sprint 12
+
+One row of site-wide context (last 28 days), injected verbatim into the
+diagnostic prompt's `<site_context>` block so the LLM can calibrate
+per-page metrics against site averages.
+
+```sql
+select * from public.site_context_export();
+-- global_sessions_28d           : 1396
+-- global_bounce_rate_28d        : 0.6203 (already 0..1)
+-- sessions_per_day_median_28d   : 49.5
+-- sessions_trend_pct_7d_vs_28d  : +12.5  (signed % delta vs 28d rate)
+-- top_sources_28d               : [{source, medium, sessions} × top 5]
+```
+
+#### `outbound_destinations_for_path(path, days_back)` — Sprint 12
+
+Top-10 external hostnames clicked outbound from a given page over the
+last `days_back` days. Lets the LLM diagnose "outbound leak" patterns
+("users fleeing toward legifrance.gouv.fr from a juridique page →
+suggest an in-page citation").
+
+```sql
+select * from public.outbound_destinations_for_path(
+  '/post/bail-commercial-la-revision-du-loyer-comment-est-ce-que-cela-fonctionne',
+  28
+);
+-- hostname     | clicks
+-- claude.ai    |      2
+```
+
+#### `cta_breakdown_for_path(path, days_back)` — Sprint 12
+
+The disambiguating signal. Splits CTA clicks by
+`(cta_type, placement, anchor_sample)` so the LLM can tell the
+difference between:
+
+- **5 phone clicks all in `footer`** → ambient cabinet-wide CTA, low
+  intent
+- **5 phone clicks all in `body`** → qualified intent on this specific
+  page, high signal
+
+Enum values are exact: `cta_type ∈ {'phone', 'email', 'booking'}`,
+`placement ∈ {'header', 'footer', 'body'}`. One row per distinct anchor
+(option (c) of the contract — caller can re-aggregate to
+`(cta_type, placement)` if needed).
+
+```sql
+select * from public.cta_breakdown_for_path('/', 28);
+-- cta_type | placement | anchor_sample      | clicks
+-- phone    | footer    | 05 56 44 35 96     |      2
+-- booking  | header    | Contactez - nous   |      1
 ```
 
 ### Conversion CTAs (Sprint 10 Phase 1 + 1.5)

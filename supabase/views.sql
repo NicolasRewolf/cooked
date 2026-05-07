@@ -11,8 +11,12 @@
 --   • seo_traffic_sources_28d       — by source / medium / referrer
 --   • seo_landing_pages_28d         — entry pages with engagement
 --   • seo_daily_summary             — site-wide daily aggregates
---   • behavior_pages_for_period(from, to) — RPC consumed cross-project by
---                                           the seo audit tool
+--   • behavior_pages_for_period(from, to) — original RPC for seo (period-parametric)
+--   • Sprint 12 RPCs (cross-project contract for seo full-menu audit)
+--       - snapshot_pages_export(paths)
+--       - site_context_export()
+--       - outbound_destinations_for_path(path, days_back)
+--       - cta_breakdown_for_path(path, days_back)
 -- ============================================================
 
 -- ---------- 1. Parametric per-URL overview ------------------
@@ -672,7 +676,224 @@ revoke execute on function public.behavior_pages_for_period(timestamptz, timesta
 grant  execute on function public.behavior_pages_for_period(timestamptz, timestamptz) to service_role;
 
 
--- ---------- 6. Daily refresh via pg_cron ------------------------
+-- ============================================================
+-- 6. Sprint 12 RPCs — full-menu contract for the seo audit tool
+-- ============================================================
+-- The 4 functions below are the cross-project contract published for
+-- consumption by the seo repo (https://github.com/NicolasRewolf/seo)
+-- as of Sprint 12. Their TypeScript shapes are defined in
+-- seo/src/lib/cooked.ts (PageSnapshotExtras, SiteContext,
+-- OutboundDestination, CtaBreakdownRow). DO NOT change a return-table
+-- signature without coordinating a corresponding bump in cooked.ts.
+-- All four are granted to service_role only.
+
+-- ---------- 6.1 snapshot_pages_export ---------------------------
+-- Returns the latest pre-computed snapshot rows. Optional filtering by
+-- paths (pass null to get the full snapshot). The seo wrapper
+-- reconstructs the nested TS type from the flat 66-column row.
+
+create or replace function public.snapshot_pages_export(
+  paths text[] default null
+)
+returns setof public.seo_url_snapshot
+language sql
+stable
+set search_path = public, pg_catalog
+as $$
+  select *
+  from public.seo_url_snapshot s
+  where snapshot_pages_export.paths is null
+     or s.path = any (snapshot_pages_export.paths);
+$$;
+
+revoke execute on function public.snapshot_pages_export(text[]) from public;
+revoke execute on function public.snapshot_pages_export(text[]) from anon;
+revoke execute on function public.snapshot_pages_export(text[]) from authenticated;
+grant  execute on function public.snapshot_pages_export(text[]) to service_role;
+
+-- ---------- 6.2 site_context_export -----------------------------
+-- One row of site-wide context over the last 28 days, injected verbatim
+-- into the diagnostic prompt's <site_context> block to let the LLM
+-- calibrate per-page metrics against site averages.
+
+create or replace function public.site_context_export()
+returns table (
+  global_sessions_28d            bigint,
+  global_bounce_rate_28d         numeric,
+  sessions_per_day_median_28d    numeric,
+  sessions_trend_pct_7d_vs_28d   numeric,
+  top_sources_28d                jsonb
+)
+language sql
+stable
+set search_path = public, pg_catalog
+as $$
+  with ss as (
+    select
+      e.session_id,
+      min(e.occurred_at)                                         as session_start,
+      max(e.occurred_at)                                         as session_end,
+      count(*) filter (where e.name = 'pageview')                as pages_viewed,
+      max(e.referrer_hostname)                                   as referrer_hostname,
+      max(e.utm_source)                                          as utm_source,
+      max(e.utm_medium)                                          as utm_medium
+    from public.events e
+    where e.occurred_at >= now() - interval '28 days'
+    group by e.session_id
+  ),
+  agg as (
+    select
+      count(*)::bigint                                                                     as s28_total,
+      count(*) filter (where session_start >= now() - interval '7 days')::bigint           as s7_total,
+      count(*) filter (
+        where pages_viewed = 1
+          and extract(epoch from (session_end - session_start)) < 10
+      )::numeric                                                                           as bounce_count
+    from ss
+  ),
+  daily as (
+    select date_trunc('day', session_start)::date as day, count(*) as n
+    from ss
+    group by 1
+  ),
+  median as (
+    select percentile_cont(0.5) within group (order by n)::numeric as v
+    from daily
+  ),
+  sources as (
+    select
+      coalesce(utm_source, referrer_hostname, 'direct')                                    as source,
+      coalesce(utm_medium,
+               case when referrer_hostname is null then 'none' else 'referral' end)        as medium,
+      count(*)::bigint                                                                     as sessions
+    from ss
+    group by 1, 2
+    order by 3 desc
+    limit 5
+  ),
+  top_sources as (
+    select coalesce(
+      jsonb_agg(jsonb_build_object(
+        'source',   source,
+        'medium',   medium,
+        'sessions', sessions
+      ) order by sessions desc),
+      '[]'::jsonb
+    ) as top
+    from sources
+  )
+  select
+    a.s28_total,
+    coalesce(round(a.bounce_count / nullif(a.s28_total, 0), 4), 0),
+    coalesce(round(m.v, 1), 0),
+    coalesce(round(
+      case
+        when a.s28_total > 0 then
+          100.0 * ((a.s7_total::numeric / 7.0) - (a.s28_total::numeric / 28.0))
+                 / nullif((a.s28_total::numeric / 28.0), 0)
+        else 0
+      end, 2
+    ), 0),
+    t.top
+  from agg a, median m, top_sources t;
+$$;
+
+revoke execute on function public.site_context_export() from public;
+revoke execute on function public.site_context_export() from anon;
+revoke execute on function public.site_context_export() from authenticated;
+grant  execute on function public.site_context_export() to service_role;
+
+-- ---------- 6.3 outbound_destinations_for_path ------------------
+-- Top-10 hostnames clicked outbound from a given page over `days_back`
+-- days. Lets the LLM diagnose "outbound leak" patterns.
+
+create or replace function public.outbound_destinations_for_path(
+  path      text,
+  days_back int default 28
+)
+returns table (
+  hostname text,
+  clicks   bigint
+)
+language sql
+stable
+set search_path = public, pg_catalog
+as $$
+  select
+    (e.props->>'hostname')      as hostname,
+    count(*)::bigint            as clicks
+  from public.events e
+  where e.name      = 'click_outbound'
+    and e.path      = outbound_destinations_for_path.path
+    and e.occurred_at >= now() - (outbound_destinations_for_path.days_back * interval '1 day')
+    and (e.props->>'hostname') is not null
+    and (e.props->>'hostname') <> ''
+  group by (e.props->>'hostname')
+  order by 2 desc
+  limit 10;
+$$;
+
+revoke execute on function public.outbound_destinations_for_path(text, int) from public;
+revoke execute on function public.outbound_destinations_for_path(text, int) from anon;
+revoke execute on function public.outbound_destinations_for_path(text, int) from authenticated;
+grant  execute on function public.outbound_destinations_for_path(text, int) to service_role;
+
+-- ---------- 6.4 cta_breakdown_for_path --------------------------
+-- THE central conversion-intent disambiguation signal. Splits CTA clicks
+-- by (cta_type, placement, anchor_sample) so the LLM can tell the
+-- difference between "ambient footer phone CTA" and "qualified body CTA".
+-- Enum values are exact:
+--    cta_type  ∈ {'phone', 'email', 'booking'}
+--    placement ∈ {'header', 'footer', 'body'}
+-- One row per distinct anchor (option (c) of the contract — the caller
+-- can re-aggregate to (cta_type, placement) if needed).
+
+create or replace function public.cta_breakdown_for_path(
+  path      text,
+  days_back int default 28
+)
+returns table (
+  cta_type      text,
+  placement     text,
+  anchor_sample text,
+  clicks        bigint
+)
+language sql
+stable
+set search_path = public, pg_catalog
+as $$
+  with cta as (
+    select
+      case e.name
+        when 'cta_phone_click'   then 'phone'
+        when 'cta_email_click'   then 'email'
+        when 'cta_booking_click' then 'booking'
+      end                                                 as cta_type,
+      coalesce(nullif(e.props->>'placement', ''), 'body') as placement,
+      coalesce(e.props->>'anchor', '')                    as anchor
+    from public.events e
+    where e.name in ('cta_phone_click', 'cta_email_click', 'cta_booking_click')
+      and e.path = cta_breakdown_for_path.path
+      and e.occurred_at >= now() - (cta_breakdown_for_path.days_back * interval '1 day')
+  )
+  select
+    cta_type,
+    placement,
+    anchor       as anchor_sample,
+    count(*)::bigint
+  from cta
+  where cta_type is not null
+  group by cta_type, placement, anchor
+  order by 4 desc, cta_type, placement;
+$$;
+
+revoke execute on function public.cta_breakdown_for_path(text, int) from public;
+revoke execute on function public.cta_breakdown_for_path(text, int) from anon;
+revoke execute on function public.cta_breakdown_for_path(text, int) from authenticated;
+grant  execute on function public.cta_breakdown_for_path(text, int) to service_role;
+
+
+-- ---------- 7. Daily refresh via pg_cron ------------------------
 -- pg_cron must be enabled: Supabase Dashboard → Database → Extensions → pg_cron.
 -- Alternatively, run this once after the extension is enabled:
 --   create extension if not exists pg_cron;
