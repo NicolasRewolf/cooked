@@ -113,6 +113,25 @@ function n(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+// Sprint 13 — normalize `path` to decoded form so it joins cleanly with
+// the rest of the SEO stack (GSC returns decoded URLs by convention; the
+// browser's `location.pathname` returns percent-encoded strings for paths
+// that contain non-ASCII characters). Without this, "/post/durée-…" from
+// GSC would never match "/post/dur%C3%A9e-…" from the tracker.
+//
+// Note: only `path` is decoded — the full `url` stays as-is to preserve
+// the original transport form for debugging.
+function decodePathSafe(p: string | null): string | null {
+  if (p == null) return null;
+  try {
+    return decodeURIComponent(p);
+  } catch {
+    // Malformed percent-encoding (e.g. lone "%") — keep original to avoid
+    // silently dropping the row.
+    return p;
+  }
+}
+
 function corsHeaders(origin: string): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin,
@@ -177,7 +196,7 @@ Deno.serve(async (req) => {
       session_id,
       name,
       url: s(e.url, 2048),
-      path: s(e.path, 2048),
+      path: decodePathSafe(s(e.path, 2048)),
       hostname: hostnameOf(s(e.url, 2048)),
       title: s(e.title, 500),
       referrer: s(e.referrer, 2048),

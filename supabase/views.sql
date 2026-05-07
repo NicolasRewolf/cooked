@@ -677,6 +677,68 @@ grant  execute on function public.behavior_pages_for_period(timestamptz, timesta
 
 
 -- ============================================================
+-- 5b. URL-decode helper (Sprint 13)
+-- ============================================================
+-- Postgres has no native url_decode. Used by the Sprint 13 backfill that
+-- normalised existing events.path to decoded form, and available as a
+-- general utility for ad-hoc queries.
+--
+-- Algorithm: walk the input character-by-character, accumulate contiguous
+-- %XX sequences as a bytea, then decode that bytea as UTF-8. Multi-byte
+-- codepoints (é = 0xC3 0xA9, à = 0xC3 0xA0, …) decode correctly because
+-- consecutive %XX bytes are batched together before convert_from().
+-- Falls back to the original string on any error.
+
+create or replace function public.url_decode(input text)
+returns text
+language plpgsql
+immutable
+as $$
+declare
+  result        text  := '';
+  i             int   := 1;
+  len           int   := length(input);
+  pending       bytea := ''::bytea;
+  hex_pair      text;
+begin
+  if input is null then
+    return null;
+  end if;
+
+  while i <= len loop
+    if substring(input from i for 1) = '%'
+       and i + 2 <= len
+       and substring(input from i+1 for 2) ~ '^[0-9A-Fa-f]{2}$'
+    then
+      hex_pair := substring(input from i+1 for 2);
+      pending  := pending || decode(hex_pair, 'hex');
+      i := i + 3;
+    else
+      if length(pending) > 0 then
+        result  := result || convert_from(pending, 'UTF8');
+        pending := ''::bytea;
+      end if;
+      result := result || substring(input from i for 1);
+      i := i + 1;
+    end if;
+  end loop;
+
+  if length(pending) > 0 then
+    result := result || convert_from(pending, 'UTF8');
+  end if;
+
+  return result;
+exception
+  when others then
+    return input;
+end;
+$$;
+
+revoke execute on function public.url_decode(text) from public;
+grant  execute on function public.url_decode(text) to service_role;
+
+
+-- ============================================================
 -- 6. Sprint 12 RPCs — full-menu contract for the seo audit tool
 -- ============================================================
 -- The 4 functions below are the cross-project contract published for
