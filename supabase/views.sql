@@ -17,6 +17,8 @@
 --       - site_context_export()
 --       - outbound_destinations_for_path(path, days_back)
 --       - cta_breakdown_for_path(path, days_back)
+--   • rls_auto_enable() + ensure_rls event trigger — security hardening,
+--     auto-enables RLS on every new public table.
 -- ============================================================
 
 -- ---------- 1. Parametric per-URL overview ------------------
@@ -693,6 +695,7 @@ create or replace function public.url_decode(input text)
 returns text
 language plpgsql
 immutable
+set search_path = public, pg_catalog
 as $$
 declare
   result        text  := '';
@@ -1002,5 +1005,82 @@ begin
     );
   else
     raise notice 'pg_cron not enabled — enable it in Dashboard, then re-run views.sql';
+  end if;
+end $$;
+
+
+-- ============================================================
+-- 8. Security hardening — RLS auto-enable on new tables
+-- ============================================================
+-- Belt-and-suspenders security guardrail. Every new table created in the
+-- `public` schema automatically gets RLS enabled by an event trigger, so
+-- a forgotten `alter table … enable row level security` can never expose
+-- a freshly-created table via PostgREST to anon/authenticated.
+--
+-- Important contract notes:
+--   • The function is SECURITY DEFINER because it must alter tables on
+--     behalf of whoever ran the CREATE TABLE — search_path is pinned to
+--     pg_catalog to prevent search_path injection.
+--   • EXECUTE is revoked from public/anon/authenticated/service_role:
+--     the function is fired by the `ensure_rls` event trigger which
+--     runs with the privileges of the function owner regardless of
+--     grants. There is no legitimate reason to call it via /rest/v1/rpc/
+--     and Supabase advisors flag any SECURITY DEFINER fn that's
+--     externally callable.
+--   • Tables created via `apply_migration` MCP / direct CREATE TABLE in
+--     the public schema are covered. System schemas (pg_catalog,
+--     information_schema, pg_toast*, pg_temp*) are skipped.
+
+create or replace function public.rls_auto_enable()
+returns event_trigger
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  cmd record;
+begin
+  for cmd in
+    select *
+    from pg_event_trigger_ddl_commands()
+    where command_tag in ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+      and object_type in ('table', 'partitioned table')
+  loop
+     if cmd.schema_name is not null
+        and cmd.schema_name in ('public')
+        and cmd.schema_name not in ('pg_catalog', 'information_schema')
+        and cmd.schema_name not like 'pg_toast%'
+        and cmd.schema_name not like 'pg_temp%'
+     then
+      begin
+        execute format('alter table if exists %s enable row level security', cmd.object_identity);
+        raise log 'rls_auto_enable: enabled RLS on %', cmd.object_identity;
+      exception
+        when others then
+          raise log 'rls_auto_enable: failed to enable RLS on %', cmd.object_identity;
+      end;
+     else
+        raise log 'rls_auto_enable: skip % (either system schema or not in enforced list: %.)', cmd.object_identity, cmd.schema_name;
+     end if;
+  end loop;
+end;
+$$;
+
+-- Revoke direct EXECUTE from every role that PostgREST might surface this
+-- function under. The event trigger keeps firing because event triggers
+-- run as the function owner (postgres), not as the caller.
+revoke execute on function public.rls_auto_enable() from public;
+revoke execute on function public.rls_auto_enable() from anon;
+revoke execute on function public.rls_auto_enable() from authenticated;
+revoke execute on function public.rls_auto_enable() from service_role;
+
+-- Wire the event trigger if not already present.
+do $$
+begin
+  if not exists (select 1 from pg_event_trigger where evtname = 'ensure_rls') then
+    create event trigger ensure_rls
+      on ddl_command_end
+      when tag in ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+      execute function public.rls_auto_enable();
   end if;
 end $$;

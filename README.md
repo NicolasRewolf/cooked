@@ -83,6 +83,29 @@ This setup is **exempted from cookie-banner consent** under CNIL délibération
 2020-091 and the 2022 guidelines (mesure d'audience strictement statistique,
 pas de recoupement, pas de transfert tiers, identifiant non pérenne).
 
+## Security model
+
+Defense-in-depth on the Supabase side:
+
+- **`events` and `seo_url_snapshot` have RLS enabled with no policies — by
+  design.** This is the deny-all-to-clients pattern: `anon` and
+  `authenticated` get zero rows, only the `service_role` (used by the Edge
+  Function for inserts and by the seo audit tool's cross-project secret
+  for reads) bypasses RLS. Supabase advisors flag this as INFO-level "RLS
+  enabled, no policies" — that flag is expected and acceptable here.
+- **`rls_auto_enable()` event trigger** (`supabase/views.sql` §8) listens
+  to `ddl_command_end` and auto-enables RLS on every newly-created table
+  in `public`. Belt-and-suspenders against forgetting the
+  `enable row level security` in a future migration.
+- **All cross-project RPCs are granted to `service_role` only.** `public`,
+  `anon`, and `authenticated` have no EXECUTE on `behavior_pages_for_period`,
+  `snapshot_pages_export`, `site_context_export`,
+  `outbound_destinations_for_path`, `cta_breakdown_for_path`,
+  `tracker_first_seen_global`, `url_decode`, or `rls_auto_enable`.
+- **`SECURITY DEFINER` functions pin `search_path`** to prevent
+  search_path injection (`refresh_seo_url_snapshot`, `rls_auto_enable`,
+  `url_decode`).
+
 ## Tracked events
 
 The browser-side `tracker.html` snippet (Wix Custom Code, head, all pages)
