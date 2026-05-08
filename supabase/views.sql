@@ -19,6 +19,10 @@
 --       - cta_breakdown_for_path(path, days_back)
 --   • rls_auto_enable() + ensure_rls event trigger — security hardening,
 --     auto-enables RLS on every new public table.
+--   • seo_expertise_pages view — domain-specific filter on
+--     seo_url_snapshot for the 3 practice-area URL trees of
+--     jplouton-avocat.fr (defense-penale / indemnisation-des-victimes /
+--     droit-des-contrats-et-des-personnes).
 -- ============================================================
 
 -- ---------- 1. Parametric per-URL overview ------------------
@@ -1084,3 +1088,49 @@ begin
       execute function public.rls_auto_enable();
   end if;
 end $$;
+
+
+-- ============================================================
+-- 9. Domain-specific views — jplouton-avocat.fr expertise pages
+-- ============================================================
+-- Filtered slice of seo_url_snapshot restricted to the 3 practice-area
+-- URL trees used by the cabinet jplouton-avocat.fr:
+--
+--   /defense-penale/*                       → expertise_area = 'defense_penale'
+--   /indemnisation-des-victimes/*           → expertise_area = 'indemnisation_victimes'
+--   /droit-des-contrats-et-des-personnes/*  → expertise_area = 'droit_contrats_personnes'
+--
+-- Each row is tagged with:
+--   expertise_area  : the practice area (3 values above)
+--   expertise_level : 'hub' for the area landing page (e.g. /defense-penale)
+--                     'leaf' for sub-pages (e.g. /defense-penale/droit-penal)
+--
+-- Excludes paths ending with apostrophe (`/defense-penale/droit-penal'`) —
+-- these come from broken hrefs in the site's content where an apostrophe
+-- got concatenated to the URL. They have real traffic and should be
+-- diagnosed/fixed on the Wix side, but they pollute analytics.
+--
+-- Inherits seo_url_snapshot's RLS deny-all: only service_role can SELECT.
+
+create or replace view public.seo_expertise_pages as
+select
+  case
+    when path ~ '^/defense-penale'                       then 'defense_penale'
+    when path ~ '^/indemnisation-des-victimes'           then 'indemnisation_victimes'
+    when path ~ '^/droit-des-contrats-et-des-personnes'  then 'droit_contrats_personnes'
+  end as expertise_area,
+  case
+    when path ~ '^/[^/]+$' then 'hub'
+    else 'leaf'
+  end as expertise_level,
+  s.*
+from public.seo_url_snapshot s
+where
+  path ~ '^/(defense-penale|indemnisation-des-victimes|droit-des-contrats-et-des-personnes)(/|$)'
+  and right(path, 1) <> ''''
+;
+
+comment on view public.seo_expertise_pages is
+  'Filtered view of seo_url_snapshot restricted to the 3 practice-area URL trees + tagged with expertise_area / expertise_level. Excludes malformed paths ending with apostrophe.';
+
+grant select on public.seo_expertise_pages to service_role;
