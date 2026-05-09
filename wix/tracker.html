@@ -1,33 +1,14 @@
-<!--
-  COOKED — first-party SEO tracker
-  ==================================================================
-  Where to paste this:
-    Wix Studio → Settings → Custom Code → Add Custom Code
-      Code:        the entire <script>…</script> block below
-      Place code:  Head
-      Apply to:    All pages
-      Load on:     Site (production)  + Premium homepage if relevant
-  Privacy / RGPD:
-    • Cookieless, no localStorage, no persistent identifier.
-    • anonymous_id is computed server-side as sha256(IP|UA|daily-salt) and
-      rotates daily — non-identifying, unrecoverable.
-    • session_id lives in sessionStorage (cleared when tab closes).
-    • Approach exempted from cookie banner per CNIL délibération 2020-091
-      (mesure d'audience strictement statistique).
-  ==================================================================
--->
+<!-- COOKED — first-party SEO tracker (cookieless, RGPD-exempt) -->
 <script>
 (function () {
   'use strict';
 
-  // ----- config -----
   var ENDPOINT             = '/_functions/track';
   var SESSION_TIMEOUT_MS   = 30 * 60 * 1000; // 30 min idle → new session
   var ENGAGEMENT_TICK_MS   = 10 * 1000;       // flush active-time every 10 s
   var IDLE_THRESHOLD_MS    = 30 * 1000;       // 30 s no input = idle
   var SCROLL_DEBOUNCE_MS   = 200;
 
-  // ----- session (sessionStorage, no cookies) -----
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
   function getSessionId() {
@@ -48,7 +29,6 @@
     } catch (e) { return rid(); }
   }
 
-  // ----- query params (for UTM) -----
   function parseQuery() {
     var out = {};
     var q = location.search.replace(/^\?/, '');
@@ -63,7 +43,6 @@
     return out;
   }
 
-  // ----- payload builder -----
   function basePayload() {
     var qp = parseQuery();
     return {
@@ -89,7 +68,6 @@
     p.props = props || {};
     var body = JSON.stringify(p);
 
-    // sendBeacon survives page unload — preferred for page_exit etc.
     if (navigator.sendBeacon) {
       try {
         var blob = new Blob([body], { type: 'application/json' });
@@ -114,7 +92,6 @@
 
   emitPageview();
 
-  // Wix Studio is a SPA — listen for client-side navigation.
   function onPathMaybeChanged() {
     if (location.pathname !== currentPath) {
       // Flush previous page's exit data first
@@ -123,9 +100,10 @@
       // Reset per-page state
       scrollHits = { 25: false, 50: false, 75: false, 100: false };
       maxScroll  = 0;
-      pageStart  = performance.now();
-      activeMs   = 0;
-      lastTick   = Date.now();
+      pageStart     = performance.now();
+      activeMs      = 0;
+      totalActiveMs = 0;
+      lastTick      = Date.now();
       vitals.lcp = 0; vitals.cls = 0; vitals.inp = 0; vitals.ttfb = 0;
       vitalsEmitted = { LCP: false, CLS: false, INP: false, TTFB: false };
       emitPageview();
@@ -182,10 +160,11 @@
   // ==============================================================
   // 3. Engagement (active time only — pauses on idle / hidden tab)
   // ==============================================================
-  var lastActivity = Date.now();
-  var lastTick     = Date.now();
-  var activeMs     = 0;
-  var pageStart    = performance.now();
+  var lastActivity  = Date.now();
+  var lastTick      = Date.now();
+  var activeMs      = 0;
+  var totalActiveMs = 0;
+  var pageStart     = performance.now();
 
   ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (ev) {
     window.addEventListener(ev, function () { lastActivity = Date.now(); }, { passive: true });
@@ -201,7 +180,8 @@
   setInterval(function () {
     var now = Date.now();
     if (!document.hidden && (now - lastActivity) < IDLE_THRESHOLD_MS) {
-      activeMs += (now - lastTick);
+      activeMs      += (now - lastTick);
+      totalActiveMs += (now - lastTick);
     }
     lastTick = now;
   }, 1000);
@@ -214,32 +194,8 @@
   }, ENGAGEMENT_TICK_MS);
 
   // ==============================================================
-  // 4. Link click delegation
-  //    One capture-phase listener routes link clicks to the right event :
-  //      - tel:                         → cta_phone_click
-  //      - http(s) same-origin pointing
-  //        to a "booking" target path
-  //        AND placement = header|footer → cta_booking_click
-  //      - http(s) cross-origin         → click_outbound
-  //
-  //    BOOKING_TARGET_PATHS lists the internal URLs whose click counts as
-  //    a conversion intent. The path is normalised (trailing slash dropped,
-  //    case-insensitive) so /honoraires-rendez-vous and
-  //    /honoraires-rendez-vous/ both match. Add new entries here as the
-  //    site grows additional booking-page paths.
-  //
-  //    IMPORTANT — placement filter on cta_booking_click :
-  //    Plouton has a dedicated CTA button in the global header AND another
-  //    in the global footer that drive to /honoraires-rendez-vous. But
-  //    inside blog article bodies the same target is also reached via
-  //    neutral inline anchors like "cabinet Plouton" or "notre équipe".
-  //    Those editorial links are NOT a comparable conversion intent and
-  //    would inflate the metric, so we only emit cta_booking_click when
-  //    the click originates from the header or the footer (i.e. the
-  //    deliberate CTAs). Body clicks are silently ignored.
-  //
-  //    mailto: clicks are intentionally NOT tracked — the site never
-  //    exposes a mailto: link.
+  // 4. Link click delegation (tel→cta_phone, booking header/footer
+  //    →cta_booking, cross-origin→click_outbound)
   // ==============================================================
   var BOOKING_TARGET_PATHS = ['/honoraires-rendez-vous'];
 
@@ -259,8 +215,6 @@
   }
 
   function placementOf(el) {
-    // Best-effort hint of where the link sits in the page. The Wix Studio
-    // footer isn't always a real <footer> tag — fall back to a class hint.
     if (el.closest('footer, [role="contentinfo"], .wixui-footer, [class*="FOOTER"]')) {
       return 'footer';
     }
@@ -278,7 +232,6 @@
     var rawHref = el.getAttribute('href') || '';
     var anchor = (el.textContent || '').trim().slice(0, 100);
 
-    // tel: links — phone CTA conversion signal
     if (rawHref.indexOf('tel:') === 0) {
       send('cta_phone_click', {
         phone:     rawHref.slice(4).replace(/\s+/g, ''),
@@ -288,30 +241,21 @@
       return;
     }
 
-    // http(s) link — distinguish internal (booking CTA) from outbound
     try {
       var u = new URL(el.href);
-
-      // Same-origin → check if it's a deliberate booking CTA
       if (u.hostname === location.hostname) {
         if (isBookingTarget(u.pathname)) {
           var place = placementOf(el);
-          // Only header/footer clicks count as a CTA conversion intent.
-          // Body editorial inline links are intentionally NOT emitted.
-          if (place === 'header' || place === 'footer') {
-            send('cta_booking_click', {
-              anchor:      anchor,
-              placement:   place,
-              target_path: normalizePath(u.pathname),
-              href:        el.href
-            });
-          }
+          send('cta_booking_click', {
+            anchor:      anchor,
+            placement:   place,
+            target_path: normalizePath(u.pathname),
+            href:        el.href
+          });
         }
-        // Other internal navigations are NOT tracked here.
         return;
       }
 
-      // Cross-origin → outbound click
       if (u.hostname) {
         send('click_outbound', {
           href:     el.href,
@@ -354,7 +298,6 @@
     }
   } catch (e) {}
 
-  // CLS (session-window aggregation, web-vitals-style)
   var clsSessionValue   = 0;
   var clsSessionEntries = [];
   try {
@@ -382,7 +325,6 @@
     }
   } catch (e) {}
 
-  // INP (worst-case interaction duration)
   try {
     if (typeof PerformanceObserver !== 'undefined') {
       var inpObs = new PerformanceObserver(function (list) {
@@ -414,14 +356,17 @@
     }
     flushVitals();
 
-    var duration = Math.round((performance.now() - pageStart) / 1000);
+    var now2 = Date.now();
+    if (!document.hidden && (now2 - lastActivity) < IDLE_THRESHOLD_MS) {
+      totalActiveMs += (now2 - lastTick);
+    }
+    var duration = Math.round(totalActiveMs / 1000);
     send('page_exit', {
       duration_seconds: duration,
       max_scroll:       maxScroll
     });
   }
 
-  // exitSent is per-page; reset on SPA nav
   function resetExitFlag() { exitSent = false; }
   window.addEventListener('popstate', resetExitFlag);
 

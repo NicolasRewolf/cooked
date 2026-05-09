@@ -4,6 +4,10 @@
 -- Run AFTER schema.sql. Idempotent.
 --
 -- What you get:
+--   • bot_fingerprints table + refresh_bot_fingerprints() — centralized
+--     bot detection (Sprint 17). anonymous_ids with >20 pv/day + 0 scroll.
+--   • events_human view — events minus bot traffic. ALL RPCs and views
+--     below read from events_human, never from events directly.
 --   • seo_pages_overview(from, to)  — parametric function, 1 row / URL
 --   • seo_url_snapshot              — flat table, 1 row / URL with rolling
 --                                     windows (7d, 28d, 90d, 365d) — refreshed
@@ -19,11 +23,77 @@
 --       - cta_breakdown_for_path(path, days_back)
 --   • rls_auto_enable() + ensure_rls event trigger — security hardening,
 --     auto-enables RLS on every new public table.
+--   • pogo_rates_for_period(from, to) — pogo-stick detection per page
+--       (Google sessions, pogo count, hard pogo, pogo rate %)
+--   • engagement_density_for_path(path, days) — dwell distribution
+--       (p25/median/p75 + evenness_score) for a single page
 --   • seo_expertise_pages view — domain-specific filter on
 --     seo_url_snapshot for the 3 practice-area URL trees of
 --     jplouton-avocat.fr (defense-penale / indemnisation-des-victimes /
 --     droit-des-contrats-et-des-personnes).
 -- ============================================================
+
+
+-- ============================================================
+-- 0. Bot filtering — centralized detection + filtered view
+-- ============================================================
+-- Architecture:
+--   events (raw, unchanged) → bot_fingerprints (detected bots)
+--   → events_human (view: events minus bots)
+--   → all RPCs + snapshot use events_human
+--
+-- Detection rule: anonymous_id with >20 pageviews/day AND 0 scroll
+-- events = crawler. No human visits 20+ pages without ever scrolling.
+--
+-- refresh_bot_fingerprints() is called automatically at the start of
+-- refresh_seo_url_snapshot(), so pg_cron only needs one entry.
+
+create table if not exists public.bot_fingerprints (
+  anonymous_id  text primary key,
+  detected_at   timestamptz default now(),
+  reason        text
+);
+
+alter table public.bot_fingerprints enable row level security;
+
+create or replace function public.refresh_bot_fingerprints()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+begin
+  truncate public.bot_fingerprints;
+
+  insert into public.bot_fingerprints (anonymous_id, reason)
+  select distinct sub.anonymous_id, 'crawl: >20 pv/day, 0 scroll'
+  from (
+    select e.anonymous_id, e.occurred_at::date as day,
+      count(*) filter (where e.name = 'pageview') as pvs,
+      count(*) filter (where e.name = 'scroll_depth') as scrolls
+    from public.events e
+    where e.anonymous_id is not null
+    group by e.anonymous_id, e.occurred_at::date
+    having count(*) filter (where e.name = 'pageview') > 20
+       and count(*) filter (where e.name = 'scroll_depth') = 0
+  ) sub
+  on conflict (anonymous_id) do nothing;
+end;
+$$;
+
+revoke execute on function public.refresh_bot_fingerprints() from public;
+revoke execute on function public.refresh_bot_fingerprints() from anon;
+revoke execute on function public.refresh_bot_fingerprints() from authenticated;
+grant  execute on function public.refresh_bot_fingerprints() to service_role;
+
+create or replace view public.events_human as
+select e.*
+from public.events e
+where not exists (
+  select 1 from public.bot_fingerprints b
+  where b.anonymous_id = e.anonymous_id
+);
+
 
 -- ---------- 1. Parametric per-URL overview ------------------
 
@@ -49,7 +119,7 @@ language sql stable
 set search_path = public, pg_catalog
 as $$
   with we as (
-    select * from public.events
+    select * from public.events_human
     where occurred_at >= date_from and occurred_at < date_to
   ),
   pv as (
@@ -244,6 +314,18 @@ create table if not exists public.seo_url_snapshot (
   booking_cta_clicks_90d  bigint,
   booking_cta_clicks_365d bigint,
 
+  -- Pogo-stick (NavBoost signal, 28d, Google-origin only)
+  google_sessions_28d  bigint,
+  pogo_sticks_28d      bigint,
+  hard_pogo_28d        bigint,
+  pogo_rate_28d        numeric,
+
+  -- CTA rate by device (28d)
+  mobile_sessions_28d   bigint,
+  desktop_sessions_28d  bigint,
+  cta_rate_mobile_28d   numeric,
+  cta_rate_desktop_28d  numeric,
+
   refreshed_at timestamptz not null default now()
 );
 
@@ -261,7 +343,15 @@ alter table public.seo_url_snapshot
   add column if not exists booking_cta_clicks_7d   bigint,
   add column if not exists booking_cta_clicks_28d  bigint,
   add column if not exists booking_cta_clicks_90d  bigint,
-  add column if not exists booking_cta_clicks_365d bigint;
+  add column if not exists booking_cta_clicks_365d bigint,
+  add column if not exists google_sessions_28d     bigint,
+  add column if not exists pogo_sticks_28d         bigint,
+  add column if not exists hard_pogo_28d           bigint,
+  add column if not exists pogo_rate_28d           numeric,
+  add column if not exists mobile_sessions_28d     bigint,
+  add column if not exists desktop_sessions_28d    bigint,
+  add column if not exists cta_rate_mobile_28d     numeric,
+  add column if not exists cta_rate_desktop_28d    numeric;
 
 alter table public.seo_url_snapshot enable row level security;
 
@@ -277,13 +367,16 @@ as $$
 declare
   now_ts timestamptz := now();
 begin
+  -- Refresh bot detection before rebuilding snapshot
+  perform public.refresh_bot_fingerprints();
+
   delete from public.seo_url_snapshot;
 
   insert into public.seo_url_snapshot
   with
     all_paths as (
       select distinct path
-      from public.events
+      from public.events_human
       where path is not null
         and occurred_at >= now_ts - interval '365 days'
     ),
@@ -302,7 +395,7 @@ begin
           filter (where props->>'metric' = 'CLS'))::numeric  as cls_p75,
         (percentile_cont(0.75) within group (order by (props->>'value')::numeric)
           filter (where props->>'metric' = 'TTFB'))::numeric as ttfb_p75
-      from public.events
+      from public.events_human
       where name = 'web_vitals'
         and path is not null
         and occurred_at >= now_ts - interval '28 days'
@@ -312,7 +405,7 @@ begin
       select distinct on (path) path, referrer_hostname as top_referrer
       from (
         select path, referrer_hostname, count(*) as c
-        from public.events
+        from public.events_human
         where name = 'pageview'
           and path is not null
           and referrer_hostname is not null
@@ -325,7 +418,7 @@ begin
       select distinct on (path) path, utm_source as top_source
       from (
         select path, utm_source, count(*) as c
-        from public.events
+        from public.events_human
         where name = 'pageview'
           and path is not null
           and utm_source is not null
@@ -338,7 +431,7 @@ begin
       select distinct on (path) path, utm_medium as top_medium
       from (
         select path, utm_medium, count(*) as c
-        from public.events
+        from public.events_human
         where name = 'pageview'
           and path is not null
           and utm_medium is not null
@@ -354,7 +447,7 @@ begin
           path,
           device_type,
           round((100.0 * count(*) / sum(count(*)) over (partition by path))::numeric, 1) as pct
-        from public.events
+        from public.events_human
         where name = 'pageview'
           and path is not null
           and device_type is not null
@@ -372,7 +465,7 @@ begin
         count(*) filter (where occurred_at >= now_ts - interval '28 days')  as p28,
         count(*) filter (where occurred_at >= now_ts - interval '90 days')  as p90,
         count(*) filter (where occurred_at >= now_ts - interval '365 days') as p365
-      from public.events
+      from public.events_human
       where name = 'cta_phone_click'
         and path is not null
         and occurred_at >= now_ts - interval '365 days'
@@ -385,7 +478,7 @@ begin
         count(*) filter (where occurred_at >= now_ts - interval '28 days')  as e28,
         count(*) filter (where occurred_at >= now_ts - interval '90 days')  as e90,
         count(*) filter (where occurred_at >= now_ts - interval '365 days') as e365
-      from public.events
+      from public.events_human
       where name = 'cta_email_click'
         and path is not null
         and occurred_at >= now_ts - interval '365 days'
@@ -399,10 +492,38 @@ begin
         count(*) filter (where occurred_at >= now_ts - interval '28 days')  as b28,
         count(*) filter (where occurred_at >= now_ts - interval '90 days')  as b90,
         count(*) filter (where occurred_at >= now_ts - interval '365 days') as b365
-      from public.events
+      from public.events_human
       where name = 'cta_booking_click'
         and path is not null
         and occurred_at >= now_ts - interval '365 days'
+      group by path
+    ),
+    -- Pogo-stick (NavBoost signal, 28d window, Google-origin only)
+    pogo as (
+      select *
+      from public.pogo_rates_for_period(now_ts - interval '28 days', now_ts)
+    ),
+    -- CTA rate by device (28d) — mobile vs desktop conversion gap
+    device_sessions as (
+      select
+        path,
+        count(distinct session_id) filter (where device_type = 'mobile')  as mob_s,
+        count(distinct session_id) filter (where device_type = 'desktop') as dsk_s
+      from public.events_human
+      where name = 'pageview'
+        and path is not null
+        and occurred_at >= now_ts - interval '28 days'
+      group by path
+    ),
+    device_cta as (
+      select
+        path,
+        count(*) filter (where device_type = 'mobile')  as mob_cta,
+        count(*) filter (where device_type = 'desktop') as dsk_cta
+      from public.events_human
+      where name in ('cta_phone_click', 'cta_booking_click')
+        and path is not null
+        and occurred_at >= now_ts - interval '28 days'
       group by path
     )
   select
@@ -459,7 +580,23 @@ begin
     coalesce(booking_counts.b7, 0)::bigint,
     coalesce(booking_counts.b28, 0)::bigint,
     coalesce(booking_counts.b90, 0)::bigint,
-    coalesce(booking_counts.b365, 0)::bigint
+    coalesce(booking_counts.b365, 0)::bigint,
+
+    -- Pogo-stick (NavBoost signal, 28d)
+    coalesce(pogo.google_sessions, 0)::bigint,
+    coalesce(pogo.pogo_sticks, 0)::bigint,
+    coalesce(pogo.hard_pogo, 0)::bigint,
+    pogo.pogo_rate,
+
+    -- CTA rate by device (28d)
+    coalesce(device_sessions.mob_s, 0)::bigint,
+    coalesce(device_sessions.dsk_s, 0)::bigint,
+    case when coalesce(device_sessions.mob_s, 0) > 0
+         then round(100.0 * coalesce(device_cta.mob_cta, 0) / device_sessions.mob_s, 2)
+         else null end,
+    case when coalesce(device_sessions.dsk_s, 0) > 0
+         then round(100.0 * coalesce(device_cta.dsk_cta, 0) / device_sessions.dsk_s, 2)
+         else null end
   from all_paths p
     left join o7      on o7.path     = p.path
     left join o28     on o28.path    = p.path
@@ -472,7 +609,10 @@ begin
     left join dev     on dev.path    = p.path
     left join phone_counts   on phone_counts.path   = p.path
     left join email_counts   on email_counts.path   = p.path
-    left join booking_counts on booking_counts.path = p.path;
+    left join booking_counts on booking_counts.path = p.path
+    left join pogo            on pogo.path            = p.path
+    left join device_sessions on device_sessions.path = p.path
+    left join device_cta      on device_cta.path      = p.path;
 end;
 $$;
 
@@ -487,7 +627,7 @@ grant  execute on function public.refresh_seo_url_snapshot() to service_role;
 create or replace view public.seo_traffic_sources_28d
 with (security_invoker = true) as
   with we as (
-    select * from public.events
+    select * from public.events_human
     where name = 'pageview'
       and occurred_at >= now() - interval '28 days'
   ),
@@ -521,7 +661,7 @@ with (security_invoker = true) as
 create or replace view public.seo_landing_pages_28d
 with (security_invoker = true) as
   with we as (
-    select * from public.events
+    select * from public.events_human
     where occurred_at >= now() - interval '28 days'
   ),
   ss as (
@@ -561,7 +701,7 @@ with (security_invoker = true) as
       min(occurred_at) as session_start,
       max(occurred_at) as session_end,
       count(*) filter (where name = 'pageview') as pages_viewed
-    from public.events
+    from public.events_human
     group by session_id
   )
   select
@@ -608,7 +748,7 @@ stable
 set search_path = public, pg_catalog
 as $$
   with we as (
-    select * from public.events
+    select * from public.events_human
     where occurred_at >= date_from and occurred_at < date_to
   ),
   ss as (
@@ -806,7 +946,7 @@ as $$
       max(e.referrer_hostname)                                   as referrer_hostname,
       max(e.utm_source)                                          as utm_source,
       max(e.utm_medium)                                          as utm_medium
-    from public.events e
+    from public.events_human e
     where e.occurred_at >= now() - interval '28 days'
     group by e.session_id
   ),
@@ -891,7 +1031,7 @@ as $$
   select
     (e.props->>'hostname')      as hostname,
     count(*)::bigint            as clicks
-  from public.events e
+  from public.events_human e
   where e.name      = 'click_outbound'
     and e.path      = outbound_destinations_for_path.path
     and e.occurred_at >= now() - (outbound_destinations_for_path.days_back * interval '1 day')
@@ -940,7 +1080,7 @@ as $$
       end                                                 as cta_type,
       coalesce(nullif(e.props->>'placement', ''), 'body') as placement,
       coalesce(e.props->>'anchor', '')                    as anchor
-    from public.events e
+    from public.events_human e
     where e.name in ('cta_phone_click', 'cta_email_click', 'cta_booking_click')
       and e.path = cta_breakdown_for_path.path
       and e.occurred_at >= now() - (cta_breakdown_for_path.days_back * interval '1 day')
@@ -982,7 +1122,7 @@ language sql
 stable
 set search_path = public, pg_catalog
 as $$
-  select min(occurred_at) from public.events;
+  select min(occurred_at) from public.events_human;
 $$;
 
 revoke execute on function public.tracker_first_seen_global() from public;
@@ -1134,3 +1274,128 @@ comment on view public.seo_expertise_pages is
   'Filtered view of seo_url_snapshot restricted to the 3 practice-area URL trees + tagged with expertise_area / expertise_level. Excludes malformed paths ending with apostrophe.';
 
 grant select on public.seo_expertise_pages to service_role;
+
+-- ---------- 10. Pogo-stick rates per page (NavBoost signal) ----
+--
+-- A "pogo-stick" is when a visitor arrives from Google, views only
+-- one page, and leaves in under 10 seconds — a strong negative
+-- signal in Google's NavBoost ranking system.
+--
+-- "hard_pogo" adds scroll < 5% — the visitor didn't even try to read.
+--
+-- Usage:
+--   SELECT * FROM pogo_rates_for_period(now() - interval '28 days', now())
+--   WHERE google_sessions >= 5
+--   ORDER BY pogo_rate DESC;
+
+create or replace function public.pogo_rates_for_period(
+  date_from timestamptz,
+  date_to   timestamptz
+)
+returns table (
+  path             text,
+  google_sessions  bigint,
+  pogo_sticks      bigint,
+  hard_pogo        bigint,
+  pogo_rate        numeric
+)
+language sql stable security definer
+set search_path = public, pg_catalog
+as $$
+  with google_entries as (
+    select distinct session_id, path
+    from events_human
+    where name = 'pageview'
+      and referrer_hostname like '%google%'
+      and occurred_at >= date_from
+      and occurred_at < date_to
+  ),
+  session_pages as (
+    select session_id, count(*) as pages
+    from events_human
+    where name = 'pageview'
+      and occurred_at >= date_from
+      and occurred_at < date_to
+    group by session_id
+  ),
+  session_exit as (
+    select session_id, path,
+           (props->>'duration_seconds')::numeric as dwell_s,
+           (props->>'max_scroll')::numeric as scroll
+    from events_human
+    where name = 'page_exit'
+      and occurred_at >= date_from
+      and occurred_at < date_to
+  )
+  select
+    g.path,
+    count(*)::bigint as google_sessions,
+    count(*) filter (
+      where sp.pages = 1 and se.dwell_s < 10
+    )::bigint as pogo_sticks,
+    count(*) filter (
+      where sp.pages = 1 and se.dwell_s < 10 and se.scroll < 5
+    )::bigint as hard_pogo,
+    round(100.0 * count(*) filter (where sp.pages = 1 and se.dwell_s < 10)
+          / nullif(count(*), 0), 1) as pogo_rate
+  from google_entries g
+  left join session_pages sp on sp.session_id = g.session_id
+  left join session_exit se on se.session_id = g.session_id and se.path = g.path
+  group by g.path;
+$$;
+
+grant execute on function public.pogo_rates_for_period(timestamptz, timestamptz) to service_role;
+revoke execute on function public.pogo_rates_for_period(timestamptz, timestamptz) from anon, authenticated;
+
+-- ---------- 11. Engagement density per page (ad-hoc RPC) -------
+--
+-- Returns dwell time distribution (p25/median/p75) and an evenness
+-- score for a single page. evenness = p25/p75 — close to 1 means
+-- uniform reading, close to 0 means bimodal (quick bouncers + deep
+-- readers).
+--
+-- Usage:
+--   SELECT * FROM engagement_density_for_path('/post/...', 28);
+
+create or replace function public.engagement_density_for_path(
+  target_path text,
+  days        int default 28
+)
+returns table (
+  sessions        bigint,
+  dwell_p25       numeric,
+  dwell_median    numeric,
+  dwell_p75       numeric,
+  evenness_score  numeric
+)
+language sql stable security definer
+set search_path = public, pg_catalog
+as $$
+  with session_dwell as (
+    select
+      session_id,
+      (props->>'duration_seconds')::numeric as dwell_s
+    from events_human
+    where path = target_path
+      and name = 'page_exit'
+      and (props->>'duration_seconds')::numeric > 0
+      and occurred_at >= now() - (days || ' days')::interval
+  )
+  select
+    count(*)::bigint as sessions,
+    round((percentile_cont(0.25) within group (order by dwell_s))::numeric, 1) as dwell_p25,
+    round((percentile_cont(0.50) within group (order by dwell_s))::numeric, 1) as dwell_median,
+    round((percentile_cont(0.75) within group (order by dwell_s))::numeric, 1) as dwell_p75,
+    round(
+      case
+        when (percentile_cont(0.75) within group (order by dwell_s))::numeric > 0
+        then (percentile_cont(0.25) within group (order by dwell_s))::numeric
+           / (percentile_cont(0.75) within group (order by dwell_s))::numeric
+        else null
+      end::numeric, 2
+    ) as evenness_score
+  from session_dwell;
+$$;
+
+grant execute on function public.engagement_density_for_path(text, int) to service_role;
+revoke execute on function public.engagement_density_for_path(text, int) from anon, authenticated;
