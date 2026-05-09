@@ -86,7 +86,10 @@ revoke execute on function public.refresh_bot_fingerprints() from anon;
 revoke execute on function public.refresh_bot_fingerprints() from authenticated;
 grant  execute on function public.refresh_bot_fingerprints() to service_role;
 
-create or replace view public.events_human as
+-- security_invoker = true: enforce caller's RLS, not creator's (Postgres 15+).
+-- Without this, the view runs as SECURITY DEFINER and the linter flags it.
+create or replace view public.events_human
+with (security_invoker = true) as
 select e.*
 from public.events e
 where not exists (
@@ -1252,7 +1255,8 @@ end $$;
 --
 -- Inherits seo_url_snapshot's RLS deny-all: only service_role can SELECT.
 
-create or replace view public.seo_expertise_pages as
+create or replace view public.seo_expertise_pages
+with (security_invoker = true) as
 select
   case
     when path ~ '^/defense-penale'                       then 'defense_penale'
