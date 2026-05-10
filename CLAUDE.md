@@ -253,13 +253,18 @@ articles "ressources" sans les distinguer des "affaires").
 
 ### 3. Posts — Ressources et notions juridiques
 - Path pattern : `/post/*`
-- Filtre catégorie Wix Blog : `ressources-et-notions-juridiques`
-  (URL catégorie : `/blog/categories/ressources-et-notions-juridiques`)
-- 20 articles environ (au 2026-05-11)
-- **Pattern critique** : **plus gros volume de trafic du site**
-  (ex. `/post/durée-de-la-garde-à-vue...` à 191 sess/28j),
-  dwell élevé (88-157s), 76% des lecteurs scrollent, mais
-  **quasi-0 conversion vers /honoraires-rendez-vous**.
+- **Source authoritative** : la page hub `/comprendre-le-droit`
+  (maintenue manuellement par Nicolas — c'est la vraie liste exhaustive).
+- ⚠️ La catégorie Wix Blog `/blog/categories/ressources-et-notions-juridiques`
+  ne contient que ~20 articles (sous-ensemble). NE PAS l'utiliser comme
+  référence. Toujours scraper `/comprendre-le-droit` pour la liste complète.
+- ~49 articles au 2026-05-11.
+- **Pattern critique confirmé** : **plus gros volume de trafic du site**
+  - Top article `/post/durée-de-la-garde-à-vue-24h-48h-96h` : 219 sess/28j
+  - Top 5 cumule 488 sessions (42% de la catégorie)
+  - Total catégorie : ~1 156 sessions cumulées, dont 64% Google organique
+  - Dwell moyen 80-150s (lecteurs engagés)
+  - **0 conversion vers /honoraires-rendez-vous sur les 47 articles à trafic**
 - Intent du lecteur : éducatif / informatif (cherche à comprendre, pas
   à embaucher un avocat).
 - Source SEO majeure → top du funnel.
