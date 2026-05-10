@@ -224,3 +224,71 @@ RPCs publiées (contrat stable consommé par Seo) :
 Pre-deployment date "tracker live" : 2026-05-05.
 First end-to-end issue diagnostiquée : 2026-05-07
 (`que-se-passe-t-il-après-une-garde-à-vue` #30 côté Seo).
+
+---
+
+## Taxonomy du site jplouton-avocat.fr
+
+Le site a **4 grands types de pages** qu'il est essentiel de distinguer
+dans toute analyse. Sans cette distinction, les conclusions sont
+trompeuses (cf. erreur du 11 mai 2026 où l'agent Cooked avait listé des
+articles "ressources" sans les distinguer des "affaires").
+
+### 1. Pages Expertise (14)
+- `/defense-penale/*` (sauf le hub `/defense-penale`)
+- `/indemnisation-des-victimes/*` (sauf le hub)
+- `/droit-des-contrats-et-des-personnes/*` (sauf le hub)
+- Pattern : pages service / landing page, dwell court (15-50s), scroll
+  faible (médiane 0%), but = conversion directe CTA. Trafic majoritaire
+  via Adwords. **Bandeau CTA sticky bar mobile uniquement sur ces pages**.
+
+### 2. Pages Cabinet (institutionnelles)
+- `/` (home)
+- `/notre-cabinet`
+- `/honoraires-rendez-vous`
+- `/mentions-legales`
+- Hubs `/defense-penale`, `/indemnisation-des-victimes`,
+  `/droit-des-contrats-et-des-personnes`
+- Pattern : pages de navigation/branding, peu de conversion directe.
+
+### 3. Posts — Ressources et notions juridiques
+- Path pattern : `/post/*`
+- Filtre catégorie Wix Blog : `ressources-et-notions-juridiques`
+  (URL catégorie : `/blog/categories/ressources-et-notions-juridiques`)
+- 20 articles environ (au 2026-05-11)
+- **Pattern critique** : **plus gros volume de trafic du site**
+  (ex. `/post/durée-de-la-garde-à-vue...` à 191 sess/28j),
+  dwell élevé (88-157s), 76% des lecteurs scrollent, mais
+  **quasi-0 conversion vers /honoraires-rendez-vous**.
+- Intent du lecteur : éducatif / informatif (cherche à comprendre, pas
+  à embaucher un avocat).
+- Source SEO majeure → top du funnel.
+
+### 4. Posts — Classiques
+- Path pattern : `/post/*`
+- Toutes les autres catégories Wix Blog : Affaires, Médias, Droit Pénal,
+  Procès criminels, Violences Conjugales et féminicides, Trafic de
+  stupéfiants, Droit pénal des affaires, Victimes de délits ou crimes,
+  Accidents et erreurs médicales, Accidents de la route, Droit et
+  accidents du travail, Accidents de la vie courante.
+- Pattern : case studies (affaires gagnées), actualités cabinet,
+  reportages médias.
+- Volume moyen-bas mais **convertissent mieux que les ressources** vers
+  /honoraires-rendez-vous (au 2026-05-11, sur 5j, 3 conversions article→
+  honoraires venaient TOUTES de posts classiques, pas de ressources).
+
+### Cooked ne stocke PAS la catégorie
+
+L'info catégorie n'est PAS dans la DB Cooked (`events`,
+`seo_url_snapshot`). Pour filtrer une analyse par type, il faut soit :
+1. Lister manuellement les slugs de la catégorie en allant sur
+   `/blog/categories/...` côté browser
+2. Demander à l'agent Seo (qui a un wrapper Wix Blog API) de fournir
+   la liste
+3. Considérer un futur enrichissement de Cooked : table
+   `post_categories(slug, category)` mise à jour par job quotidien qui
+   scrape `/blog/categories/*` ou appelle Wix Blog API
+
+**Avant de parler de "ressources" vs "affaires" dans une analyse :
+toujours vérifier la liste des slugs de la catégorie.** Ne JAMAIS
+présumer la catégorie d'un article à partir de son slug.
