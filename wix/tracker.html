@@ -230,7 +230,10 @@
     if (!el || !el.href) return;
 
     var rawHref = el.getAttribute('href') || '';
-    var anchor = (el.textContent || '').trim().slice(0, 100);
+    // Prefer aria-label when present — accessible name reflects the
+    // semantic intent better than textContent for icon-only buttons
+    // (e.g. Wix sticky bars where the visible label is "Read More").
+    var anchor = (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 100);
 
     if (rawHref.indexOf('tel:') === 0) {
       send('cta_phone_click', {
