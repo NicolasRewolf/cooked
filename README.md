@@ -68,6 +68,7 @@ The browser-side `tracker.html` emits these events. Anything else is rejected by
 | `page_exit` | `pagehide` / `beforeunload` / tab hidden | `duration_seconds`, `max_scroll` |
 | `cta_phone_click` | Click on any `<a href="tel:…">` | `phone`, `anchor`, `placement` (header / footer / body) |
 | `cta_booking_click` | Click on any `<a>` pointing to `/honoraires-rendez-vous` | `anchor`, `placement` (header / footer / body), `target_path`, `href` |
+| `form_submit` (Sprint 18) | Wix Form successfully submitted (fired by Velo `onWixFormSubmitted` in `masterPage.js`) | `form_id`, `page_source` |
 
 ### Anchor capture convention (since 2026-05-10)
 
@@ -108,6 +109,7 @@ cooked/
 │   └── functions/track/index.ts       — Edge Function (Deno)
 └── wix/
     ├── http-functions.js              — Velo proxy backend
+    ├── masterPage.js                  — Velo page code (form submit tracking)
     └── tracker.html                   — Wix Custom Code <head>
 ```
 
@@ -187,6 +189,15 @@ Copy `wix/http-functions.js` into the Velo backend:
 
 The Velo secrets `SUPABASE_TRACK_URL` and `SUPABASE_SERVICE_KEY` must be set in Wix Admin → Settings → Secrets Manager.
 
+### Updating the Velo form tracking (Sprint 18)
+
+Copy `wix/masterPage.js` into the Velo page code:
+**Wix Studio → Code → Page Code → masterPage.js**
+
+This adds the `onWixFormSubmitted` handler that fires `form_submit` events
+whenever a Wix Form is successfully submitted on any page. Reuses the
+session_id from sessionStorage set by tracker.html.
+
 ---
 
 ## Project IDs (reference)
@@ -215,6 +226,7 @@ Defense-in-depth on the Supabase side:
 
 | Sprint | Date | Scope |
 |---|---|---|
+| **18 — Form submission tracking** | 2026-05-11 | New event `form_submit` fired by Velo `onWixFormSubmitted` hook in `wix/masterPage.js`. Captures every successful Wix Form submission with `form_id` + `page_source` in props. Edge Function v7 deployed. Real conversion signal (vs `cta_booking_click` which is intent only). |
 | **17** | 2026-05-09 | **Centralized bot filtering** via `events_human` view. `refresh_bot_fingerprints()` runs before each snapshot refresh. All 9 RPCs + 3 views read from `events_human`. Also: body CTA tracking (cta_booking_click no longer scoped to header/footer only), `page_exit.duration_seconds` uses cumulative active time. |
 | **Tracker — aria-label capture** | 2026-05-10 | `cta_*_click` events capture `aria-label` in priority over `textContent`. Enables per-emplacement analytics via the `<Action> — <Location>` convention rolled out on the 13 CTA buttons of the site. |
 | **13bis** | 2026-05-07 | `tracker_first_seen_global()` RPC for capture-rate pro-rating during bootstrap. |

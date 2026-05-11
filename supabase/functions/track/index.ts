@@ -37,6 +37,12 @@ const ALLOWED_EVENTS = new Set([
   "cta_booking_click", // click on any internal link pointing to
                        // /honoraires-rendez-vous (i.e. "Je prends RDV",
                        // "Contactez-nous", "Honoraires & RDV", …)
+  // Phase 2 — form submission (Sprint 18):
+  "form_submit",       // Wix Form successfully submitted (validation
+                       // passed, data posted to Wix). Fired client-side
+                       // by the Velo `onWixFormSubmitted` hook in
+                       // wix/masterPage.js. Carries `form_id` and
+                       // `page_source` in props.
 ]);
 
 function dailySalt(): string {
