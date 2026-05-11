@@ -1,411 +1,268 @@
-# cooked
+# Cooked
 
-First-party SEO event tracking for **jplouton-avocat.fr** (Wix Studio).
-Cookieless, RGPD-exempt, non-sampled — designed to feed clean behavioural
-data to a downstream AI for SEO analysis (see the consuming repo
-[seo](https://github.com/NicolasRewolf/seo)).
+**First-party SEO event tracking for [jplouton-avocat.fr](https://www.jplouton-avocat.fr) (Wix Studio).**
+
+Cookieless, RGPD-exempt, non-sampled — designed to feed clean behavioural data to a downstream AI for SEO analysis (see the consuming repo [seo](https://github.com/NicolasRewolf/seo)).
+
+---
+
+## Architecture
 
 ```
-Browser
-  │  POST /_functions/track   (same-origin, no CORS, no adblocker)
-  ▼
-Wix Velo HTTP function
-  │  fetch — auth header injected server-side (key never reaches the browser)
-  ▼
-Supabase Edge Function /track          [ DEPLOYED ]
-  │  hash IP+UA → anonymous_id (rotates daily)
-  │  parse UA, geo header → enrich row
-  ▼
-Postgres   ─────────────►   pg_cron 03:00 UTC      [ SCHEDULED ]
-  events                    refresh_seo_url_snapshot()
-                                       │
-                                       ▼
-                            seo_url_snapshot   (1 row / URL × rolling windows)
-                                       │
-                                       ▼
-                  behavior_pages_for_period(from, to) RPC
-                                       │
-                                       ▼
-                  Consumed cross-project by the seo audit tool
+Browser (Wix Custom Code <head>)
+   │  tracker.html — pageview / scroll / engagement / web_vitals /
+   │                  click_outbound / page_exit / cta_phone_click /
+   │                  cta_booking_click
+   ▼ POST /_functions/track  (same-origin, no CORS, no adblocker)
+
+Wix Velo HTTP proxy
+   │  http-functions.js — injects Bearer key server-side
+   │                       (key never reaches the browser)
+   ▼ POST with Authorization: Bearer <service_role>
+
+Supabase Edge Function `/track` (Deno)
+   │  hash(IP | UA | daily-salt) → anonymous_id (rotates daily)
+   │  parse UA → device / browser / os
+   │  decodeURIComponent(path)   (Sprint 13 fix for French URLs)
+   ▼ INSERT
+
+Postgres
+   │  events table (raw)
+   │     ↓ bot_fingerprints (Sprint 17 — nightly bot detection)
+   │     ↓ events_human view (events MINUS bot traffic)
+   │
+   │  pg_cron 03:00 UTC
+   │     ↓ refresh_seo_url_snapshot()
+   │
+   │  seo_url_snapshot table (1 row / URL × rolling windows 7d/28d/90d/365d)
+   ▼ RPCs (service_role only, cross-project secret)
+
+Seo audit tool (separate repo)
+   └─ diagnostic pipeline → GitHub issues
 ```
+
+---
+
+## Privacy & RGPD
+
+- **No cookies, no localStorage, no persistent identifier**
+- `anonymous_id` = `sha256(IP | User-Agent | daily-salt)` truncated, rotates daily — irreversible, doesn't survive 24h
+- `session_id` lives in `sessionStorage` only (cleared on tab close)
+- IPs never stored — only hashed in transit
+
+**Exempted from cookie-banner consent** under CNIL délibération 2020-091 and the 2022 guidelines (mesure d'audience strictement statistique, pas de recoupement, pas de transfert tiers, identifiant non pérenne).
+
+---
+
+## Tracked events
+
+The browser-side `tracker.html` emits these events. Anything else is rejected by the Edge Function's allow-list.
+
+| Event | When it fires | Useful props |
+|---|---|---|
+| `pageview` | Initial load + every SPA navigation | `path`, `title`, `referrer`, `utm_*`, `viewport_*` |
+| `scroll_depth` | 25 / 50 / 75 / 100 % milestones (once per page) | `percent` |
+| `engagement_tick` | Every 10s of active time (paused on idle / hidden tab) | `active_ms` |
+| `web_vitals` | LCP / INP / CLS / TTFB | `metric`, `value` |
+| `click_outbound` | Click on an external `<a>` | `href`, `hostname`, `anchor` |
+| `page_exit` | `pagehide` / `beforeunload` / tab hidden | `duration_seconds`, `max_scroll` |
+| `cta_phone_click` | Click on any `<a href="tel:…">` | `phone`, `anchor`, `placement` (header / footer / body) |
+| `cta_booking_click` | Click on any `<a>` pointing to `/honoraires-rendez-vous` | `anchor`, `placement` (header / footer / body), `target_path`, `href` |
+
+### Anchor capture convention (since 2026-05-10)
+
+The `anchor` field in `cta_*_click` events is captured with this priority:
+
+1. **`aria-label`** if present (semantic intent, accessible name)
+2. **`textContent`** as fallback
+
+On jplouton-avocat.fr, all CTA buttons use the convention:
+
+```
+aria-label = "<Action> — <Location>"
+```
+
+Examples:
+- `Appeler le cabinet — hero`
+- `Prendre rendez-vous — header`
+- `Appeler le cabinet — barre mobile expertise`
+- `Demander un RDV — formulaire expertise`
+
+This makes per-emplacement analytics a 1-line query (`split_part(anchor, ' — ', 2)`) instead of guessing from raw textContent.
+
+---
 
 ## Repo layout
 
 ```
 cooked/
+├── CLAUDE.md                          — Claude Code agent instructions
+│                                        + site taxonomy + coordination
+│                                        protocol with the seo agent
+├── README.md                          — this file
 ├── supabase/
-│   ├── schema.sql                    -- events table + indexes + RLS
-│   ├── views.sql                     -- parametric function, snapshot table,
-│   │                                    refresh function, pg_cron schedule,
-│   │                                    companion 28d views, behavior RPC
-│   └── functions/track/index.ts      -- Edge Function (Deno)
-├── wix/
-│   ├── http-functions.js             -- Velo proxy (backend/http-functions.js)
-│   └── tracker.html                  -- Wix Custom Code <head>
-└── README.md
+│   ├── schema.sql                     — events table + indexes + RLS
+│   ├── views.sql                      — all functions, views, snapshot
+│   │                                    table, refresh function, pg_cron
+│   │                                    schedule, bot filtering, RPCs
+│   └── functions/track/index.ts       — Edge Function (Deno)
+└── wix/
+    ├── http-functions.js              — Velo proxy backend
+    └── tracker.html                   — Wix Custom Code <head>
 ```
 
-## Deployment status (live as of 2026-05-07)
+---
 
-| Component | State | Notes |
-|---|---|---|
-| Supabase project | ✅ Created | `cooked` (`mxycmjkeotrycyneacje`), region `eu-west-1` |
-| `events` table + indexes + RLS | ✅ Deployed | RLS on, no policies → only service-role can read/write |
-| `pg_cron` extension | ✅ Enabled | |
-| `seo_pages_overview()` parametric function | ✅ Deployed | with `search_path` pinned |
-| `seo_url_snapshot` table | ✅ Deployed | RLS on, refreshed daily via cron, includes Sprint 10 phone + booking CTA counters |
-| `seo_traffic_sources_28d` / `seo_landing_pages_28d` / `seo_daily_summary` views | ✅ Deployed | `security_invoker` |
-| `behavior_pages_for_period(from, to)` RPC (cross-project, Sprint 8) | ✅ Deployed | granted to `service_role` only |
-| Sprint 12 RPCs : `snapshot_pages_export`, `site_context_export`, `outbound_destinations_for_path`, `cta_breakdown_for_path` | ✅ Deployed | full-menu contract for seo audit tool, granted to `service_role` only |
-| `tracker_first_seen_global()` RPC (Sprint 13bis) | ✅ Deployed | Returns `min(occurred_at)` over events. Used by seo to pro-rate Cooked sessions during bootstrap. `service_role` only. |
-| Daily refresh cron (03:00 UTC) | ✅ Scheduled | `refresh_seo_url_snapshot` job |
-| Edge Function `track` | ✅ Deployed v5 | `verify_jwt: false`, `ALLOWED_ORIGIN` baked-in, accepts all Sprint 10 events |
-| Velo proxy `/_functions/track` | ✅ Live | served same-origin from jplouton-avocat.fr |
-| Wix Custom Code `<head>` tracker | ✅ Live | All pages — Sprint 10 Phase 1 + 1.5 conversion listeners |
+## What the seo agent can query (cross-project RPCs)
 
-## Project IDs (reference)
+All RPCs are `granted to service_role only`. No `anon` / `authenticated` access.
 
-- **Supabase project ref:** `mxycmjkeotrycyneacje`
-- **Project URL:** `https://mxycmjkeotrycyneacje.supabase.co`
-- **Edge Function URL:** `https://mxycmjkeotrycyneacje.supabase.co/functions/v1/track`
-- **Region:** `eu-west-1` (Ireland)
-- **Live endpoint (same-origin):** `https://www.jplouton-avocat.fr/_functions/track`
+| RPC | Returns |
+|---|---|
+| `snapshot_pages_export(paths text[])` | Latest snapshot rows (66 cols : 4 windows × 11 metrics + CWV + provenance + device + CTAs). Filter by paths optional. |
+| `site_context_export()` | One row of site-wide context 28d (sessions, bounce rate, top sources, sessions trend) |
+| `behavior_pages_for_period(from, to)` | One row / URL with 12-col subset over the requested window |
+| `seo_pages_overview(from, to)` | Same as above, parametric date range |
+| `outbound_destinations_for_path(path, days)` | Top external hostnames clicked from a given page |
+| `cta_breakdown_for_path(path, days)` | CTA clicks split by `(cta_type, placement, anchor)` |
+| `engagement_density_for_path(path, days)` | Dwell distribution (p25 / median / p75 + evenness_score) — detects bimodal patterns (bouncers + deep readers) |
+| `pogo_rates_for_period(from, to)` | Pogo-stick detection per page (Google sessions returning to SERP) |
+| `tracker_first_seen_global()` | Earliest event timestamp (used for pro-rating capture rate during bootstrap) |
 
-## Privacy & RGPD
+The full SQL is in `supabase/views.sql`. Contract signatures are stable since Sprint 13bis.
 
-- No cookies, no localStorage, no persistent identifier.
-- `anonymous_id` is `sha256(IP | User-Agent | daily-salt)` truncated — rotates
-  every day, irreversible, doesn't survive 24 h.
-- `session_id` lives in `sessionStorage` only (cleared on tab close).
-- IPs never stored — only hashed in transit.
+---
 
-This setup is **exempted from cookie-banner consent** under CNIL délibération
-2020-091 and the 2022 guidelines (mesure d'audience strictement statistique,
-pas de recoupement, pas de transfert tiers, identifiant non pérenne).
+## Bot filtering (Sprint 17)
 
-## Security model
+Cooked detects and excludes crawler traffic at the analytics layer, without touching raw events.
 
-Defense-in-depth on the Supabase side:
-
-- **`events` and `seo_url_snapshot` have RLS enabled with no policies — by
-  design.** This is the deny-all-to-clients pattern: `anon` and
-  `authenticated` get zero rows, only the `service_role` (used by the Edge
-  Function for inserts and by the seo audit tool's cross-project secret
-  for reads) bypasses RLS. Supabase advisors flag this as INFO-level "RLS
-  enabled, no policies" — that flag is expected and acceptable here.
-- **`rls_auto_enable()` event trigger** (`supabase/views.sql` §8) listens
-  to `ddl_command_end` and auto-enables RLS on every newly-created table
-  in `public`. Belt-and-suspenders against forgetting the
-  `enable row level security` in a future migration.
-- **All cross-project RPCs are granted to `service_role` only.** `public`,
-  `anon`, and `authenticated` have no EXECUTE on `behavior_pages_for_period`,
-  `snapshot_pages_export`, `site_context_export`,
-  `outbound_destinations_for_path`, `cta_breakdown_for_path`,
-  `tracker_first_seen_global`, `url_decode`, or `rls_auto_enable`.
-- **`SECURITY DEFINER` functions pin `search_path`** to prevent
-  search_path injection (`refresh_seo_url_snapshot`, `rls_auto_enable`,
-  `url_decode`).
-
-## Tracked events
-
-The browser-side `tracker.html` snippet (Wix Custom Code, head, all pages)
-emits these event types. Anything else is rejected by the Edge Function's
-`ALLOWED_EVENTS` allow-list.
-
-| Event name | When it fires | Useful props |
-|---|---|---|
-| `pageview` | First load + every SPA navigation (push/replace/popstate) | `path`, `title`, `referrer`, `utm_*`, `viewport_*` |
-| `scroll_depth` | Each of 25/50/75/100 % is hit once per page | `percent` |
-| `engagement_tick` | Every 10 s of **active** time (idle / hidden tab paused) | `active_ms` |
-| `web_vitals` | LCP / INP / CLS / TTFB, flushed on tab hide / page unload | `metric`, `value` |
-| `click_outbound` | Click on an `<a>` whose hostname differs from the site | `href`, `hostname`, `anchor` |
-| `page_exit` | `pagehide` / `beforeunload` / tab hidden — once per page life | `duration_seconds`, `max_scroll` |
-| `cta_phone_click` | Click on any `<a href="tel:...">` anywhere on the site | `phone`, `anchor`, `placement` (footer/header/body) |
-| `cta_booking_click` | Click on the deliberate header **or** footer CTA pointing to `/honoraires-rendez-vous`. Editorial body links to the same target are filtered out at the tracker level | `anchor`, `placement` (always `header` or `footer`), `target_path`, `href` |
-
-Anonymisation lives in the Edge Function, not the tracker:
-the `anonymous_id` is computed server-side from
-`sha256(IP | User-Agent | daily-salt)` truncated to 16 hex chars and
-rotates daily — no client-side persistent identifier ever leaves the
-browser, no cookies, no `localStorage`. Only `sessionStorage` is used to
-keep the per-tab `session_id`.
-
-## Sprint history
-
-| Sprint | Date | Scope |
-|---|---|---|
-| **0 — Initial deploy** | 2026-05-06 | Tracker + Velo proxy + Edge Function `track` v1 + `events` table + `seo_url_snapshot` + 28d companion views + `pg_cron` daily refresh + cross-project `behavior_pages_for_period()` RPC |
-| **10 Phase 1 — Phone + email click capture** | 2026-05-07 | New events `cta_phone_click` / `cta_email_click` + 8 new per-window columns on `seo_url_snapshot` (`phone_clicks_*` / `email_clicks_*`) + Edge Function v4 |
-| **10 Phase 1.5 — Booking-CTA capture, header/footer scoped** | 2026-05-07 | New event `cta_booking_click` (clicks on header / footer CTAs to `/honoraires-rendez-vous`, body editorial links filtered out at tracker level) + 4 new columns `booking_cta_clicks_*` on `seo_url_snapshot` + Edge Function v5. Mailto branch dropped from the tracker. |
-| **12 — Full-menu RPC contract for seo** | 2026-05-07 | 4 new RPCs published as the cross-project contract for the seo full-menu audit (Sprint 12 SEO-side): `snapshot_pages_export(paths)`, `site_context_export()`, `outbound_destinations_for_path(path, days_back)`, `cta_breakdown_for_path(path, days_back)`. The 4th is the central conversion-intent disambiguation signal (header / footer / body breakdown). All four `granted to service_role only`, signatures aligned on the TS shapes published in `seo/src/lib/cooked.ts`. |
-| **13 — Path-encoding fix** | 2026-05-07 | Edge Function `track` v5 → v6: decodes `e.path` via `decodeURIComponent` before insert, with safe fallback on malformed input. Existing 6531 events with percent-encoded paths backfilled in one UPDATE using a new `public.url_decode()` plpgsql helper (handles multi-byte UTF-8 correctly). Snapshot rebuilt to propagate. Result: French URLs (`/post/durée-…`, `/post/garde-à-vue-…`) now match the decoded paths that GSC returns and the seo audit tool stores — silent fail on any page with non-ASCII characters resolved. The `url` column stays unchanged (original transport form preserved for debugging). |
-| **13bis — Tracker first-seen RPC** | 2026-05-07 | New RPC `tracker_first_seen_global()` returning the min(occurred_at) over all events. Replaces a hardcoded `COOKED_TRACKER_DEPLOY_DATE` in seo's diagnostic helper so the seo audit tool can pro-rate Cooked sessions against the 28d GSC window during bootstrap (avoids spurious "tracker quasi-cassé" verdicts during the first ~28d of collection). Also makes the seo pipeline portable to a 2nd tracker without code changes. Granted to `service_role` only. |
-
-### Roadmap (not committed yet)
-
-- **Phase 2 — Form funnel** (planned). When Sprint 11 of the seo audit
-  tool ships, instrument the Wix Forms V2 widget on the 14 expertise
-  pages + `/honoraires-rendez-vous` to fire `form_view`,
-  `form_start`, `form_field_blur`, `form_abandon` from the browser, plus
-  `form_submit_success` from a Velo `masterPage.js`
-  `$w('#form').onWixFormSubmitted(...)` handler. That gives a per-page
-  conversion funnel from impression to booked appointment.
-
-## What the AI gets to query
-
-### Flat snapshot — 1 row per URL (the "440-line table")
-
-```sql
-select * from public.seo_url_snapshot;
+```
+events (raw, unchanged — all hits kept for audit)
+   ↓
+bot_fingerprints  (anonymous_ids flagged as bots, refreshed nightly)
+   ↓
+events_human VIEW  (events MINUS bot_fingerprints)
+   ↓
+ALL RPCs + snapshot read from events_human
 ```
 
-Columns per URL:
+**Detection rule** : `anonymous_id` with > 20 pageviews/day AND 0 scroll events = crawler. Catches the nightly Ahrefs audit crawler and similar bots.
 
-- For each window (`_7d`, `_28d`, `_90d`, `_365d`):
-  - `views`, `unique_visitors`, `sessions`
-  - `bounce_rate`, `avg_dwell_seconds`
-  - `scroll_avg`, `scroll_median`, `scroll_complete_pct`
-  - `entry_count`, `exit_count`, `outbound_clicks`
-  - `phone_clicks` _(Sprint 10 — taps on `tel:` links anywhere on the
-     site — every page is a potential conversion point because the
-     phone number sits in the global footer)_
-  - `email_clicks` _(Sprint 10 — kept for backward-compat, never
-     populated since the site has no `mailto:` links and the tracker no
-     longer fires `cta_email_click`)_
-  - `booking_cta_clicks` _(Sprint 10 Phase 1.5 — clicks on the
-     deliberate header / footer CTAs that drive to
-     `/honoraires-rendez-vous`. Editorial inline links in article bodies
-     pointing to the same target ("cabinet Plouton", "notre équipe", …)
-     are intentionally **NOT** counted, so this metric is a clean
-     conversion-intent signal)_
-- Core Web Vitals (28d, p75 — the value Google uses for ranking):
-  `lcp_p75_28d_ms`, `inp_p75_28d_ms`, `cls_p75_28d`, `ttfb_p75_28d_ms`
-- Sources (28d): `top_referrer_28d`, `top_source_28d`, `top_medium_28d`
-- `device_split_28d` (jsonb, e.g. `{"desktop":62.0,"mobile":35.5,"tablet":2.5}`)
+`refresh_bot_fingerprints()` is called automatically at the start of `refresh_seo_url_snapshot()`. One pg_cron job handles both.
 
-### Parametric — any window the AI wants
+---
 
-```sql
--- Last 14 days
-select * from public.seo_pages_overview(now() - interval '14 days', now());
+## Deployment
 
--- Specific date range
-select * from public.seo_pages_overview('2026-04-01', '2026-05-01');
-```
-
-### Companion 28-day views
-
-```sql
-select * from public.seo_traffic_sources_28d;   -- by source / medium
-select * from public.seo_landing_pages_28d;     -- entry pages
-select * from public.seo_daily_summary;         -- site-wide daily aggregates
-```
-
-### Cross-project RPCs (consumed by the seo audit tool)
-
-5 RPCs exposed to the seo audit tool, all `granted to service_role only`.
-
-#### `behavior_pages_for_period(from, to)` — original (Sprint 8)
-
-Returns 1 row per URL with the 12-column subset over a user-supplied
-window. Kept stable for the original `snapshotBehaviorPages` pipeline in
-seo. Newer signals (Sprint 10 conversion CTAs, multi-window…) are NOT
-exposed here — see the Sprint 12 RPCs below.
-
-```sql
-select * from public.behavior_pages_for_period(
-  '2026-04-01'::timestamptz,
-  '2026-05-01'::timestamptz
-);
-```
-
-#### `snapshot_pages_export(paths text[] default null)` — Sprint 12
-
-Returns the latest pre-computed snapshot rows (full 66 columns of
-`seo_url_snapshot`). Filtering by paths is optional. Used by the seo
-diagnose / fix-gen / issue-render pipelines to surface CWV + multi-window
-+ provenance + device + conversion CTAs all at once.
-
-```sql
--- All pages
-select * from public.snapshot_pages_export();
-
--- Just the pages that have findings this audit run
-select * from public.snapshot_pages_export(array[
-  '/post/abandon-de-poste-quels-risques',
-  '/honoraires-rendez-vous'
-]);
-```
-
-#### `site_context_export()` — Sprint 12
-
-One row of site-wide context (last 28 days), injected verbatim into the
-diagnostic prompt's `<site_context>` block so the LLM can calibrate
-per-page metrics against site averages.
-
-```sql
-select * from public.site_context_export();
--- global_sessions_28d           : 1396
--- global_bounce_rate_28d        : 0.6203 (already 0..1)
--- sessions_per_day_median_28d   : 49.5
--- sessions_trend_pct_7d_vs_28d  : +12.5  (signed % delta vs 28d rate)
--- top_sources_28d               : [{source, medium, sessions} × top 5]
-```
-
-#### `outbound_destinations_for_path(path, days_back)` — Sprint 12
-
-Top-10 external hostnames clicked outbound from a given page over the
-last `days_back` days. Lets the LLM diagnose "outbound leak" patterns
-("users fleeing toward legifrance.gouv.fr from a juridique page →
-suggest an in-page citation").
-
-```sql
-select * from public.outbound_destinations_for_path(
-  '/post/bail-commercial-la-revision-du-loyer-comment-est-ce-que-cela-fonctionne',
-  28
-);
--- hostname     | clicks
--- claude.ai    |      2
-```
-
-#### `cta_breakdown_for_path(path, days_back)` — Sprint 12
-
-The disambiguating signal. Splits CTA clicks by
-`(cta_type, placement, anchor_sample)` so the LLM can tell the
-difference between:
-
-- **5 phone clicks all in `footer`** → ambient cabinet-wide CTA, low
-  intent
-- **5 phone clicks all in `body`** → qualified intent on this specific
-  page, high signal
-
-Enum values are exact: `cta_type ∈ {'phone', 'email', 'booking'}`,
-`placement ∈ {'header', 'footer', 'body'}`. One row per distinct anchor
-(option (c) of the contract — caller can re-aggregate to
-`(cta_type, placement)` if needed).
-
-```sql
-select * from public.cta_breakdown_for_path('/', 28);
--- cta_type | placement | anchor_sample      | clicks
--- phone    | footer    | 05 56 44 35 96     |      2
--- booking  | header    | Contactez - nous   |      1
-```
-
-#### `tracker_first_seen_global()` — Sprint 13bis
-
-Returns the timestamp of the earliest event ever captured. Used by the
-seo audit tool to determine how many days the tracker has been
-collecting, in order to pro-rate Cooked sessions against the 28-day
-GSC window during the bootstrap phase (the first ~28 days of
-collection).
-
-```sql
-select public.tracker_first_seen_global();
--- 2026-05-06 17:14:47.13+00
-```
-
-Without this pro-rating, a freshly-deployed Cooked tracker would be
-classified as "🚫 tracker quasi-cassé" on every page — not because
-anything is broken but because the math compares 1-2 days of Cooked
-collection against 28 days of GSC clicks. Reference implementation
-of the consumer side is in `seo/src/prompts/diagnostic.v1.ts`.
-
-### Conversion CTAs (Sprint 10 Phase 1 + 1.5)
-
-```sql
--- Top pages génératrices d'appels (Path A — phone)
-select path, phone_clicks_28d, sessions_28d,
-       round(100.0 * phone_clicks_28d / nullif(sessions_28d, 0), 2)
-         as call_rate_pct
-from public.seo_url_snapshot
-where phone_clicks_28d > 0
-order by phone_clicks_28d desc
-limit 20;
-
--- Top pages qui drainent vers le formulaire (Path B — booking)
-select path, booking_cta_clicks_28d, sessions_28d,
-       round(100.0 * booking_cta_clicks_28d / nullif(sessions_28d, 0), 2)
-         as booking_intent_rate_pct
-from public.seo_url_snapshot
-where booking_cta_clicks_28d > 0
-order by booking_cta_clicks_28d desc
-limit 20;
-
--- Funnel total par page (les deux paths combinés)
-select path, sessions_28d, phone_clicks_28d, booking_cta_clicks_28d,
-       (phone_clicks_28d + booking_cta_clicks_28d) as total_conversion_intents,
-       round(100.0 * (phone_clicks_28d + booking_cta_clicks_28d)
-             / nullif(sessions_28d, 0), 2) as conversion_intent_rate_pct
-from public.seo_url_snapshot
-where sessions_28d > 0
-order by total_conversion_intents desc
-limit 30;
-
--- Pages high-trafic SANS aucun signal de conversion = vraie friction
--- (candidates pour ajouter une CTA visible)
-select path, sessions_28d, avg_dwell_seconds_28d, scroll_avg_28d
-from public.seo_url_snapshot
-where sessions_28d >= 30
-  and phone_clicks_28d = 0
-  and booking_cta_clicks_28d = 0
-order by sessions_28d desc;
-
--- Comparaison des deux canaux de conversion par catégorie de page
-select
-  case
-    when path like '/defense-penale/%'        then 'defense_penale'
-    when path like '/indemnisation-des-victimes/%' then 'indemnisation'
-    when path like '/droit-des-contrats-et-des-personnes/%' then 'droit_contrats'
-    when path = '/honoraires-rendez-vous'     then 'honoraires_rdv'
-    when path like '/post/%'                  then 'blog'
-    else 'other'
-  end as bucket,
-  sum(sessions_28d)               as sessions,
-  sum(phone_clicks_28d)           as phone_clicks,
-  sum(booking_cta_clicks_28d)     as booking_clicks
-from public.seo_url_snapshot
-group by bucket
-order by phone_clicks + booking_clicks desc;
-```
-
-## Maintenance
-
-- The cron rebuilds `seo_url_snapshot` daily at 03:00 UTC. Force a refresh:
-  `select public.refresh_seo_url_snapshot();` (service-role only)
-- To rotate `ANON_SALT`: update the Edge Function secret. Old `anonymous_id`s
-  no longer collide with new ones.
-- Trim retention (e.g. >13 months):
-  ```sql
-  delete from public.events where occurred_at < now() - interval '13 months';
-  ```
-
-## Re-deploying the Edge Function from this repo
+### Re-deploying the Edge Function
 
 ```bash
 brew install supabase/tap/supabase
-cd cooked
 supabase login
 supabase link --project-ref mxycmjkeotrycyneacje
 supabase functions deploy track --no-verify-jwt
 ```
 
-`--no-verify-jwt` is required: requests come from the Velo proxy without a
-Supabase user JWT (we authorise via service-role key in the proxy).
+`--no-verify-jwt` is required: requests come from the Velo proxy without a Supabase user JWT (auth is via service-role key injected by the proxy).
 
-## Re-applying the schema from this repo
+### Re-applying the schema
 
-Connect to the SQL Editor of the project and run:
+In the Supabase SQL Editor:
 
 1. `supabase/schema.sql` (idempotent, safe to re-run)
 2. `supabase/views.sql` (idempotent, safe to re-run — also re-schedules the cron)
+
+### Updating the browser tracker
+
+Copy the contents of `wix/tracker.html` into:
+**Wix Admin → Settings → Custom Code → Add Custom Code → Head → All pages**
+
+Then republish the site.
+
+### Updating the Velo proxy
+
+Copy `wix/http-functions.js` into the Velo backend:
+**Wix Admin → Code → Backend → http-functions.js**
+
+The Velo secrets `SUPABASE_TRACK_URL` and `SUPABASE_SERVICE_KEY` must be set in Wix Admin → Settings → Secrets Manager.
+
+---
+
+## Project IDs (reference)
+
+- **Supabase project ref** : `mxycmjkeotrycyneacje`
+- **Project URL** : `https://mxycmjkeotrycyneacje.supabase.co`
+- **Edge Function URL** : `https://mxycmjkeotrycyneacje.supabase.co/functions/v1/track`
+- **Region** : `eu-west-1` (Ireland)
+- **Live endpoint (same-origin)** : `https://www.jplouton-avocat.fr/_functions/track`
+
+---
+
+## Security model
+
+Defense-in-depth on the Supabase side:
+
+- **`events`, `seo_url_snapshot`, `bot_fingerprints` have RLS enabled with no policies — by design.** This is the deny-all-to-clients pattern: only `service_role` (used by the Edge Function and the seo audit tool's cross-project secret) bypasses RLS. The "RLS enabled, no policies" INFO-level advisor flag is expected and acceptable.
+- **`rls_auto_enable()` event trigger** auto-enables RLS on every newly-created table in `public` — belt-and-suspenders against forgetting the `enable row level security` in a future migration.
+- **All cross-project RPCs are granted to `service_role` only**. `public`, `anon`, `authenticated` have no EXECUTE on any of them.
+- **`SECURITY DEFINER` functions pin `search_path`** to prevent search_path injection.
+- **`security_invoker = true`** on `events_human` and `seo_expertise_pages` views (Postgres 15+) — enforces caller's RLS, not creator's.
+
+---
+
+## Sprint history (recent)
+
+| Sprint | Date | Scope |
+|---|---|---|
+| **17** | 2026-05-09 | **Centralized bot filtering** via `events_human` view. `refresh_bot_fingerprints()` runs before each snapshot refresh. All 9 RPCs + 3 views read from `events_human`. Also: body CTA tracking (cta_booking_click no longer scoped to header/footer only), `page_exit.duration_seconds` uses cumulative active time. |
+| **Tracker — aria-label capture** | 2026-05-10 | `cta_*_click` events capture `aria-label` in priority over `textContent`. Enables per-emplacement analytics via the `<Action> — <Location>` convention rolled out on the 13 CTA buttons of the site. |
+| **13bis** | 2026-05-07 | `tracker_first_seen_global()` RPC for capture-rate pro-rating during bootstrap. |
+| **13** | 2026-05-07 | Path-encoding fix — Edge Function decodes `path` via `decodeURIComponent` before insert. Backfill of 6531 historical events with the new `url_decode()` plpgsql helper. |
+| **12** | 2026-05-07 | Full-menu RPC contract for the seo audit tool : `snapshot_pages_export`, `site_context_export`, `outbound_destinations_for_path`, `cta_breakdown_for_path`. |
+| **10 Phase 1 + 1.5** | 2026-05-07 | Phone + booking CTA event tracking + counter columns on `seo_url_snapshot`. |
+| **0** | 2026-05-06 | Initial deploy : tracker + Velo proxy + Edge Function v1 + `events` table + `seo_url_snapshot` + companion views + pg_cron daily refresh + first cross-project RPC. |
+
+---
+
+## Maintenance
+
+```sql
+-- Force snapshot refresh (service_role only)
+SELECT public.refresh_seo_url_snapshot();
+
+-- Inspect detected bots
+SELECT * FROM public.bot_fingerprints;
+
+-- Trim retention (>13 months)
+DELETE FROM public.events WHERE occurred_at < now() - interval '13 months';
+```
+
+To rotate `ANON_SALT` : update the Edge Function secret. Old `anonymous_id`s will no longer collide with new ones (rotation is daily anyway, so the impact is limited).
+
+---
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 |---|---|
 | `404` on `/_functions/track` | Site not republished after adding the Velo file |
-| `403 forbidden_origin` (Velo) | Tracker loading from a host other than `www.jplouton-avocat.fr` |
-| `500 proxy_error` (Velo) | Velo Secret missing/wrong — check `SUPABASE_TRACK_URL` & `SUPABASE_SERVICE_KEY` |
-| Edge Function `401` | JWT verification was re-enabled — set `verify_jwt: false` |
-| No rows in `events` | Adblocker on `/_functions/track`? Curl from another network |
-| Snapshot empty | Cron didn't run yet — `select public.refresh_seo_url_snapshot();` |
+| `403 forbidden_origin` | Tracker loading from a host other than `www.jplouton-avocat.fr` |
+| `500 proxy_error` | Velo Secret missing — check `SUPABASE_TRACK_URL` & `SUPABASE_SERVICE_KEY` |
+| Edge Function `401` | JWT verification was re-enabled — redeploy with `--no-verify-jwt` |
+| No rows in `events` | Adblocker on `/_functions/track`? Curl from another network to confirm |
+| Snapshot empty | Cron didn't run yet — `SELECT public.refresh_seo_url_snapshot();` |
+| Anchor stuck on `"Read More"` | Wix icon-only button without aria-label — add `aria-label` in Wix Studio settings |
+
+---
+
+## Working on this repo with Claude Code
+
+See [`CLAUDE.md`](./CLAUDE.md) — it documents:
+
+- The autonomy boundaries for the Cooked agent
+- The coordination protocol with the **seo** agent (twin Claude Code session on the consuming project)
+- The site taxonomy (4 page types : expertise, cabinet, posts ressources, posts classiques)
+- Methodology takeaways from previous sprints
+
+`CLAUDE.md` is auto-read by every Claude Code session that starts in this repo.
