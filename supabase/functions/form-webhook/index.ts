@@ -76,36 +76,49 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Wix Automations payload shape varies. We extract what we can find
-  // (form name/id, submission id, page where it was submitted) without
-  // assuming a specific schema. The full raw payload is stored in props
-  // for forensic analysis.
+  // Wix Automations payload (observed shape, May 2026):
+  //   {
+  //     "data": {
+  //       "formId":       "4e919573-...",         // Wix internal form UUID
+  //       "formName":     "Prise de contact ...", // user-facing name
+  //       "submissionId": "d66fdb73-...",
+  //       "submissionTime": "2026-05-12T08:00:03.260Z",
+  //       "field:page_source": "honoraires-rendez-vous",
+  //       "field:first_name": "Nicolas", ...
+  //       "contact": { ... },
+  //       "submissions": [ {label, value}, ... ]
+  //     }
+  //   }
+  // The hidden field `page_source` is set client-side by
+  // public/faq-system.js (initPageSource).
+  const d = body?.data ?? body;
+
   const formId =
+    s(d?.formName, 200) ??
+    s(d?.formId, 200) ??
     s(body?.formName, 200) ??
     s(body?.formId, 200) ??
-    s(body?.form?.name, 200) ??
-    s(body?.form?.id, 200) ??
     "wix-form-webhook";
 
   const submissionId =
+    s(d?.submissionId, 200) ??
     s(body?.submissionId, 200) ??
-    s(body?.submission?.id, 200) ??
-    s(body?.id, 200) ??
     null;
 
-  // Try to extract the page where the form was submitted. Wix Automations
-  // often expose this under `submission.pageInfo` or `data.page_source`
-  // (which we set ourselves in a hidden field via faq-system.js).
+  // page_source: try the hidden field first (faq-system.js sets this),
+  // then several other shapes that Wix Automations might use.
   const pageSource =
-    s(body?.submission?.pageInfo?.url, 500) ??
-    s(body?.data?.page_source, 500) ??
-    s(body?.submission?.data?.page_source, 500) ??
+    s(d?.["field:page_source"], 500) ??
+    s(d?.page_source, 500) ??
+    s(d?.submission?.pageInfo?.url, 500) ??
     s(body?.pageUrl, 500) ??
     null;
 
-  const occurredAt = s(body?.triggeredAt, 35)
-    ?? s(body?.submittedAt, 35)
-    ?? new Date().toISOString();
+  const occurredAt =
+    s(d?.submissionTime, 35) ??
+    s(body?.triggeredAt, 35) ??
+    s(body?.submittedAt, 35) ??
+    new Date().toISOString();
 
   // Generate a synthetic session_id for this server-side event. Format:
   // "webhook-<submission_id_or_random>" — clearly identifies it as a
