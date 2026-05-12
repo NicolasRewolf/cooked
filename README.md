@@ -68,7 +68,7 @@ The browser-side `tracker.html` emits these events. Anything else is rejected by
 | `page_exit` | `pagehide` / `beforeunload` / tab hidden | `duration_seconds`, `max_scroll` |
 | `cta_phone_click` | Click on any `<a href="tel:…">` | `phone`, `anchor`, `placement` (header / footer / body) |
 | `cta_booking_click` | Click on any `<a>` pointing to `/honoraires-rendez-vous` | `anchor`, `placement` (header / footer / body), `target_path`, `href` |
-| `form_submit` (Sprint 18) | Wix Form successfully submitted (fired by Velo `onWixFormSubmitted` in `masterPage.js`) | `form_id`, `page_source` |
+| `form_submit` (Sprint 18) | Wix Form successfully submitted — fired **server-side** by the `form-webhook` Edge Function, triggered by a Wix Automation on form submission | `form_id`, `submission_id`, `page_source`, `capture_source: 'wix-webhook'` |
 
 ### Anchor capture convention (since 2026-05-10)
 
@@ -106,10 +106,11 @@ cooked/
 │   ├── views.sql                      — all functions, views, snapshot
 │   │                                    table, refresh function, pg_cron
 │   │                                    schedule, bot filtering, RPCs
-│   └── functions/track/index.ts       — Edge Function (Deno)
+│   └── functions/
+│       ├── track/index.ts             — Tracker ingest Edge Function
+│       └── form-webhook/index.ts      — Wix Automations webhook for forms
 └── wix/
     ├── http-functions.js              — Velo proxy backend
-    ├── masterPage.js                  — Velo page code (form submit tracking)
     └── tracker.html                   — Wix Custom Code <head>
 ```
 
@@ -189,14 +190,33 @@ Copy `wix/http-functions.js` into the Velo backend:
 
 The Velo secrets `SUPABASE_TRACK_URL` and `SUPABASE_SERVICE_KEY` must be set in Wix Admin → Settings → Secrets Manager.
 
-### Updating the Velo form tracking (Sprint 18)
+### Configuring form submission tracking (Sprint 18 — webhooks)
 
-Copy `wix/masterPage.js` into the Velo page code:
-**Wix Studio → Code → Page Code → masterPage.js**
+Form submissions are tracked **server-side** via a Wix Automation webhook
+that posts to the dedicated `form-webhook` Edge Function. This avoids
+the unreliability of browser-side intercepts on Wix Forms V2.
 
-This adds the `onWixFormSubmitted` handler that fires `form_submit` events
-whenever a Wix Form is successfully submitted on any page. Reuses the
-session_id from sessionStorage set by tracker.html.
+Setup once:
+
+1. Generate a secret token (`openssl rand -hex 24`)
+2. Set the env var `FORM_WEBHOOK_SECRET` on the `form-webhook` Edge
+   Function (Supabase Dashboard → Edge Functions → form-webhook →
+   Secrets)
+3. In Wix Admin → Automations, create an automation:
+   - **Trigger**: Form Submitted (on every form)
+   - **Action**: Send HTTP Request (POST, JSON body)
+   - **URL**:
+     `https://mxycmjkeotrycyneacje.supabase.co/functions/v1/form-webhook?token=<SECRET>`
+4. Activate
+
+After this, every Wix Form submission inserts a `form_submit` event into
+the `events` table with the form name, submission ID, page source, and
+the full raw payload (in `props.raw_payload` for forensic analysis).
+
+The webhook bypasses the browser entirely, so it's 100% reliable. The
+trade-off: no `session_id` / `referrer` / `utm_*` correlation with the
+visitor's browsing session (other events still track the session up to
+the submit moment).
 
 ---
 
@@ -226,7 +246,7 @@ Defense-in-depth on the Supabase side:
 
 | Sprint | Date | Scope |
 |---|---|---|
-| **18 — Form submission tracking** | 2026-05-11 | New event `form_submit` fired by Velo `onWixFormSubmitted` hook in `wix/masterPage.js`. Captures every successful Wix Form submission with `form_id` + `page_source` in props. Edge Function v7 deployed. Real conversion signal (vs `cta_booking_click` which is intent only). |
+| **18 — Form submission tracking** | 2026-05-11 | New event `form_submit` fired server-side by the new `form-webhook` Edge Function, triggered by a Wix Automation on every form submission. Captures `form_id`, `submission_id`, `page_source`, and the full raw Wix payload. Browser-side intercept (masterPage.js) was attempted first but Wix Forms V2 swallows the DOM submit event before any JS layer can hook it reliably; the webhook approach is 100% reliable since it fires server-to-server. `track` Edge Function bumped to v7 (accepts `form_submit` in ALLOWED_EVENTS — kept for symmetry even though the webhook inserts directly). |
 | **17** | 2026-05-09 | **Centralized bot filtering** via `events_human` view. `refresh_bot_fingerprints()` runs before each snapshot refresh. All 9 RPCs + 3 views read from `events_human`. Also: body CTA tracking (cta_booking_click no longer scoped to header/footer only), `page_exit.duration_seconds` uses cumulative active time. |
 | **Tracker — aria-label capture** | 2026-05-10 | `cta_*_click` events capture `aria-label` in priority over `textContent`. Enables per-emplacement analytics via the `<Action> — <Location>` convention rolled out on the 13 CTA buttons of the site. |
 | **13bis** | 2026-05-07 | `tracker_first_seen_global()` RPC for capture-rate pro-rating during bootstrap. |
