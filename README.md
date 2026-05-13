@@ -12,8 +12,11 @@ Cookieless, RGPD-exempt, non-sampled — designed to feed clean behavioural data
 Browser (Wix Custom Code <head>)
    │  tracker.html — pageview / scroll / engagement / web_vitals /
    │                  click_outbound / page_exit / cta_phone_click /
-   │                  cta_booking_click
+   │                  cta_booking_click / cta_anchor_click
    ▼ POST /_functions/track  (same-origin, no CORS, no adblocker)
+
+   (form_submit is server-side only — see "Configuring form submission
+   tracking" below: Wix Automation → form-webhook Edge Function.)
 
 Wix Velo HTTP proxy
    │  http-functions.js — injects Bearer key server-side
@@ -66,8 +69,9 @@ The browser-side `tracker.html` emits these events. Anything else is rejected by
 | `web_vitals` | LCP / INP / CLS / TTFB | `metric`, `value` |
 | `click_outbound` | Click on an external `<a>` | `href`, `hostname`, `anchor` |
 | `page_exit` | `pagehide` / `beforeunload` / tab hidden | `duration_seconds`, `max_scroll` |
-| `cta_phone_click` | Click on any `<a href="tel:…">` | `phone`, `anchor`, `placement` (header / footer / body) |
-| `cta_booking_click` | Click on any `<a>` pointing to `/honoraires-rendez-vous` | `anchor`, `placement` (header / footer / body), `target_path`, `href` |
+| `cta_phone_click` | Click on any `<a href="tel:…">` | `phone`, `anchor`, `placement` (header / footer / sticky / body) |
+| `cta_booking_click` | Click on any `<a>` pointing to `/honoraires-rendez-vous` | `anchor`, `placement` (header / footer / sticky / body), `target_path`, `href` |
+| `cta_anchor_click` (Sprint 19) | Click on an in-page anchor: classic `href="#x"`, Wix anchor-menu (`<a href=current data-anchor="anchors-xxx">`), or any interactive element inside a sticky container | `target_section` (slugified label or hash), `anchor`, `placement` (header / footer / sticky / body), `source` (`click` / `hashchange` / `sticky-fallback`), `data_anchor` (Wix internal ID, optional) |
 | `form_submit` (Sprint 18) | Wix Form successfully submitted — fired **server-side** by the `form-webhook` Edge Function, triggered by a Wix Automation on form submission | `form_id`, `submission_id`, `page_source`, `capture_source: 'wix-webhook'` |
 
 ### Anchor capture convention (since 2026-05-10)
@@ -246,7 +250,8 @@ Defense-in-depth on the Supabase side:
 
 | Sprint | Date | Scope |
 |---|---|---|
-| **18 — Form submission tracking** | 2026-05-11 | New event `form_submit` fired server-side by the new `form-webhook` Edge Function, triggered by a Wix Automation on every form submission. Captures `form_id`, `submission_id`, `page_source`, and the full raw Wix payload. Browser-side intercept (masterPage.js) was attempted first but Wix Forms V2 swallows the DOM submit event before any JS layer can hook it reliably; the webhook approach is 100% reliable since it fires server-to-server. `track` Edge Function bumped to v7 (accepts `form_submit` in ALLOWED_EVENTS — kept for symmetry even though the webhook inserts directly). |
+| **19 — Wix anchor-menu tracking** | 2026-05-13 | New event `cta_anchor_click` capturing in-page anchor clicks (sticky index, FAQ jumps, "back to top"). Wix Studio's anchor-menu widget renders as `<a href=current-path data-anchor="anchors-xxx">` and scrolls via JS without ever updating `location.hash`, so the tracker detects the widget's signature directly: same-pathname + `data-anchor` attribute. `target_section` is a human-readable slug of the button label (e.g. `accompagnement-immediat`). Also: `placement` taxonomy extended to `{header, footer, sticky, body}` (computed-style detection via `position: sticky / fixed` ancestor). Also: `normalizePathForCompare` kills the duplicate-pageview cascade caused by Wix's internal `pushState` flicker on micro-interactions. `track` Edge Function v9; tracker v4. |
+| **18 — Form submission tracking** | 2026-05-11 | New event `form_submit` fired server-side by the new `form-webhook` Edge Function, triggered by a Wix Automation on every form submission. Captures `form_id`, `submission_id`, `page_source`, and the full raw Wix payload. Browser-side intercept (masterPage.js) was attempted first but Wix Forms V2 swallows the DOM submit event before any JS layer can hook it reliably; the webhook approach is 100% reliable since it fires server-to-server. `track` Edge Function accepts `form_submit` in ALLOWED_EVENTS as a safety net even though the webhook inserts directly. |
 | **17** | 2026-05-09 | **Centralized bot filtering** via `events_human` view. `refresh_bot_fingerprints()` runs before each snapshot refresh. All 9 RPCs + 3 views read from `events_human`. Also: body CTA tracking (cta_booking_click no longer scoped to header/footer only), `page_exit.duration_seconds` uses cumulative active time. |
 | **Tracker — aria-label capture** | 2026-05-10 | `cta_*_click` events capture `aria-label` in priority over `textContent`. Enables per-emplacement analytics via the `<Action> — <Location>` convention rolled out on the 13 CTA buttons of the site. |
 | **13bis** | 2026-05-07 | `tracker_first_seen_global()` RPC for capture-rate pro-rating during bootstrap. |
@@ -285,6 +290,8 @@ To rotate `ANON_SALT` : update the Edge Function secret. Old `anonymous_id`s wil
 | No rows in `events` | Adblocker on `/_functions/track`? Curl from another network to confirm |
 | Snapshot empty | Cron didn't run yet — `SELECT public.refresh_seo_url_snapshot();` |
 | Anchor stuck on `"Read More"` | Wix icon-only button without aria-label — add `aria-label` in Wix Studio settings |
+| `form-webhook` crashes on startup | `FORM_WEBHOOK_SECRET` env var missing — set it in Supabase Dashboard → Edge Functions → form-webhook → Secrets, then redeploy |
+| `cta_anchor_click` events with `target_section: anchors-xxx` | The clicked button has no `aria-label` / `textContent` — slugify fell back to the raw Wix ID. Add a label on the Wix anchor-menu button for readability |
 
 ---
 

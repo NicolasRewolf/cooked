@@ -26,9 +26,13 @@ seo_url_snapshot (rebuilt nightly via pg_cron)
 RPCs publiées vers le projet Seo
 ```
 
-Capture pageview / scroll / engagement / web_vitals / click_outbound /
-page_exit / cta_phone_click / cta_booking_click. Sert de remplaçant
-GA4 pour fournir des données comportementales fiables au pipeline SEO.
+Capture pageview / scroll_depth / engagement_tick / web_vitals /
+click_outbound / page_exit / cta_phone_click / cta_booking_click /
+cta_anchor_click (Sprint 19). Plus `form_submit` inséré directement
+par la deuxième Edge Function `form-webhook` qui reçoit les webhooks
+Wix Automations (Sprint 18). Bot filtering via la vue `events_human`
+(Sprint 17). Sert de remplaçant GA4 pour fournir des données
+comportementales fiables au pipeline SEO.
 
 ---
 
@@ -38,7 +42,8 @@ L'agent `cooked` est **propriétaire** de :
 
 - Le tracker `wix/tracker.html` déployé en Custom Code
 - Le proxy Velo `wix/http-functions.js`
-- L'Edge Function `supabase/functions/track/index.ts` (Deno)
+- L'Edge Function `supabase/functions/track/index.ts` (Deno, tracker ingest)
+- L'Edge Function `supabase/functions/form-webhook/index.ts` (Deno, Wix Automations webhook pour `form_submit`)
 - Le schéma Cooked (`mxycmjkeotrycyneacje`) :
   `events`, `seo_url_snapshot`, vues, RPCs publiées
 - Les migrations Supabase (`supabase/migrations/*.sql`,
@@ -184,19 +189,22 @@ au moment où l'agent Seo aura sa propre approche.
 ## Architecture rapide (pour démarrer une session sans relire tout)
 
 ```
-Browser (Wix Custom Code)
-  └─ tracker.html
-      ↓ POST /_functions/track (same-origin)
+Browser (Wix Custom Code)               Wix Automations (server-side)
+  └─ tracker.html                          └─ on Form Submitted
+      ↓ POST /_functions/track                  ↓ POST /functions/v1/form-webhook
+        (same-origin)                            ?token=<FORM_WEBHOOK_SECRET>
 Velo proxy (http-functions.js)
   └─ Authorization: Bearer <secret_key>
       ↓
-Edge Function /track (Deno)
-  ├─ hash IP+UA → anonymous_id (rotated daily)
-  ├─ parse UA → device/browser/os
-  ├─ decodeURIComponent(path) (Sprint 13 fix)
+Edge Function /track (Deno)              Edge Function /form-webhook (Deno)
+  ├─ hash IP+UA → anonymous_id              ├─ verify token query param (401 if KO)
+  ├─ parse UA → device/browser/os           ├─ parse Wix payload (body.data.*)
+  ├─ decodeURIComponent(path) (Sprint 13)   └─ INSERT events (name=form_submit)
   └─ INSERT events
        ↓
-events table (~6.5k rows aujourd'hui)
+events table (raw)
+       ↓ refresh_bot_fingerprints() — Sprint 17
+       ↓ events_human view (events MINUS bots)
        ↓ pg_cron nightly
 refresh_seo_url_snapshot()
        ↓

@@ -36,8 +36,17 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SECRET_KEY =
   Deno.env.get("SUPABASE_SECRET_KEY") ??
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const WEBHOOK_SECRET =
-  Deno.env.get("FORM_WEBHOOK_SECRET") ?? "change-me-in-dashboard";
+// FORM_WEBHOOK_SECRET is REQUIRED — without it the endpoint would accept
+// any POST and let an attacker manufacture fake `form_submit` rows.
+// Throw at startup so a missing secret fails loudly (Supabase logs) instead
+// of silently authorising the placeholder default.
+const WEBHOOK_SECRET = Deno.env.get("FORM_WEBHOOK_SECRET");
+if (!WEBHOOK_SECRET) {
+  throw new Error(
+    "[form-webhook] FORM_WEBHOOK_SECRET env var is required — set it in the " +
+    "Supabase Dashboard before re-deploying this function.",
+  );
+}
 
 const supabase = createClient(SUPABASE_URL, SECRET_KEY, {
   auth: { persistSession: false },
@@ -49,20 +58,25 @@ function s(v: unknown, max = 500): string | null {
   return str.length > max ? str.slice(0, max) : str;
 }
 
+// All non-2xx responses follow the same shape as `track/index.ts` so log
+// analysis can grep `ok:false` uniformly across both functions.
+const jsonError = (status: number, error: string) =>
+  new Response(JSON.stringify({ ok: false, error }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
-    return new Response("method not allowed", { status: 405 });
+    return jsonError(405, "method_not_allowed");
   }
 
   // Verify webhook secret in query param
   const url = new URL(req.url);
   const token = url.searchParams.get("token") ?? "";
   if (token !== WEBHOOK_SECRET) {
-    console.warn("form-webhook: invalid token");
-    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
-      status: 401,
-      headers: { "content-type": "application/json" },
-    });
+    console.warn("[form-webhook] invalid token");
+    return jsonError(401, "unauthorized");
   }
 
   // Parse Wix Automations payload
@@ -70,10 +84,7 @@ Deno.serve(async (req) => {
   try {
     body = await req.json();
   } catch {
-    return new Response(JSON.stringify({ ok: false, error: "invalid_json" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    return jsonError(400, "invalid_json");
   }
 
   // Wix Automations payload (observed shape, May 2026):
@@ -162,11 +173,8 @@ Deno.serve(async (req) => {
   const { error } = await supabase.from("events").insert(row);
 
   if (error) {
-    console.error("form-webhook insert error:", error.message);
-    return new Response(
-      JSON.stringify({ ok: false, error: error.message }),
-      { status: 500, headers: { "content-type": "application/json" } }
-    );
+    console.error("[form-webhook] insert error:", error.message);
+    return jsonError(500, error.message);
   }
 
   return new Response(
