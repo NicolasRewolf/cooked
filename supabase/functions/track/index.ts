@@ -38,11 +38,29 @@ const ALLOWED_EVENTS = new Set([
                        // /honoraires-rendez-vous (i.e. "Je prends RDV",
                        // "Contactez-nous", "Honoraires & RDV", …)
   // Phase 2 — form submission (Sprint 18):
-  "form_submit",       // Wix Form successfully submitted (validation
-                       // passed, data posted to Wix). Fired client-side
-                       // by the Velo `onWixFormSubmitted` hook in
-                       // wix/masterPage.js. Carries `form_id` and
-                       // `page_source` in props.
+  "form_submit",       // Wix Form successfully submitted (server-side
+                       // signal). Inserted DIRECTLY into `events` by the
+                       // `form-webhook` Edge Function (POST from Wix
+                       // Automations). The `track` endpoint never
+                       // receives this event from the browser — it's
+                       // kept in ALLOWED_EVENTS as a defensive
+                       // safety net only.
+  // Phase 3 — Wix anchor-menu tracking (Sprint 19):
+  "cta_anchor_click",  // click on an in-page anchor (sticky index, FAQ
+                       // jump, "back to top"). Captures three shapes:
+                       //   1. href="#section"        (classic)
+                       //   2. href=current-path with `data-anchor`
+                       //      attribute set by Wix Studio's anchor-
+                       //      menu widget (no URL hash, scrolls via JS)
+                       //   3. sticky-container fallback (clicks on any
+                       //      interactive element inside a position:
+                       //      sticky / fixed container that wasn't
+                       //      classified by handlers 1/2)
+                       // Props: target_section (slugified label or
+                       // hash), anchor (aria-label or text), placement
+                       // (header / footer / sticky / body), source
+                       // (click | hashchange | sticky-fallback),
+                       // data_anchor (Wix-internal ID, optional).
 ]);
 
 function dailySalt(): string {
@@ -158,18 +176,26 @@ Deno.serve(async (req) => {
       : ALLOWED_ORIGIN;
   const cors = corsHeaders(allowOrigin);
 
+  // Helper for JSON error responses — keeps the contract identical to
+  // form-webhook so downstream log analysis can grep `ok:false` uniformly.
+  const jsonError = (status: number, error: string) =>
+    new Response(JSON.stringify({ ok: false, error }), {
+      status,
+      headers: { ...cors, "content-type": "application/json" },
+    });
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: cors });
   }
   if (req.method !== "POST") {
-    return new Response("method not allowed", { status: 405, headers: cors });
+    return jsonError(405, "method_not_allowed");
   }
 
   let body: any;
   try {
     body = await req.json();
   } catch {
-    return new Response("invalid json", { status: 400, headers: cors });
+    return jsonError(400, "invalid_json");
   }
 
   const events: any[] = Array.isArray(body?.events)
@@ -179,7 +205,7 @@ Deno.serve(async (req) => {
     : [body];
 
   if (!events.length || events.length > 50) {
-    return new Response("invalid batch size", { status: 400, headers: cors });
+    return jsonError(400, "invalid_batch_size");
   }
 
   const ip = clientIp(req);
@@ -226,16 +252,13 @@ Deno.serve(async (req) => {
   }
 
   if (!rows.length) {
-    return new Response("no valid events", { status: 400, headers: cors });
+    return jsonError(400, "no_valid_events");
   }
 
   const { error } = await supabase.from("events").insert(rows);
   if (error) {
-    console.error("insert error", error.message);
-    return new Response(JSON.stringify({ ok: false, error: error.message }), {
-      status: 500,
-      headers: { ...cors, "content-type": "application/json" },
-    });
+    console.error("[track] insert error:", error.message);
+    return jsonError(500, error.message);
   }
 
   return new Response(JSON.stringify({ ok: true, inserted: rows.length }), {

@@ -1,4 +1,15 @@
-<!-- COOKED — first-party SEO tracker (cookieless, RGPD-exempt) -->
+<!--
+  COOKED — first-party SEO tracker (cookieless, RGPD-exempt)
+  Version: Sprint 19 (2026-05-13) — Wix anchor-menu tracking + pageview spam fix
+
+  Events emitted (see Edge Function ALLOWED_EVENTS for the canonical list):
+    pageview, scroll_depth, engagement_tick, web_vitals, page_exit,
+    cta_phone_click, cta_booking_click, cta_anchor_click, click_outbound.
+
+  `form_submit` is server-side only and never flows through this tracker;
+  it's inserted by the `form-webhook` Edge Function on every Wix Forms
+  submission via Wix Automations.
+-->
 <script>
 (function () {
   'use strict';
@@ -86,17 +97,31 @@
 
   // ==============================================================
   // 1. Pageview (initial + SPA navigations)
+  //
+  // Wix Studio calls history.pushState/replaceState internally on many
+  // micro-interactions (sticky-index clicks, anchor-menu scrolls, …),
+  // with URLs that differ only by a trailing slash or by a transient
+  // hash. Without normalization, those would each fire a fake pageview
+  // + page_exit, completely polluting metrics. We compare a normalized
+  // pathname (trailing slash stripped, no hash) — if it hasn't really
+  // changed, we don't re-emit anything.
   // ==============================================================
-  var currentPath = location.pathname;
+  function normalizePathForCompare(p) {
+    if (!p) return '/';
+    if (p.length > 1 && p.charAt(p.length - 1) === '/') return p.slice(0, -1);
+    return p;
+  }
+  var currentPath = normalizePathForCompare(location.pathname);
   function emitPageview() { send('pageview', {}); }
 
   emitPageview();
 
   function onPathMaybeChanged() {
-    if (location.pathname !== currentPath) {
+    var newPath = normalizePathForCompare(location.pathname);
+    if (newPath !== currentPath) {
       // Flush previous page's exit data first
       flushExit();
-      currentPath = location.pathname;
+      currentPath = newPath;
       // Reset per-page state
       scrollHits = { 25: false, 50: false, 75: false, 100: false };
       maxScroll  = 0;
@@ -194,8 +219,11 @@
   }, ENGAGEMENT_TICK_MS);
 
   // ==============================================================
-  // 4. Link click delegation (tel→cta_phone, booking header/footer
-  //    →cta_booking, cross-origin→click_outbound)
+  // 4. Link click delegation
+  //    tel:                       → cta_phone_click
+  //    href="#xxx" / same-page#x  → cta_anchor_click (sticky index, FAQ, top)
+  //    /honoraires-rendez-vous    → cta_booking_click
+  //    cross-origin               → click_outbound
   // ==============================================================
   var BOOKING_TARGET_PATHS = ['/honoraires-rendez-vous'];
 
@@ -221,8 +249,32 @@
     if (el.closest('header, nav, [role="navigation"], .wixui-header, [class*="HEADER"]')) {
       return 'header';
     }
+    // Sticky / fixed container detection (Wix sticky bars, sticky indices,
+    // "back to top" buttons, etc.). Walks up the DOM and inspects the
+    // computed `position` of each ancestor. This widens the placement
+    // taxonomy to {header, footer, sticky, body} — additive change, the
+    // existing values are unaffected for non-sticky CTAs.
+    try {
+      var p = el.parentElement;
+      var hops = 0;
+      while (p && p !== document.body && hops < 12) {
+        var pos = window.getComputedStyle(p).position;
+        if (pos === 'sticky' || pos === 'fixed') return 'sticky';
+        p = p.parentElement;
+        hops++;
+      }
+    } catch (e) {}
     return 'body';
   }
+
+  // Track the most-recently-clicked element so the hashchange fallback
+  // (below) can pull a sensible `anchor` label from it. Wix Studio's
+  // anchor-menu widget triggers scroll-to-section via JS (location.hash
+  // assignment) rather than emitting a real <a href="#x"> click, so the
+  // primary click listener never fires for those elements.
+  var lastClickedEl = null;
+  var lastClickAnchorAt = 0;
+  document.addEventListener('click', function (e) { lastClickedEl = e.target; }, true);
 
   document.addEventListener('click', function (e) {
     var el = e.target;
@@ -244,9 +296,55 @@
       return;
     }
 
+    // In-page anchor click (sticky index, FAQ jump, back-to-top, …).
+    // Hash-only hrefs like "#section" are intercepted here BEFORE we try
+    // to parse them as full URLs. We skip the pure "#" no-op case.
+    if (rawHref.charAt(0) === '#' && rawHref.length > 1) {
+      lastClickAnchorAt = Date.now();
+      send('cta_anchor_click', {
+        target_section: rawHref.slice(1).slice(0, 200),
+        anchor:         anchor,
+        placement:      placementOf(el),
+        source:         'click'
+      });
+      return;
+    }
+
     try {
       var u = new URL(el.href);
       if (u.hostname === location.hostname) {
+        // Same-page anchor — two shapes Wix can produce:
+        //   1. Classic:     href="/current-path#section"   → u.hash filled
+        //   2. Wix native:  href="/current-path" + data-anchor="anchors-xxx"
+        //                   (Wix scrolls programmatically; never sets #)
+        // The data-anchor attribute (`el.dataset.anchor`) is set by the
+        // Wix anchor-menu and section-navigator widgets — it's the
+        // reliable signature we need.
+        if (normalizePath(u.pathname) === normalizePath(location.pathname)) {
+          var dataAnchor = (el.getAttribute('data-anchor') || el.dataset && el.dataset.anchor || '').toString();
+          if (u.hash || dataAnchor) {
+            var section;
+            if (u.hash) {
+              section = u.hash.replace(/^#/, '').slice(0, 200);
+            } else if (anchor) {
+              // Slugify the visible label so target_section is human-
+              // readable ("accompagnement-immediat") rather than the
+              // opaque Wix ID ("anchors-m6fkbsmm4").
+              section = slugify(anchor) || dataAnchor.slice(0, 200);
+            } else {
+              section = dataAnchor.slice(0, 200);
+            }
+            lastClickAnchorAt = Date.now();
+            send('cta_anchor_click', {
+              target_section: section,
+              anchor:         anchor,
+              placement:      placementOf(el),
+              source:         'click',
+              data_anchor:    dataAnchor || null
+            });
+            return;
+          }
+        }
         if (isBookingTarget(u.pathname)) {
           var place = placementOf(el);
           send('cta_booking_click', {
@@ -268,6 +366,140 @@
       }
     } catch (err) {}
   }, true);
+
+  // ==============================================================
+  // 4c. Sticky-container click fallback for Wix anchor-menu widget
+  //
+  // Wix Studio's anchor menu renders as <button>/<div> elements that
+  // scroll programmatically (no <a href="#x">, no hash update). Detect
+  // them positionally: any click inside a sticky/fixed-positioned
+  // container that wasn't already classified by the primary handler
+  // (phone, booking, outbound) is treated as an anchor click. The
+  // visible text becomes the `target_section`.
+  //
+  // Guards:
+  //   - Skip if the primary handler just fired cta_anchor_click (<200ms)
+  //   - Skip if the click is on a tel: / booking / outbound link
+  //     (those are owned by the primary handler)
+  //   - Skip if no text label can be extracted (avoids empty noise)
+  // ==============================================================
+  function slugify(s) {
+    return String(s || '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 200);
+  }
+
+  document.addEventListener('click', function (e) {
+    if (Date.now() - lastClickAnchorAt < 200) return;
+
+    var el = e.target;
+    if (!el || el.nodeType !== 1) return;
+
+    // Skip clicks the primary handler owns (tel:, booking, outbound).
+    try {
+      var aAncestor = el.closest('a[href]');
+      if (aAncestor) {
+        var href = aAncestor.getAttribute('href') || '';
+        if (href.indexOf('tel:') === 0) return;
+        if (href.indexOf('mailto:') === 0) return;
+        var u2 = null;
+        try { u2 = new URL(aAncestor.href); } catch (e2) {}
+        if (u2 && u2.hostname && u2.hostname !== location.hostname) return;
+        if (isBookingTarget((u2 && u2.pathname) || '')) return;
+      }
+    } catch (e3) {}
+
+    // Must be inside a sticky/fixed container.
+    var inSticky = false;
+    try {
+      var p = el, hops = 0;
+      while (p && p !== document.body && hops < 15) {
+        var pos = window.getComputedStyle(p).position;
+        if (pos === 'sticky' || pos === 'fixed') { inSticky = true; break; }
+        p = p.parentElement; hops++;
+      }
+    } catch (e4) {}
+    if (!inSticky) return;
+
+    // Find the closest interactive-like element to extract a label.
+    var interactive = el;
+    for (var i = 0; i < 6 && interactive && interactive.nodeType === 1; i++) {
+      var tag = interactive.tagName;
+      var role = interactive.getAttribute && interactive.getAttribute('role');
+      if (tag === 'A' || tag === 'BUTTON' || role === 'button' || role === 'link') break;
+      interactive = interactive.parentElement;
+    }
+    if (!interactive || interactive.nodeType !== 1) interactive = el;
+
+    var label = (
+      (interactive.getAttribute && interactive.getAttribute('aria-label')) ||
+      interactive.textContent ||
+      ''
+    ).trim().slice(0, 100);
+    if (!label) return;
+
+    var slug = slugify(label);
+    if (!slug) return;
+
+    lastClickAnchorAt = Date.now();
+    send('cta_anchor_click', {
+      target_section: slug,
+      anchor:         label,
+      placement:      'sticky',
+      source:         'sticky-fallback'
+    });
+  }, false); // bubble — primary capture-phase handler claims its own first
+
+  // ==============================================================
+  // 4b. Hashchange fallback for anchor menus
+  //
+  // Wix Studio's "anchor menu" widget (and similar custom-coded sticky
+  // indices) scroll to a section by assigning location.hash via JS,
+  // without dispatching a click on a real <a href="#x">. The click
+  // handler above never sees those interactions. The DOM `hashchange`
+  // event, however, fires unconditionally — so we use it as a catch-all.
+  //
+  // Dedup: if the click handler above just sent a cta_anchor_click in
+  // the last 500 ms, skip this one to avoid double-counting.
+  // ==============================================================
+  var lastHash = location.hash || '';
+  window.addEventListener('hashchange', function () {
+    if (Date.now() - lastClickAnchorAt < 500) {
+      lastHash = location.hash || '';
+      return;
+    }
+    var newHash = location.hash || '';
+    if (newHash === lastHash) return;
+    lastHash = newHash;
+    var section = newHash.replace(/^#/, '').slice(0, 200);
+    if (!section) return;
+
+    var anchor = null;
+    var placement = 'unknown';
+    if (lastClickedEl && lastClickedEl.nodeType === 1) {
+      try {
+        var src = lastClickedEl;
+        // Walk up a couple of hops to find an element with an
+        // accessible label (the actual click target is often a deep
+        // inner <span> or <svg>).
+        for (var i = 0; i < 4 && src && src.nodeType === 1; i++) {
+          var lbl = src.getAttribute && (src.getAttribute('aria-label') || src.textContent);
+          if (lbl && lbl.trim()) { anchor = lbl.trim().slice(0, 100); break; }
+          src = src.parentElement;
+        }
+        placement = placementOf(lastClickedEl);
+      } catch (e) {}
+    }
+    send('cta_anchor_click', {
+      target_section: section,
+      anchor:         anchor,
+      placement:      placement,
+      source:         'hashchange'
+    });
+  });
 
   // ==============================================================
   // 5. Core Web Vitals — LCP, CLS, INP, TTFB (p75 in SQL views)
