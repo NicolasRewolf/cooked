@@ -235,6 +235,106 @@ First end-to-end issue diagnostiquée : 2026-05-07
 
 ---
 
+## Définition des conversions (taxonomy macro / micro / engagement)
+
+Trois niveaux de signaux à distinguer dans toute analyse Cooked.
+**Ne jamais les mélanger** sous un seul label "conversion" — c'est
+l'erreur faite dans l'audit du 2026-05-15 qui annonçait 157 "conversions"
+alors qu'il n'y avait que 37 vraies actions business.
+
+### 1. Macro-conversion (vrai contact établi)
+
+Le visiteur a réellement essayé de joindre le cabinet.
+
+- `cta_phone_click` — tap-to-call (composeur ouvert sur mobile, intent
+  quasi-certain ; sur desktop, c'est un signal plus faible mais reste
+  une action explicite)
+- `form_submit` — soumission validée server-side par l'Edge Function
+  `form-webhook` via Wix Automation (irréfutable)
+
+**C'est la métrique business.** Si on doit choisir UN chiffre à
+remonter à Me Plouton ou à Adrien (Nomad Marketing), c'est celui-ci.
+
+### 2. Micro-conversion (intent déclaré, pas encore matérialisé)
+
+Le visiteur a manifesté son intention mais n'est pas allé au bout.
+
+- `cta_booking_click` — clic sur "Prendre rendez-vous" / "Je prends
+  rendez-vous" qui mène vers `/honoraires-rendez-vous`
+- `cta_anchor_click` — clic sur "Demander un RDV" / "Je prends
+  rendez-vous — table des matières" qui scrolle vers le formulaire de
+  la même page (sticky bar mobile expertise, table des matières, etc.)
+
+À utiliser pour mesurer l'efficacité des CTAs et la qualité du funnel
+intermédiaire, **pas** pour annoncer un taux de conversion business.
+
+### 3. Engagement (signal de lecture)
+
+Le visiteur consomme du contenu sans manifester d'intent explicite.
+
+- `scroll_depth` (percent ≥ 75 %)
+- `engagement_tick` cumul ≥ 2 min
+- Session multi-page (≥ 2 pageviews)
+
+Utile pour comprendre la qualité du contenu, pas la performance
+commerciale.
+
+### Piège SQL à connaître : `device_type='server'` et form_submit
+
+Les `form_submit` sont insérés par l'Edge Function `form-webhook`
+server-side, donc avec `device_type = 'server'` (cf
+`supabase/functions/form-webhook/index.ts` ligne 156).
+
+La plupart des analyses "humaines" filtrent `device_type != 'server'`
+pour exclure les bots Cooked détectés (UA suspects insérés par la
+fonction `track`). **Ce filtre jette par erreur tous les form_submit**
+et donne l'impression qu'il n'y en a aucun.
+
+Règles correctes :
+
+```sql
+-- Compter les macro-conversions (ne PAS filtrer device_type)
+SELECT COUNT(*) FROM events
+WHERE name IN ('cta_phone_click','form_submit');
+
+-- Compter les micro-conversions (exclure bots, garder humains)
+SELECT COUNT(*) FROM events
+WHERE name IN ('cta_booking_click','cta_anchor_click')
+  AND device_type != 'server';
+
+-- Compter toutes conversions sans rater les form_submit
+SELECT COUNT(*) FROM events
+WHERE name IN ('cta_phone_click','cta_booking_click','cta_anchor_click','form_submit')
+  AND (device_type != 'server' OR name = 'form_submit');
+```
+
+Préférer compter explicitement par nom d'event plutôt que par filtre
+device.
+
+### Ordres de grandeur observés (10 jours, 2026-05-06 → 2026-05-15)
+
+Sur ~14 000 sessions :
+
+```
+Macro-conversions    :   37  (0.26 %)  ← métrique business
+  cta_phone_click    :   30
+  form_submit        :    7
+
+Micro-conversions    :  173  (1.2 %)
+  cta_booking_click  :  120
+  cta_anchor_click   :   53
+
+Engagement qualifié  : ~880  (~6.3 %)
+```
+
+**Ratio micro → macro ≈ 21 %.** Le vrai goulot d'étranglement n'est
+pas l'amont du funnel (acquérir du trafic, faire scroller, faire
+cliquer un CTA) mais le **passage de l'intent à l'action** sur la
+page `/honoraires-rendez-vous` (95 % des `cta_booking_click` ne se
+transforment pas en `form_submit`).
+
+---
+
 ## Taxonomy du site jplouton-avocat.fr
 
 Le site a **4 grands types de pages** qu'il est essentiel de distinguer
