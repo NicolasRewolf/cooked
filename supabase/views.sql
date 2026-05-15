@@ -6,12 +6,13 @@
 -- What you get:
 --   • bot_fingerprints table + refresh_bot_fingerprints() — centralized
 --     bot detection (Sprint 17). anonymous_ids with >20 pv/day + 0 scroll.
---   • prefetch_sessions table + refresh_prefetch_sessions() — browser
---     prefetch detection (Sprint 20). sessions matching ALL of: no
---     referrer + 0 engagement_tick + 0 scroll_depth + exactly 1 pageview
---     + duration < 10s. Catches Safari Top Hit / Chrome prefetch /
---     iMessage link preview / Cloudflare prerender ghosts.
---   • events_human view — events minus bot traffic minus prefetch
+--   • noise_sessions table + refresh_noise_sessions() — session-level
+--     noise detection (Sprint 20 → renamed & expanded in Sprint 21).
+--     Three patterns, each with a distinct `reason` value:
+--       (a) prefetch       — Safari/Chrome/Cloudflare prerender ghosts
+--       (b) ua_bot         — explicit User-Agent matches (Sprint 21)
+--       (c) instant_close  — 1 pv + 0 eng + <5s (Sprint 21)
+--   • events_human view — events minus bot traffic minus noise
 --     sessions. ALL RPCs and views below read from events_human, never
 --     from events directly.
 --   • seo_pages_overview(from, to)  — parametric function, 1 row / URL
@@ -41,13 +42,14 @@
 
 
 -- ============================================================
--- 0. Bot + prefetch filtering — centralized detection + filtered view
+-- 0. Bot + noise filtering — centralized detection + filtered view
 -- ============================================================
 -- Architecture:
 --   events (raw, unchanged)
---     → bot_fingerprints   (Sprint 17 — anonymous_id-level crawler ban)
---     → prefetch_sessions  (Sprint 20 — session-level browser prefetch)
---     → events_human (view: events minus bots minus prefetch)
+--     → bot_fingerprints (Sprint 17 — anonymous_id-level crawler ban)
+--     → noise_sessions   (Sprint 20 + 21 — session-level noise: prefetch
+--                         + ua_bot + instant_close)
+--     → events_human (view: events minus bots minus noise)
 --     → all RPCs + snapshot use events_human
 --
 -- Two complementary detection layers — both must pass for an event to
@@ -55,30 +57,54 @@
 --
 -- Layer 1 — bot_fingerprints (Sprint 17):
 --   Rule: anonymous_id with >20 pageviews/day AND 0 scroll events.
---   Targets: classic SEO crawlers, monitoring services, bulk scrapers.
---   Catches: high-volume, repeated patterns over a single day.
+--   Targets: classic SEO crawlers, monitoring services, bulk scrapers
+--   that hammer the site over a day. Captures high-volume patterns.
 --
--- Layer 2 — prefetch_sessions (Sprint 20):
---   Rule: session matching ALL of:
---     • referrer_hostname IS NULL              (no human origin)
---     • COUNT(engagement_tick) = 0             (no focus activity)
---     • COUNT(scroll_depth)    = 0             (no scroll at all)
---     • COUNT(pageview)        = 1             (single page loaded)
---     • max(occurred_at) - min(occurred_at) < 10s   (never lingered)
---     • device_type != 'server'                (skip form-webhook rows)
---   Targets: Safari Top Hit prefetch, Chrome prerender, iMessage /
---   WhatsApp link preview, Cloudflare prefetch — single-page ghosts
---   the user's browser loaded but never showed to a human eye.
---   Catches: low-volume, single-session, "no-signs-of-life" patterns
---   the Sprint 17 rule can't see (these typically touch 1 page and
---   leave, well below the 20 pv/day threshold).
+-- Layer 2 — noise_sessions (Sprint 20 + 21):
+--   Three sub-patterns, evaluated in order. Each populated row has a
+--   `reason` column ("prefetch:...", "ua_bot:<name>", "instant_close:...")
+--   for forensic traceability. Patterns:
 --
--- Why a real human survives BOTH filters:
---   - A search visitor has a referrer (Google/Bing/etc.) → survives L2.
---   - A reader emits at least one engagement_tick or scroll_depth →
---     survives L2.
---   - A multi-page visitor has pageview count ≥ 2 → survives L2.
---   - A visitor staying ≥ 10s on the page survives L2.
+--   (a) prefetch — Sprint 20 (5 conditions, ALL required):
+--       • referrer_hostname IS NULL
+--       • COUNT(engagement_tick) = 0
+--       • COUNT(scroll_depth)    = 0
+--       • COUNT(pageview)        = 1
+--       • duration < 10 seconds
+--       Plus: device_type != 'server' (spare form-webhook rows).
+--       Targets: Safari Top Hit prefetch, Chrome prerender, iMessage /
+--       WhatsApp link preview, Cloudflare prefetch — ghosts no human
+--       ever saw.
+--
+--   (b) ua_bot — Sprint 21 (explicit User-Agent ILIKE list):
+--       headless, googlebot, bingbot, applebot, duckduckbot, yandexbot,
+--       baiduspider, gptbot, claudebot, perplexitybot, chatgpt-user,
+--       googleother, semrushbot, ahrefsbot, mj12bot, dotbot, petalbot,
+--       bytespider, lighthouse, pingdom, uptimerobot, gtmetrix,
+--       facebookexternalhit, linkedinbot, twitterbot, discordbot,
+--       telegrambot, slackbot, whatsapp/, crawler, spider, axios/,
+--       curl/, wget, python, go-http, node-fetch, httpclient, java/.
+--       Every entry is technically impossible in a real human browser
+--       UA — verified by sampling on 2026-05-15 audit (zero false
+--       positives).
+--
+--   (c) instant_close — Sprint 21 (3 conditions, ALL required):
+--       • COUNT(pageview)        = 1
+--       • COUNT(engagement_tick) = 0
+--       • COUNT(scroll_depth)    = 0
+--       • duration < 5 seconds
+--       Plus: device_type != 'server'.
+--       Targets: accidental taps / immediate back-button. The <5s
+--       threshold is deliberately conservative (the 5-10s band is the
+--       safety margin where a quick human decision can occur).
+--
+-- Why a real human survives ALL filters:
+--   - Search/referral visitors have referrer → survive (a).
+--   - Readers emit at least one tick or scroll → survive (a) and (c).
+--   - Multi-page visitors have pageview ≥ 2 → survive (a) and (c).
+--   - Visitors staying ≥ 10s on the page survive (a); ≥ 5s survives (c).
+--   - Real browsers (Chrome/Safari/Firefox/Edge/Mobile Safari) never
+--     match any (b) UA pattern.
 --
 -- Both refresh functions are called automatically at the start of
 -- refresh_seo_url_snapshot(), so pg_cron only needs one entry.
@@ -122,42 +148,54 @@ revoke execute on function public.refresh_bot_fingerprints() from authenticated;
 grant  execute on function public.refresh_bot_fingerprints() to service_role;
 
 
--- ---------- Sprint 20 — prefetch_sessions ------------------------
+-- ---------- noise_sessions (Sprint 20 + 21) ----------------------
 --
--- Materialised list of sessions that match the prefetch fingerprint
--- (see rule above). Refreshed at the start of refresh_seo_url_snapshot()
--- alongside refresh_bot_fingerprints(), so events_human is recomputed
--- as a set difference against a pre-built lookup table (fast) rather
--- than a recursive subquery on every read.
+-- Materialised list of sessions matching one of the three noise
+-- patterns (prefetch / ua_bot / instant_close). Refreshed at the start
+-- of refresh_seo_url_snapshot() alongside refresh_bot_fingerprints(),
+-- so events_human is computed as a fast set difference rather than a
+-- recursive subquery on every read.
 --
--- 2026-05-15 observed baseline: ~6 700 sessions flagged on a 10-day
--- window (with significant overlap with bot_fingerprints — same crawler
--- can match both detection rules; that's fine, defence in depth).
+-- Sprint 20 introduced this table under the name `prefetch_sessions`
+-- with the (a) pattern only. Sprint 21 renamed it to `noise_sessions`
+-- and added the (b) ua_bot and (c) instant_close patterns. The
+-- `reason` column tracks which pattern flagged each session.
+--
+-- 2026-05-15 observed baseline (10-day window, after rename):
+--   prefetch      : 6 768 sessions
+--   ua_bot        :   834 sessions
+--   instant_close :   352 sessions
+--   total (after deduplication via ON CONFLICT) : ~7 950 sessions
+--
+-- There is significant overlap between Layer 1 (bot_fingerprints) and
+-- pattern (b) here — same crawler can match both. That's fine, defence
+-- in depth.
 
-create table if not exists public.prefetch_sessions (
+create table if not exists public.noise_sessions (
   session_id  text primary key,
   detected_at timestamptz default now(),
   reason      text
 );
 
-alter table public.prefetch_sessions enable row level security;
+alter table public.noise_sessions enable row level security;
 
-create or replace function public.refresh_prefetch_sessions()
+create or replace function public.refresh_noise_sessions()
 returns void
 language plpgsql
 security definer
 set search_path = public, pg_catalog
 as $$
 begin
-  truncate public.prefetch_sessions;
+  truncate public.noise_sessions;
 
-  insert into public.prefetch_sessions (session_id, reason)
+  -- Pattern (a) — prefetch (Sprint 20). 5 conditions, ALL required.
+  insert into public.noise_sessions (session_id, reason)
   select
     session_id,
-    'prefetch: 0 referrer + 0 tick + 0 scroll + 1 pv + <10s'
+    'prefetch: 0 ref + 0 tick + 0 scroll + 1 pv + <10s'
   from public.events
   where session_id is not null
-    and device_type is distinct from 'server'  -- never flag form-webhook rows
+    and device_type is distinct from 'server'
   group by session_id
   having max(referrer_hostname) is null
      and count(*) filter (where name = 'engagement_tick') = 0
@@ -165,13 +203,128 @@ begin
      and count(*) filter (where name = 'pageview')        = 1
      and extract(epoch from (max(occurred_at) - min(occurred_at))) < 10
   on conflict (session_id) do nothing;
+
+  -- Pattern (b) — ua_bot (Sprint 21). Explicit User-Agent ILIKE list.
+  -- Every entry verified to be impossible in a real human browser UA.
+  -- The CASE/WHEN computes a per-session reason tag identifying which
+  -- bot family matched, kept for forensic analysis.
+  insert into public.noise_sessions (session_id, reason)
+  select distinct
+    session_id,
+    'ua_bot: ' || (
+      case
+        when user_agent ilike '%headless%'              then 'headless'
+        when user_agent ilike '%googlebot%'             then 'googlebot'
+        when user_agent ilike '%bingbot%'               then 'bingbot'
+        when user_agent ilike '%applebot%'              then 'applebot'
+        when user_agent ilike '%duckduckbot%'           then 'duckduckbot'
+        when user_agent ilike '%yandexbot%'             then 'yandexbot'
+        when user_agent ilike '%baiduspider%'           then 'baiduspider'
+        when user_agent ilike '%gptbot%'                then 'gptbot'
+        when user_agent ilike '%claudebot%'             then 'claudebot'
+        when user_agent ilike '%perplexitybot%'         then 'perplexitybot'
+        when user_agent ilike '%chatgpt-user%'          then 'chatgpt-user'
+        when user_agent ilike '%googleother%'           then 'googleother'
+        when user_agent ilike '%semrushbot%'            then 'semrushbot'
+        when user_agent ilike '%ahrefsbot%'             then 'ahrefsbot'
+        when user_agent ilike '%mj12bot%'               then 'mj12bot'
+        when user_agent ilike '%dotbot%'                then 'dotbot'
+        when user_agent ilike '%petalbot%'              then 'petalbot'
+        when user_agent ilike '%bytespider%'            then 'bytespider'
+        when user_agent ilike '%lighthouse%'            then 'lighthouse'
+        when user_agent ilike '%pingdom%'               then 'pingdom'
+        when user_agent ilike '%uptimerobot%'           then 'uptimerobot'
+        when user_agent ilike '%gtmetrix%'              then 'gtmetrix'
+        when user_agent ilike '%facebookexternalhit%'   then 'facebookexternalhit'
+        when user_agent ilike '%linkedinbot%'           then 'linkedinbot'
+        when user_agent ilike '%twitterbot%'            then 'twitterbot'
+        when user_agent ilike '%discordbot%'            then 'discordbot'
+        when user_agent ilike '%telegrambot%'           then 'telegrambot'
+        when user_agent ilike '%slackbot%'              then 'slackbot'
+        when user_agent ilike '%whatsapp/%'             then 'whatsapp-preview'
+        when user_agent ilike '%crawler%'               then 'crawler'
+        when user_agent ilike '%spider%'                then 'spider'
+        when user_agent ilike '%axios/%'                then 'axios'
+        when user_agent ilike '%curl/%'                 then 'curl'
+        when user_agent ilike '%wget%'                  then 'wget'
+        when user_agent ilike '%python%'                then 'python'
+        when user_agent ilike '%go-http%'               then 'go-http'
+        when user_agent ilike '%node-fetch%'            then 'node-fetch'
+        when user_agent ilike '%httpclient%'            then 'httpclient'
+        when user_agent ilike '%java/%'                 then 'java-http'
+        else 'unknown'
+      end
+    )
+  from public.events
+  where session_id is not null
+    and device_type is distinct from 'server'
+    and user_agent is not null
+    and (
+         user_agent ilike '%headless%'
+      or user_agent ilike '%googlebot%'
+      or user_agent ilike '%bingbot%'
+      or user_agent ilike '%applebot%'
+      or user_agent ilike '%duckduckbot%'
+      or user_agent ilike '%yandexbot%'
+      or user_agent ilike '%baiduspider%'
+      or user_agent ilike '%gptbot%'
+      or user_agent ilike '%claudebot%'
+      or user_agent ilike '%perplexitybot%'
+      or user_agent ilike '%chatgpt-user%'
+      or user_agent ilike '%googleother%'
+      or user_agent ilike '%semrushbot%'
+      or user_agent ilike '%ahrefsbot%'
+      or user_agent ilike '%mj12bot%'
+      or user_agent ilike '%dotbot%'
+      or user_agent ilike '%petalbot%'
+      or user_agent ilike '%bytespider%'
+      or user_agent ilike '%lighthouse%'
+      or user_agent ilike '%pingdom%'
+      or user_agent ilike '%uptimerobot%'
+      or user_agent ilike '%gtmetrix%'
+      or user_agent ilike '%facebookexternalhit%'
+      or user_agent ilike '%linkedinbot%'
+      or user_agent ilike '%twitterbot%'
+      or user_agent ilike '%discordbot%'
+      or user_agent ilike '%telegrambot%'
+      or user_agent ilike '%slackbot%'
+      or user_agent ilike '%whatsapp/%'
+      or user_agent ilike '%crawler%'
+      or user_agent ilike '%spider%'
+      or user_agent ilike '%axios/%'
+      or user_agent ilike '%curl/%'
+      or user_agent ilike '%wget%'
+      or user_agent ilike '%python%'
+      or user_agent ilike '%go-http%'
+      or user_agent ilike '%node-fetch%'
+      or user_agent ilike '%httpclient%'
+      or user_agent ilike '%java/%'
+    )
+  on conflict (session_id) do nothing;
+
+  -- Pattern (c) — instant_close (Sprint 21). 4 conditions, ALL required.
+  -- Catches accidental taps / immediate back-button. <5s deliberately
+  -- conservative (5-10s is the safety band).
+  insert into public.noise_sessions (session_id, reason)
+  select
+    session_id,
+    'instant_close: 1 pv + 0 tick + 0 scroll + <5s'
+  from public.events
+  where session_id is not null
+    and device_type is distinct from 'server'
+  group by session_id
+  having count(*) filter (where name = 'pageview')        = 1
+     and count(*) filter (where name = 'engagement_tick') = 0
+     and count(*) filter (where name = 'scroll_depth')    = 0
+     and extract(epoch from (max(occurred_at) - min(occurred_at))) < 5
+  on conflict (session_id) do nothing;
 end;
 $$;
 
-revoke execute on function public.refresh_prefetch_sessions() from public;
-revoke execute on function public.refresh_prefetch_sessions() from anon;
-revoke execute on function public.refresh_prefetch_sessions() from authenticated;
-grant  execute on function public.refresh_prefetch_sessions() to service_role;
+revoke execute on function public.refresh_noise_sessions() from public;
+revoke execute on function public.refresh_noise_sessions() from anon;
+revoke execute on function public.refresh_noise_sessions() from authenticated;
+grant  execute on function public.refresh_noise_sessions() to service_role;
 
 
 -- security_invoker = true: enforce caller's RLS, not creator's (Postgres 15+).
@@ -185,8 +338,8 @@ where not exists (
   where b.anonymous_id = e.anonymous_id
 )
 and not exists (
-  select 1 from public.prefetch_sessions p
-  where p.session_id = e.session_id
+  select 1 from public.noise_sessions n
+  where n.session_id = e.session_id
 );
 
 
@@ -463,10 +616,11 @@ declare
   now_ts timestamptz := now();
 begin
   -- Refresh both filter layers before rebuilding snapshot.
-  -- bot_fingerprints (Sprint 17) catches anonymous_id-level crawlers.
-  -- prefetch_sessions (Sprint 20) catches session-level browser prefetch.
+  -- bot_fingerprints (Sprint 17): anonymous_id-level crawlers.
+  -- noise_sessions (Sprint 20 + 21): session-level prefetch + ua_bot
+  --                                  + instant_close.
   perform public.refresh_bot_fingerprints();
-  perform public.refresh_prefetch_sessions();
+  perform public.refresh_noise_sessions();
 
   delete from public.seo_url_snapshot;
 
