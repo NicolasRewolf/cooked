@@ -6,8 +6,14 @@
 -- What you get:
 --   • bot_fingerprints table + refresh_bot_fingerprints() — centralized
 --     bot detection (Sprint 17). anonymous_ids with >20 pv/day + 0 scroll.
---   • events_human view — events minus bot traffic. ALL RPCs and views
---     below read from events_human, never from events directly.
+--   • prefetch_sessions table + refresh_prefetch_sessions() — browser
+--     prefetch detection (Sprint 20). sessions matching ALL of: no
+--     referrer + 0 engagement_tick + 0 scroll_depth + exactly 1 pageview
+--     + duration < 10s. Catches Safari Top Hit / Chrome prefetch /
+--     iMessage link preview / Cloudflare prerender ghosts.
+--   • events_human view — events minus bot traffic minus prefetch
+--     sessions. ALL RPCs and views below read from events_human, never
+--     from events directly.
 --   • seo_pages_overview(from, to)  — parametric function, 1 row / URL
 --   • seo_url_snapshot              — flat table, 1 row / URL with rolling
 --                                     windows (7d, 28d, 90d, 365d) — refreshed
@@ -35,17 +41,46 @@
 
 
 -- ============================================================
--- 0. Bot filtering — centralized detection + filtered view
+-- 0. Bot + prefetch filtering — centralized detection + filtered view
 -- ============================================================
 -- Architecture:
---   events (raw, unchanged) → bot_fingerprints (detected bots)
---   → events_human (view: events minus bots)
---   → all RPCs + snapshot use events_human
+--   events (raw, unchanged)
+--     → bot_fingerprints   (Sprint 17 — anonymous_id-level crawler ban)
+--     → prefetch_sessions  (Sprint 20 — session-level browser prefetch)
+--     → events_human (view: events minus bots minus prefetch)
+--     → all RPCs + snapshot use events_human
 --
--- Detection rule: anonymous_id with >20 pageviews/day AND 0 scroll
--- events = crawler. No human visits 20+ pages without ever scrolling.
+-- Two complementary detection layers — both must pass for an event to
+-- appear in events_human.
 --
--- refresh_bot_fingerprints() is called automatically at the start of
+-- Layer 1 — bot_fingerprints (Sprint 17):
+--   Rule: anonymous_id with >20 pageviews/day AND 0 scroll events.
+--   Targets: classic SEO crawlers, monitoring services, bulk scrapers.
+--   Catches: high-volume, repeated patterns over a single day.
+--
+-- Layer 2 — prefetch_sessions (Sprint 20):
+--   Rule: session matching ALL of:
+--     • referrer_hostname IS NULL              (no human origin)
+--     • COUNT(engagement_tick) = 0             (no focus activity)
+--     • COUNT(scroll_depth)    = 0             (no scroll at all)
+--     • COUNT(pageview)        = 1             (single page loaded)
+--     • max(occurred_at) - min(occurred_at) < 10s   (never lingered)
+--     • device_type != 'server'                (skip form-webhook rows)
+--   Targets: Safari Top Hit prefetch, Chrome prerender, iMessage /
+--   WhatsApp link preview, Cloudflare prefetch — single-page ghosts
+--   the user's browser loaded but never showed to a human eye.
+--   Catches: low-volume, single-session, "no-signs-of-life" patterns
+--   the Sprint 17 rule can't see (these typically touch 1 page and
+--   leave, well below the 20 pv/day threshold).
+--
+-- Why a real human survives BOTH filters:
+--   - A search visitor has a referrer (Google/Bing/etc.) → survives L2.
+--   - A reader emits at least one engagement_tick or scroll_depth →
+--     survives L2.
+--   - A multi-page visitor has pageview count ≥ 2 → survives L2.
+--   - A visitor staying ≥ 10s on the page survives L2.
+--
+-- Both refresh functions are called automatically at the start of
 -- refresh_seo_url_snapshot(), so pg_cron only needs one entry.
 
 create table if not exists public.bot_fingerprints (
@@ -86,6 +121,59 @@ revoke execute on function public.refresh_bot_fingerprints() from anon;
 revoke execute on function public.refresh_bot_fingerprints() from authenticated;
 grant  execute on function public.refresh_bot_fingerprints() to service_role;
 
+
+-- ---------- Sprint 20 — prefetch_sessions ------------------------
+--
+-- Materialised list of sessions that match the prefetch fingerprint
+-- (see rule above). Refreshed at the start of refresh_seo_url_snapshot()
+-- alongside refresh_bot_fingerprints(), so events_human is recomputed
+-- as a set difference against a pre-built lookup table (fast) rather
+-- than a recursive subquery on every read.
+--
+-- 2026-05-15 observed baseline: ~6 700 sessions flagged on a 10-day
+-- window (with significant overlap with bot_fingerprints — same crawler
+-- can match both detection rules; that's fine, defence in depth).
+
+create table if not exists public.prefetch_sessions (
+  session_id  text primary key,
+  detected_at timestamptz default now(),
+  reason      text
+);
+
+alter table public.prefetch_sessions enable row level security;
+
+create or replace function public.refresh_prefetch_sessions()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+begin
+  truncate public.prefetch_sessions;
+
+  insert into public.prefetch_sessions (session_id, reason)
+  select
+    session_id,
+    'prefetch: 0 referrer + 0 tick + 0 scroll + 1 pv + <10s'
+  from public.events
+  where session_id is not null
+    and device_type is distinct from 'server'  -- never flag form-webhook rows
+  group by session_id
+  having max(referrer_hostname) is null
+     and count(*) filter (where name = 'engagement_tick') = 0
+     and count(*) filter (where name = 'scroll_depth')    = 0
+     and count(*) filter (where name = 'pageview')        = 1
+     and extract(epoch from (max(occurred_at) - min(occurred_at))) < 10
+  on conflict (session_id) do nothing;
+end;
+$$;
+
+revoke execute on function public.refresh_prefetch_sessions() from public;
+revoke execute on function public.refresh_prefetch_sessions() from anon;
+revoke execute on function public.refresh_prefetch_sessions() from authenticated;
+grant  execute on function public.refresh_prefetch_sessions() to service_role;
+
+
 -- security_invoker = true: enforce caller's RLS, not creator's (Postgres 15+).
 -- Without this, the view runs as SECURITY DEFINER and the linter flags it.
 create or replace view public.events_human
@@ -95,6 +183,10 @@ from public.events e
 where not exists (
   select 1 from public.bot_fingerprints b
   where b.anonymous_id = e.anonymous_id
+)
+and not exists (
+  select 1 from public.prefetch_sessions p
+  where p.session_id = e.session_id
 );
 
 
@@ -370,8 +462,11 @@ as $$
 declare
   now_ts timestamptz := now();
 begin
-  -- Refresh bot detection before rebuilding snapshot
+  -- Refresh both filter layers before rebuilding snapshot.
+  -- bot_fingerprints (Sprint 17) catches anonymous_id-level crawlers.
+  -- prefetch_sessions (Sprint 20) catches session-level browser prefetch.
   perform public.refresh_bot_fingerprints();
+  perform public.refresh_prefetch_sessions();
 
   delete from public.seo_url_snapshot;
 
