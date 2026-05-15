@@ -7,11 +7,15 @@
 --   • bot_fingerprints table + refresh_bot_fingerprints() — centralized
 --     bot detection (Sprint 17). anonymous_ids with >20 pv/day + 0 scroll.
 --   • noise_sessions table + refresh_noise_sessions() — session-level
---     noise detection (Sprint 20 → renamed & expanded in Sprint 21).
---     Three patterns, each with a distinct `reason` value:
---       (a) prefetch       — Safari/Chrome/Cloudflare prerender ghosts
---       (b) ua_bot         — explicit User-Agent matches (Sprint 21)
---       (c) instant_close  — 1 pv + 0 eng + <5s (Sprint 21)
+--     noise detection (Sprint 20 → renamed & expanded in Sprint 21,
+--     then trimmed back in Sprint 21b).
+--     Two patterns, each with a distinct `reason` value:
+--       (a) prefetch  — Safari/Chrome/Cloudflare prerender ghosts
+--       (b) ua_bot    — explicit User-Agent matches (Sprint 21)
+--     NOTE: pattern (c) instant_close (1 pv + 0 eng + <5s) was added
+--     in Sprint 21 then immediately removed in Sprint 21b — those
+--     sessions are pogo-stick signals consumed by
+--     pogo_rates_for_period(), not noise. Do not re-add it.
 --   • events_human view — events minus bot traffic minus noise
 --     sessions. ALL RPCs and views below read from events_human, never
 --     from events directly.
@@ -47,8 +51,8 @@
 -- Architecture:
 --   events (raw, unchanged)
 --     → bot_fingerprints (Sprint 17 — anonymous_id-level crawler ban)
---     → noise_sessions   (Sprint 20 + 21 — session-level noise: prefetch
---                         + ua_bot + instant_close)
+--     → noise_sessions   (Sprint 20 + 21 + 21b — session-level noise:
+--                         prefetch + ua_bot)
 --     → events_human (view: events minus bots minus noise)
 --     → all RPCs + snapshot use events_human
 --
@@ -60,10 +64,9 @@
 --   Targets: classic SEO crawlers, monitoring services, bulk scrapers
 --   that hammer the site over a day. Captures high-volume patterns.
 --
--- Layer 2 — noise_sessions (Sprint 20 + 21):
---   Three sub-patterns, evaluated in order. Each populated row has a
---   `reason` column ("prefetch:...", "ua_bot:<name>", "instant_close:...")
---   for forensic traceability. Patterns:
+-- Layer 2 — noise_sessions (Sprint 20 + 21, trimmed in Sprint 21b):
+--   Two sub-patterns. Each populated row has a `reason` column
+--   ("prefetch:...", "ua_bot:<name>") for forensic traceability.
 --
 --   (a) prefetch — Sprint 20 (5 conditions, ALL required):
 --       • referrer_hostname IS NULL
@@ -88,21 +91,17 @@
 --       UA — verified by sampling on 2026-05-15 audit (zero false
 --       positives).
 --
---   (c) instant_close — Sprint 21 (3 conditions, ALL required):
---       • COUNT(pageview)        = 1
---       • COUNT(engagement_tick) = 0
---       • COUNT(scroll_depth)    = 0
---       • duration < 5 seconds
---       Plus: device_type != 'server'.
---       Targets: accidental taps / immediate back-button. The <5s
---       threshold is deliberately conservative (the 5-10s band is the
---       safety margin where a quick human decision can occur).
+--   (c) instant_close — REMOVED in Sprint 21b. Those sessions are real
+--       humans pogo-sticking from search results back to the SERP,
+--       which Cooked already measures in pogo_rates_for_period() (a
+--       NavBoost-style page-quality signal). Filtering them upstream
+--       would silently destroy that metric. Do not re-introduce.
 --
--- Why a real human survives ALL filters:
+-- Why a real human survives both filters:
 --   - Search/referral visitors have referrer → survive (a).
---   - Readers emit at least one tick or scroll → survive (a) and (c).
---   - Multi-page visitors have pageview ≥ 2 → survive (a) and (c).
---   - Visitors staying ≥ 10s on the page survive (a); ≥ 5s survives (c).
+--   - Readers emit at least one tick or scroll → survive (a).
+--   - Multi-page visitors have pageview ≥ 2 → survive (a).
+--   - Visitors staying ≥ 10s on the page survive (a).
 --   - Real browsers (Chrome/Safari/Firefox/Edge/Mobile Safari) never
 --     match any (b) UA pattern.
 --
@@ -148,24 +147,29 @@ revoke execute on function public.refresh_bot_fingerprints() from authenticated;
 grant  execute on function public.refresh_bot_fingerprints() to service_role;
 
 
--- ---------- noise_sessions (Sprint 20 + 21) ----------------------
+-- ---------- noise_sessions (Sprint 20 + 21 + 21b) ----------------
 --
--- Materialised list of sessions matching one of the three noise
--- patterns (prefetch / ua_bot / instant_close). Refreshed at the start
--- of refresh_seo_url_snapshot() alongside refresh_bot_fingerprints(),
--- so events_human is computed as a fast set difference rather than a
+-- Materialised list of sessions matching one of the two noise
+-- patterns (prefetch / ua_bot). Refreshed at the start of
+-- refresh_seo_url_snapshot() alongside refresh_bot_fingerprints(), so
+-- events_human is computed as a fast set difference rather than a
 -- recursive subquery on every read.
 --
--- Sprint 20 introduced this table under the name `prefetch_sessions`
--- with the (a) pattern only. Sprint 21 renamed it to `noise_sessions`
--- and added the (b) ua_bot and (c) instant_close patterns. The
--- `reason` column tracks which pattern flagged each session.
+-- History:
+--   • Sprint 20 introduced this table as `prefetch_sessions` with the
+--     (a) pattern only.
+--   • Sprint 21 renamed it to `noise_sessions` and added (b) ua_bot
+--     and (c) instant_close.
+--   • Sprint 21b removed (c) instant_close — those sessions are real
+--     human pogo-sticks that pogo_rates_for_period() counts as a
+--     page-quality signal; filtering them upstream would have
+--     silently destroyed that metric.
+-- The `reason` column tracks which pattern flagged each session.
 --
--- 2026-05-15 observed baseline (10-day window, after rename):
---   prefetch      : 6 768 sessions
---   ua_bot        :   834 sessions
---   instant_close :   352 sessions
---   total (after deduplication via ON CONFLICT) : ~7 950 sessions
+-- 2026-05-15 observed baseline (10-day window, post Sprint 21b):
+--   prefetch : 6 768 sessions
+--   ua_bot   :   834 sessions
+--   total (after deduplication via ON CONFLICT) : ~7 600 sessions
 --
 -- There is significant overlap between Layer 1 (bot_fingerprints) and
 -- pattern (b) here — same crawler can match both. That's fine, defence
@@ -302,22 +306,9 @@ begin
     )
   on conflict (session_id) do nothing;
 
-  -- Pattern (c) — instant_close (Sprint 21). 4 conditions, ALL required.
-  -- Catches accidental taps / immediate back-button. <5s deliberately
-  -- conservative (5-10s is the safety band).
-  insert into public.noise_sessions (session_id, reason)
-  select
-    session_id,
-    'instant_close: 1 pv + 0 tick + 0 scroll + <5s'
-  from public.events
-  where session_id is not null
-    and device_type is distinct from 'server'
-  group by session_id
-  having count(*) filter (where name = 'pageview')        = 1
-     and count(*) filter (where name = 'engagement_tick') = 0
-     and count(*) filter (where name = 'scroll_depth')    = 0
-     and extract(epoch from (max(occurred_at) - min(occurred_at))) < 5
-  on conflict (session_id) do nothing;
+  -- Pattern (c) instant_close was added in Sprint 21 then immediately
+  -- removed in Sprint 21b — those sessions are pogo-stick signals
+  -- consumed by pogo_rates_for_period(), not noise. Do not re-add.
 end;
 $$;
 
@@ -617,8 +608,7 @@ declare
 begin
   -- Refresh both filter layers before rebuilding snapshot.
   -- bot_fingerprints (Sprint 17): anonymous_id-level crawlers.
-  -- noise_sessions (Sprint 20 + 21): session-level prefetch + ua_bot
-  --                                  + instant_close.
+  -- noise_sessions (Sprint 20 + 21 + 21b): session-level prefetch + ua_bot.
   perform public.refresh_bot_fingerprints();
   perform public.refresh_noise_sessions();
 
