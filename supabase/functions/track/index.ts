@@ -211,8 +211,28 @@ Deno.serve(async (req) => {
   const ip = clientIp(req);
   const ua = req.headers.get("user-agent") ?? "";
   const country = clientCountry(req);
-  const anonymous_id = await hashAnonymous(ip, ua);
+  // Sprint 22 — prefer browser-supplied anonymous_id (stable localStorage UUID)
+  // over the server-side IP hash. The IP hash was unreliable because Wix Velo
+  // routes each request through a different serverless worker (different outbound
+  // IP per request → different hash per engagement_tick → 6+ anonymous_ids per
+  // session for 93 % of sessions).
+  // Validation: accept any alphanumeric string 8–128 chars (covers our rid()
+  // format and standard UUIDs). If absent or invalid, fall back to the hash so
+  // old events already stored remain consistent.
+  const serverHash = await hashAnonymous(ip, ua);
   const { device_type, os, browser } = parseUserAgent(ua);
+
+  function resolveAnonId(browserAid: unknown): string {
+    if (
+      typeof browserAid === "string" &&
+      browserAid.length >= 8 &&
+      browserAid.length <= 128 &&
+      /^[a-zA-Z0-9_-]+$/.test(browserAid)
+    ) {
+      return browserAid;
+    }
+    return serverHash;
+  }
 
   const now = new Date().toISOString();
   const rows = [];
@@ -224,7 +244,7 @@ Deno.serve(async (req) => {
     if (!ALLOWED_EVENTS.has(name)) continue;
 
     rows.push({
-      anonymous_id,
+      anonymous_id: resolveAnonId(e?.anonymous_id),
       session_id,
       name,
       url: s(e.url, 2048),
