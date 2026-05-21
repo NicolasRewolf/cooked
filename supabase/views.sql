@@ -1409,13 +1409,24 @@ grant  execute on function public.cta_breakdown_for_path(text, int) to service_r
 -- is plugged into a 2nd tracker (different first_seen) or after a
 -- retention purge that drops old events.
 
+-- Sprint 29 (2026-05-21) — guard against clock-skewed events.
+-- 13 events discovered with occurred_at=2025-05-20 (one full year off)
+-- but received_at=2026-05-21 09:26 → broken browser system clock or
+-- bot forging timestamps. Without the BETWEEN guard,
+-- tracker_first_seen_global() returned 2025-05-20 instead of the real
+-- deploy date 2026-05-06, breaking pro-rating math in the seo agent.
+-- Tolerance ±2d absorbs legitimate timezone drift / queued offline
+-- events without trusting events older than the server window.
 create or replace function public.tracker_first_seen_global()
 returns timestamptz
 language sql
 stable
 set search_path = public, pg_catalog
 as $$
-  select min(occurred_at) from public.events_human;
+  select min(occurred_at)
+  from public.events_human
+  where occurred_at between received_at - interval '2 days'
+                       and received_at + interval '2 days';
 $$;
 
 revoke execute on function public.tracker_first_seen_global() from public;
@@ -1992,3 +2003,39 @@ grant  execute on function public.classify_channel(text,text,text,text) to servi
 --   - refresh_seo_url_snapshot   : 0 3 * * *
 --   - run_rpc_contract_tests     : 30 3 * * *
 --   - purge_old_events_monthly   : 0 4 1 * *
+
+
+-- ============================================================
+-- Sprint 29 (2026-05-21) — audit hardening
+-- ============================================================
+-- Findings d'un audit multi-agent (10 personas indépendantes). Tous
+-- les fixes vérifiés et déployés en prod le 2026-05-21 :
+--
+--   1. tracker_first_seen_global() retournait 2025-05-20 (event-fantôme
+--      avec horloge client cassée d'1 an). Fix : guard ±2j entre
+--      occurred_at et received_at. Cf section 6.5 ci-dessus.
+--
+--   2. seo_pages_overview et url_decode étaient anon-executable
+--      (oversight des Sprint 13ter / 17). Revoked anon, authenticated,
+--      public — granted service_role uniquement.
+
+revoke execute on function public.seo_pages_overview(timestamptz, timestamptz) from public;
+revoke execute on function public.seo_pages_overview(timestamptz, timestamptz) from anon;
+revoke execute on function public.seo_pages_overview(timestamptz, timestamptz) from authenticated;
+grant  execute on function public.seo_pages_overview(timestamptz, timestamptz) to service_role;
+
+revoke execute on function public.url_decode(text) from public;
+revoke execute on function public.url_decode(text) from anon;
+revoke execute on function public.url_decode(text) from authenticated;
+grant  execute on function public.url_decode(text) to service_role;
+
+-- 3. form_submit retiré de ALLOWED_EVENTS de l'Edge `track`. La forge
+--    via /track public est désormais rejetée (HTTP 400 no_valid_events,
+--    vérifié par curl). Voir supabase/functions/track/index.ts L42-82.
+--
+-- 4. À investiguer (Sprint 30) : bots Adwords/Display WebView Android
+--    qui passent à travers events_human (4 sessions identifiées sur
+--    2026-05-19 → 21, ~88 anchor clicks sur /). Pattern : UA contient
+--    "wv)" + country='IE' + referrer ad-tech (safeframe.googlesyndication,
+--    doubleclick.net, atlas.taboolanews) + >5 anchor_clicks/session.
+--    À ajouter dans refresh_noise_sessions().

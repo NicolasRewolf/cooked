@@ -57,13 +57,12 @@ const ALLOWED_EVENTS = new Set([
                        // /honoraires-rendez-vous (i.e. "Je prends RDV",
                        // "Contactez-nous", "Honoraires & RDV", …)
   // Phase 2 — form submission (Sprint 18):
-  "form_submit",       // Wix Form successfully submitted (server-side
-                       // signal). Inserted DIRECTLY into `events` by the
-                       // `form-webhook` Edge Function (POST from Wix
-                       // Automations). The `track` endpoint never
-                       // receives this event from the browser — it's
-                       // kept in ALLOWED_EVENTS as a defensive
-                       // safety net only.
+  // ⚠️ form_submit is intentionally NOT listed here (Sprint 29 hardening).
+  // It is inserted server-to-server via the dedicated `form-webhook` Edge
+  // Function (POST from Wix Automations, secret-gated). Allowing the
+  // browser-facing `/track` endpoint to accept it would let anyone forge
+  // conversions by curl'ing the public endpoint — confirmed exploit path
+  // identified during the 2026-05-21 audit. Reject silently below.
   // Phase 3 — Wix anchor-menu tracking (Sprint 19):
   "cta_anchor_click",  // click on an in-page anchor (sticky index, FAQ
                        // jump, "back to top"). Captures three shapes:
