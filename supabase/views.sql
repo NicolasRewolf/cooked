@@ -48,23 +48,33 @@
 -- ============================================================
 -- 0. Bot + noise filtering — centralized detection + filtered view
 -- ============================================================
--- Architecture:
---   events (raw, unchanged)
---     → bot_fingerprints (Sprint 17 — anonymous_id-level crawler ban)
---     → noise_sessions   (Sprint 20 + 21 + 21b — session-level noise:
---                         prefetch + ua_bot)
---     → events_human (view: events minus bots minus noise)
---     → all RPCs + snapshot use events_human
+-- Architecture (Sprint 24 — serial pipeline):
 --
--- Two complementary detection layers — both must pass for an event to
--- appear in events_human.
+--   events (raw, unchanged)
+--     ↓ Layer 1 — refresh_bot_fingerprints()
+--   events_no_bots (view: events minus bot_fingerprints)
+--     ↓ Layer 2 — refresh_noise_sessions()
+--   noise_sessions (materialised from events_no_bots)
+--     ↓
+--   events_human (view: events_no_bots minus noise_sessions)
+--     ↓
+--   all RPCs + snapshot
+--
+-- Serial, not parallel: noise_sessions is built from events_no_bots,
+-- so it never re-processes sessions already eliminated by Layer 1.
+-- Before Sprint 24, both filters were applied in parallel directly on
+-- events, causing bot sessions to appear in noise_sessions as well —
+-- inflating its count and creating redundancy. With the serial
+-- pipeline, noise_sessions is a clean count of behavioral noise only.
 --
 -- Layer 1 — bot_fingerprints (Sprint 17):
 --   Rule: anonymous_id with >20 pageviews/day AND 0 scroll events.
 --   Targets: classic SEO crawlers, monitoring services, bulk scrapers
 --   that hammer the site over a day. Captures high-volume patterns.
+--   Keyed on anonymous_id.
 --
--- Layer 2 — noise_sessions (Sprint 20 + 21, trimmed in Sprint 21b):
+-- Layer 2 — noise_sessions (Sprint 20 + 21, trimmed in Sprint 21b,
+--            now running on events_no_bots since Sprint 24):
 --   Two sub-patterns. Each populated row has a `reason` column
 --   ("prefetch:...", "ua_bot:<name>") for forensic traceability.
 --
@@ -89,7 +99,9 @@
 --       curl/, wget, python, go-http, node-fetch, httpclient, java/.
 --       Every entry is technically impossible in a real human browser
 --       UA — verified by sampling on 2026-05-15 audit (zero false
---       positives).
+--       positives). Runs on events_no_bots (Sprint 24) so it only
+--       catches UA-bots not already covered by Layer 1's behavioral
+--       detection.
 --
 --   (c) instant_close — REMOVED in Sprint 21b. Those sessions are real
 --       humans pogo-sticking from search results back to the SERP,
@@ -107,6 +119,13 @@
 --
 -- Both refresh functions are called automatically at the start of
 -- refresh_seo_url_snapshot(), so pg_cron only needs one entry.
+--
+-- Sprint 24 observed baseline (2026-05-17, 12-day window):
+--   events_raw      : 123 594
+--   events_no_bots  : 109 404  (−14 190 via bot_fingerprints)
+--   noise_sessions  :   2 960  (was 8 456 before Sprint 24 — 5 496
+--                               were bot sessions double-counted)
+--   events_human    : 101 547  (−7 857 via noise_sessions)
 
 create table if not exists public.bot_fingerprints (
   anonymous_id  text primary key,
@@ -145,6 +164,21 @@ revoke execute on function public.refresh_bot_fingerprints() from public;
 revoke execute on function public.refresh_bot_fingerprints() from anon;
 revoke execute on function public.refresh_bot_fingerprints() from authenticated;
 grant  execute on function public.refresh_bot_fingerprints() to service_role;
+
+
+-- ---------- events_no_bots (Sprint 24) ---------------------------
+-- Intermediate view: events minus bot_fingerprints.
+-- refresh_noise_sessions() reads from this view so it never
+-- processes sessions already caught by Layer 1.
+
+create or replace view public.events_no_bots
+with (security_invoker = true) as
+select e.*
+from public.events e
+where not exists (
+  select 1 from public.bot_fingerprints b
+  where b.anonymous_id = e.anonymous_id
+);
 
 
 -- ---------- noise_sessions (Sprint 20 + 21 + 21b) ----------------
@@ -193,11 +227,12 @@ begin
   truncate public.noise_sessions;
 
   -- Pattern (a) — prefetch (Sprint 20). 5 conditions, ALL required.
+  -- Runs on events_no_bots (Sprint 24) — crawlers already excluded.
   insert into public.noise_sessions (session_id, reason)
   select
     session_id,
     'prefetch: 0 ref + 0 tick + 0 scroll + 1 pv + <10s'
-  from public.events
+  from public.events_no_bots
   where session_id is not null
     and device_type is distinct from 'server'
   group by session_id
@@ -210,8 +245,8 @@ begin
 
   -- Pattern (b) — ua_bot (Sprint 21). Explicit User-Agent ILIKE list.
   -- Every entry verified to be impossible in a real human browser UA.
-  -- The CASE/WHEN computes a per-session reason tag identifying which
-  -- bot family matched, kept for forensic analysis.
+  -- Runs on events_no_bots (Sprint 24) — catches UA-bots not covered
+  -- by Layer 1 (behavioral crawler detection via anonymous_id).
   insert into public.noise_sessions (session_id, reason)
   select distinct
     session_id,
@@ -259,7 +294,7 @@ begin
         else 'unknown'
       end
     )
-  from public.events
+  from public.events_no_bots
   where session_id is not null
     and device_type is distinct from 'server'
     and user_agent is not null
@@ -318,17 +353,14 @@ revoke execute on function public.refresh_noise_sessions() from authenticated;
 grant  execute on function public.refresh_noise_sessions() to service_role;
 
 
+-- events_human (Sprint 24 — serial pipeline):
+-- Stage 2 of the serial filter: events_no_bots minus noise_sessions.
 -- security_invoker = true: enforce caller's RLS, not creator's (Postgres 15+).
--- Without this, the view runs as SECURITY DEFINER and the linter flags it.
 create or replace view public.events_human
 with (security_invoker = true) as
 select e.*
-from public.events e
+from public.events_no_bots e
 where not exists (
-  select 1 from public.bot_fingerprints b
-  where b.anonymous_id = e.anonymous_id
-)
-and not exists (
   select 1 from public.noise_sessions n
   where n.session_id = e.session_id
 );
@@ -1295,9 +1327,22 @@ grant  execute on function public.outbound_destinations_for_path(text, int) to s
 -- difference between "ambient footer phone CTA" and "qualified body CTA".
 -- Enum values are exact:
 --    cta_type  ∈ {'phone', 'email', 'booking'}
---    placement ∈ {'header', 'footer', 'body'}
+--    placement ∈ {'header', 'footer', 'body', 'sticky'}
 -- One row per distinct anchor (option (c) of the contract — the caller
 -- can re-aggregate to (cta_type, placement) if needed).
+--
+-- Sprint 23 (2026-05-16) — added cta_anchor_click:
+--   Two anchor CTAs on expertise pages (TOC sticky sidebar + sticky bar
+--   mobile) were invisible to this RPC because their placement is 'sticky',
+--   not 'header'|'footer'|'body'. Fixed by:
+--     1. Adding 'sticky' to the placement enum (comment + SEO wrapper).
+--     2. Including cta_anchor_click in the WHERE clause, but only mapping
+--        the two RDV-intent labels to cta_type='booking'. Navigation anchors
+--        (section jumps like "Défendre vos intérêts") are explicitly excluded
+--        via the null branch of the CASE — they are NOT conversion CTAs.
+--   Known RDV anchor labels (stable, set via aria-label in Wix Studio):
+--     • "Je prends rendez-vous — table des matières"  → TOC, all devices
+--     • "Demander un RDV — formulaire expertise"       → sticky bar, tab+mobile
 
 create or replace function public.cta_breakdown_for_path(
   path      text,
@@ -1319,11 +1364,17 @@ as $$
         when 'cta_phone_click'   then 'phone'
         when 'cta_email_click'   then 'email'
         when 'cta_booking_click' then 'booking'
+        when 'cta_anchor_click'  then
+          case e.props->>'anchor'
+            when 'Je prends rendez-vous — table des matières' then 'booking'
+            when 'Demander un RDV — formulaire expertise'      then 'booking'
+            else null  -- navigation anchors (section jumps) → excluded
+          end
       end                                                 as cta_type,
       coalesce(nullif(e.props->>'placement', ''), 'body') as placement,
       coalesce(e.props->>'anchor', '')                    as anchor
     from public.events_human e
-    where e.name in ('cta_phone_click', 'cta_email_click', 'cta_booking_click')
+    where e.name in ('cta_phone_click', 'cta_email_click', 'cta_booking_click', 'cta_anchor_click')
       and e.path = cta_breakdown_for_path.path
       and e.occurred_at >= now() - (cta_breakdown_for_path.days_back * interval '1 day')
   )
@@ -1642,3 +1693,302 @@ $$;
 
 grant execute on function public.engagement_density_for_path(text, int) to service_role;
 revoke execute on function public.engagement_density_for_path(text, int) from anon, authenticated;
+
+
+-- ---------- 6.X refresh_pipeline_health (Sprint 25 — 2026-05-17) --
+-- Single-row health endpoint surfacing the 3 silent-failure modes
+-- identified in the AMDEC consolidation:
+--   1. pg_cron job failed or paused (refresh_seo_url_snapshot)
+--   2. seo_url_snapshot stale (snapshot age > 25h)
+--   3. events ingestion stopped (no event in last hour)
+--
+-- Consumed by Seo at the start of each pipeline run. If
+-- status='critical', Seo should abort the diagnostic run rather than
+-- producing recommendations on stale or absent data.
+--
+-- Thresholds:
+--   snapshot_age > 25h               → degraded
+--   snapshot_age > 36h               → critical
+--   cron_last_status != 'succeeded'  → critical
+--   last_event_age > 60min           → degraded
+--   last_event_age > 6h              → critical
+
+create or replace function public.refresh_pipeline_health()
+returns table (
+  status                  text,
+  snapshot_refreshed_at   timestamptz,
+  snapshot_age_hours      numeric,
+  cron_last_status        text,
+  cron_last_run           timestamptz,
+  cron_age_hours          numeric,
+  last_event_at           timestamptz,
+  last_event_age_minutes  numeric,
+  events_last_60min       bigint,
+  issues                  text[]
+)
+language plpgsql
+stable
+security definer
+set search_path = public, cron, pg_catalog
+as $$
+declare
+  v_snapshot_refreshed_at  timestamptz;
+  v_snapshot_age_hours     numeric;
+  v_cron_last_status       text;
+  v_cron_last_run          timestamptz;
+  v_cron_age_hours         numeric;
+  v_last_event_at          timestamptz;
+  v_last_event_age_minutes numeric;
+  v_events_last_60min      bigint;
+  v_issues                 text[] := array[]::text[];
+  v_status                 text   := 'healthy';
+begin
+  -- 1. Snapshot freshness
+  select max(refreshed_at) into v_snapshot_refreshed_at
+  from public.seo_url_snapshot;
+
+  v_snapshot_age_hours := extract(epoch from (now() - v_snapshot_refreshed_at)) / 3600;
+
+  if v_snapshot_refreshed_at is null then
+    v_issues := v_issues || 'snapshot_never_refreshed';
+    v_status := 'critical';
+  elsif v_snapshot_age_hours > 36 then
+    v_issues := v_issues || format('snapshot_stale: %.1fh old', v_snapshot_age_hours);
+    v_status := 'critical';
+  elsif v_snapshot_age_hours > 25 then
+    v_issues := v_issues || format('snapshot_aging: %.1fh old', v_snapshot_age_hours);
+    if v_status = 'healthy' then v_status := 'degraded'; end if;
+  end if;
+
+  -- 2. Cron last run status
+  select d.status, d.start_time
+    into v_cron_last_status, v_cron_last_run
+  from cron.job j
+  join cron.job_run_details d on d.jobid = j.jobid
+  where j.jobname = 'refresh_seo_url_snapshot'
+  order by d.start_time desc
+  limit 1;
+
+  v_cron_age_hours := extract(epoch from (now() - v_cron_last_run)) / 3600;
+
+  if v_cron_last_run is null then
+    v_issues := v_issues || 'cron_no_run_history';
+    v_status := 'critical';
+  elsif v_cron_last_status is distinct from 'succeeded' then
+    v_issues := v_issues || format('cron_last_failed: status=%s', coalesce(v_cron_last_status, 'NULL'));
+    v_status := 'critical';
+  elsif v_cron_age_hours > 25 then
+    v_issues := v_issues || format('cron_overdue: %.1fh since last run', v_cron_age_hours);
+    v_status := 'critical';
+  end if;
+
+  -- 3. Ingestion freshness
+  select max(occurred_at) into v_last_event_at
+  from public.events;
+
+  v_last_event_age_minutes := extract(epoch from (now() - v_last_event_at)) / 60;
+
+  select count(*) into v_events_last_60min
+  from public.events
+  where occurred_at >= now() - interval '60 minutes';
+
+  if v_last_event_at is null then
+    v_issues := v_issues || 'no_events_ever';
+    v_status := 'critical';
+  elsif v_last_event_age_minutes > 360 then  -- 6h
+    v_issues := v_issues || format('ingestion_stopped: %.0fmin since last event', v_last_event_age_minutes);
+    v_status := 'critical';
+  elsif v_last_event_age_minutes > 60 then
+    v_issues := v_issues || format('ingestion_quiet: %.0fmin since last event', v_last_event_age_minutes);
+    if v_status = 'healthy' then v_status := 'degraded'; end if;
+  end if;
+
+  return query select
+    v_status,
+    v_snapshot_refreshed_at,
+    round(v_snapshot_age_hours, 2),
+    v_cron_last_status,
+    v_cron_last_run,
+    round(v_cron_age_hours, 2),
+    v_last_event_at,
+    round(v_last_event_age_minutes, 1),
+    v_events_last_60min,
+    v_issues;
+end;
+$$;
+
+revoke execute on function public.refresh_pipeline_health() from public;
+revoke execute on function public.refresh_pipeline_health() from anon;
+revoke execute on function public.refresh_pipeline_health() from authenticated;
+grant  execute on function public.refresh_pipeline_health() to service_role;
+
+
+-- ============================================================
+-- Sprint 26 (2026-05-17) — Tier 2 AMDEC consolidation
+-- ============================================================
+-- 6 actions issues du Tier 2 de l'AMDEC :
+--   1. revoke select on filter surfaces from anon/authenticated
+--   2. bot_fingerprints reason enrichi (pv, distinct paths)
+--   3. cta_anchor_label_map table + cta_breakdown_for_path en JOIN
+--   4. snapshot_pages_export returns table(...) explicite
+--   5. tracker version hash (props._v) + tracker_version_distribution()
+--   6. (escaladé Seo) — assertion bounce_rate côté src/lib/cooked.ts
+--
+-- Voir la migration sprint26_* dans Supabase pour le SQL complet.
+-- Notable :
+--   - cta_anchor_label_map est administrable sans migration
+--   - cta_anchor_labels_unmapped expose les labels non-classés (audit)
+--   - tracker_version_distribution(hours_back) détecte un republish raté
+
+-- ---------- 6.Y cta_anchor_label_map (Sprint 26) ----------------
+-- Table de référence pour le mapping cta_anchor_click → cta_type.
+-- Remplace le CASE/WHEN hardcoded de cta_breakdown_for_path Sprint 23.
+-- Administrable via INSERT/UPDATE sans migration.
+create table if not exists public.cta_anchor_label_map (
+  label       text primary key,
+  cta_type    text not null check (cta_type in ('phone', 'email', 'booking')),
+  notes       text,
+  created_at  timestamptz default now()
+);
+alter table public.cta_anchor_label_map enable row level security;
+revoke select on public.cta_anchor_label_map from anon, authenticated;
+grant  select, insert, update, delete on public.cta_anchor_label_map to service_role;
+
+-- ---------- 6.Z tracker_version_distribution (Sprint 26) --------
+-- Tracker injecte props._v = 'sprintXX' depuis Sprint 26. Cette RPC
+-- expose la distribution des versions vues sur N heures pour valider
+-- qu'un republish Wix a bien pris.
+create or replace function public.tracker_version_distribution(hours_back int default 24)
+returns table (
+  version            text,
+  events             bigint,
+  sessions           bigint,
+  first_seen         timestamptz,
+  last_seen          timestamptz,
+  share_pct          numeric
+)
+language sql
+stable
+security definer
+set search_path = public, pg_catalog
+as $$
+  with versioned as (
+    select
+      coalesce(nullif(e.props->>'_v', ''), 'legacy_pre_sprint26') as version,
+      e.session_id,
+      e.occurred_at
+    from public.events_human e
+    where e.occurred_at >= now() - (tracker_version_distribution.hours_back * interval '1 hour')
+      and e.device_type is distinct from 'server'
+  ),
+  totals as (select count(*)::numeric as total from versioned)
+  select
+    v.version,
+    count(*)::bigint,
+    count(distinct v.session_id)::bigint,
+    min(v.occurred_at),
+    max(v.occurred_at),
+    round(100.0 * count(*)::numeric / nullif((select total from totals), 0), 2)
+  from versioned v
+  group by v.version
+  order by 2 desc;
+$$;
+revoke execute on function public.tracker_version_distribution(int) from public, anon, authenticated;
+grant  execute on function public.tracker_version_distribution(int) to service_role;
+
+
+-- ============================================================
+-- Sprint 28 (2026-05-21) — classify_channel() utility
+-- ============================================================
+-- Diagnosis (2026-05-21): the `referral` channel as historically
+-- computed in ad-hoc analyses (CASE WHEN ref ILIKE ...) was 21 % CR
+-- on n=471 sessions/7d, looking like a hidden goldmine. Drilling
+-- down showed 461 / 471 of those "referrals" had
+-- referrer_hostname = www.jplouton-avocat.fr — self-referrals
+-- produced by Wix Studio's hard navigations dropping sessionStorage
+-- between pages. The "referral" channel was therefore mostly an
+-- artefact of session breakage, not an acquisition source.
+--
+-- Sprint 28 tracker change persists session_id in localStorage to
+-- prevent the breakage going forward. This SQL function centralises
+-- the channel taxonomy so every consumer (RPCs, ad-hoc queries,
+-- the SEO agent wrappers) uses the same rules — including the
+-- self-referral filter (returns NULL).
+--
+-- Returned labels:
+--   'paid'           — utm_medium in (cpc/paid/ppc) or google ads utm_source
+--   'organic_ai'     — referrer is claude.ai, perplexity.ai, chatgpt.com,
+--                      gemini.google.com, copilot.microsoft.com
+--   'organic_google' — referrer is google.* (and not paid)
+--   'organic_other'  — yahoo, ecosia, brave, lilo, duckduckgo, qwant, bing
+--   'social'         — facebook, instagram, linkedin, t.co, threads, tiktok, youtube
+--   'direct'         — no referrer
+--   'referral'       — any other third-party host
+--   NULL             — self-referral (referrer matches self_host).
+--                      Callers should exclude NULLs from acquisition counts
+--                      and instead trust the first event of the session.
+
+create or replace function public.classify_channel(
+  ref         text,
+  utm_source  text,
+  utm_medium  text,
+  self_host   text default 'jplouton-avocat.fr'
+) returns text
+language sql immutable
+set search_path = public, pg_catalog
+as $$
+  select case
+    -- Self-referral: not an acquisition channel
+    when ref ilike '%' || self_host || '%' then null
+    -- Paid first (UTM beats referrer)
+    when lower(utm_medium) in ('cpc','paid','ppc')
+      or lower(utm_source) like '%google%ads%' then 'paid'
+    -- AI search referrers (separate bucket — emerging signal)
+    when ref ilike '%claude.ai%' or ref ilike '%perplexity.ai%'
+      or ref ilike '%chatgpt.com%' or ref ilike '%chat.openai.com%'
+      or ref ilike '%gemini.google.com%' or ref ilike '%copilot.microsoft.com%'
+      then 'organic_ai'
+    -- Google organic
+    when ref ilike '%google.%' then 'organic_google'
+    -- Other search engines
+    when ref ilike '%yahoo.%' or ref ilike '%ecosia.org%' or ref ilike '%brave.com%'
+      or ref ilike '%lilo.org%' or ref ilike '%duckduckgo.%' or ref ilike '%qwant.%'
+      or ref ilike '%bing.%'
+      then 'organic_other'
+    -- Social
+    when ref ilike '%facebook.%' or ref ilike '%instagram.%' or ref ilike '%linkedin.%'
+      or ref ilike '%t.co%' or ref ilike '%threads.%' or ref ilike '%tiktok.%'
+      or ref ilike '%youtube.%'
+      then 'social'
+    -- Direct
+    when ref is null or ref = '' then 'direct'
+    -- Anything else
+    else 'referral'
+  end;
+$$;
+
+revoke execute on function public.classify_channel(text,text,text,text) from public, anon, authenticated;
+grant  execute on function public.classify_channel(text,text,text,text) to service_role;
+
+-- Quick smoke test (run manually after apply):
+-- SELECT classify_channel('www.jplouton-avocat.fr', null, null) AS expect_null;
+-- SELECT classify_channel('www.google.com', null, null)         AS expect_organic_google;
+-- SELECT classify_channel('www.google.com', 'google', 'cpc')    AS expect_paid;
+-- SELECT classify_channel('claude.ai', null, null)              AS expect_organic_ai;
+-- SELECT classify_channel(null, null, null)                     AS expect_direct;
+
+
+-- ============================================================
+-- Sprint 27 (2026-05-17) — Tier 3 AMDEC consolidation
+-- ============================================================
+-- 2 actions Tier 3 livrées :
+--   1. Contract test SQL nightly (table rpc_health + run_rpc_contract_tests +
+--      latest_rpc_health + pg_cron 03:30 UTC). Couvre risque #1 criticité 100.
+--   2. Politique de rétention events (purge_old_events + pg_cron 1er du mois
+--      à 04:00 UTC, suppression > 400 jours). Couvre risque #11.
+--
+-- Voir migrations sprint27_* pour le SQL complet.
+-- Note : tous les jobs pg_cron actifs (vérifier avec `SELECT * FROM cron.job`):
+--   - refresh_seo_url_snapshot   : 0 3 * * *
+--   - run_rpc_contract_tests     : 30 3 * * *
+--   - purge_old_events_monthly   : 0 4 1 * *

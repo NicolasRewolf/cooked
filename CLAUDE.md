@@ -151,6 +151,31 @@ typique : 5-15 min selon le niveau de réflexion technique nécessaire.
 local "au cas où" — tu vas créer du code mort ou pire, des conflits
 au moment où l'agent Seo aura sa propre approche.
 
+### Coordination drift-guards (Sprint 26 round 3 — 2026-05-17)
+
+Depuis le Sprint 26, l'agent Seo expose des **drift-guards** dans son
+wrapper `src/lib/cooked.ts` qui throw si une RPC Cooked retourne une
+valeur hors de la range attendue :
+
+- `parsePageSnapshotRow` : throw si `bounce_rate_*` > 100.0001 (attend 0..100)
+- `fetchSiteContext` : throw si `global_bounce_rate_28d` > 1.0001 (attend 0..1)
+- `sanitizeCwv()` : défense contre LCP > 60s
+- Tolérance ±0.0001 absorbe le rounding Postgres
+
+**Protocole d'harmonisation des unités** (ne JAMAIS unilatéralement
+changer une unité Cooked-side sans suivre ce protocole) :
+
+1. Cooked annonce dans le chat Nicolas : "je passe `<rpc>.<col>` de
+   unité X à unité Y, jj/mm prévu"
+2. Nicolas relaie à l'agent Seo
+3. Seo désactive le guard correspondant (commit dédié, branch ou
+   feature flag — à sa discrétion)
+4. Seo confirme à Nicolas → Nicolas relaie à Cooked → Cooked déploie
+5. Seo re-active le guard dans la nouvelle unité et bump le smoke test
+
+Le smoke Seo bloque la pipeline si un guard saute. C'est exactement
+le filet qu'on a voulu — pas un bug, une feature.
+
 ---
 
 ## Méthodologie qui marche (Sprints 12-13 retex)
@@ -232,6 +257,77 @@ RPCs publiées (contrat stable consommé par Seo) :
 Pre-deployment date "tracker live" : 2026-05-05.
 First end-to-end issue diagnostiquée : 2026-05-07
 (`que-se-passe-t-il-après-une-garde-à-vue` #30 côté Seo).
+
+---
+
+## 🚨 RÈGLE ABSOLUE — Timezone Paris partout, date affichée explicite
+
+Le serveur Postgres stocke `occurred_at` en UTC. Le client (Nicolas, Me Plouton)
+raisonne en Paris. Sans précaution, les events de 00:00–01:59 Paris (= 22:00–
+23:59 UTC la veille) sont rattachés à la veille au lieu d'aujourd'hui — ce
+qui fait disparaître silencieusement des conversions du compte du jour.
+
+**Règles dures :**
+
+1. **Filtrage par date côté SQL** : toujours `(occurred_at AT TIME ZONE
+   'Europe/Paris')::date`, jamais `occurred_at::date`. Le bug s'appelle
+   "fenêtre glissante UTC = perte de 2h chaque matin".
+
+   ```sql
+   -- CORRECT
+   WHERE (occurred_at AT TIME ZONE 'Europe/Paris')::date = (now() AT TIME ZONE 'Europe/Paris')::date
+
+   -- INTERDIT
+   WHERE occurred_at::date = current_date
+   ```
+
+2. **Date couverte explicitée dans la réponse** : ne jamais écrire "aujourd'hui"
+   tout court. Toujours préciser le jour calendaire (ex: "lundi 18 mai 2026")
+   pour qu'une réponse lue 6h après reste lisible.
+
+3. **Heures affichées en Paris** : `to_char(occurred_at AT TIME ZONE
+   'Europe/Paris', 'HH24:MI')` quand on liste des events. Jamais l'heure UTC
+   sauf si explicitement demandé.
+
+**Pourquoi cette règle existe :** le 2026-05-18 j'ai indiqué à Nicolas "1
+formulaire aujourd'hui" alors qu'un 2e formulaire venait d'arriver à 08:58
+Paris et que ma requête tournait encore en mode "aujourd'hui UTC = hier
+Paris". Frustration justifiée.
+
+---
+
+## 🚨 RÈGLE ABSOLUE — Toujours requêter `events_human`, jamais `events`
+
+**Pour TOUTE requête ad-hoc demandée par Nicolas, je tape `FROM events_human`,
+pas `FROM events`.**
+
+- `events` (table brute) contient les bots et le bruit non filtré → comptes
+  gonflés de ~17 % (parfois plus selon les périodes).
+- `events_human` (vue) = `events` − `bot_fingerprints` − `noise_sessions`.
+  C'est la base canonique de toutes les analyses business.
+- Toutes les RPCs publiées (`snapshot_pages_export`, `cta_breakdown_for_path`,
+  `site_context_export`, etc.) lisent déjà `events_human` — donc passer par
+  une RPC est toujours sûr.
+
+**Exceptions où `events` brut est acceptable (à expliciter dans la réponse) :**
+
+1. Audit du système de filtrage lui-même (vérifier ce qui a été filtré, par
+   exemple lors d'une investigation type Sprint 24).
+2. Compter les `form_submit` : insérés server-side par `form-webhook`,
+   `device_type='server'`, jamais classés bot ou bruit → comptes identiques
+   sur `events` et `events_human`. Préférer quand même `events_human` par
+   cohérence.
+3. Debug d'ingestion (vérifier qu'un event vient bien d'arriver).
+
+Si je tape `FROM events` sans annoncer pourquoi, c'est une erreur. Nicolas
+peut me le rappeler avec un simple "events_human" et je dois corriger
+immédiatement la requête.
+
+**Pourquoi cette règle existe :** Nicolas remonte les chiffres à Me Plouton
+(le client) et à Adrien (Nomad Marketing). Un chiffre gonflé de 17 % par
+des bots = une décision business fausse. Le filet anti-bruit a été construit
+exprès pour produire des chiffres propres ; il faut que je le respecte
+systématiquement.
 
 ---
 

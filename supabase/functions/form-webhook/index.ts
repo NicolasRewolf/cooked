@@ -170,9 +170,29 @@ Deno.serve(async (req) => {
     received_at: new Date().toISOString(),
   };
 
+  // Sprint 25 — idempotent insert. Wix Automations can retry a webhook
+  // delivery on its own timeout/5xx. The partial UNIQUE index
+  // `events_form_submit_submission_id_uniq` ensures the second attempt
+  // collides (PG error code 23505) and we return 200 so Wix stops
+  // retrying — the row already exists.
   const { error } = await supabase.from("events").insert(row);
 
   if (error) {
+    // 23505 = unique_violation → already inserted, this is a retry.
+    if ((error as { code?: string }).code === "23505") {
+      console.log(
+        `[form-webhook] duplicate submission_id=${submissionId} (Wix retry) — ignored`,
+      );
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          form_id: formId,
+          submission_id: submissionId,
+          dedup: true,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
     console.error("[form-webhook] insert error:", error.message);
     return jsonError(500, error.message);
   }

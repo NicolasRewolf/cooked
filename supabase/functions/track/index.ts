@@ -9,10 +9,29 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 // New-format keys (sb_secret_*) populate SUPABASE_SECRET_KEY;
 // legacy JWT keys populate SUPABASE_SERVICE_ROLE_KEY. Try new first.
+// Sprint 25 — fail-fast at boot if neither is set. Without it the
+// service-role insert would 401 silently and we'd lose events with
+// only a cryptic Edge log entry.
 const SECRET_KEY =
   Deno.env.get("SUPABASE_SECRET_KEY") ??
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ANON_SALT = Deno.env.get("ANON_SALT") ?? "cooked-default-salt-CHANGE-ME-IN-DASHBOARD";
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+if (!SECRET_KEY) {
+  throw new Error(
+    "[track] SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY) env var is required — " +
+    "set it in the Supabase Dashboard before deploying this function.",
+  );
+}
+// Sprint 25 — fail-fast if ANON_SALT is missing OR still the placeholder.
+// Sprint 22 made the browser-supplied UUID primary, but ANON_SALT is
+// still used in the IP+UA hash fallback (visitors without localStorage).
+// A predictable salt would let anyone re-identify those visitors.
+const ANON_SALT = Deno.env.get("ANON_SALT");
+if (!ANON_SALT || ANON_SALT === "cooked-default-salt-CHANGE-ME-IN-DASHBOARD") {
+  throw new Error(
+    "[track] ANON_SALT env var is required and must not be the placeholder — " +
+    "set a strong random value in the Supabase Dashboard before deploying.",
+  );
+}
 const ALLOWED_ORIGIN =
   Deno.env.get("ALLOWED_ORIGIN") ?? "https://www.jplouton-avocat.fr";
 
