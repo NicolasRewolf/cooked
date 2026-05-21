@@ -182,10 +182,41 @@ In the Supabase SQL Editor:
 
 ### Updating the browser tracker
 
-Copy the contents of `wix/tracker.html` into:
-**Wix Admin → Settings → Custom Code → Add Custom Code → Head → All pages**
+Wix Custom Code is capped at **15 000 characters**. The source
+`wix/tracker.html` is ~27 KB (comments + formatting kept for auditability),
+so it must be minified before pasting into Wix.
 
-Then republish the site.
+**Workflow:**
+
+```bash
+# One-time setup
+pip3 install jsmin
+
+# Each deploy
+python3 scripts/minify-tracker.py --copy
+```
+
+The script writes `wix/tracker.min.html` (gitignored — it's a build artifact,
+the source of truth is `tracker.html`) and copies its content to the macOS
+clipboard. It also enforces the 15 k limit and exits non-zero if the output
+overflows.
+
+Then in Wix:
+**Wix Admin → Settings → Custom Code → Edit the "Cooked tracker" snippet →
+Cmd+A, Cmd+V → Save → Publish.**
+
+After publishing, confirm the new version is live (replace `sprint28` with
+the current `COOKED_VERSION` from `tracker.html`):
+
+```sql
+SELECT props->>'_v' AS version, COUNT(*)
+FROM events
+WHERE occurred_at > now() - interval '15 minutes'
+GROUP BY 1 ORDER BY 2 DESC;
+```
+
+If the new version label never appears after 15 min, the paste was
+truncated or Wix didn't republish.
 
 ### Updating the Velo proxy
 
