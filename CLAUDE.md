@@ -284,17 +284,54 @@ qui fait disparaître silencieusement des conversions du compte du jour.
    ```
 
 2. **Date couverte explicitée dans la réponse** : ne jamais écrire "aujourd'hui"
-   tout court. Toujours préciser le jour calendaire (ex: "lundi 18 mai 2026")
+   tout court. Toujours préciser le jour calendaire (ex: "lundi 18/05/2026")
    pour qu'une réponse lue 6h après reste lisible.
 
 3. **Heures affichées en Paris** : `to_char(occurred_at AT TIME ZONE
    'Europe/Paris', 'HH24:MI')` quand on liste des events. Jamais l'heure UTC
    sauf si explicitement demandé.
 
-**Pourquoi cette règle existe :** le 2026-05-18 j'ai indiqué à Nicolas "1
+**Pourquoi cette règle existe :** le 18/05/2026 j'ai indiqué à Nicolas "1
 formulaire aujourd'hui" alors qu'un 2e formulaire venait d'arriver à 08:58
 Paris et que ma requête tournait encore en mode "aujourd'hui UTC = hier
 Paris". Frustration justifiée.
+
+---
+
+## 🚨 RÈGLE ABSOLUE — Format de date FR partout : JJ/MM/AAAA
+
+Nicolas est français. **Toutes les dates affichées dans les réponses texte,
+tableaux markdown, récaps, commentaires doivent être en JJ/MM/AAAA** —
+jamais YYYY-MM-DD (ISO) dans le texte présenté.
+
+**Exemples corrects :**
+- ✅ "Sprint 30 livré le **21/05/2026**"
+- ✅ "Premier compare 7j vs 7j iso : à partir du **28/05/2026**"
+- ✅ "Form_submit reçu le **21/05/2026** à 13:30 (Paris)"
+- ✅ "jeudi 22/05/2026"
+
+**Exemples interdits :**
+- ❌ "Sprint 30 livré le 2026-05-21"
+- ❌ "Compare possible à partir du 2026-05-28"
+
+**Exception — SQL et code uniquement :**
+- Les requêtes SQL Postgres gardent `'2026-05-28'` (syntaxe obligatoire)
+- Les littéraux dans le code source restent ISO
+- Les noms de migrations gardent leur timestamp natif (`20260521140914_xxx.sql`)
+- Les commit messages git peuvent contenir ISO (cohérent avec `git log`)
+
+→ Conversion à la frontière : SQL produit du ISO, on convertit en français
+au moment d'afficher.
+
+**Pour formatter directement en SQL** quand le résultat brut doit être lisible :
+```sql
+to_char((occurred_at AT TIME ZONE 'Europe/Paris'), 'DD/MM/YYYY HH24:MI') AS quand
+```
+
+**Pourquoi cette règle existe :** le 21/05/2026 Nicolas a recadré l'agent
+après plusieurs récaps en format `2026-05-XX`. Lecture rapide en JJ/MM/AAAA
+= friction réduite, jamais besoin de mentalement reconstituer "ah oui c'est
+le 28 mai".
 
 ---
 
