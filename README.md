@@ -48,12 +48,13 @@ Seo audit tool (separate repo)
 
 ## Privacy & RGPD
 
-- **No cookies, no localStorage, no persistent identifier**
-- `anonymous_id` = `sha256(IP | User-Agent | daily-salt)` truncated, rotates daily — irreversible, doesn't survive 24h
-- `session_id` lives in `sessionStorage` only (cleared on tab close)
-- IPs never stored — only hashed in transit
+- **No cookies. `localStorage` used for visitor identity and session continuity** — same approach as Plausible / Fathom Lite / Pirsch
+- `anonymous_id` = random alphanumeric string (~28 chars), stored in `localStorage._ckd_aid` since Sprint 22 (2026-05-15). Persists indefinitely on the device. Falls back to `sha256(IP | User-Agent | daily-salt)` server-side hash if `localStorage` is blocked (Safari ITP strict, Firefox strict, privacy extensions)
+- `session_id` lives in `localStorage._ckd` with a 30-minute sliding idle window since Sprint 28 (2026-05-21). Survives hard navigations (the previous `sessionStorage`-only design was producing ~10 % of fake "referral" sessions because Wix Studio's hard-nav was dropping the per-tab storage). Falls back to `sessionStorage` if `localStorage` is blocked
+- IPs are never stored — only used as input for the server-side hash fallback, and rotated daily via the salt
+- The browser-side identifiers (`_ckd_aid`, `_ckd`) are inspectable in DevTools → Application → Local Storage → the visitor can delete them at any time
 
-**Exempted from cookie-banner consent** under CNIL délibération 2020-091 and the 2022 guidelines (mesure d'audience strictement statistique, pas de recoupement, pas de transfert tiers, identifiant non pérenne).
+**Exempted from cookie-banner consent** under CNIL délibération 2020-091 and the 2022 guidelines (mesure d'audience strictement statistique, pas de recoupement, pas de transfert tiers). The use of `localStorage` for a non-PII random UUID with no cross-site tracking and no advertising re-use is accepted by the CNIL within this exemption — see the [2022 guidelines, §"Solutions techniques exemptées"](https://www.cnil.fr/fr/cookies-et-traceurs-que-dit-la-loi).
 
 ---
 
@@ -126,7 +127,7 @@ All RPCs are `granted to service_role only`. No `anon` / `authenticated` access.
 
 | RPC | Returns |
 |---|---|
-| `snapshot_pages_export(paths text[])` | Latest snapshot rows (66 cols : 4 windows × 11 metrics + CWV + provenance + device + CTAs). Filter by paths optional. |
+| `snapshot_pages_export(paths text[])` | Latest snapshot rows (70 cols : 4 windows × ~11 metrics + CWV + provenance + device + CTAs + pogo + device CTA rate, post-Sprint-30). Filter by paths optional. |
 | `site_context_export()` | One row of site-wide context 28d (sessions, bounce rate, top sources, sessions trend) |
 | `behavior_pages_for_period(from, to)` | One row / URL with 12-col subset over the requested window |
 | `seo_pages_overview(from, to)` | Same as above, parametric date range |
@@ -156,7 +157,14 @@ ALL RPCs + snapshot read from events_human
 
 **Detection rule** : `anonymous_id` with > 20 pageviews/day AND 0 scroll events = crawler. Catches the nightly Ahrefs audit crawler and similar bots.
 
-`refresh_bot_fingerprints()` is called automatically at the start of `refresh_seo_url_snapshot()`. One pg_cron job handles both.
+**4 active pg_cron jobs** (verified live, post-Sprint-30) :
+
+| Job | Schedule | What |
+|---|---|---|
+| `refresh_seo_url_snapshot` | `0 3 * * *` (05:00 Paris) | Nightly rebuild of `seo_url_snapshot` (calls `refresh_bot_fingerprints()` first) |
+| `refresh_noise_filters_hourly` | `5 * * * *` | Re-scan bot fingerprints + noise sessions every hour (Sprint 28) |
+| `run_rpc_contract_tests` | `30 3 * * *` (05:30 Paris) | Nightly contract-test of the 8 published RPCs → logs to `rpc_health` (Sprint 27) |
+| `purge_old_events_monthly` | `0 4 1 * *` (06:00 Paris, 1st of month) | Retention policy : deletes events > 400 days (Sprint 27) |
 
 ---
 
@@ -281,7 +289,18 @@ Defense-in-depth on the Supabase side:
 
 | Sprint | Date | Scope |
 |---|---|---|
-| **19 — Wix anchor-menu tracking** | 2026-05-13 | New event `cta_anchor_click` capturing in-page anchor clicks (sticky index, FAQ jumps, "back to top"). Wix Studio's anchor-menu widget renders as `<a href=current-path data-anchor="anchors-xxx">` and scrolls via JS without ever updating `location.hash`, so the tracker detects the widget's signature directly: same-pathname + `data-anchor` attribute. `target_section` is a human-readable slug of the button label (e.g. `accompagnement-immediat`). Also: `placement` taxonomy extended to `{header, footer, sticky, body}` (computed-style detection via `position: sticky / fixed` ancestor). Also: `normalizePathForCompare` kills the duplicate-pageview cascade caused by Wix's internal `pushState` flicker on micro-interactions. `track` Edge Function v9; tracker v4. |
+| **30 — Audit chirurgical** | 2026-05-21 | Audit 7-agents (DB / Edge / tracker). Fixes : `cta_breakdown_for_path` masquait 42 % des anchors (filtre `cta_type IS NOT NULL`) → `anchor_nav` exposé. `engagement_density_for_path` over-counted +19 % (CTE retournait 1 row par page_exit, fix `GROUP BY session_id + MAX`). `pogo_rates_for_period` +26 % via LEFT JOIN dup + sessions sans `page_exit` traitées comme pogo. Edge `track v14` : `props` array → `{}`, ISO strict `occurred_at`, logs des drops. Edge `form-webhook v6` : hostname-spoofing guard (`//evil.com` rejeté), PII stripped (nom/email/téléphone ne sont plus stockés), erreurs PG non-23505 → 200 (stop le retry loop Wix). Tracker `sprint30` : `pageshow` bfcache handler (iOS back-nav perdait page_exit), `exitSent` reset après SPA pushState, `[class*="FOOTER"]` viré du `placementOf`, debounce localStorage 5s, INP threshold 40 (spec), `PerformanceObserver` disconnect sur SPA. Zombies droppés : `idx_events_props_gin`, 5 vues mortes, 4 colonnes `email_clicks_*`. `tracker_first_seen_global()` PK `noise_sessions_pkey`. |
+| **29 — Audit hardening** | 2026-05-21 | Audit 10-agents round 1. Fixes : `form_submit` retiré de `ALLOWED_EVENTS` côté `/track` (forge via curl désormais HTTP 400). `tracker_first_seen_global()` guard ±2j contre les horloges clients cassées (retournait 2025-05-20 au lieu de 2026-05-06). `REVOKE EXECUTE` sur `seo_pages_overview` + `url_decode` (étaient appelables avec l'anon key). |
+| **28 — session_id en localStorage** | 2026-05-21 | Fixe l'inflation self-referral (461 fausses sessions "referral" / 7j). Wix Studio drop `sessionStorage` entre certaines hard navigations → le tracker créait un nouveau `session_id` avec referrer = jplouton-avocat.fr. Migration vers `localStorage._ckd` avec sliding 30 min. `classify_channel(ref, utm_source, utm_medium, self_host)` RPC pour taxonomie unifiée. |
+| **27 — AMDEC Tier 3** | 2026-05-17 | Contract tests RPC nightly (`run_rpc_contract_tests` + table `rpc_health` + cron 03:30 UTC). Politique de rétention `purge_old_events` (>400j, cron 1er du mois 04:00 UTC). |
+| **26 — Version stamp** | 2026-05-17 | `COOKED_VERSION` injecté dans chaque event via `props._v` — permet de monitorer le rollout Wix Custom Code (un republish raté n'émet jamais la nouvelle version, détectable par `SELECT props->>'_v', COUNT(*) FROM events …`). |
+| **25 — Hardening Edge** | 2026-05-17 | Fail-fast au boot si `SUPABASE_SECRET_KEY` ou `ANON_SALT` manquent / sont placeholder. `form-webhook` idempotent sur 23505 (Wix Automation peut retry sur timeout — partial UNIQUE index `events_form_submit_submission_id_uniq`). `refresh_pipeline_health()` self-diagnostic 3-axes (snapshot freshness, cron status, ingestion live). |
+| **24 — Pipeline serial bot/noise** | 2026-05-16 | Séparation propre `events_no_bots` → `events_human`. Les 2 filtres bot et noise étaient cumulés implicitement et générer du double comptage des sessions filtrées. Documentation explicite des invariants. |
+| **23 — `cta_breakdown` + anchor** | 2026-05-16 | Inclusion de `cta_anchor_click` dans la breakdown CTA (avant Sprint 23 le funnel ne voyait que phone + booking, l'anchor était orphelin). |
+| **22 — `anonymous_id` stable** | 2026-05-15 | UUID random persistant en `localStorage._ckd_aid`. Avant : `hash(IP + UA + dailySalt)` côté Edge → Wix Velo route chaque request par un worker stateless différent → 6+ identités par session pour 93 % des sessions. |
+| **21 / 21b — `noise_sessions`** | 2026-05-15 | Filtre des sessions parasites (prefetch, bots qui ne respectent pas robots.txt). 21b a rollback le pattern `instant_close` qui s'est révélé être un signal pogo-stick légitime. |
+| **20 — `prefetch_sessions`** | 2026-05-15 | Premier filtre des sessions de prefetch Chrome (Lighthouse, link rel=prefetch). |
+| **19 — Wix anchor-menu tracking** | 2026-05-13 | New event `cta_anchor_click` capturing in-page anchor clicks (sticky index, FAQ jumps, "back to top"). Wix Studio's anchor-menu widget renders as `<a href=current-path data-anchor="anchors-xxx">` and scrolls via JS without ever updating `location.hash`, so the tracker detects the widget's signature directly: same-pathname + `data-anchor` attribute. `target_section` is a human-readable slug of the button label (e.g. `accompagnement-immediat`). Also: `placement` taxonomy extended to `{header, footer, sticky, body}` (computed-style detection via `position: sticky / fixed` ancestor). Also: `normalizePathForCompare` kills the duplicate-pageview cascade caused by Wix's internal `pushState` flicker on micro-interactions. |
 | **18 — Form submission tracking** | 2026-05-11 | New event `form_submit` fired server-side by the new `form-webhook` Edge Function, triggered by a Wix Automation on every form submission. Captures `form_id`, `submission_id`, `page_source`, and the full raw Wix payload. Browser-side intercept (masterPage.js) was attempted first but Wix Forms V2 swallows the DOM submit event before any JS layer can hook it reliably; the webhook approach is 100% reliable since it fires server-to-server. `track` Edge Function accepts `form_submit` in ALLOWED_EVENTS as a safety net even though the webhook inserts directly. |
 | **17** | 2026-05-09 | **Centralized bot filtering** via `events_human` view. `refresh_bot_fingerprints()` runs before each snapshot refresh. All 9 RPCs + 3 views read from `events_human`. Also: body CTA tracking (cta_booking_click no longer scoped to header/footer only), `page_exit.duration_seconds` uses cumulative active time. |
 | **Tracker — aria-label capture** | 2026-05-10 | `cta_*_click` events capture `aria-label` in priority over `textContent`. Enables per-emplacement analytics via the `<Action> — <Location>` convention rolled out on the 13 CTA buttons of the site. |

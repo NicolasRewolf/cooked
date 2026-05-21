@@ -233,8 +233,10 @@ events table (raw)
        ↓ pg_cron nightly
 refresh_seo_url_snapshot()
        ↓
-seo_url_snapshot (66 colonnes : 4 fenêtres × 11 metrics + CWV +
-                  provenance + device + conversion CTAs)
+seo_url_snapshot (70 colonnes post-Sprint-30 : 4 fenêtres × ~11
+                  metrics + CWV + provenance + device + CTAs + pogo
+                  + device CTA rate. Sprint 30 a dropé 4 colonnes
+                  email_clicks_* qui étaient à 0 depuis le début)
        ↓ RPCs cross-project (service_role secret_key)
 Seo project (lzdnljppbenqoflyxbhi)
        ↓ src/lib/cooked.ts

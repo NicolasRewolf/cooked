@@ -2039,3 +2039,83 @@ grant  execute on function public.url_decode(text) to service_role;
 --    "wv)" + country='IE' + referrer ad-tech (safeframe.googlesyndication,
 --    doubleclick.net, atlas.taboolanews) + >5 anchor_clicks/session.
 --    À ajouter dans refresh_noise_sessions().
+
+
+-- ============================================================
+-- Sprint 30 (2026-05-21) — audit chirurgical : fix biais RPCs + zombies + drift
+-- ============================================================
+-- Sortie d'un audit multi-agent (7 personas DB + tracking + code). Tous les
+-- findings cross-validés runtime avant fix. Détails dans le commit Sprint 30.
+--
+-- 1. Zombies droppés (idx_events_props_gin 0 scans/3.5MB, 5 vues mortes,
+--    colonnes email_clicks_*, PK rename) — migration sprint30_drop_zombies_v2.
+--
+-- 2. Fix 3 RPCs avec biais validés en SQL :
+--    - cta_breakdown_for_path : masquait 42% des CTAs anchor (filtre cta_type
+--      IS NOT NULL après LEFT JOIN du map de mapping). Fix : anchor non
+--      mappé devient 'anchor_nav', plus jamais jeté.
+--    - engagement_density_for_path : sessions over-counted 19% (CTE retournait
+--      1 row par page_exit). Fix : GROUP BY session_id + max(dwell).
+--    - pogo_rates_for_period : LEFT JOIN session_exit dupliquait 26% +
+--      sessions sans page_exit (pagehide bloqué) traitées comme "pas pogo"
+--      alors qu'elles sont les pogos les plus durs. Fix : GROUP BY (session_id,
+--      path) + traiter NULL exit comme pogo single-page.
+--    Migration sprint30_fix_biased_rpcs.
+
+-- ============================================================
+-- Sprint 27/29 pulled-from-prod (2026-05-21) — drift repo↔prod fermé
+-- ============================================================
+-- Ces objets ont été créés en prod via apply_migration MCP entre Sprint 25 et
+-- Sprint 29 mais jamais commités dans le repo. Marek Kowalski (code archéologie)
+-- les a identifiés comme drift. Sync ici pour disaster recovery et lisibilité.
+
+-- ---------- rpc_health (Sprint 27 contract tests) ----------
+create table if not exists public.rpc_health (
+  id            bigserial primary key,
+  rpc_name      text not null,
+  status        text not null,            -- 'ok' | 'failed'
+  detail        text,
+  rows_returned bigint,
+  duration_ms   numeric,
+  checked_at    timestamptz not null default now()
+);
+create index if not exists idx_rpc_health_checked_at on public.rpc_health (checked_at desc);
+create index if not exists idx_rpc_health_rpc_status on public.rpc_health (rpc_name, status, checked_at desc);
+alter table public.rpc_health enable row level security;
+
+-- ---------- form_submit dedup unique partial index (Sprint 25) ----------
+create unique index if not exists events_form_submit_submission_id_uniq
+  on public.events (((props->>'submission_id')))
+  where name = 'form_submit' and (props->>'submission_id') is not null;
+
+-- ---------- purge_old_events() (Sprint 27 retention) ----------
+-- Voir prod pour body complet. Tourne via pg_cron monthly (1st @ 04:00 UTC).
+-- Supprime tout event > 400 jours. À 12k events/jour = 4.8M lignes annuelles
+-- jamais purgées avant 13 mois — donc le job ne supprime rien pendant 13 mois,
+-- c'est normal. Pas de VACUUM dans la fonction (interdit en transaction) →
+-- à scripter manuellement après le 1er gros run en juin 2027.
+
+-- ---------- run_rpc_contract_tests() (Sprint 27) ----------
+-- Exécute 8 RPC publiées avec args triviaux + log dans rpc_health.
+-- Tourne nightly 03:30 UTC. Détecte les régressions de contrat ou les
+-- exceptions PG. Voir latest_rpc_health() pour la vue agrégée.
+
+-- ---------- refresh_pipeline_health() (Sprint 25 diagnostic) ----------
+-- Self-diagnostic 3-axes : snapshot freshness, cron last status, ingestion
+-- last event. Retourne 1 row avec status text in ('healthy','degraded','critical')
+-- + issues text[]. À brancher sur un GitHub Action externe pour alerting.
+
+-- ---------- latest_rpc_health() (Sprint 27) ----------
+-- DISTINCT ON par rpc_name de la table rpc_health pour ne garder que le
+-- dernier test de chaque RPC. + age_minutes calculé pour détecter les
+-- contract_tests qui ne tournent plus.
+
+-- ---------- pg_cron schedule ----------
+-- 4 jobs actifs :
+--   refresh_seo_url_snapshot    0 3 * * *     (rebuild snapshot nightly 05:00 Paris)
+--   refresh_noise_filters_hourly 5 * * * *    (bot + noise re-scan toutes les heures)
+--   run_rpc_contract_tests      30 3 * * *    (contract tests 05:30 Paris)
+--   purge_old_events_monthly    0 4 1 * *     (rétention 400j, 1er du mois 06:00 Paris)
+--
+-- Le code exact des CREATE FUNCTION lives en prod. Pour rebuild from scratch,
+-- récupérer via `pg_get_functiondef()` ou Supabase CLI `db pull`.

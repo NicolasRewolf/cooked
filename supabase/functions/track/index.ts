@@ -155,6 +155,26 @@ function n(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+// Sprint 30 — strict ISO-8601 timestamp validation. Without this, any
+// 35-char string was accepted (e.g. "hello") and Postgres later rejected
+// the entire batch of 50 events with a single cryptic error. Now we
+// quietly fall back to server `now()` when occurred_at is malformed.
+function iso(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+
+// Sprint 30 — `typeof [] === "object"` was letting arrays slip into the
+// `props` jsonb column. Downstream RPCs that do `props->>'foo'` would
+// then silently return NULL with no trace. Coerce arrays + non-objects
+// to an empty object.
+function plainObject(v: unknown): Record<string, unknown> {
+  return v != null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
 // Sprint 13 — normalize `path` to decoded form so it joins cleanly with
 // the rest of the SEO stack (GSC returns decoded URLs by convention; the
 // browser's `location.pathname` returns percent-encoded strings for paths
@@ -254,12 +274,17 @@ Deno.serve(async (req) => {
 
   const now = new Date().toISOString();
   const rows = [];
+  // Sprint 30 — track silently-dropped events for ops visibility. Without
+  // these counters, a tracker regression that emits e.g. `pageView` (camelCase)
+  // would silently drop 100 % of events with zero log signal.
+  let droppedMissingFields = 0;
+  let droppedDisallowedName = 0;
 
   for (const e of events) {
     const name = s(e?.name, 50);
     const session_id = s(e?.session_id, 64);
-    if (!name || !session_id) continue;
-    if (!ALLOWED_EVENTS.has(name)) continue;
+    if (!name || !session_id) { droppedMissingFields++; continue; }
+    if (!ALLOWED_EVENTS.has(name)) { droppedDisallowedName++; continue; }
 
     rows.push({
       anonymous_id: resolveAnonId(e?.anonymous_id),
@@ -283,10 +308,18 @@ Deno.serve(async (req) => {
       viewport_width: n(e.viewport_width),
       viewport_height: n(e.viewport_height),
       country,
-      props: e.props && typeof e.props === "object" ? e.props : {},
-      occurred_at: s(e.occurred_at, 35) ?? now,
+      props: plainObject(e.props),                  // Sprint 30 — arrays rejected
+      occurred_at: iso(e.occurred_at) ?? now,       // Sprint 30 — strict ISO
       received_at: now,
     });
+  }
+
+  // Sprint 30 — emit a single warn per batch if drops happened. Cheap, grepable.
+  if (droppedMissingFields > 0 || droppedDisallowedName > 0) {
+    console.warn(
+      `[track] dropped events in batch (size=${events.length}): ` +
+      `missing_fields=${droppedMissingFields} disallowed_name=${droppedDisallowedName}`,
+    );
   }
 
   if (!rows.length) {

@@ -137,13 +137,77 @@ Deno.serve(async (req) => {
   const syntheticSession =
     "webhook-" + (submissionId || crypto.randomUUID());
 
+  // Sprint 30 — hostname spoofing guard. Wix Automations sends
+  // `field:page_source` as a relative path or a same-origin URL. If we
+  // pass a protocol-relative string like "//evil.com/foo" to `new URL`
+  // with the jplouton base, it resolves to "https://evil.com/foo" → the
+  // attacker's hostname would land in our `events.hostname` column and
+  // poison per-host analytics. Whitelist the resolved hostname against
+  // the canonical site.
+  const ALLOWED_HOSTS = new Set([
+    "www.jplouton-avocat.fr",
+    "jplouton-avocat.fr",
+  ]);
+
+  function resolvePageSource(raw: string | null): {
+    url: string | null;
+    path: string | null;
+    hostname: string | null;
+  } {
+    if (!raw) return { url: null, path: null, hostname: null };
+    try {
+      const u = new URL(raw, "https://www.jplouton-avocat.fr");
+      if (!ALLOWED_HOSTS.has(u.hostname)) {
+        // Hostname spoofing attempt — refuse the enrichment but keep the
+        // raw string so we can audit the attempt downstream if needed.
+        console.warn(
+          `[form-webhook] page_source hostname rejected: ${u.hostname}`,
+        );
+        return { url: raw, path: null, hostname: null };
+      }
+      return { url: u.toString(), path: u.pathname, hostname: u.hostname };
+    } catch {
+      return { url: raw, path: null, hostname: null };
+    }
+  }
+  const ps = resolvePageSource(pageSource);
+
+  // Sprint 30 — PII stripping (RGPD hardening). Wix sends the FULL form
+  // payload including first_name / last_name / email / phone / message
+  // body. Stored as-is in `raw_payload`, those fields make the `events`
+  // table a regulated PII store — incompatible with the "exempted
+  // measure of audience" status documented in the README/CLAUDE.md. Keep
+  // only the meta fields needed for diagnostics (form id, submission id,
+  // page where the form was submitted, timing). The actual contact data
+  // is already received by the cabinet via Wix's own form-submission
+  // workflow — no need for Cooked to duplicate it.
+  function stripPii(payload: unknown): Record<string, unknown> {
+    const safe: Record<string, unknown> = {};
+    const d2 = (payload as { data?: Record<string, unknown> })?.data ?? {};
+    // Whitelist only non-PII metadata keys.
+    for (const key of [
+      "formId",
+      "formName",
+      "submissionId",
+      "submissionTime",
+      "field:page_source",
+    ]) {
+      if (key in d2) safe[key] = d2[key];
+    }
+    // Drop submissions[], contact{}, field:first_name, field:last_name,
+    // field:email, field:phone, field:message, etc. — none of those
+    // ever go into Cooked's analytics table.
+    return safe;
+  }
+  const safePayloadMeta = stripPii(body);
+
   const row = {
     anonymous_id: "webhook-" + (submissionId || "anon"),
     session_id: syntheticSession,
     name: "form_submit",
-    url: pageSource,
-    path: pageSource ? new URL(pageSource, "https://www.jplouton-avocat.fr").pathname : null,
-    hostname: pageSource ? new URL(pageSource, "https://www.jplouton-avocat.fr").hostname : null,
+    url: ps.url,
+    path: ps.path,
+    hostname: ps.hostname,
     title: null,
     referrer: null,
     referrer_hostname: null,
@@ -164,7 +228,7 @@ Deno.serve(async (req) => {
       submission_id: submissionId,
       page_source: pageSource,
       capture_source: "wix-webhook",
-      raw_payload: body, // full payload kept for forensic analysis
+      payload_meta: safePayloadMeta, // ⬅️ PII-stripped (Sprint 30)
     },
     occurred_at: occurredAt,
     received_at: new Date().toISOString(),
@@ -178,8 +242,9 @@ Deno.serve(async (req) => {
   const { error } = await supabase.from("events").insert(row);
 
   if (error) {
+    const code = (error as { code?: string }).code;
     // 23505 = unique_violation → already inserted, this is a retry.
-    if ((error as { code?: string }).code === "23505") {
+    if (code === "23505") {
       console.log(
         `[form-webhook] duplicate submission_id=${submissionId} (Wix retry) — ignored`,
       );
@@ -193,8 +258,26 @@ Deno.serve(async (req) => {
         { status: 200, headers: { "content-type": "application/json" } },
       );
     }
-    console.error("[form-webhook] insert error:", error.message);
-    return jsonError(500, error.message);
+    // Sprint 30 — any other PG error is treated as a permanent failure
+    // (bad payload, schema mismatch, etc.) and returned as 200 to stop
+    // the Wix retry loop. Without this, a row that violates a CHECK or
+    // NOT NULL constraint would loop forever, drowning the function
+    // logs. Log the code+detail and accept the loss — the form
+    // submission still reached Me Plouton via Wix Automations' own
+    // delivery, this Edge Function only does analytics tracking.
+    console.error(
+      `[form-webhook] permanent insert error code=${code} submission=${submissionId} msg=${error.message}`,
+    );
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "dropped",
+        code,
+        form_id: formId,
+        submission_id: submissionId,
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
   }
 
   return new Response(

@@ -1,8 +1,13 @@
 <!--
   COOKED — first-party SEO tracker (cookieless, RGPD-exempt)
-  Version: Sprint 28 (2026-05-21) — session_id persisted in localStorage
-           (fixes self-referral inflation caused by Wix hard-nav drop
-            of sessionStorage between pages — 461 false "referral" sessions
+  Version: Sprint 30 (2026-05-21) — bfcache, SPA nav, placement & debounce fixes
+           Multi-agent audit landed: bfcache page_exit loss, exitSent
+           not reset on pushState, [class*="FOOTER"] over-classify body
+           CTAs as footer, localStorage write per event (35× iOS Safari),
+           INP threshold 16 → 40 (spec), PerformanceObserver SPA leak.
+           (Sprint 28: session_id persisted in localStorage — fixes
+            self-referral inflation caused by Wix hard-nav drop of
+            sessionStorage between pages, 461 false "referral" sessions
             on 7d before the fix).
            (Sprint 26: Version hash propagated in every event)
            (Sprint 25: ANON_SALT fail-fast + closure aid cache + form_submit dedup)
@@ -34,7 +39,7 @@
   // version label never appears after a Wix republish, the paste
   // failed or was truncated. Bump this string on every meaningful
   // tracker change.
-  var COOKED_VERSION       = 'sprint28';
+  var COOKED_VERSION       = 'sprint30';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -86,7 +91,7 @@
   }
 
   // ==============================================================
-  // Sprint 28 — session_id persisted in localStorage with 30-min
+  // Sprint 30 — session_id persisted in localStorage with 30-min
   // sliding idle window.
   //
   // Previous design stored the session blob in sessionStorage, which
@@ -109,6 +114,12 @@
   // per tab). Acceptable — they share the same anonymous_id anyway,
   // and merging is the more honest count.
   // ==============================================================
+  // Sprint 30 — debounce localStorage write to 5s minimum. Each event
+  // (~35 per 5-min session) was triggering a setItem; on iOS Safari ITP
+  // each write costs 0.5-1.5ms of main-thread sync I/O → ~35ms cumulative
+  // jank on iPhone 8-era devices, sub-INP but felt. The 30-min sliding
+  // timeout doesn't need ms precision — 5s drift is irrelevant.
+  var _sessionLastWrite = 0;
   function getSessionId() {
     try {
       var KEY = '_ckd';
@@ -118,12 +129,16 @@
         var s = JSON.parse(raw);
         if (s && s.id && (now - s.last) < SESSION_TIMEOUT_MS) {
           s.last = now;
-          localStorage.setItem(KEY, JSON.stringify(s));
+          if (now - _sessionLastWrite > 5000) {
+            localStorage.setItem(KEY, JSON.stringify(s));
+            _sessionLastWrite = now;
+          }
           return s.id;
         }
       }
       var ns = { id: rid(), start: now, last: now };
       localStorage.setItem(KEY, JSON.stringify(ns));
+      _sessionLastWrite = now;
       return ns.id;
     } catch (e) {
       // localStorage blocked (private mode, strict cookie blockers).
@@ -230,6 +245,12 @@
     if (newPath !== currentPath) {
       // Flush previous page's exit data first
       flushExit();
+      // Sprint 30 — reset exitSent so the new SPA page can emit its own
+      // page_exit. Previously this only reset on popstate (see
+      // resetExitFlag handler), but Wix Studio uses pushState heavily,
+      // and after pushState `exitSent` stayed true → page 2's exit was
+      // silently dropped on tab close.
+      exitSent = false;
       currentPath = newPath;
       // Reset per-page state
       scrollHits = { 25: false, 50: false, 75: false, 100: false };
@@ -240,9 +261,28 @@
       lastTick      = Date.now();
       vitals.lcp = 0; vitals.cls = 0; vitals.inp = 0; vitals.ttfb = 0;
       vitalsEmitted = { LCP: false, CLS: false, INP: false, TTFB: false };
+      // Sprint 30 — disconnect & reattach PerformanceObservers so LCP/CLS
+      // from page N don't leak into page N+1 (observers keep firing on
+      // detached document otherwise). See attachVitalsObservers() below.
+      try { disconnectVitals(); } catch (e) {}
+      try { attachVitalsObservers(); } catch (e) {}
       emitPageview();
     }
   }
+
+  // Sprint 30 — bfcache restore handler. On iOS Safari, navigating back
+  // (or forward) to a cached page fires `pageshow` with persisted=true.
+  // Without this handler, `exitSent` stays true from the previous
+  // pagehide → the next page_exit is silently dropped (full session
+  // worth of metrics lost on every iOS back-nav). HTML spec §7.1.4.
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) {
+      exitSent      = false;
+      lastTick      = Date.now();     // bfcache pause invisible
+      lastActivity  = Date.now();
+      pageStart     = performance.now();
+    }
+  });
 
   window.addEventListener('popstate', onPathMaybeChanged);
   ['pushState', 'replaceState'].forEach(function (m) {
@@ -352,10 +392,15 @@
   }
 
   function placementOf(el) {
-    if (el.closest('footer, [role="contentinfo"], .wixui-footer, [class*="FOOTER"]')) {
+    // Sprint 30 — dropped [class*="FOOTER"] / [class*="HEADER"] substring
+    // matchers. Wix Studio names body utility classes like
+    // "wixui-rich-text-FOOTER_CTA" → a CTA in the middle of /honoraires-
+    // rendez-vous was being classified as `placement='footer'`, biasing
+    // per-placement conversion attribution. Stick to structural selectors.
+    if (el.closest('footer, [role="contentinfo"], .wixui-footer')) {
       return 'footer';
     }
-    if (el.closest('header, nav, [role="navigation"], .wixui-header, [class*="HEADER"]')) {
+    if (el.closest('header, nav, [role="navigation"], .wixui-header')) {
       return 'header';
     }
     // Sticky / fixed container detection (Wix sticky bars, sticky indices,
@@ -622,7 +667,7 @@
     send('web_vitals', { metric: metric, value: Math.round(value * 100) / 100 });
   }
 
-  // TTFB
+  // TTFB (one-shot, not observer-based)
   try {
     var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
     if (nav && nav.responseStart > 0) {
@@ -631,22 +676,32 @@
     }
   } catch (e) {}
 
-  // LCP
-  try {
-    if (typeof PerformanceObserver !== 'undefined') {
-      var lcpObs = new PerformanceObserver(function (list) {
+  // Sprint 30 — wrap LCP / CLS / INP observers in (re)attachable helpers
+  // so they can be disconnected on SPA navigation. Previously the
+  // observers stayed attached to the detached document and continued
+  // writing into the new page's `vitals` object, leaking metrics from
+  // page N into page N+1. See onPathMaybeChanged() above.
+  var lcpObs = null, clsObs = null, inpObs = null;
+  var clsSessionValue   = 0;
+  var clsSessionEntries = [];
+
+  function attachVitalsObservers() {
+    if (typeof PerformanceObserver === 'undefined') return;
+
+    // LCP
+    try {
+      lcpObs = new PerformanceObserver(function (list) {
         var entries = list.getEntries();
         if (entries.length) vitals.lcp = entries[entries.length - 1].startTime;
       });
       lcpObs.observe({ type: 'largest-contentful-paint', buffered: true });
-    }
-  } catch (e) {}
+    } catch (e) {}
 
-  var clsSessionValue   = 0;
-  var clsSessionEntries = [];
-  try {
-    if (typeof PerformanceObserver !== 'undefined') {
-      var clsObs = new PerformanceObserver(function (list) {
+    // CLS — reset session-window state each (re)attach
+    clsSessionValue   = 0;
+    clsSessionEntries = [];
+    try {
+      clsObs = new PerformanceObserver(function (list) {
         list.getEntries().forEach(function (entry) {
           if (entry.hadRecentInput) return;
           var first = clsSessionEntries[0];
@@ -666,19 +721,30 @@
         });
       });
       clsObs.observe({ type: 'layout-shift', buffered: true });
-    }
-  } catch (e) {}
+    } catch (e) {}
 
-  try {
-    if (typeof PerformanceObserver !== 'undefined') {
-      var inpObs = new PerformanceObserver(function (list) {
+    // INP — Sprint 30 : durationThreshold raised from 16 to 40 (spec).
+    // At 16 the observer silently returned nothing on most engines, so
+    // we were emitting LCP/CLS but not INP for the vast majority of pages.
+    try {
+      inpObs = new PerformanceObserver(function (list) {
         list.getEntries().forEach(function (entry) {
           if (entry.duration > vitals.inp) vitals.inp = entry.duration;
         });
       });
-      inpObs.observe({ type: 'event', buffered: true, durationThreshold: 16 });
-    }
-  } catch (e) {}
+      inpObs.observe({ type: 'event', buffered: true, durationThreshold: 40 });
+    } catch (e) {}
+  }
+
+  function disconnectVitals() {
+    try { lcpObs && lcpObs.disconnect(); } catch (e) {}
+    try { clsObs && clsObs.disconnect(); } catch (e) {}
+    try { inpObs && inpObs.disconnect(); } catch (e) {}
+    lcpObs = clsObs = inpObs = null;
+  }
+
+  // Initial attach for the first page load.
+  attachVitalsObservers();
 
   function flushVitals() {
     if (vitals.lcp)  emitVital('LCP', vitals.lcp);
