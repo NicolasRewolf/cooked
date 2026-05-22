@@ -175,23 +175,23 @@ function plainObject(v: unknown): Record<string, unknown> {
     : {};
 }
 
-// Sprint 13 — normalize `path` to decoded form so it joins cleanly with
-// the rest of the SEO stack (GSC returns decoded URLs by convention; the
-// browser's `location.pathname` returns percent-encoded strings for paths
-// that contain non-ASCII characters). Without this, "/post/durée-…" from
-// GSC would never match "/post/dur%C3%A9e-…" from the tracker.
-//
-// Note: only `path` is decoded — the full `url` stays as-is to preserve
-// the original transport form for debugging.
-function decodePathSafe(p: string | null): string | null {
+// Sprint 13 + GSC contract — canonical path for Cooked × GSC joins.
+// Matches scripts/gsc_common.canonical_path() and SQL canonical_path(text):
+// decode → Unicode NFC → strip trailing slash (except root).
+// Only `path` is normalized; `url` stays as sent for debugging.
+function canonicalPath(p: string | null): string | null {
   if (p == null) return null;
+  let path: string;
   try {
-    return decodeURIComponent(p);
+    path = decodeURIComponent(p);
   } catch {
-    // Malformed percent-encoding (e.g. lone "%") — keep original to avoid
-    // silently dropping the row.
-    return p;
+    path = p;
   }
+  path = path.normalize("NFC");
+  if (path.length > 1 && path.endsWith("/")) {
+    path = path.slice(0, -1);
+  }
+  return path || "/";
 }
 
 function corsHeaders(origin: string): Record<string, string> {
@@ -291,7 +291,7 @@ Deno.serve(async (req) => {
       session_id,
       name,
       url: s(e.url, 2048),
-      path: decodePathSafe(s(e.path, 2048)),
+      path: canonicalPath(s(e.path, 2048)),
       hostname: hostnameOf(s(e.url, 2048)),
       title: s(e.title, 500),
       referrer: s(e.referrer, 2048),

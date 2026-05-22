@@ -42,7 +42,7 @@ Postgres
    │
    │  Google Search Console (Sprint 31-32, ingested via scripts/gsc_ingest_*.py)
    │     ↓ Service Account JWT → GSC API
-   │     ↓ canonical_path() Python (decode + NFC + strip domain/query/slash)
+   │     ↓ gsc_common.canonical_path() (decode + NFC + slash ; URLs GSC complètes)
    │     ↓ upsert
    │  gsc_path_daily        — day × path
    │  gsc_query_daily       — day × query
@@ -117,14 +117,17 @@ cooked/
 ├── README.md                          — this file
 ├── scripts/
 │   ├── minify-tracker.py              — Minify tracker.html before Wix paste
-│   ├── gsc_ingest_path_and_query.py   — Backfill GSC path-daily + query-daily
-│   └── gsc_ingest_query_page.py       — Backfill GSC query×path attribution
+│   ├── gsc_common.py                  — Lib partagée ingestion GSC
+│   ├── gsc_ingest.py                  — CLI : path-query | query-page
+│   ├── gsc_ingest_path_and_query.py   — Wrapper rétro-compat
+│   ├── gsc_ingest_query_page.py       — Wrapper rétro-compat
+│   └── requirements-gsc.txt           — pip deps pour scripts GSC
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS
+│   ├── migrations/                    — DDL nommé (GSC Sprint 31-32, etc.)
 │   ├── views.sql                      — all functions, views, snapshot
 │   │                                    table, refresh function, pg_cron
-│   │                                    schedule, bot filtering, RPCs,
-│   │                                    GSC tables (Sprint 31-32)
+│   │                                    schedule, bot filtering, RPCs
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
 │       └── form-webhook/index.ts      — Wix Automations webhook for forms
@@ -167,16 +170,18 @@ Cooked ingère désormais GSC dans les mêmes tables Supabase. Permet les analys
 | `gsc_query_daily` | day × query | 872 564 rows, 2.6M imp | Demande globale sur le site, vue search-side seule |
 | `gsc_query_page_daily` | day × path × query | **1 005 653 rows, 3.05M imp** | **Brique critique** : attribution "quelle requête a amené sur quelle page" |
 
-### Path canonicalisation symétrique avec Cooked
+### Path canonicalisation (contrat partagé)
 
-GSC renvoie les URLs percent-encoded (`/post/dur%C3%A9e-de-la-garde-%C3%A0-vue-...`). Cooked (depuis Sprint 13) stocke en UTF-8 décodé. La normalisation est faite côté Python avant insert :
-1. `decodeURIComponent` (`%C3%A9` → `é`)
-2. Unicode NFC
-3. Strip `https://www.jplouton-avocat.fr` (domain)
-4. Strip query string (`?utm_source=gmb`, `?fbclid=...`)
-5. Strip trailing slash sauf root
+Même règle partout : **decode → NFC → slash final retiré (sauf `/`)**.
 
-→ Jointure directe possible : `cooked.events.path = gsc_path_daily.path`.
+| Couche | Où |
+|--------|-----|
+| Ingestion tracker | Edge `canonicalPath()` dans `supabase/functions/track/index.ts` |
+| Ingestion GSC | `scripts/gsc_common.canonical_path()` (+ strip domain/query sur URLs GSC) |
+| Jointures SQL historiques | `canonical_path(events.path) = gsc_path_daily.path` (fonction Postgres, voir migration GSC) |
+
+→ Nouveaux events : jointure directe `events.path = gsc_path_daily.path`.  
+→ Historique pré-NFC/slash : passer par `canonical_path()` côté SQL.
 
 ### Anonymisation GSC
 
@@ -189,12 +194,23 @@ Service Account Google Cloud `gsc-mcp-claude@plouton-472207.iam.gserviceaccount.
 ### Re-ingestion / refresh
 
 ```bash
-# Backfill complet 16 mois (à exécuter occasionnellement, ~4-7 min)
-SUPABASE_SECRET_KEY='sb_secret_...' python3 scripts/gsc_ingest_path_and_query.py
-SUPABASE_SECRET_KEY='sb_secret_...' python3 scripts/gsc_ingest_query_page.py
+pip install -r scripts/requirements-gsc.txt
+
+# Backfill complet 16 mois (~4-7 min). --end-date défaut = hier.
+export SUPABASE_SECRET_KEY='sb_secret_...'
+# optionnel : SUPABASE_URL, GSC_CREDENTIALS_PATH (~/.claude/gsc-credentials.json)
+
+python3 scripts/gsc_ingest.py path-query
+python3 scripts/gsc_ingest.py query-page
+
+# Wrappers rétro-compat (même comportement) :
+# python3 scripts/gsc_ingest_path_and_query.py
+# python3 scripts/gsc_ingest_query_page.py
 ```
 
-⚠️ Pas encore de pg_cron pour mise à jour incrémentale quotidienne — à automatiser Sprint 33+ quand les analyses live deviendront critiques. Pour l'instant on tape l'API GSC à la main quand on veut refresh.
+DDL : `supabase/migrations/20260522120000_gsc_tables.sql` (à rejouer sur fresh DB).
+
+⚠️ Pas encore de pg_cron quotidien — Sprint 33+.
 
 ---
 

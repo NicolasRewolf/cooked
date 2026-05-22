@@ -32,7 +32,7 @@ RPCs internes consommées par les analyses
 
    +
 
-scripts/gsc_ingest_*.py  (Service Account → API GSC)
+scripts/gsc_ingest.py + gsc_common.py  (Service Account → API GSC)
    ↓
 gsc_path_daily        — day × path        (~121k rows, 16 mois)
 gsc_query_daily       — day × query       (~872k rows, 16 mois)
@@ -72,7 +72,7 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
 - Le README du repo Cooked
 - Les analyses, graphes, rapports produits depuis Cooked
 - Les scripts d'outillage (`scripts/minify-tracker.py`,
-  `scripts/gsc_ingest_*.py`, etc.)
+  `scripts/gsc_ingest.py`, `scripts/gsc_common.py`, etc.)
 - L'auth Service Account GSC (`gsc-mcp-claude@plouton-472207...`)
   et le fichier `~/.claude/gsc-credentials.json` qui ne doit JAMAIS
   être committé

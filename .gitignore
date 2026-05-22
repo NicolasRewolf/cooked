@@ -3,6 +3,8 @@
 .env.local
 node_modules/
 *.log
+__pycache__/
+*.pyc
 
 # Build artifact — tracker.min.html is regenerated from tracker.html
 # at each Wix deploy. Source of truth = tracker.html.
