@@ -572,12 +572,9 @@ create table if not exists public.seo_url_snapshot (
   phone_clicks_28d  bigint,
   phone_clicks_90d  bigint,
   phone_clicks_365d bigint,
-  -- email_clicks_* are kept as columns for backward compat but the tracker
-  -- no longer fires cta_email_click events (the site never exposes mailto:).
-  email_clicks_7d   bigint,
-  email_clicks_28d  bigint,
-  email_clicks_90d  bigint,
-  email_clicks_365d bigint,
+  -- Sprint 30 (21/05/2026) : email_clicks_* droppés (0 rows depuis Sprint 0,
+  -- le tracker skip explicitement les mailto:, le site n'expose pas d'email).
+  -- Sprint 33 (22/05/2026) : alignement repo après fix refresh function.
   -- Sprint 10 Phase 1.5 — booking-CTA clicks (internal links to
   -- /honoraires-rendez-vous, regardless of anchor text).
   booking_cta_clicks_7d   bigint,
@@ -607,10 +604,7 @@ alter table public.seo_url_snapshot
   add column if not exists phone_clicks_28d  bigint,
   add column if not exists phone_clicks_90d  bigint,
   add column if not exists phone_clicks_365d bigint,
-  add column if not exists email_clicks_7d   bigint,
-  add column if not exists email_clicks_28d  bigint,
-  add column if not exists email_clicks_90d  bigint,
-  add column if not exists email_clicks_365d bigint,
+  -- Sprint 30/33 : email_clicks_* droppés, voir comment au-dessus.
   add column if not exists booking_cta_clicks_7d   bigint,
   add column if not exists booking_cta_clicks_28d  bigint,
   add column if not exists booking_cta_clicks_90d  bigint,
@@ -745,19 +739,7 @@ begin
         and occurred_at >= now_ts - interval '365 days'
       group by path
     ),
-    email_counts as (
-      select
-        path,
-        count(*) filter (where occurred_at >= now_ts - interval '7 days')   as e7,
-        count(*) filter (where occurred_at >= now_ts - interval '28 days')  as e28,
-        count(*) filter (where occurred_at >= now_ts - interval '90 days')  as e90,
-        count(*) filter (where occurred_at >= now_ts - interval '365 days') as e365
-      from public.events_human
-      where name = 'cta_email_click'
-        and path is not null
-        and occurred_at >= now_ts - interval '365 days'
-      group by path
-    ),
+    -- Sprint 30/33 : email_counts CTE retiré (drop email_clicks_* du snapshot).
     -- Sprint 10 Phase 1.5 — booking-CTA clicks (internal links to /honoraires-rendez-vous)
     booking_counts as (
       select
@@ -841,15 +823,12 @@ begin
 
     now_ts,
 
-    -- Sprint 10 Phase 1 — phone / email click counters
+    -- Sprint 10 Phase 1 — phone click counters
+    -- (email counters retirés Sprint 30/33 : voir CTE plus haut)
     coalesce(phone_counts.p7, 0)::bigint,
     coalesce(phone_counts.p28, 0)::bigint,
     coalesce(phone_counts.p90, 0)::bigint,
     coalesce(phone_counts.p365, 0)::bigint,
-    coalesce(email_counts.e7, 0)::bigint,
-    coalesce(email_counts.e28, 0)::bigint,
-    coalesce(email_counts.e90, 0)::bigint,
-    coalesce(email_counts.e365, 0)::bigint,
     -- Sprint 10 Phase 1.5 — booking-CTA click counters
     coalesce(booking_counts.b7, 0)::bigint,
     coalesce(booking_counts.b28, 0)::bigint,
@@ -882,7 +861,6 @@ begin
     left join top_med on top_med.path = p.path
     left join dev     on dev.path    = p.path
     left join phone_counts   on phone_counts.path   = p.path
-    left join email_counts   on email_counts.path   = p.path
     left join booking_counts on booking_counts.path = p.path
     left join pogo            on pogo.path            = p.path
     left join device_sessions on device_sessions.path = p.path
