@@ -5,6 +5,13 @@ node_modules/
 *.log
 __pycache__/
 *.pyc
+.deploy-*.json
+.full-deploy.json
+.mcp-deploy-args.json
+.mcp-deploy-body.json
+.deploy-out-oneline.json
+track_content_only.txt
+supabase/functions/track/.deploy-content.ts
 
 # Build artifact — tracker.min.html is regenerated from tracker.html
 # at each Wix deploy. Source of truth = tracker.html.
