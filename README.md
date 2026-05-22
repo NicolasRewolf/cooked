@@ -210,7 +210,22 @@ python3 scripts/gsc_ingest.py query-page
 
 DDL : `supabase/migrations/20260522120000_gsc_tables.sql` (à rejouer sur fresh DB).
 
-⚠️ Pas encore de pg_cron quotidien — Sprint 33+.
+### Cron quotidien (Sprint 33, 22/05/2026)
+
+GitHub Actions workflow `.github/workflows/gsc-daily-ingest.yml` lance
+`python3 scripts/gsc_ingest.py path-query --months 1` puis `query-page --months 1`
+tous les jours à 06:00 UTC (≈08:00 Paris en été). Upsert idempotent —
+re-ingère le dernier mois pour capturer les refinements GSC.
+
+**Secrets à configurer une fois** dans le repo GitHub (Settings → Secrets and variables → Actions) :
+
+| Secret | Valeur |
+|---|---|
+| `GSC_CREDENTIALS_B64` | base64 du JSON service account (`base64 -w0 < ~/.claude/gsc-credentials.json`) |
+| `SUPABASE_SECRET_KEY` | clé `sb_secret_*` du projet Cooked |
+
+Run manuel via le bouton **"Run workflow"** sur l'onglet Actions. Monitoring via
+`refresh_pipeline_health()` axe GSC (gsc_data_age_days, gsc_ingest_age_hours).
 
 ---
 
