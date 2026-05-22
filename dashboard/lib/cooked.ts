@@ -116,6 +116,28 @@ export type SiteContextRow = {
   top_sources: Record<string, unknown>;
 };
 
+export type SiteKpisCompare = {
+  period_n_start: string;
+  period_n_end: string;
+  sessions_n: number;
+  pageviews_n: number;
+  phone_clicks_n: number;
+  form_submits_n: number;
+  macro_conversions_n: number;
+  period_prev_start: string;
+  period_prev_end: string;
+  sessions_prev: number;
+  pageviews_prev: number;
+  phone_clicks_prev: number;
+  form_submits_prev: number;
+  macro_conversions_prev: number;
+  sessions_delta_pct: number | null;
+  pageviews_delta_pct: number | null;
+  phone_clicks_delta_pct: number | null;
+  form_submits_delta_pct: number | null;
+  macro_conversions_delta_pct: number | null;
+};
+
 // ============================================================
 // Wrappers RPCs — chaque fonction = 1 RPC Cooked publiée
 // ============================================================
@@ -188,4 +210,20 @@ export async function siteContext(): Promise<SiteContextRow | null> {
   if (error) throw new Error(`site_context_export: ${error.message}`);
   const rows = (data ?? []) as SiteContextRow[];
   return rows[0] ?? null;
+}
+
+/**
+ * KPIs business N vs N-1 (sessions, pageviews, phone, form_submit, macro).
+ * RPC : public.site_kpis_compare(period_days int)
+ */
+export async function siteKpisCompare(
+  periodDays = 28
+): Promise<SiteKpisCompare> {
+  const { data, error } = await client().rpc("site_kpis_compare", {
+    period_days: periodDays,
+  });
+  if (error) throw new Error(`site_kpis_compare: ${error.message}`);
+  const rows = (data ?? []) as SiteKpisCompare[];
+  if (!rows[0]) throw new Error("site_kpis_compare returned no rows");
+  return rows[0];
 }

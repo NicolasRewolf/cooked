@@ -11,8 +11,11 @@ export function Nav() {
           cooked<span className="text-muted-foreground">/dashboard</span>
         </Link>
         <div className="flex items-center gap-6 text-sm text-muted-foreground">
+          <Link href="/" className="hover:text-foreground transition-colors">
+            Vue d&apos;ensemble
+          </Link>
           <Link
-            href="/"
+            href="/pages"
             className="hover:text-foreground transition-colors"
           >
             Pages

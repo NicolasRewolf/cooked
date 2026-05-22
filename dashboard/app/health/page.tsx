@@ -1,6 +1,7 @@
 import { Nav } from "@/components/nav";
+import { DateBanner } from "@/components/date-banner";
 import { StatusPill } from "@/components/status-pill";
-import { pipelineHealth } from "@/lib/cooked";
+import { pipelineHealth, siteKpisCompare } from "@/lib/cooked";
 import {
   formatAge,
   formatDateTimeFR,
@@ -12,7 +13,10 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function HealthPage() {
-  const h = await pipelineHealth();
+  const [h, kpis] = await Promise.all([
+    pipelineHealth(),
+    siteKpisCompare(28),
+  ]);
 
   const axes: Axis[] = [
     {
@@ -70,6 +74,12 @@ export default async function HealthPage() {
   return (
     <>
       <Nav />
+      <DateBanner
+        periodStart={kpis.period_n_start}
+        periodEnd={kpis.period_n_end}
+        gscLastDay={h.gsc_last_day}
+        gscDataAgeDays={h.gsc_data_age_days}
+      />
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
         <header className="mb-8 flex items-end justify-between">
           <div>

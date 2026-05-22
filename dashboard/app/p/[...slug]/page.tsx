@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Nav } from "@/components/nav";
-import { gscPagePerformance, gscTopQueriesForPath } from "@/lib/cooked";
+import { DateBanner } from "@/components/date-banner";
+import { CategoryBadge } from "@/components/category-badge";
+import {
+  gscPagePerformance,
+  gscTopQueriesForPath,
+  pipelineHealth,
+  siteKpisCompare,
+} from "@/lib/cooked";
 import { formatInt, formatPct, formatNumber } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -13,9 +20,11 @@ export default async function PageDetail({ params }: Props) {
   const { slug } = await params;
   const path = "/" + slug.map((s) => decodeURIComponent(s)).join("/");
 
-  const [perf, queries] = await Promise.all([
+  const [perf, queries, health, kpis] = await Promise.all([
     gscPagePerformance(path),
     gscTopQueriesForPath(path, 28, 20),
+    pipelineHealth(),
+    siteKpisCompare(28),
   ]);
 
   if (!perf) notFound();
@@ -23,17 +32,26 @@ export default async function PageDetail({ params }: Props) {
   return (
     <>
       <Nav />
+      <DateBanner
+        periodStart={kpis.period_n_start}
+        periodEnd={kpis.period_n_end}
+        gscLastDay={health.gsc_last_day}
+        gscDataAgeDays={health.gsc_data_age_days}
+      />
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
         <Link
-          href="/"
+          href="/pages"
           className="mb-6 inline-block font-mono text-xs text-muted-foreground hover:text-foreground"
         >
           ← Pages
         </Link>
 
-        <h1 className="break-words font-mono text-xl tracking-tight text-foreground">
-          {perf.path}
-        </h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <CategoryBadge path={perf.path} />
+          <h1 className="break-words font-mono text-xl tracking-tight text-foreground">
+            {perf.path}
+          </h1>
+        </div>
         <p className="mt-1 text-sm text-muted-foreground">
           Fiche cross-source sur les 28 derniers jours.
         </p>
