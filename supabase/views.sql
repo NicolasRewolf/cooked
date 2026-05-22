@@ -2115,3 +2115,32 @@ create unique index if not exists events_form_submit_submission_id_uniq
 -- Volume backfill initial (16 mois → 19/05/2026) : voir README section GSC.
 --
 -- TODO Sprint 33+ : pg_cron quotidien (J-3 → J-1, dataState=final).
+
+
+-- ============================================================
+-- Sprint 33 (22/05/2026) — RPCs cross-source GSC × Cooked
+-- ============================================================
+-- 3 RPCs publiées, code dans :
+--   → supabase/migrations/20260522113000_gsc_cross_source_rpcs.sql
+--
+--   gsc_page_performance(target_path)
+--     Fiche complète d'une page sur 28j :
+--     GSC (clicks/impressions/position/CTR) + Cooked (sessions/dwell/
+--     conversions/pogo) + CWV (LCP/INP/CLS p75) + device_split.
+--
+--   gsc_top_queries_for_path(target_path, days_back, max_rows)
+--     Top requêtes Google qui amènent sur une page. Lit
+--     gsc_query_page_daily, agrège par query (clicks/impressions/position
+--     pondérée/CTR/days_in_period). Défauts : 28j, 20 lignes.
+--
+--   gsc_pages_overview(max_rows)
+--     Tableau de bord top pages (28j) : GSC top par clicks + comportement
+--     Cooked (sessions, dwell, bounce, conversions, pogo, has_cooked_data).
+--     Défaut : 30 lignes.
+--
+-- Toutes : SECURITY DEFINER, service_role only, jointure via canonical_path
+-- pour gérer l'historique events pré-Sprint 31.
+--
+-- Sprint 33 (22/05/2026) — fix refresh_seo_url_snapshot (74 vs 70 cols) :
+--   → supabase/migrations/20260522110000_fix_refresh_seo_url_snapshot.sql
+--   Drop CTE email_counts + LEFT JOIN + 4 expressions (drift Sprint 30).
