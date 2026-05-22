@@ -421,7 +421,7 @@ articles "ressources" sans les distinguer des "affaires").
 - ⚠️ La catégorie Wix Blog `/blog/categories/ressources-et-notions-juridiques`
   ne contient que ~20 articles (sous-ensemble). NE PAS l'utiliser comme
   référence. Toujours scraper `/comprendre-le-droit` pour la liste complète.
-- ~49 articles au 11/05/2026.
+- **51 articles au 22/05/2026** (49 au 11/05/2026, +2 nouveaux en 11 jours).
 - **Pattern critique confirmé** : **plus gros volume de trafic du site**
   - Top article `/post/durée-de-la-garde-à-vue-24h-48h-96h` : 219 sess/28j
   - Top 5 cumule 488 sessions (42 % de la catégorie)
