@@ -2144,3 +2144,9 @@ create unique index if not exists events_form_submit_submission_id_uniq
 -- Sprint 33 (22/05/2026) — fix refresh_seo_url_snapshot (74 vs 70 cols) :
 --   → supabase/migrations/20260522110000_fix_refresh_seo_url_snapshot.sql
 --   Drop CTE email_counts + LEFT JOIN + 4 expressions (drift Sprint 30).
+--
+-- Sprint 33 (22/05/2026) — refresh_pipeline_health étendu au GSC :
+--   → supabase/migrations/20260522114000_extend_pipeline_health_gsc.sql
+--   Ajoute un 4e axe self-diagnostic : gsc_last_day, gsc_data_age_days,
+--   gsc_last_ingest, gsc_ingest_age_hours. Return type passe de 10 à 14
+--   colonnes (DROP + CREATE). Seuils : data 4/7j, ingest 30/72h.
