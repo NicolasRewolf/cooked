@@ -8,9 +8,12 @@
 
 ## Identité du projet
 
-`cooked` est un **système de tracking d'événements first-party**
-(cookieless, RGPD-exempt, non échantillonné) pour le site
-`jplouton-avocat.fr` (Wix Studio). Stack :
+`cooked` est un **système d'analytics first-party** (cookieless,
+RGPD-exempt, non échantillonné) pour le site `jplouton-avocat.fr`
+(Wix Studio). Depuis Sprint 31-32 (21-22/05/2026), Cooked ingère
+**aussi Google Search Console** pour les analyses cross-source
+acquisition × comportement on-page. Tout dans le même projet
+Supabase, plus de pipeline séparé. Stack :
 
 ```
 tracker.html (Wix Custom Code)
@@ -21,18 +24,31 @@ Supabase Edge Function `track` (Deno)
    ↓
 events table (Supabase Postgres)
    ↓
+events_human view (events MINUS bots MINUS noise)
+   ↓
 seo_url_snapshot (rebuilt nightly via pg_cron)
    ↓
 RPCs internes consommées par les analyses
+
+   +
+
+scripts/gsc_ingest_*.py  (Service Account → API GSC)
+   ↓
+gsc_path_daily        — day × path        (~121k rows, 16 mois)
+gsc_query_daily       — day × query       (~872k rows, 16 mois)
+gsc_query_page_daily  — day × path × query (~1M rows, brique
+                        d'attribution query → landing, Sprint 32)
 ```
 
-Capture pageview / scroll_depth / engagement_tick / web_vitals /
-click_outbound / page_exit / cta_phone_click / cta_booking_click /
-cta_anchor_click (Sprint 19). Plus `form_submit` inséré directement
-par la deuxième Edge Function `form-webhook` qui reçoit les webhooks
-Wix Automations (Sprint 18). Bot filtering via la vue `events_human`
-(Sprint 17). Sert de remplaçant GA4 pour fournir des données
-comportementales fiables à Nicolas et à Me Plouton.
+Capture côté browser : pageview / scroll_depth / engagement_tick /
+web_vitals / click_outbound / page_exit / cta_phone_click /
+cta_booking_click / cta_anchor_click (Sprint 19). Plus `form_submit`
+inséré directement par la deuxième Edge Function `form-webhook` qui
+reçoit les webhooks Wix Automations (Sprint 18). Bot filtering via la
+vue `events_human` (Sprint 17). Sert de remplaçant GA4 pour fournir
+des données comportementales fiables à Nicolas et à Me Plouton, et
+permet désormais les analyses Cooked × GSC (intent matching, funnel
+SEO complet, pogo-stick × ranking).
 
 ---
 
@@ -46,6 +62,8 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
 - L'Edge Function `supabase/functions/form-webhook/index.ts` (Deno, Wix Automations webhook pour `form_submit`)
 - Le schéma Cooked (`mxycmjkeotrycyneacje`) :
   `events`, `seo_url_snapshot`, vues, RPCs publiées
+- Les 3 tables Google Search Console (Sprint 31-32) :
+  `gsc_path_daily`, `gsc_query_daily`, `gsc_query_page_daily`
 - Les migrations Supabase (`supabase/migrations/*.sql`,
   `supabase/views.sql`)
 - Le pg_cron de rebuild nocturne `refresh_seo_url_snapshot()`
@@ -53,7 +71,11 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
   comportement)
 - Le README du repo Cooked
 - Les analyses, graphes, rapports produits depuis Cooked
-- Les scripts d'outillage (`scripts/minify-tracker.py`, etc.)
+- Les scripts d'outillage (`scripts/minify-tracker.py`,
+  `scripts/gsc_ingest_*.py`, etc.)
+- L'auth Service Account GSC (`gsc-mcp-claude@plouton-472207...`)
+  et le fichier `~/.claude/gsc-credentials.json` qui ne doit JAMAIS
+  être committé
 
 L'agent peut prendre toutes les décisions techniques sur ces objets.
 Demander une validation explicite à Nicolas uniquement pour :

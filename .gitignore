@@ -7,3 +7,13 @@ node_modules/
 # Build artifact — tracker.min.html is regenerated from tracker.html
 # at each Wix deploy. Source of truth = tracker.html.
 wix/tracker.min.html
+
+# Safety net : aucun fichier de credentials Google / Supabase / Wix
+# ne doit JAMAIS atterrir dans ce repo. Les credentials Service
+# Account GSC vivent dans ~/.claude/gsc-credentials.json (hors repo).
+# Les secrets Supabase sont en env vars (cf scripts/gsc_ingest_*.py).
+*credentials*.json
+*-credentials.json
+service-account*.json
+*.pem
+*.key

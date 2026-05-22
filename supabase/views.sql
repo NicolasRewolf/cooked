@@ -2119,3 +2119,95 @@ create unique index if not exists events_form_submit_submission_id_uniq
 --
 -- Le code exact des CREATE FUNCTION lives en prod. Pour rebuild from scratch,
 -- récupérer via `pg_get_functiondef()` ou Supabase CLI `db pull`.
+
+
+-- ============================================================
+-- Sprint 31-32 (21-22/05/2026) — Ingestion Google Search Console
+-- ============================================================
+-- Le projet Seo (repo + DB séparée) a été supprimé le 21/05/2026 par
+-- décision business ("trop complexe pour le moment"). Cooked devient
+-- l'unique data platform pour Plouton : analytics comportementale
+-- (Cooked) + acquisition search (GSC), tout dans le même Supabase.
+--
+-- 3 tables, identifiées comme nécessaires après brainstorm multi-agent
+-- (5 personas idéation + 3 critiques) :
+--
+--   1. gsc_path_daily       — agg quotidien par page    (Sprint 31)
+--   2. gsc_query_daily      — agg quotidien par query   (Sprint 31)
+--   3. gsc_query_page_daily — attribution query × page  (Sprint 32, brique
+--      critique débloquant ~13 idées d'analyses cross-source)
+--
+-- Path canonicalisé symétrique avec events.path (Sprint 13) :
+--   - decodeURIComponent (%C3%A9 → é)
+--   - Unicode NFC normalization
+--   - strip protocol + domain
+--   - strip query string
+--   - strip trailing slash sauf root
+--   → fait Python-side avant insert, cf scripts/gsc_ingest_*.py
+--
+-- Auth : Service Account `gsc-mcp-claude@plouton-472207.iam...`
+-- (Google Cloud project plouton-472207), credentials en
+-- ~/.claude/gsc-credentials.json (non commité). Le SA est ajouté
+-- comme utilisateur "Restreint" sur la propriété GSC jplouton-avocat.fr.
+--
+-- Volume au 22/05/2026 (16 mois d'historique 01/02/2025 → 19/05/2026) :
+--   gsc_path_daily       : 121 746 rows, 6.59M impressions, 142k clicks
+--   gsc_query_daily      : 872 564 rows, 2.60M impressions, 36k clicks
+--   gsc_query_page_daily : 1 005 653 rows, 3.05M impressions, 37k clicks
+--
+-- Note : le delta path-only (6.59M) vs path×query (3.05M) = 54% du
+-- volume est anonymisé par GSC pour les queries rares. C'est attendu
+-- et OK : le volume total reste dans gsc_path_daily, juste sans
+-- query identifiable. Quasi-tous les CLICKS (37k/36k ≈ 100%) sont
+-- attribuables — GSC anonymise les impressions, pas les clics.
+
+CREATE TABLE IF NOT EXISTS public.gsc_path_daily (
+  day           date NOT NULL,
+  path          text NOT NULL,         -- canonicalisé (cf header)
+  impressions   integer NOT NULL CHECK (impressions >= 0),
+  clicks        integer NOT NULL CHECK (clicks >= 0),
+  position      numeric(6,2) NOT NULL CHECK (position > 0),
+  ctr           numeric(7,6) NOT NULL CHECK (ctr >= 0 AND ctr <= 1),
+  ingested_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, path)
+);
+CREATE INDEX IF NOT EXISTS gsc_path_daily_path_idx ON public.gsc_path_daily(path);
+CREATE INDEX IF NOT EXISTS gsc_path_daily_day_idx  ON public.gsc_path_daily(day DESC);
+ALTER TABLE public.gsc_path_daily ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS public.gsc_query_daily (
+  day           date NOT NULL,
+  query         text NOT NULL,
+  impressions   integer NOT NULL CHECK (impressions >= 0),
+  clicks        integer NOT NULL CHECK (clicks >= 0),
+  position      numeric(6,2) NOT NULL CHECK (position > 0),
+  ctr           numeric(7,6) NOT NULL CHECK (ctr >= 0 AND ctr <= 1),
+  ingested_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, query)
+);
+CREATE INDEX IF NOT EXISTS gsc_query_daily_query_idx ON public.gsc_query_daily(query);
+CREATE INDEX IF NOT EXISTS gsc_query_daily_day_idx   ON public.gsc_query_daily(day DESC);
+ALTER TABLE public.gsc_query_daily ENABLE ROW LEVEL SECURITY;
+
+-- Brique critique Sprint 32 : débloque l'attribution query → page
+CREATE TABLE IF NOT EXISTS public.gsc_query_page_daily (
+  day           date NOT NULL,
+  path          text NOT NULL,
+  query         text NOT NULL,
+  impressions   integer NOT NULL CHECK (impressions >= 0),
+  clicks        integer NOT NULL CHECK (clicks >= 0),
+  position      numeric(6,2) NOT NULL CHECK (position > 0),
+  ctr           numeric(7,6) NOT NULL CHECK (ctr >= 0 AND ctr <= 1),
+  ingested_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, path, query)
+);
+CREATE INDEX IF NOT EXISTS gsc_query_page_daily_path_idx  ON public.gsc_query_page_daily(path);
+CREATE INDEX IF NOT EXISTS gsc_query_page_daily_query_idx ON public.gsc_query_page_daily(query);
+CREATE INDEX IF NOT EXISTS gsc_query_page_daily_day_idx   ON public.gsc_query_page_daily(day DESC);
+ALTER TABLE public.gsc_query_page_daily ENABLE ROW LEVEL SECURITY;
+
+-- TODO Sprint 33+ : pg_cron quotidien pour mettre à jour les 3 tables
+-- (incrémentale : last 7 days, garde dataState='final'). Pour l'instant
+-- les tables sont peuplées par un backfill manuel via scripts/gsc_ingest_*.py
+-- exécutés une fois (22/05/2026) — il faudra automatiser quand les analyses
+-- live deviendront critiques.
