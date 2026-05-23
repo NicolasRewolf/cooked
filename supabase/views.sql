@@ -2114,7 +2114,8 @@ create unique index if not exists events_form_submit_submission_id_uniq
 --
 -- Volume backfill initial (16 mois → 19/05/2026) : voir README section GSC.
 --
--- TODO Sprint 33+ : pg_cron quotidien (J-3 → J-1, dataState=final).
+-- Ingestion GSC quotidienne : GitHub Actions (pas pg_cron) —
+--   .github/workflows/gsc-daily-ingest.yml (06:00 UTC, --months 1).
 
 
 -- ============================================================
@@ -2157,3 +2158,15 @@ create unique index if not exists events_form_submit_submission_id_uniq
 --   06:00 UTC quotidien : scripts/gsc_ingest.py path-query/query-page
 --   --months 1. Upsert idempotent (refinements GSC capturés).
 --   Secrets requis : GSC_CREDENTIALS_B64, SUPABASE_SECRET_KEY.
+--
+-- Sprint 33+ (22-24/05/2026) — dashboard & enrichissements :
+--   20260522190000_site_kpis_compare.sql
+--   20260523130000 / 20260523140000_pages_overview_unified(_v2)
+--   20260524100000_contacts_macro_per_path.sql
+--   20260524120000_gsc_pages_overview_v3_contacts.sql
+--   20260524160000_pages_pulse.sql / 20260524180000_site_pulse.sql
+--   20260524200000_page_daily_series.sql
+--   20260524220000_pulse_helpers.sql
+--   20260524240000_gsc_top_queries_global.sql
+--   20260524260000_site_seo_funnel.sql (+ 20260524270000 fix ambiguity)
+--   20260524300000_fix_off_by_one_28d.sql

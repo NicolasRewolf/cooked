@@ -38,6 +38,10 @@ gsc_path_daily        — day × path        (~121k rows, 16 mois)
 gsc_query_daily       — day × query       (~872k rows, 16 mois)
 gsc_query_page_daily  — day × path × query (~1M rows, brique
                         d'attribution query → landing, Sprint 32)
+
+dashboard/ (Next.js 15, READ-ONLY)
+   ↓ lib/cooked.ts → RPCs cross-source (site_kpis, pages_overview_unified,
+     pulse, funnel, sparklines…)
 ```
 
 Capture côté browser : pageview / scroll_depth / engagement_tick /
@@ -72,7 +76,10 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
 - Le README du repo Cooked
 - Les analyses, graphes, rapports produits depuis Cooked
 - Les scripts d'outillage (`scripts/minify-tracker.py`,
-  `scripts/gsc_ingest.py`, `scripts/gsc_common.py`, etc.)
+  `scripts/gsc_ingest.py`, `scripts/gsc_common.py`,
+  `scripts/deploy_track.py`, etc.)
+- Le dashboard `dashboard/` (UI lecture ; schéma/RPCs restent ici)
+- Le workflow GitHub Actions GSC (`.github/workflows/gsc-daily-ingest.yml`)
 - L'auth Service Account GSC (`gsc-mcp-claude@plouton-472207...`)
   et le fichier `~/.claude/gsc-credentials.json` qui ne doit JAMAIS
   être committé
@@ -80,8 +87,8 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
 L'agent peut prendre toutes les décisions techniques sur ces objets.
 Demander une validation explicite à Nicolas uniquement pour :
 
-- Une décision business ou de produit (ex : dashboard utilisateur,
-  multi-tenancy, nouveau client)
+- Une décision business ou de produit (ex : multi-tenancy, nouveau client,
+  refonte produit dashboard visible par le client final)
 - Une suppression de donnée irrécupérable (DROP TABLE, DELETE de masse)
 - Un changement de coût significatif (ex : passer à un plan Supabase
   payant supérieur, activer une API tierce facturée)
@@ -134,7 +141,7 @@ Velo proxy (http-functions.js)
 Edge Function /track (Deno)              Edge Function /form-webhook (Deno)
   ├─ hash IP+UA → anonymous_id              ├─ verify token query param (401 if KO)
   ├─ parse UA → device/browser/os           ├─ parse Wix payload (body.data.*)
-  ├─ decodeURIComponent(path) (Sprint 13)   ├─ strip PII (Sprint 30)
+  ├─ canonicalPath(path) (Sprint 13 + NFC)    ├─ strip PII (Sprint 30)
   └─ INSERT events                          └─ INSERT events (name=form_submit)
        ↓                                          ↓
 events table (raw)
@@ -148,10 +155,10 @@ seo_url_snapshot (70 colonnes post-Sprint-30 : 4 fenêtres × ~11
                   + device CTA rate. Sprint 30 a dropé 4 colonnes
                   email_clicks_* qui étaient à 0 depuis le début)
        ↓
-RPCs internes consommées par les analyses ad-hoc et les rapports
+RPCs internes + dashboard (`dashboard/lib/cooked.ts`)
 ```
 
-RPCs publiées (interface stable des analyses) :
+RPCs publiées — analyses historiques & snapshot :
 - `snapshot_pages_export()` — top pages avec metrics 28d/90d
 - `site_context_export()` — site-wide aggregates
 - `outbound_destinations_for_path(path, days)` — top destinations
@@ -175,6 +182,21 @@ RPCs publiées (interface stable des analyses) :
 - `refresh_pipeline_health()` — self-diagnostic 3-axes (snapshot
   freshness, cron last status, ingestion last event)
 - `latest_rpc_health()` — dernier état des contract tests par RPC
+
+RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
+
+- `site_kpis_compare(period_days)` — KPIs business N vs N-1 (macro = phone + form)
+- `pages_overview_unified(max_rows)` — univers pages (~490 paths), contacts macro séparés de booking_intent
+- `gsc_page_performance(target_path)` — fiche page complète
+- `gsc_top_queries_for_path(path, days_back, max_rows)` — requêtes → landing
+- `gsc_pages_overview(max_rows)` — top pages SEO (tri clics) ; v3 contacts macro
+- `gsc_top_queries_global(days_back, max_rows)` — top requêtes site
+- `site_pulse` / `pages_pulse` — quadrants GSC 28v28 × Cooked 7v7 (`pulse_quadrant` helper)
+- `site_seo_funnel(period_days)` — funnel impressions → contacts
+- `gsc_page_daily_series` / `cooked_page_daily_series` — séries quotidiennes (sparklines)
+
+**Contacts dashboard** : `cooked_contacts_*` = `cta_phone_click` + `form_submit` uniquement.
+`cooked_booking_intent_*` = `cta_booking_click` (micro). Ne pas mélanger.
 
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
 Paris (première ingestion réelle). Le tracker est en sprint30

@@ -9,7 +9,7 @@
 ## Identité du projet
 
 **cooked-dashboard** est l'interface de lecture du système d'analytics
-Cooked × GSC. C'est un projet **séparé** du repo `cooked` (data layer).
+Cooked × GSC. Code dans `dashboard/` du repo **cooked** (data layer à la racine).
 
 Stack : Next.js 15 + App Router + React 19 + TypeScript + Tailwind v4 +
 shadcn/ui + Geist + Recharts + Framer Motion.
@@ -49,9 +49,10 @@ on revient ici ajouter un wrapper.
 ```
 app/
   layout.tsx              Geist + theme + nav + TooltipProvider
-  page.tsx                Home : site_kpis_compare + pages_overview_unified (alertes/contributeurs)
-  pages/page.tsx          Tableau /pages : pages_overview_unified (univers exhaustif, ~490 paths)
-  p/[...slug]/page.tsx    Fiche page : gsc_page_performance + gsc_top_queries_for_path
+  page.tsx                Home : KPIs, site_pulse, site_seo_funnel, alertes pages_pulse
+  pages/page.tsx          Tableau /pages : pages_overview_unified
+  queries/page.tsx        Top requêtes : gsc_top_queries_global
+  p/[...slug]/page.tsx    Fiche : perf + queries + pulse + sparklines
   health/page.tsx         Pipeline : refresh_pipeline_health
   globals.css             Design tokens REWOLF (canvas, surface, signals, shadows)
 
@@ -63,14 +64,18 @@ lib/
   utils.ts                shadcn cn()
 
 components/
-  nav.tsx                 Nav minimaliste top
-  date-banner.tsx         Bandeau dates + GSC freshness sous Nav
+  nav.tsx                 Nav (/, /pages, /queries, /health)
+  date-banner.tsx         Bandeau dates + fraîcheur GSC
+  site-pulse-card.tsx     Pulse site-wide (quadrant GSC × Cooked)
+  seo-funnel.tsx          Funnel impressions → contacts macro
+  quadrant-badge.tsx      Badge quadrant Pulse (up_up, up_down, …)
+  page-trend-panel.tsx    Sparklines GSC + Cooked (fiche page)
   status-pill.tsx         Pill healthy/degraded/critical
-  kpi-card.tsx            KPI card avec valeur + delta % + sub
-  category-badge.tsx      Badge catégorie de page
-  info-label.tsx          Label + tooltip ℹ️
-  pages-table.tsx         Tableau client avec filtres / tri / pagination
-  ui/                     shadcn (button, card, table, badge, separator, skeleton, tooltip)
+  kpi-card.tsx            KPI + delta %
+  category-badge.tsx      Badge catégorie page
+  pages-table.tsx         Tableau /pages (filtres, tri, pagination)
+  queries-table.tsx       Tableau /queries
+  ui/                     shadcn
 ```
 
 Toutes les pages sont des **Server Components** (`export const dynamic =
@@ -88,6 +93,12 @@ Toutes les pages sont des **Server Components** (`export const dynamic =
 | `pipelineHealth()` | `refresh_pipeline_health()` | self-diag 4 axes (snapshot, cron, ingestion, GSC) |
 | `siteKpisCompare(periodDays=28)` | `site_kpis_compare(period_days)` | KPIs business N vs N-1 (sessions, pageviews, phone, form_submit, macro) |
 | `siteContext()` | `site_context_export()` | contexte site-wide 28j |
+| `sitePulse(gsc, cooked, threshold)` | `site_pulse(...)` | agrégat site quadrant GSC 28v28 × Cooked 7v7 |
+| `pagesPulse(gsc, cooked, threshold)` | `pages_pulse(...)` | même logique par path (alertes home, fiche page) |
+| `siteSeoFunnel(periodDays)` | `site_seo_funnel(period_days)` | funnel SEO site-wide |
+| `gscTopQueriesGlobal(days, max)` | `gsc_top_queries_global(...)` | top requêtes + landing |
+| `gscPageDailySeries(path, days)` | `gsc_page_daily_series(...)` | série clics GSC (sparkline) |
+| `cookedPageDailySeries(path, days)` | `cooked_page_daily_series(...)` | série sessions Cooked (sparkline) |
 
 ## 🚨 RÈGLE DURE — Définition « Contacts » (CLAUDE.md cooked)
 
