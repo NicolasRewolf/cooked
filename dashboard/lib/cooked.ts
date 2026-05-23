@@ -145,6 +145,9 @@ export type PagePulseRow = {
   quadrant: PulseQuadrant;
 };
 
+export type GscDailyPoint = { day: string; clicks: number };
+export type CookedDailyPoint = { day: string; sessions: number };
+
 export type SitePulse = {
   gsc_period_start: string;
   gsc_period_end: string;
@@ -277,6 +280,38 @@ export async function pagesPulse(
   });
   if (error) throw new Error(`pages_pulse: ${error.message}`);
   return (data ?? []) as PagePulseRow[];
+}
+
+/**
+ * Série quotidienne clics GSC pour une page (sparkline fiche page).
+ * RPC : public.gsc_page_daily_series(target_path, days_back)
+ */
+export async function gscPageDailySeries(
+  targetPath: string,
+  daysBack = 56
+): Promise<GscDailyPoint[]> {
+  const { data, error } = await client().rpc("gsc_page_daily_series", {
+    target_path: targetPath,
+    days_back: daysBack,
+  });
+  if (error) throw new Error(`gsc_page_daily_series: ${error.message}`);
+  return (data ?? []) as GscDailyPoint[];
+}
+
+/**
+ * Série quotidienne visites Cooked pour une page (sparkline fiche page).
+ * RPC : public.cooked_page_daily_series(target_path, days_back)
+ */
+export async function cookedPageDailySeries(
+  targetPath: string,
+  daysBack = 14
+): Promise<CookedDailyPoint[]> {
+  const { data, error } = await client().rpc("cooked_page_daily_series", {
+    target_path: targetPath,
+    days_back: daysBack,
+  });
+  if (error) throw new Error(`cooked_page_daily_series: ${error.message}`);
+  return (data ?? []) as CookedDailyPoint[];
 }
 
 /**

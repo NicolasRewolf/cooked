@@ -3,9 +3,13 @@ import { notFound } from "next/navigation";
 import { Nav } from "@/components/nav";
 import { DateBanner } from "@/components/date-banner";
 import { CategoryBadge } from "@/components/category-badge";
+import { PageTrendPanel } from "@/components/page-trend-panel";
 import {
+  cookedPageDailySeries,
+  gscPageDailySeries,
   gscPagePerformance,
   gscTopQueriesForPath,
+  pagesPulse,
   pipelineHealth,
   siteKpisCompare,
 } from "@/lib/cooked";
@@ -20,14 +24,21 @@ export default async function PageDetail({ params }: Props) {
   const { slug } = await params;
   const path = "/" + slug.map((s) => decodeURIComponent(s)).join("/");
 
-  const [perf, queries, health, kpis] = await Promise.all([
-    gscPagePerformance(path),
-    gscTopQueriesForPath(path, 28, 20),
-    pipelineHealth(),
-    siteKpisCompare(28),
-  ]);
+  const [perf, queries, health, kpis, gscSeries, cookedSeries, pulseRows] =
+    await Promise.all([
+      gscPagePerformance(path),
+      gscTopQueriesForPath(path, 28, 20),
+      pipelineHealth(),
+      siteKpisCompare(28),
+      gscPageDailySeries(path, 56),
+      cookedPageDailySeries(path, 14),
+      pagesPulse(28, 7, 5.0),
+    ]);
 
   if (!perf) notFound();
+
+  // Le row Pulse de cette page (peut être null si hors fenêtre)
+  const pulse = pulseRows.find((r) => r.path === perf.path) ?? null;
 
   return (
     <>
@@ -55,6 +66,13 @@ export default async function PageDetail({ params }: Props) {
         <p className="mt-1 text-sm text-muted-foreground">
           Fiche cross-source sur les 28 derniers jours.
         </p>
+
+        {/* Panneau Tendance — sparkline GSC 56j + Cooked 14j + badge Pulse */}
+        <PageTrendPanel
+          pulse={pulse}
+          gscSeries={gscSeries}
+          cookedSeries={cookedSeries}
+        />
 
         {/* Métriques principales */}
         <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border shadow-xs md:grid-cols-4">
