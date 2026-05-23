@@ -24,10 +24,16 @@ const CABINET_EXACT = new Set<string>([
   "/notre-cabinet",
   "/honoraires-rendez-vous",
   "/mentions-legales",
+  // Hubs passerelle vers les expertises (peu d'intérêt analytics propre,
+  // gardées sous "cabinet" pour ne pas polluer le filtre Expertise).
   "/defense-penale",
   "/indemnisation-des-victimes",
   "/droit-des-contrats-et-des-personnes",
-  "/comprendre-le-droit",
+  // Hubs articles maintenus par Nicolas.
+  "/comprendre-le-droit", // ressources
+  "/nos-affaires",        // articles classiques
+  // Wix blog legacy (peu utilisé depuis /nos-affaires).
+  "/blog",
 ]);
 
 const EXPERTISE_PREFIXES = [
