@@ -145,6 +145,20 @@ export type PagePulseRow = {
   quadrant: PulseQuadrant;
 };
 
+export type SitePulse = {
+  gsc_period_start: string;
+  gsc_period_end: string;
+  cooked_period_start: string;
+  cooked_period_end: string;
+  gsc_clicks_n: number;
+  gsc_clicks_prev: number;
+  gsc_delta_pct: number | null;
+  cooked_sessions_n: number;
+  cooked_sessions_prev: number | null;
+  cooked_sessions_delta_pct: number | null;
+  quadrant: PulseQuadrant;
+};
+
 export type SiteKpisCompare = {
   period_n_start: string;
   period_n_end: string;
@@ -263,6 +277,26 @@ export async function pagesPulse(
   });
   if (error) throw new Error(`pages_pulse: ${error.message}`);
   return (data ?? []) as PagePulseRow[];
+}
+
+/**
+ * Pulse cross-source site-wide : totaux GSC 28v28 + Cooked 7v7 + quadrant.
+ * RPC : public.site_pulse(gsc_period, cooked_period, delta_threshold_pct)
+ */
+export async function sitePulse(
+  gscPeriod = 28,
+  cookedPeriod = 7,
+  deltaThresholdPct = 5.0
+): Promise<SitePulse> {
+  const { data, error } = await client().rpc("site_pulse", {
+    gsc_period: gscPeriod,
+    cooked_period: cookedPeriod,
+    delta_threshold_pct: deltaThresholdPct,
+  });
+  if (error) throw new Error(`site_pulse: ${error.message}`);
+  const rows = (data ?? []) as SitePulse[];
+  if (!rows[0]) throw new Error("site_pulse returned no rows");
+  return rows[0];
 }
 
 /**

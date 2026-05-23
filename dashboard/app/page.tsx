@@ -3,24 +3,37 @@ import { Nav } from "@/components/nav";
 import { DateBanner } from "@/components/date-banner";
 import { KpiCard } from "@/components/kpi-card";
 import { CategoryBadge } from "@/components/category-badge";
+import { SitePulseCard } from "@/components/site-pulse-card";
+import { QuadrantBadge } from "@/components/quadrant-badge";
 import { StatusPill } from "@/components/status-pill";
 import {
   pagesOverviewUnified,
+  pagesPulse,
   pipelineHealth,
   siteKpisCompare,
+  sitePulse,
+  type PagePulseRow,
 } from "@/lib/cooked";
-import { categorize } from "@/lib/page-category";
-import { formatInt, formatPct } from "@/lib/format";
+import { formatInt } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+// Seuil minimum de volume GSC pour qu'une alerte up_down soit
+// considérée comme actionnable. En dessous, le delta % est dominé
+// par le bruit (ex. 2 → 5 clics).
+const PULSE_ALERT_MIN_CLICKS = 20;
+
 export default async function Home() {
-  const [kpis, health, pages] = await Promise.all([
+  const [kpis, health, pages, pulse, pulseRows] = await Promise.all([
     siteKpisCompare(28),
     pipelineHealth(),
     pagesOverviewUnified(200),
+    sitePulse(28, 7, 5.0),
+    pagesPulse(28, 7, 5.0),
   ]);
+
+  const pulseByPath = Object.fromEntries(pulseRows.map((r) => [r.path, r]));
 
   // Top pages contributrices aux contacts (>= 1 conversion).
   const contributors = [...pages]
@@ -28,21 +41,15 @@ export default async function Home() {
     .sort((a, b) => b.cooked_contacts_28d - a.cooked_contacts_28d)
     .slice(0, 5);
 
-  // Alertes : pages d'expertise OU cabinet (pages business)
-  // avec trafic significatif (>= 50 sessions Cooked) et 0 conversion.
-  // Le seuil "sessions" (et non "clics Google") capture aussi les pages
-  // dont le trafic vient d'AdWords / nav interne. Les articles sont
-  // exclus (leur rôle est éducatif, conversion attendue via maillage —
-  // débat Plouton vs Adrien).
-  const alerts = pages
-    .filter((p) => {
-      const cat = categorize(p.path);
-      return (
-        (cat === "expertise" || cat === "cabinet" || cat === "home") &&
-        p.cooked_contacts_28d === 0 &&
-        p.cooked_sessions_28d >= 50
-      );
-    })
+  // Alertes : pages où Google envoie plus de trafic mais Cooked
+  // baisse en engagement (quadrant up_down). Filtre par volume minimal
+  // pour exclure le bruit statistique des petites pages.
+  const alerts = [...pulseRows]
+    .filter(
+      (p) =>
+        p.quadrant === "up_down" && p.gsc_clicks_n >= PULSE_ALERT_MIN_CLICKS
+    )
+    .sort((a, b) => b.gsc_clicks_n - a.gsc_clicks_n)
     .slice(0, 5);
 
   return (
@@ -68,16 +75,21 @@ export default async function Home() {
           <StatusPill status={health.status} />
         </header>
 
+        {/* Pulse site-wide */}
+        <SitePulseCard pulse={pulse} />
+
         {/* KPI primaire en pleine largeur */}
-        <KpiCard
-          label="Contacts générés"
-          hint="Total des appels (cta_phone_click) + formulaires soumis (form_submit). C'est la métrique business principale."
-          value={kpis.macro_conversions_n}
-          deltaPct={kpis.macro_conversions_delta_pct}
-          prevValue={kpis.macro_conversions_prev}
-          tone="positive"
-          emphasis
-        />
+        <div className="mt-6">
+          <KpiCard
+            label="Contacts générés"
+            hint="Total des appels (cta_phone_click) + formulaires soumis (form_submit). C'est la métrique business principale."
+            value={kpis.macro_conversions_n}
+            deltaPct={kpis.macro_conversions_delta_pct}
+            prevValue={kpis.macro_conversions_prev}
+            tone="positive"
+            emphasis
+          />
+        </div>
 
         {/* 3 sous-KPIs */}
         <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -104,7 +116,31 @@ export default async function Home() {
           />
         </div>
 
-        {/* Top contributors */}
+        {/* Alertes Pulse — top up_down (trafic monte, engagement baisse) */}
+        {alerts.length > 0 && (
+          <section className="mt-10">
+            <div className="mb-3 flex items-baseline justify-between">
+              <h2 className="font-heading text-base font-medium tracking-tight">
+                À regarder — alertes Pulse
+              </h2>
+              <Link
+                href="/pages"
+                className="font-mono text-xs text-muted-foreground hover:text-foreground"
+              >
+                Voir toutes les pages →
+              </Link>
+            </div>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Pages où Google envoie plus de trafic mais le comportement
+              Cooked baisse (quadrant SEO ↗ engagement ↘). Filtre :
+              ≥ {PULSE_ALERT_MIN_CLICKS} clics Google sur la fenêtre
+              pour exclure le bruit statistique.
+            </p>
+            <PulseAlertList rows={alerts} />
+          </section>
+        )}
+
+        {/* Top contributors aux contacts */}
         <section className="mt-10">
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="font-heading text-base font-medium tracking-tight">
@@ -120,24 +156,9 @@ export default async function Home() {
           {contributors.length === 0 ? (
             <EmptyHint text="Aucune page n'a généré de contact sur la fenêtre." />
           ) : (
-            <ContribList rows={contributors} kind="contributor" />
+            <ContribList rows={contributors} pulseByPath={pulseByPath} />
           )}
         </section>
-
-        {/* Alerts */}
-        {alerts.length > 0 && (
-          <section className="mt-8">
-            <h2 className="mb-3 font-heading text-base font-medium tracking-tight">
-              À regarder
-            </h2>
-            <p className="mb-3 text-sm text-muted-foreground">
-              Pages business (Cabinet ou Expertise) qui attirent du trafic
-              Google mais ne génèrent aucun contact sur la fenêtre. Les
-              articles sont volontairement exclus (leur rôle est éducatif).
-            </p>
-            <ContribList rows={alerts} kind="alert" />
-          </section>
-        )}
       </main>
     </>
   );
@@ -145,10 +166,10 @@ export default async function Home() {
 
 function ContribList({
   rows,
-  kind,
+  pulseByPath,
 }: {
   rows: Awaited<ReturnType<typeof pagesOverviewUnified>>;
-  kind: "contributor" | "alert";
+  pulseByPath: Record<string, PagePulseRow>;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-xs">
@@ -172,19 +193,44 @@ function ContribList({
                 <span className="text-muted-foreground">
                   {formatInt(p.cooked_sessions_28d)} visites
                 </span>
-                {kind === "contributor" ? (
-                  <span className="font-medium text-success">
-                    {formatInt(p.cooked_contacts_28d)} contact
-                    {p.cooked_contacts_28d > 1 ? "s" : ""}
-                  </span>
-                ) : (
-                  <span className="font-medium text-danger">
-                    0 contact ·{" "}
-                    {p.cooked_pogo_rate_28d != null
-                      ? `rebond ${formatPct(p.cooked_pogo_rate_28d, 0)}`
-                      : ""}
-                  </span>
-                )}
+                <span className="font-medium text-success">
+                  {formatInt(p.cooked_contacts_28d)} contact
+                  {p.cooked_contacts_28d > 1 ? "s" : ""}
+                </span>
+                <QuadrantBadge row={pulseByPath[p.path]} />
+              </div>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PulseAlertList({ rows }: { rows: PagePulseRow[] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-warning/30 bg-warning/5 shadow-xs">
+      <ul className="divide-y divide-[var(--border-subtle)]">
+        {rows.map((p) => (
+          <li key={p.path}>
+            <Link
+              href={`/p${p.path}`}
+              className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-warning/10"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <CategoryBadge path={p.path} />
+                <span className="truncate text-sm text-foreground">
+                  {p.path}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-baseline gap-5 font-mono text-xs">
+                <span className="text-muted-foreground">
+                  {formatInt(p.gsc_clicks_n)} clics Google
+                </span>
+                <span className="text-muted-foreground">
+                  {formatInt(p.cooked_sessions_n)} visites
+                </span>
+                <QuadrantBadge row={p} />
               </div>
             </Link>
           </li>
