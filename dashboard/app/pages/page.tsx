@@ -12,7 +12,7 @@ export const revalidate = 0;
 
 export default async function PagesList() {
   const [pages, health, kpis] = await Promise.all([
-    pagesOverviewUnified(200),
+    pagesOverviewUnified(1000),
     pipelineHealth(),
     siteKpisCompare(28),
   ]);

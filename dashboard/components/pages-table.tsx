@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { CategoryBadge } from "@/components/category-badge";
 import { InfoLabel } from "@/components/info-label";
 import {
@@ -30,6 +30,9 @@ type SortCol =
   | "pogo";
 
 type SortDir = "asc" | "desc";
+
+type PageSize = 25 | 50 | 100 | "all";
+const PAGE_SIZE_OPTIONS: PageSize[] = [25, 50, 100, "all"];
 
 const HINTS = {
   page: "URL de la page sur le site.",
@@ -59,9 +62,20 @@ const BUCKETS: FilterBucket[] = [
 ];
 
 export function PagesTable({ rows }: { rows: GscPagesOverviewRow[] }) {
-  const [bucket, setBucket] = useState<FilterBucket>("all");
-  const [sortCol, setSortCol] = useState<SortCol>("clicks");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [bucket, setBucketState] = useState<FilterBucket>("all");
+  const [sortCol, setSortColState] = useState<SortCol>("sessions");
+  const [sortDir, setSortDirState] = useState<SortDir>("desc");
+  const [pageSize, setPageSizeState] = useState<PageSize>(50);
+  const [page, setPage] = useState<number>(1);
+
+  // Reset page=1 dès qu'un filtre / tri / taille change.
+  const setBucket = (b: FilterBucket) => { setBucketState(b); setPage(1); };
+  const setPageSize = (s: PageSize) => { setPageSizeState(s); setPage(1); };
+  const setSortCol = (c: SortCol) => { setSortColState(c); setPage(1); };
+  const setSortDir = (d: SortDir | ((p: SortDir) => SortDir)) => {
+    setSortDirState(d);
+    setPage(1);
+  };
 
   const counts = useMemo(() => {
     const c: Record<FilterBucket, number> = {
@@ -103,6 +117,16 @@ export function PagesTable({ rows }: { rows: GscPagesOverviewRow[] }) {
       setSortDir("desc");
     }
   };
+
+  // Pagination
+  const total = filteredSorted.length;
+  const perPage = pageSize === "all" ? total || 1 : pageSize;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const safePage = Math.min(page, totalPages);
+  const startIdx = (safePage - 1) * perPage;
+  const pageRows = filteredSorted.slice(startIdx, startIdx + perPage);
+  const showingFrom = total === 0 ? 0 : startIdx + 1;
+  const showingTo = Math.min(startIdx + perPage, total);
 
   return (
     <>
@@ -218,7 +242,7 @@ export function PagesTable({ rows }: { rows: GscPagesOverviewRow[] }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border-subtle)]">
-              {filteredSorted.length === 0 ? (
+              {pageRows.length === 0 ? (
                 <tr>
                   <td
                     colSpan={10}
@@ -228,7 +252,7 @@ export function PagesTable({ rows }: { rows: GscPagesOverviewRow[] }) {
                   </td>
                 </tr>
               ) : (
-                filteredSorted.map((p) => (
+                pageRows.map((p) => (
                   <tr
                     key={p.path}
                     className="group transition-colors hover:bg-surface-subtle/40"
@@ -285,11 +309,64 @@ export function PagesTable({ rows }: { rows: GscPagesOverviewRow[] }) {
         </div>
       </div>
 
-      <p className="mt-4 font-mono text-xs text-muted-foreground">
-        {filteredSorted.length} page{filteredSorted.length > 1 ? "s" : ""}{" "}
-        affichée{filteredSorted.length > 1 ? "s" : ""} · cliquer une colonne
-        pour trier · cliquer une ligne pour la fiche détaillée.
-      </p>
+      {/* Pagination */}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 font-mono text-xs text-muted-foreground">
+        <div>
+          {total === 0
+            ? "0 page"
+            : `${formatInt(showingFrom)}–${formatInt(showingTo)} sur ${formatInt(total)}`}
+          {" · "}cliquer une colonne pour trier
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Page size */}
+          <div className="flex items-center gap-1">
+            <span>Lignes</span>
+            {PAGE_SIZE_OPTIONS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setPageSize(s)}
+                className={cn(
+                  "rounded px-1.5 py-0.5 transition-colors",
+                  pageSize === s
+                    ? "bg-foreground text-background"
+                    : "hover:text-foreground"
+                )}
+              >
+                {s === "all" ? "Tout" : s}
+              </button>
+            ))}
+          </div>
+
+          {/* Prev / page indicator / next */}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="inline-flex h-6 items-center rounded border border-border bg-surface px-1.5 transition-colors enabled:hover:text-foreground disabled:opacity-40"
+                aria-label="Page précédente"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span className="px-1 tabular-nums">
+                {safePage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="inline-flex h-6 items-center rounded border border-border bg-surface px-1.5 transition-colors enabled:hover:text-foreground disabled:opacity-40"
+                aria-label="Page suivante"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </>
   );
 }
