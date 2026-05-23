@@ -2134,9 +2134,10 @@ create unique index if not exists events_form_submit_submission_id_uniq
 --     pondérée/CTR/days_in_period). Défauts : 28j, 20 lignes.
 --
 --   gsc_pages_overview(max_rows)
---     Tableau de bord top pages (28j) : GSC top par clicks + comportement
---     Cooked (sessions, dwell, bounce, conversions, pogo, has_cooked_data).
---     Défaut : 30 lignes.
+--     Top pages avec signal GSC 28j, tri clics Google (vue SEO pure).
+--     Contacts : cooked_contacts_28d (= phone + form_submit), booking_intent
+--     séparé. Signature v3 : migration 20260524120000_gsc_pages_overview_v3_contacts.
+--     Défaut : 30 lignes. Univers exhaustif → pages_overview_unified.
 --
 -- Toutes : SECURITY DEFINER, service_role only, jointure via canonical_path
 -- pour gérer l'historique events pré-Sprint 31.

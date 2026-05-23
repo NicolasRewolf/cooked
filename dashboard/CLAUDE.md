@@ -122,8 +122,9 @@ le type de retour explicite. Ne **jamais** taper `.rpc()` ailleurs.
    `Intl.NumberFormat("fr-FR", ...)`.
 
 4. **Une seule métrique business à la fois.** Macro-conversions =
-   `phone_clicks + booking_clicks`. Ne pas mélanger avec micro
-   (`anchor`) ou engagement (scroll/dwell).
+   `phone_clicks + form_submits` (voir section « Définition Contacts »).
+   Ne pas mélanger avec micro (`cta_booking_click`, `cta_anchor_click`)
+   ni engagement (scroll/dwell).
 
 ---
 
