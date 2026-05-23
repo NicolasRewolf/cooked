@@ -9,39 +9,17 @@ import {
 import { InfoLabel } from "@/components/info-label";
 import { formatDateFR, formatInt, formatNumber } from "@/lib/format";
 import type { PulseQuadrant, SitePulse } from "@/lib/cooked";
+import {
+  QUADRANT_HEADLINE,
+  QUADRANT_STYLE,
+  QUADRANT_TEXT,
+} from "@/lib/pulse-quadrant";
 import { cn } from "@/lib/utils";
 
 /**
  * Carte Pulse site-wide pour la home.
  * Affiche le quadrant global + 2 axes chiffrés (GSC 28v28 et Cooked 7v7).
  */
-
-const QUADRANT_HEADLINE: Record<PulseQuadrant, string> = {
-  up_up: "La machine tourne",
-  up_down: "Trafic ↗ mais engagement ↘",
-  down_up: "Audience plus qualifiée",
-  down_down: "Perte de vitesse",
-  neutral: "Période stable",
-  no_signal: "Pas assez de signal",
-};
-
-const QUADRANT_STYLE: Record<PulseQuadrant, string> = {
-  up_up: "border-success/30 bg-success/5",
-  up_down: "border-warning/30 bg-warning/5",
-  down_up: "border-info/30 bg-info/5",
-  down_down: "border-danger/30 bg-danger/5",
-  neutral: "border-border bg-surface",
-  no_signal: "border-border bg-surface",
-};
-
-const QUADRANT_TEXT: Record<PulseQuadrant, string> = {
-  up_up: "text-success",
-  up_down: "text-warning",
-  down_up: "text-info",
-  down_down: "text-danger",
-  neutral: "text-muted-foreground",
-  no_signal: "text-muted-foreground",
-};
 
 export function SitePulseCard({ pulse }: { pulse: SitePulse }) {
   return (
