@@ -24,8 +24,8 @@ export default async function Home() {
 
   // Top pages contributrices aux contacts (>= 1 conversion).
   const contributors = [...pages]
-    .filter((p) => p.cooked_conversions_28d > 0)
-    .sort((a, b) => b.cooked_conversions_28d - a.cooked_conversions_28d)
+    .filter((p) => p.cooked_contacts_28d > 0)
+    .sort((a, b) => b.cooked_contacts_28d - a.cooked_contacts_28d)
     .slice(0, 5);
 
   // Alertes : pages d'expertise OU cabinet (pages business)
@@ -39,7 +39,7 @@ export default async function Home() {
       const cat = categorize(p.path);
       return (
         (cat === "expertise" || cat === "cabinet" || cat === "home") &&
-        p.cooked_conversions_28d === 0 &&
+        p.cooked_contacts_28d === 0 &&
         p.cooked_sessions_28d >= 50
       );
     })
@@ -174,8 +174,8 @@ function ContribList({
                 </span>
                 {kind === "contributor" ? (
                   <span className="font-medium text-success">
-                    {formatInt(p.cooked_conversions_28d)} contact
-                    {p.cooked_conversions_28d > 1 ? "s" : ""}
+                    {formatInt(p.cooked_contacts_28d)} contact
+                    {p.cooked_contacts_28d > 1 ? "s" : ""}
                   </span>
                 ) : (
                   <span className="font-medium text-danger">

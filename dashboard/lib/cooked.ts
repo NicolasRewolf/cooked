@@ -62,7 +62,7 @@ export type PipelineHealth = {
   issues: string[];
 };
 
-export type GscPagesOverviewRow = {
+export type PagesOverviewRow = {
   path: string;
   gsc_clicks_28d: number;
   gsc_impressions_28d: number;
@@ -71,7 +71,12 @@ export type GscPagesOverviewRow = {
   cooked_sessions_28d: number;
   cooked_dwell_avg_s_28d: number | null;
   cooked_bounce_rate_28d: number | null;
-  cooked_conversions_28d: number;
+  /** Macro = vrai contact établi : clic tel: + formulaire soumis */
+  cooked_phone_clicks_28d: number;
+  cooked_form_submits_28d: number;
+  cooked_contacts_28d: number;
+  /** Micro = intent déclaré : clic « Prendre RDV » (cta_booking_click) */
+  cooked_booking_intent_28d: number;
   cooked_pogo_rate_28d: number | null;
   has_cooked_data: boolean;
 };
@@ -88,8 +93,12 @@ export type GscPagePerformance = {
   cooked_bounce_rate_28d: number | null;
   cooked_dwell_avg_s_28d: number | null;
   cooked_scroll_median_28d: number | null;
+  /** Macro = vrai contact établi : clic tel: + formulaire soumis */
   cooked_phone_clicks_28d: number;
-  cooked_booking_clicks_28d: number;
+  cooked_form_submits_28d: number;
+  cooked_contacts_28d: number;
+  /** Micro = intent déclaré : clic « Prendre RDV » */
+  cooked_booking_intent_28d: number;
   cooked_pogo_rate_28d: number | null;
   cooked_google_sessions_28d: number;
   lcp_p75_ms: number | null;
@@ -143,35 +152,21 @@ export type SiteKpisCompare = {
 // ============================================================
 
 /**
- * Top pages SEO 28j × comportement Cooked, ordonné par clics GSC.
- * Vue "performance SEO" — rate les pages dont le trafic vient d'AdWords
- * ou de la nav interne (peu/zéro clics organiques).
- * RPC : public.gsc_pages_overview(max_rows int)
- */
-export async function gscPagesOverview(
-  maxRows = 30
-): Promise<GscPagesOverviewRow[]> {
-  const { data, error } = await client().rpc("gsc_pages_overview", {
-    max_rows: maxRows,
-  });
-  if (error) throw new Error(`gsc_pages_overview: ${error.message}`);
-  return (data ?? []) as GscPagesOverviewRow[];
-}
-
-/**
- * Top pages 28j ordonné par sessions Cooked (vue business exhaustive).
- * Inclut les pages d'expertise / AdWords / nav interne. Format de retour
- * identique à gscPagesOverview pour pouvoir swap.
+ * Top pages 28j — univers exhaustif (snapshot Cooked 365j ∪ GSC 90j),
+ * ordonné par sessions Cooked. Inclut les pages mortes (0 partout).
  * RPC : public.pages_overview_unified(max_rows int)
+ *
+ * Sprint 33+ v3 (24/05/2026) : contacts macro corrects (phone + form_submit),
+ * booking_intent séparé. Voir CLAUDE.md cooked pour la taxonomie macro/micro.
  */
 export async function pagesOverviewUnified(
-  maxRows = 100
-): Promise<GscPagesOverviewRow[]> {
+  maxRows = 1000
+): Promise<PagesOverviewRow[]> {
   const { data, error } = await client().rpc("pages_overview_unified", {
     max_rows: maxRows,
   });
   if (error) throw new Error(`pages_overview_unified: ${error.message}`);
-  return (data ?? []) as GscPagesOverviewRow[];
+  return (data ?? []) as PagesOverviewRow[];
 }
 
 /**

@@ -48,8 +48,9 @@ on revient ici ajouter un wrapper.
 
 ```
 app/
-  layout.tsx              Geist + theme + nav
-  page.tsx                Home : gsc_pages_overview(30)
+  layout.tsx              Geist + theme + nav + TooltipProvider
+  page.tsx                Home : site_kpis_compare + pages_overview_unified (alertes/contributeurs)
+  pages/page.tsx          Tableau /pages : pages_overview_unified (univers exhaustif, ~490 paths)
   p/[...slug]/page.tsx    Fiche page : gsc_page_performance + gsc_top_queries_for_path
   health/page.tsx         Pipeline : refresh_pipeline_health
   globals.css             Design tokens REWOLF (canvas, surface, signals, shadows)
@@ -57,12 +58,19 @@ app/
 lib/
   cooked.ts               ⚠️ Server-only. Wrappers RPCs. Single point of contact.
   format.ts               Helpers FR (JJ/MM/AAAA, Europe/Paris, espaces fines)
+  page-category.ts        Catégorisation pages (home / cabinet / expertise / resource / article)
+  resource-slugs.ts       Liste des 51 articles "Ressources et notions juridiques"
   utils.ts                shadcn cn()
 
 components/
   nav.tsx                 Nav minimaliste top
+  date-banner.tsx         Bandeau dates + GSC freshness sous Nav
   status-pill.tsx         Pill healthy/degraded/critical
-  ui/                     shadcn (button, card, table, badge, separator, skeleton)
+  kpi-card.tsx            KPI card avec valeur + delta % + sub
+  category-badge.tsx      Badge catégorie de page
+  info-label.tsx          Label + tooltip ℹ️
+  pages-table.tsx         Tableau client avec filtres / tri / pagination
+  ui/                     shadcn (button, card, table, badge, separator, skeleton, tooltip)
 ```
 
 Toutes les pages sont des **Server Components** (`export const dynamic =
@@ -74,11 +82,28 @@ Toutes les pages sont des **Server Components** (`export const dynamic =
 
 | Wrapper TS | RPC Postgres | Sortie |
 |---|---|---|
-| `gscPagesOverview(maxRows=30)` | `gsc_pages_overview(max_rows)` | top pages 28j |
-| `gscPagePerformance(path)` | `gsc_page_performance(target_path)` | fiche complète d'une page |
-| `gscTopQueriesForPath(path, daysBack=28, maxRows=20)` | `gsc_top_queries_for_path(target_path, days_back, max_rows)` | top requêtes Google |
-| `pipelineHealth()` | `refresh_pipeline_health()` | self-diag 4 axes |
+| `pagesOverviewUnified(maxRows=1000)` | `pages_overview_unified(max_rows)` | univers exhaustif (snapshot Cooked 365j ∪ GSC 90j) avec contacts macro + booking_intent micro séparés |
+| `gscPagePerformance(path)` | `gsc_page_performance(target_path)` | fiche complète d'une page (contacts + intent séparés) |
+| `gscTopQueriesForPath(path, daysBack=28, maxRows=20)` | `gsc_top_queries_for_path(target_path, days_back, max_rows)` | top requêtes Google sur une page |
+| `pipelineHealth()` | `refresh_pipeline_health()` | self-diag 4 axes (snapshot, cron, ingestion, GSC) |
+| `siteKpisCompare(periodDays=28)` | `site_kpis_compare(period_days)` | KPIs business N vs N-1 (sessions, pageviews, phone, form_submit, macro) |
 | `siteContext()` | `site_context_export()` | contexte site-wide 28j |
+
+## 🚨 RÈGLE DURE — Définition « Contacts » (CLAUDE.md cooked)
+
+Le terme **Contacts** dans le dashboard correspond UNIQUEMENT à la macro-conversion :
+
+  contacts = phone_clicks (cta_phone_click) + form_submits (form_submit)
+
+Ne **jamais** y additionner `booking_cta_click` — c'est une **micro-conversion** (intent
+déclaré, pas matérialisé). Le champ correspondant est `cooked_booking_intent_28d`,
+affiché séparément.
+
+Le bug du 24/05/2026 (review code) a été causé par ce mélange : `gsc_pages_overview`
+et `pages_overview_unified` v1/v2 calculaient `phone + booking` au lieu de
+`phone + form_submit`, gonflant artificiellement les pages comme `/honoraires-rendez-vous`.
+La v3 (migration `20260524100000_contacts_macro_per_path.sql`) corrige en allant
+chercher `form_submit` par path dans `events_human`.
 
 **Pour ajouter une RPC :** créer le wrapper dans `lib/cooked.ts` avec
 le type de retour explicite. Ne **jamais** taper `.rpc()` ailleurs.

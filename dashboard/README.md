@@ -19,9 +19,16 @@ sur la base.
 
 | Route | Source | Contenu |
 |---|---|---|
-| `/` | `gsc_pages_overview` | Top 30 pages 28j (GSC × Cooked) |
-| `/p/[...slug]` | `gsc_page_performance` + `gsc_top_queries_for_path` | Fiche complète d'une page |
+| `/` | `site_kpis_compare` + `pages_overview_unified` | KPIs business 28j vs 28j-1 (contacts macro = phone + form_submit) + top contributeurs + alertes |
+| `/pages` | `pages_overview_unified` | Univers exhaustif (~490 paths : snapshot Cooked 365j ∪ GSC 90j) avec filtres / tri / pagination |
+| `/p/[...slug]` | `gsc_page_performance` + `gsc_top_queries_for_path` | Fiche complète d'une page (contacts macro + intent micro séparés) |
 | `/health` | `refresh_pipeline_health` | Self-diag pipeline 4 axes |
+
+## Définition Contacts (CLAUDE.md cooked)
+
+- **Macro** (vrai contact établi) = `cta_phone_click` + `form_submit`. C'est le chiffre "Contacts" affiché dans le dashboard. Ne pas y mélanger les micro-conversions.
+- **Micro / Intent RDV** = `cta_booking_click` (clic « Prendre RDV » qui mène vers `/honoraires-rendez-vous`). Affiché séparément dans la fiche page.
+- **Engagement** = scroll / dwell / sessions. Affiché en colonnes neutres.
 
 ## Dev
 

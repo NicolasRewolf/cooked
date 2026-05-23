@@ -74,14 +74,10 @@ export default async function PageDetail({ params }: Props) {
             sub={`${formatInt(perf.cooked_google_sessions_28d)} via Google`}
           />
           <Stat
-            label="Conversions"
-            value={formatInt(
-              perf.cooked_phone_clicks_28d + perf.cooked_booking_clicks_28d
-            )}
-            sub={`${perf.cooked_phone_clicks_28d} phone · ${perf.cooked_booking_clicks_28d} booking`}
-            highlight={
-              perf.cooked_phone_clicks_28d + perf.cooked_booking_clicks_28d > 0
-            }
+            label="Contacts"
+            value={formatInt(perf.cooked_contacts_28d)}
+            sub={`${perf.cooked_phone_clicks_28d} appel${perf.cooked_phone_clicks_28d > 1 ? "s" : ""} · ${perf.cooked_form_submits_28d} formulaire${perf.cooked_form_submits_28d > 1 ? "s" : ""}`}
+            highlight={perf.cooked_contacts_28d > 0}
           />
         </div>
 
@@ -111,6 +107,15 @@ export default async function PageDetail({ params }: Props) {
             <Row
               label="Pogo-stick rate"
               value={formatPct(perf.cooked_pogo_rate_28d, 1)}
+            />
+            <Row
+              label="Intent RDV (micro)"
+              value={`${formatInt(perf.cooked_booking_intent_28d)} clic${perf.cooked_booking_intent_28d > 1 ? "s" : ""}`}
+              hint={
+                perf.cooked_booking_intent_28d > 0 && perf.cooked_contacts_28d === 0
+                  ? "intent sans contact"
+                  : undefined
+              }
             />
             <Row
               label="Top referrer"

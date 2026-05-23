@@ -17,7 +17,7 @@ import {
 } from "@/lib/page-category";
 import { formatInt, formatPct, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { GscPagesOverviewRow } from "@/lib/cooked";
+import type { PagesOverviewRow } from "@/lib/cooked";
 
 type SortCol =
   | "clicks"
@@ -26,7 +26,7 @@ type SortCol =
   | "ctr"
   | "sessions"
   | "dwell"
-  | "conversions"
+  | "contacts"
   | "pogo";
 
 type SortDir = "asc" | "desc";
@@ -47,8 +47,8 @@ const HINTS = {
   visits:
     "Visites humaines uniques mesurées par Cooked (bots et bruit filtrés).",
   dwell: "Temps moyen passé sur la page par session.",
-  conversions:
-    "Contacts business : appels téléphone (cta_phone_click) + formulaires soumis (form_submit).",
+  contacts:
+    "Contacts business macro = appels téléphone (cta_phone_click) + formulaires soumis (form_submit). Conforme à la taxonomie CLAUDE.md cooked. Le clic « Prendre RDV » est une micro-conversion (intent), comptée séparément — pas additionnée ici.",
   pogo:
     "Sessions arrivant de Google qui repartent rapidement (mauvais signal SEO si élevé).",
 };
@@ -61,7 +61,7 @@ const BUCKETS: FilterBucket[] = [
   "resource",
 ];
 
-export function PagesTable({ rows }: { rows: GscPagesOverviewRow[] }) {
+export function PagesTable({ rows }: { rows: PagesOverviewRow[] }) {
   const [bucket, setBucketState] = useState<FilterBucket>("all");
   const [sortCol, setSortColState] = useState<SortCol>("sessions");
   const [sortDir, setSortDirState] = useState<SortDir>("desc");
@@ -224,8 +224,8 @@ export function PagesTable({ rows }: { rows: GscPagesOverviewRow[] }) {
                 />
                 <ThSort
                   label="Contacts"
-                  hint={HINTS.conversions}
-                  col="conversions"
+                  hint={HINTS.contacts}
+                  col="contacts"
                   active={sortCol}
                   dir={sortDir}
                   onSort={onSort}
@@ -290,9 +290,9 @@ export function PagesTable({ rows }: { rows: GscPagesOverviewRow[] }) {
                         : "—"}
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular-nums">
-                      {p.cooked_conversions_28d > 0 ? (
+                      {p.cooked_contacts_28d > 0 ? (
                         <span className="font-medium text-success">
-                          {formatInt(p.cooked_conversions_28d)}
+                          {formatInt(p.cooked_contacts_28d)}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">0</span>
@@ -445,7 +445,7 @@ function PositionBadge({ value }: { value: number | null }) {
 
 const SORT_GETTERS: Record<
   SortCol,
-  (r: GscPagesOverviewRow) => number | null
+  (r: PagesOverviewRow) => number | null
 > = {
   clicks: (r) => r.gsc_clicks_28d,
   impressions: (r) => r.gsc_impressions_28d,
@@ -453,6 +453,6 @@ const SORT_GETTERS: Record<
   ctr: (r) => r.gsc_ctr_pct_28d,
   sessions: (r) => r.cooked_sessions_28d,
   dwell: (r) => r.cooked_dwell_avg_s_28d,
-  conversions: (r) => r.cooked_conversions_28d,
+  contacts: (r) => r.cooked_contacts_28d,
   pogo: (r) => r.cooked_pogo_rate_28d,
 };
