@@ -7,6 +7,8 @@ const styles: Record<PageCategory, string> = {
     "bg-info/10 text-info ring-1 ring-inset ring-info/15",
   expertise:
     "bg-accent-base/10 text-foreground ring-1 ring-inset ring-foreground/15",
+  resource:
+    "bg-success/10 text-success ring-1 ring-inset ring-success/20",
   article:
     "bg-surface-subtle text-muted-foreground ring-1 ring-inset ring-border",
 };
