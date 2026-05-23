@@ -117,6 +117,19 @@ export type GscTopQueryRow = {
   days_in_period: number;
 };
 
+export type SiteSeoFunnel = {
+  period_start: string;
+  period_end: string;
+  impressions: number;
+  clicks: number;
+  google_sessions: number;
+  macro_contacts: number;
+  impr_to_click_pct: number | null;
+  click_to_session_pct: number | null;
+  session_to_contact_pct: number | null;
+  overall_impr_to_contact_pct: number | null;
+};
+
 export type GscGlobalQueryRow = {
   query: string;
   clicks: number;
@@ -291,6 +304,23 @@ export async function pagesPulse(
   });
   if (error) throw new Error(`pages_pulse: ${error.message}`);
   return (data ?? []) as PagePulseRow[];
+}
+
+/**
+ * Funnel SEO site-wide : Impressions → Clics GSC → Visites Google
+ * Cooked → Contacts macro, avec drop-off entre chaque étape.
+ * RPC : public.site_seo_funnel(period_days)
+ */
+export async function siteSeoFunnel(
+  periodDays = 28
+): Promise<SiteSeoFunnel> {
+  const { data, error } = await client().rpc("site_seo_funnel", {
+    period_days: periodDays,
+  });
+  if (error) throw new Error(`site_seo_funnel: ${error.message}`);
+  const rows = (data ?? []) as SiteSeoFunnel[];
+  if (!rows[0]) throw new Error("site_seo_funnel returned no rows");
+  return rows[0];
 }
 
 /**

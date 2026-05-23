@@ -4,6 +4,7 @@ import { DateBanner } from "@/components/date-banner";
 import { KpiCard } from "@/components/kpi-card";
 import { CategoryBadge } from "@/components/category-badge";
 import { SitePulseCard } from "@/components/site-pulse-card";
+import { SeoFunnel } from "@/components/seo-funnel";
 import { QuadrantBadge } from "@/components/quadrant-badge";
 import { StatusPill } from "@/components/status-pill";
 import {
@@ -12,6 +13,7 @@ import {
   pipelineHealth,
   siteKpisCompare,
   sitePulse,
+  siteSeoFunnel,
   type PagePulseRow,
 } from "@/lib/cooked";
 import { formatInt } from "@/lib/format";
@@ -25,12 +27,13 @@ export const revalidate = 0;
 const PULSE_ALERT_MIN_CLICKS = 20;
 
 export default async function Home() {
-  const [kpis, health, pages, pulse, pulseRows] = await Promise.all([
+  const [kpis, health, pages, pulse, pulseRows, funnel] = await Promise.all([
     siteKpisCompare(28),
     pipelineHealth(),
     pagesOverviewUnified(200),
     sitePulse(28, 7, 5.0),
     pagesPulse(28, 7, 5.0),
+    siteSeoFunnel(28),
   ]);
 
   const pulseByPath = Object.fromEntries(pulseRows.map((r) => [r.path, r]));
@@ -77,6 +80,11 @@ export default async function Home() {
 
         {/* Pulse site-wide */}
         <SitePulseCard pulse={pulse} />
+
+        {/* Funnel SEO — parcours acquisition Google */}
+        <div className="mt-6">
+          <SeoFunnel funnel={funnel} />
+        </div>
 
         {/* KPI primaire en pleine largeur */}
         <div className="mt-6">
