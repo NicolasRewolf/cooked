@@ -21,6 +21,12 @@ export function Nav() {
             Pages
           </Link>
           <Link
+            href="/queries"
+            className="hover:text-foreground transition-colors"
+          >
+            Requêtes
+          </Link>
+          <Link
             href="/health"
             className="hover:text-foreground transition-colors"
           >

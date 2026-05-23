@@ -117,6 +117,17 @@ export type GscTopQueryRow = {
   days_in_period: number;
 };
 
+export type GscGlobalQueryRow = {
+  query: string;
+  clicks: number;
+  impressions: number;
+  position_avg: number | null;
+  ctr_pct: number | null;
+  nb_pages_targeted: number;
+  top_page: string | null;
+  top_page_clicks: number | null;
+};
+
 export type SiteContextRow = {
   sessions_28d: number;
   bounce_rate_28d: number | null;
@@ -280,6 +291,22 @@ export async function pagesPulse(
   });
   if (error) throw new Error(`pages_pulse: ${error.message}`);
   return (data ?? []) as PagePulseRow[];
+}
+
+/**
+ * Top N requêtes Google du site sur N jours avec attribution page.
+ * RPC : public.gsc_top_queries_global(days_back, max_rows)
+ */
+export async function gscTopQueriesGlobal(
+  daysBack = 28,
+  maxRows = 100
+): Promise<GscGlobalQueryRow[]> {
+  const { data, error } = await client().rpc("gsc_top_queries_global", {
+    days_back: daysBack,
+    max_rows: maxRows,
+  });
+  if (error) throw new Error(`gsc_top_queries_global: ${error.message}`);
+  return (data ?? []) as GscGlobalQueryRow[];
 }
 
 /**
