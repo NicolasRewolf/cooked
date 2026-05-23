@@ -55,7 +55,19 @@ sub-metric selon une grille 🟢 propre / 🔵 validé / 🟡 incertain / 🔴 b
 | **H.3** | Bot + noise filtering | 🟢 propre | 15.4 % filtré (zone attendue) |
 | **H.4** | pg_cron jobs (4 actifs) | 🟢 propre | 0 échec 24 h |
 
-**Comptage** : 🟢 **27 propres** · 🔵 **6 validés** · 🟡 **6 incertains** · 🔴 **3 bancales** (en réalité 1 cause racine : off-by-one fenêtre 28j sur 5 RPCs cross-source).
+**Comptage initial** : 🟢 **27 propres** · 🔵 **6 validés** · 🟡 **6 incertains** · 🔴 **3 bancales** (1 cause racine : off-by-one fenêtre 28j sur 5 RPCs cross-source).
+
+**MAJ 24/05 fin d'après-midi — bancale fixée** : migration
+`20260524300000_fix_off_by_one_28d.sql` appliquée en prod. Les 5 RPCs
+(`pages_overview_unified`, `gsc_pages_overview`, `gsc_page_performance`,
+`gsc_top_queries_for_path`, `gsc_top_queries_global`) sont passées à la
+convention 28j inclusifs (`today - (N-1)`). Sanity post-fix sur la top
+page : `gsc_page_performance` retourne 29 561 imp / 1 079 clics =
+ground-truth exact 27/04 → 24/05. Toutes les 3 lignes F.2 du tableau
+sont désormais 🟢 **propres**.
+
+**Comptage post-fix** : 🟢 **30 propres** · 🔵 **6 validés** ·
+🟡 **6 incertains** · 🔴 **0 bancales**.
 
 ---
 
