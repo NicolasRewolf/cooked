@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { CategoryBadge } from "@/components/category-badge";
 import { InfoLabel } from "@/components/info-label";
+import { QuadrantBadge } from "@/components/quadrant-badge";
 import {
   Tooltip,
   TooltipContent,
@@ -17,7 +18,11 @@ import {
 } from "@/lib/page-category";
 import { formatInt, formatPct, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { PagesOverviewRow } from "@/lib/cooked";
+import type {
+  PagesOverviewRow,
+  PagePulseRow,
+  PulseQuadrant,
+} from "@/lib/cooked";
 
 type SortCol =
   | "clicks"
@@ -27,7 +32,18 @@ type SortCol =
   | "sessions"
   | "dwell"
   | "contacts"
+  | "pulse"
   | "pogo";
+
+/** Ordre business pour le sort par Pulse — priorité d'action décroissante */
+const PULSE_RANK: Record<PulseQuadrant, number> = {
+  up_down: 5, // alerte UX prioritaire
+  down_down: 4, // page en fin de vie
+  up_up: 3, // amplifier
+  down_up: 2, // audience qualifiée
+  neutral: 1,
+  no_signal: 0,
+};
 
 type SortDir = "asc" | "desc";
 
@@ -51,6 +67,8 @@ const HINTS = {
     "Contacts business macro = appels téléphone (cta_phone_click) + formulaires soumis (form_submit). Conforme à la taxonomie CLAUDE.md cooked. Le clic « Prendre RDV » est une micro-conversion (intent), comptée séparément — pas additionnée ici.",
   pogo:
     "Sessions arrivant de Google qui repartent rapidement (mauvais signal SEO si élevé).",
+  pulse:
+    "Pulse cross-source : grille 2×2 entre clics Google 28j vs 28j-1 et visites Cooked 7j vs 7j-1. Seuil ±5 %. Survoler un badge pour les chiffres exacts.",
 };
 
 const BUCKETS: FilterBucket[] = [
@@ -61,7 +79,14 @@ const BUCKETS: FilterBucket[] = [
   "resource",
 ];
 
-export function PagesTable({ rows }: { rows: PagesOverviewRow[] }) {
+export function PagesTable({
+  rows,
+  pulseByPath = {},
+}: {
+  rows: PagesOverviewRow[];
+  /** Map<path, PagePulseRow> (server-side, jamais re-fetché côté client) */
+  pulseByPath?: Record<string, PagePulseRow>;
+}) {
   const [bucket, setBucketState] = useState<FilterBucket>("all");
   const [sortCol, setSortColState] = useState<SortCol>("sessions");
   const [sortDir, setSortDirState] = useState<SortDir>("desc");
@@ -96,7 +121,14 @@ export function PagesTable({ rows }: { rows: PagesOverviewRow[] }) {
   const filteredSorted = useMemo(() => {
     const filtered = rows.filter((r) => matchesBucket(r.path, bucket));
     const dir = sortDir === "asc" ? 1 : -1;
-    const get = SORT_GETTERS[sortCol];
+    // Le sort par "pulse" lookup la map et renvoie le rank business
+    const get =
+      sortCol === "pulse"
+        ? (r: PagesOverviewRow): number | null => {
+            const quadrant = pulseByPath[r.path]?.quadrant;
+            return quadrant ? PULSE_RANK[quadrant] : null;
+          }
+        : SORT_GETTERS[sortCol];
     return [...filtered].sort((a, b) => {
       const va = get(a);
       const vb = get(b);
@@ -107,7 +139,7 @@ export function PagesTable({ rows }: { rows: PagesOverviewRow[] }) {
       if (va > vb) return 1 * dir;
       return 0;
     });
-  }, [rows, bucket, sortCol, sortDir]);
+  }, [rows, bucket, sortCol, sortDir, pulseByPath]);
 
   const onSort = (col: SortCol) => {
     if (col === sortCol) {
@@ -231,6 +263,14 @@ export function PagesTable({ rows }: { rows: PagesOverviewRow[] }) {
                   onSort={onSort}
                 />
                 <ThSort
+                  label="Pulse"
+                  hint={HINTS.pulse}
+                  col="pulse"
+                  active={sortCol}
+                  dir={sortDir}
+                  onSort={onSort}
+                />
+                <ThSort
                   label="Rebond rapide"
                   hint={HINTS.pogo}
                   col="pogo"
@@ -245,7 +285,7 @@ export function PagesTable({ rows }: { rows: PagesOverviewRow[] }) {
               {pageRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="px-4 py-10 text-center text-sm text-muted-foreground"
                   >
                     Aucune page dans cette catégorie sur la fenêtre.
@@ -297,6 +337,9 @@ export function PagesTable({ rows }: { rows: PagesOverviewRow[] }) {
                       ) : (
                         <span className="text-muted-foreground">0</span>
                       )}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <QuadrantBadge row={pulseByPath[p.path]} />
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums text-muted-foreground">
                       {formatPct(p.cooked_pogo_rate_28d, 1)}
@@ -443,8 +486,10 @@ function PositionBadge({ value }: { value: number | null }) {
   return <span className={tone}>{formatNumber(value, 1)}</span>;
 }
 
+// Getters statiques par colonne. Le cas "pulse" est traité inline dans
+// useMemo car il nécessite le lookup dans pulseByPath (closure).
 const SORT_GETTERS: Record<
-  SortCol,
+  Exclude<SortCol, "pulse">,
   (r: PagesOverviewRow) => number | null
 > = {
   clicks: (r) => r.gsc_clicks_28d,

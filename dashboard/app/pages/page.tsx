@@ -3,6 +3,7 @@ import { DateBanner } from "@/components/date-banner";
 import { PagesTable } from "@/components/pages-table";
 import {
   pagesOverviewUnified,
+  pagesPulse,
   pipelineHealth,
   siteKpisCompare,
 } from "@/lib/cooked";
@@ -11,11 +12,17 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function PagesList() {
-  const [pages, health, kpis] = await Promise.all([
+  const [pages, health, kpis, pulseRows] = await Promise.all([
     pagesOverviewUnified(1000),
     pipelineHealth(),
     siteKpisCompare(28),
+    pagesPulse(28, 7, 5.0),
   ]);
+
+  // Map server-side pour lookup O(1) côté Client Component
+  const pulseByPath = Object.fromEntries(
+    pulseRows.map((r) => [r.path, r])
+  );
 
   return (
     <>
@@ -37,7 +44,7 @@ export default async function PagesList() {
           </p>
         </header>
 
-        <PagesTable rows={pages} />
+        <PagesTable rows={pages} pulseByPath={pulseByPath} />
       </main>
     </>
   );

@@ -125,6 +125,26 @@ export type SiteContextRow = {
   top_sources: Record<string, unknown>;
 };
 
+/** Quadrant Pulse cross-source — cf migration 20260524160000_pages_pulse.sql */
+export type PulseQuadrant =
+  | "up_up"
+  | "up_down"
+  | "down_up"
+  | "down_down"
+  | "neutral"
+  | "no_signal";
+
+export type PagePulseRow = {
+  path: string;
+  gsc_clicks_n: number;
+  gsc_clicks_prev: number;
+  gsc_delta_pct: number | null;
+  cooked_sessions_n: number;
+  cooked_sessions_prev: number | null;
+  cooked_sessions_delta_pct: number | null;
+  quadrant: PulseQuadrant;
+};
+
 export type SiteKpisCompare = {
   period_n_start: string;
   period_n_end: string;
@@ -223,6 +243,26 @@ export async function siteContext(): Promise<SiteContextRow | null> {
   if (error) throw new Error(`site_context_export: ${error.message}`);
   const rows = (data ?? []) as SiteContextRow[];
   return rows[0] ?? null;
+}
+
+/**
+ * Pulse cross-source par path — grille 2×2 (GSC 28v28 × Cooked 7v7).
+ * Permet d'induire "progression / régression" malgré l'historique court
+ * de Cooked en s'appuyant sur GSC long terme.
+ * RPC : public.pages_pulse(gsc_period, cooked_period, delta_threshold_pct)
+ */
+export async function pagesPulse(
+  gscPeriod = 28,
+  cookedPeriod = 7,
+  deltaThresholdPct = 5.0
+): Promise<PagePulseRow[]> {
+  const { data, error } = await client().rpc("pages_pulse", {
+    gsc_period: gscPeriod,
+    cooked_period: cookedPeriod,
+    delta_threshold_pct: deltaThresholdPct,
+  });
+  if (error) throw new Error(`pages_pulse: ${error.message}`);
+  return (data ?? []) as PagePulseRow[];
 }
 
 /**
