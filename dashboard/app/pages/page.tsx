@@ -2,7 +2,7 @@ import { Nav } from "@/components/nav";
 import { DateBanner } from "@/components/date-banner";
 import { PagesTable } from "@/components/pages-table";
 import {
-  gscPagesOverview,
+  pagesOverviewUnified,
   pipelineHealth,
   siteKpisCompare,
 } from "@/lib/cooked";
@@ -12,7 +12,7 @@ export const revalidate = 0;
 
 export default async function PagesList() {
   const [pages, health, kpis] = await Promise.all([
-    gscPagesOverview(100),
+    pagesOverviewUnified(200),
     pipelineHealth(),
     siteKpisCompare(28),
   ]);

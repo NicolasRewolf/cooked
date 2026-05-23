@@ -143,7 +143,9 @@ export type SiteKpisCompare = {
 // ============================================================
 
 /**
- * Top pages SEO 28j × comportement Cooked.
+ * Top pages SEO 28j × comportement Cooked, ordonné par clics GSC.
+ * Vue "performance SEO" — rate les pages dont le trafic vient d'AdWords
+ * ou de la nav interne (peu/zéro clics organiques).
  * RPC : public.gsc_pages_overview(max_rows int)
  */
 export async function gscPagesOverview(
@@ -153,6 +155,22 @@ export async function gscPagesOverview(
     max_rows: maxRows,
   });
   if (error) throw new Error(`gsc_pages_overview: ${error.message}`);
+  return (data ?? []) as GscPagesOverviewRow[];
+}
+
+/**
+ * Top pages 28j ordonné par sessions Cooked (vue business exhaustive).
+ * Inclut les pages d'expertise / AdWords / nav interne. Format de retour
+ * identique à gscPagesOverview pour pouvoir swap.
+ * RPC : public.pages_overview_unified(max_rows int)
+ */
+export async function pagesOverviewUnified(
+  maxRows = 100
+): Promise<GscPagesOverviewRow[]> {
+  const { data, error } = await client().rpc("pages_overview_unified", {
+    max_rows: maxRows,
+  });
+  if (error) throw new Error(`pages_overview_unified: ${error.message}`);
   return (data ?? []) as GscPagesOverviewRow[];
 }
 

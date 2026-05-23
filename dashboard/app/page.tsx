@@ -5,7 +5,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { CategoryBadge } from "@/components/category-badge";
 import { StatusPill } from "@/components/status-pill";
 import {
-  gscPagesOverview,
+  pagesOverviewUnified,
   pipelineHealth,
   siteKpisCompare,
 } from "@/lib/cooked";
@@ -19,25 +19,28 @@ export default async function Home() {
   const [kpis, health, pages] = await Promise.all([
     siteKpisCompare(28),
     pipelineHealth(),
-    gscPagesOverview(50),
+    pagesOverviewUnified(200),
   ]);
 
   // Top pages contributrices aux contacts (>= 1 conversion).
-  const contributors = pages
+  const contributors = [...pages]
     .filter((p) => p.cooked_conversions_28d > 0)
+    .sort((a, b) => b.cooked_conversions_28d - a.cooked_conversions_28d)
     .slice(0, 5);
 
   // Alertes : pages d'expertise OU cabinet (pages business)
-  // avec trafic significatif (>= 50 clics) et 0 conversion.
-  // Les articles sont exclus (leur rôle est éducatif, conversion attendue
-  // via maillage interne — cf. débat Plouton vs Adrien).
+  // avec trafic significatif (>= 50 sessions Cooked) et 0 conversion.
+  // Le seuil "sessions" (et non "clics Google") capture aussi les pages
+  // dont le trafic vient d'AdWords / nav interne. Les articles sont
+  // exclus (leur rôle est éducatif, conversion attendue via maillage —
+  // débat Plouton vs Adrien).
   const alerts = pages
     .filter((p) => {
       const cat = categorize(p.path);
       return (
         (cat === "expertise" || cat === "cabinet" || cat === "home") &&
         p.cooked_conversions_28d === 0 &&
-        p.gsc_clicks_28d >= 50
+        p.cooked_sessions_28d >= 50
       );
     })
     .slice(0, 5);
@@ -144,7 +147,7 @@ function ContribList({
   rows,
   kind,
 }: {
-  rows: Awaited<ReturnType<typeof gscPagesOverview>>;
+  rows: Awaited<ReturnType<typeof pagesOverviewUnified>>;
   kind: "contributor" | "alert";
 }) {
   return (
