@@ -1,0 +1,56 @@
+name: DFS Weekly Sync
+
+# Sprint 33+ (25/05/2026) — sync hebdo DataForSEO → Supabase
+#
+# Lit les top 500 keywords par clics GSC 90j et alimente la table
+# dfs_keyword_volume avec : search_volume mensuel France, CPC,
+# competition, monthly_searches 12 mois.
+#
+# Volume mensuel bouge lentement → hebdomadaire suffit.
+# Coût estimé : ~50 cents par run × 4 runs/mois = ~$2/mois.
+#
+# Secrets à configurer une fois dans GitHub
+# (Settings → Secrets and variables → Actions → New repository secret) :
+#   DFS_USERNAME           : login DataForSEO
+#   DFS_PASSWORD           : password DataForSEO
+#   SUPABASE_SECRET_KEY    : clé sb_secret_* du projet Cooked
+
+on:
+  schedule:
+    # Lundi 07:00 UTC = 09:00 Paris en été. Volume mensuel = pas critique
+    # de tomber pile à minute X.
+    - cron: "0 7 * * 1"
+  workflow_dispatch: # bouton "Run workflow" manuel
+
+concurrency:
+  group: dfs-weekly-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "scripts/requirements-dfs.txt"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements-dfs.txt
+
+      - name: Run DFS sync (top 500 keywords GSC 90j → France)
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          DFS_USERNAME: ${{ secrets.DFS_USERNAME }}
+          DFS_PASSWORD: ${{ secrets.DFS_PASSWORD }}
+        run: python3 scripts/dfs_sync.py --limit 500

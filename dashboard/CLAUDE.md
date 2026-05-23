@@ -96,9 +96,23 @@ Toutes les pages sont des **Server Components** (`export const dynamic =
 | `sitePulse(gsc, cooked, threshold)` | `site_pulse(...)` | agrégat site quadrant GSC 28v28 × Cooked 7v7 |
 | `pagesPulse(gsc, cooked, threshold)` | `pages_pulse(...)` | même logique par path (alertes home, fiche page) |
 | `siteSeoFunnel(periodDays)` | `site_seo_funnel(period_days)` | funnel SEO site-wide |
-| `gscTopQueriesGlobal(days, max)` | `gsc_top_queries_global(...)` | top requêtes + landing |
+| `gscTopQueriesGlobal(days, max)` | `gsc_top_queries_global(...)` | top requêtes + landing (v2 : enrichi `volume_fr` / `cpc` / `click_yield_pct` via DataForSEO) |
+| `gscXDfsOpportunities(minVol=100, posMin=5, posMax=15, days=28, max=30)` | `gsc_x_dfs_opportunities(...)` | requêtes en position 5–15 avec ≥ 100 vol FR → lost potential (clics manqués si pos 1, CTR Sistrix) |
 | `gscPageDailySeries(path, days)` | `gsc_page_daily_series(...)` | série clics GSC (sparkline) |
 | `cookedPageDailySeries(path, days)` | `cooked_page_daily_series(...)` | série sessions Cooked (sparkline) |
+
+### Données externes : DataForSEO (volumes France)
+
+Sprint 33+ (25/05/2026) — la table `public.dfs_keyword_volume` est
+alimentée hebdomadairement par `.github/workflows/dfs-weekly-sync.yml`
+(lundi 07:00 UTC) qui lit les top 500 keywords par clics GSC 90j
+(RPC `dfs_keywords_to_sync`), appelle l'API DataForSEO Google Ads
+search_volume France entière (`location_code = 2250`) et upsert
+search_volume mensuel + CPC + competition. Le wrapper
+`gscTopQueriesGlobal` joint cette table pour exposer `volume_fr`,
+`cpc`, `click_yield_pct` sur chaque requête. `gscXDfsOpportunities`
+projette les "quick wins" (lost potential ordonné desc) consommé par
+`<SeoOpportunities />` en haut de `/queries`. Coût ~$2/mois.
 
 ## 🚨 RÈGLE DURE — Définition « Contacts » (CLAUDE.md cooked)
 

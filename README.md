@@ -122,8 +122,11 @@ cooked/
 │   ├── gsc_ingest.py                  — CLI : path-query | query-page
 │   ├── gsc_ingest_path_and_query.py   — Wrapper rétro-compat
 │   ├── gsc_ingest_query_page.py       — Wrapper rétro-compat
+│   ├── dfs_common.py                  — Lib ingestion DataForSEO (search_volume FR)
+│   ├── dfs_sync.py                    — CLI sync hebdo top 500 keywords GSC → DFS
 │   ├── deploy_track.py                — Déploi Edge Function track (MCP / CLI)
-│   └── requirements-gsc.txt           — pip deps pour scripts GSC
+│   ├── requirements-gsc.txt           — pip deps pour scripts GSC
+│   └── requirements-dfs.txt           — pip deps pour scripts DataForSEO
 ├── dashboard/                         — Interface lecture Cooked × GSC (Next.js)
 │   ├── README.md                      — setup dev, routes, wrappers RPC
 │   ├── CLAUDE.md                      — règles agent dashboard (silo READ-ONLY)
@@ -131,7 +134,8 @@ cooked/
 │   ├── components/                    — KPI, Pulse, funnel, tableaux…
 │   └── lib/cooked.ts                  — seul point d'accès Supabase (server-only)
 ├── .github/workflows/
-│   └── gsc-daily-ingest.yml           — cron GSC quotidien (06:00 UTC)
+│   ├── gsc-daily-ingest.yml           — cron GSC quotidien (06:00 UTC)
+│   └── dfs-weekly-sync.yml            — cron DataForSEO hebdo (lundi 07:00 UTC)
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS
 │   ├── migrations/                    — DDL nommé (GSC Sprint 31-32, etc.)
@@ -177,7 +181,9 @@ Consommées par `dashboard/lib/cooked.ts` et les analyses ad-hoc. Toutes `servic
 | `gsc_page_performance(target_path)` | Fiche page : GSC + Cooked + CWV + device |
 | `gsc_top_queries_for_path(path, days, max)` | Top requêtes Google sur une landing |
 | `gsc_pages_overview(max_rows)` | Vue SEO pure, tri clics GSC (v3 : contacts = phone + form) |
-| `gsc_top_queries_global(days, max)` | Top requêtes site + page cible (`/queries`) |
+| `gsc_top_queries_global(days, max)` | Top requêtes site + page cible (`/queries`) — v2 enrichi `volume_fr` / `cpc` / `click_yield_pct` via DataForSEO |
+| `gsc_x_dfs_opportunities(min_vol, pos_min, pos_max, days, max)` | Requêtes pos 5–15 avec volume FR ≥ 100 → lost potential (clics manqués si pos 1) |
+| `dfs_keywords_to_sync(limit_n)` | Top N keywords par clics GSC 90j (consommé par `scripts/dfs_sync.py`) |
 | `site_pulse` / `pages_pulse` | Grille 2×2 GSC 28v28 × Cooked 7v7 (quadrants) |
 | `site_seo_funnel(period_days)` | Impressions → clics → sessions Google → contacts macro |
 | `gsc_page_daily_series` / `cooked_page_daily_series` | Sparklines fiche page |
@@ -190,7 +196,19 @@ Index migrations clés : `20260522113000_gsc_cross_source_rpcs.sql`,
 `20260523140000_pages_overview_unified_v2_exhaustive.sql`,
 `20260524100000_contacts_macro_per_path.sql`,
 `20260524160000_pages_pulse.sql`, `20260524220000_pulse_helpers.sql`,
-`20260524260000_site_seo_funnel.sql`.
+`20260524260000_site_seo_funnel.sql`,
+`20260525100000_dfs_keyword_volume.sql` (enrichissement DataForSEO).
+
+### DataForSEO weekly sync (Sprint 33+)
+
+Source de vérité pour le volume mensuel France et le CPC sur les top
+500 keywords du site (réévalué chaque run). Alimente `gsc_top_queries_global`
+(colonnes `volume_fr` / `cpc` / `click_yield_pct`) et `gsc_x_dfs_opportunities`
+(quick wins SEO). Cron `.github/workflows/dfs-weekly-sync.yml` (lundi
+07:00 UTC), coût estimé ~$2/mois (3 appels DFS / run × 4 / mois).
+
+Secrets GitHub Actions requis : `DFS_USERNAME`, `DFS_PASSWORD`,
+`SUPABASE_SECRET_KEY`.
 
 ---
 

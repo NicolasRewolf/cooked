@@ -1,8 +1,10 @@
 import { Nav } from "@/components/nav";
 import { DateBanner } from "@/components/date-banner";
 import { QueriesTable } from "@/components/queries-table";
+import { SeoOpportunities } from "@/components/seo-opportunities";
 import {
   gscTopQueriesGlobal,
+  gscXDfsOpportunities,
   pipelineHealth,
   siteKpisCompare,
 } from "@/lib/cooked";
@@ -11,8 +13,9 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function QueriesList() {
-  const [queries, health, kpis] = await Promise.all([
+  const [queries, opportunities, health, kpis] = await Promise.all([
     gscTopQueriesGlobal(28, 500),
+    gscXDfsOpportunities(100, 5, 15, 28, 10),
     pipelineHealth(),
     siteKpisCompare(28),
   ]);
@@ -26,20 +29,23 @@ export default async function QueriesList() {
         gscLastDay={health.gsc_last_day}
         gscDataAgeDays={health.gsc_data_age_days}
       />
-      <main className="mx-auto w-full max-w-6xl px-6 py-10">
-        <header className="mb-8">
+      <main className="mx-auto w-full max-w-6xl space-y-8 px-6 py-10">
+        <header>
           <h1 className="font-heading text-2xl font-medium tracking-tight">
             Requêtes Google — 28 derniers jours
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Top {queries.length} requêtes du site avec la page cible et le
-            nombre de pages qui rankent dessus. Source : Google Search Console.
+            nombre de pages qui rankent dessus. Source : Google Search Console
+            × DataForSEO (volumes France, sync hebdo).
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Note : GSC anonymise ~54 % du volume impressions sur les
             requêtes rares ; les clics restent quasi-tous attribuables.
           </p>
         </header>
+
+        <SeoOpportunities rows={opportunities} />
 
         <QueriesTable rows={queries} />
       </main>

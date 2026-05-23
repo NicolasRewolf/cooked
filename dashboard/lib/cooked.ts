@@ -139,6 +139,23 @@ export type GscGlobalQueryRow = {
   nb_pages_targeted: number;
   top_page: string | null;
   top_page_clicks: number | null;
+  /** DataForSEO enrichments (null si keyword pas encore syncé) */
+  volume_fr: number | null;
+  cpc: number | null;
+  click_yield_pct: number | null;
+};
+
+export type GscDfsOpportunityRow = {
+  query: string;
+  our_position: number;
+  our_clicks: number;
+  our_impressions: number;
+  our_ctr_pct: number | null;
+  volume_fr: number;
+  cpc: number | null;
+  estimated_ctr_pos_1: number;
+  lost_potential: number;
+  top_page: string | null;
 };
 
 export type SiteContextRow = {
@@ -324,8 +341,9 @@ export async function siteSeoFunnel(
 }
 
 /**
- * Top N requêtes Google du site sur N jours avec attribution page.
- * RPC : public.gsc_top_queries_global(days_back, max_rows)
+ * Top N requêtes Google du site sur N jours avec attribution page
+ * + enrichissement DataForSEO (volume FR, CPC, click yield %).
+ * RPC v2 : public.gsc_top_queries_global(days_back, max_rows)
  */
 export async function gscTopQueriesGlobal(
   daysBack = 28,
@@ -337,6 +355,29 @@ export async function gscTopQueriesGlobal(
   });
   if (error) throw new Error(`gsc_top_queries_global: ${error.message}`);
   return (data ?? []) as GscGlobalQueryRow[];
+}
+
+/**
+ * Opportunités SEO : requêtes en position 5-15 avec volume DFS suffisant.
+ * Lost potential = clics manqués si on était en position 1.
+ * RPC : public.gsc_x_dfs_opportunities(min_volume, pos_min, pos_max, days_back, max_rows)
+ */
+export async function gscXDfsOpportunities(
+  minVolume = 100,
+  positionMin = 5,
+  positionMax = 15,
+  daysBack = 28,
+  maxRows = 30
+): Promise<GscDfsOpportunityRow[]> {
+  const { data, error } = await client().rpc("gsc_x_dfs_opportunities", {
+    min_volume: minVolume,
+    position_min: positionMin,
+    position_max: positionMax,
+    days_back: daysBack,
+    max_rows: maxRows,
+  });
+  if (error) throw new Error(`gsc_x_dfs_opportunities: ${error.message}`);
+  return (data ?? []) as GscDfsOpportunityRow[];
 }
 
 /**

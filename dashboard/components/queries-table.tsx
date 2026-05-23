@@ -25,7 +25,10 @@ type SortCol =
   | "position"
   | "ctr"
   | "nb_pages"
-  | "top_clicks";
+  | "top_clicks"
+  | "volume_fr"
+  | "cpc"
+  | "click_yield";
 
 type SortDir = "asc" | "desc";
 
@@ -44,6 +47,12 @@ const HINTS = {
     "Nombre de pages du site qui rankent sur cette requête. > 1 = potentiel cannibalisation interne.",
   top_page:
     "Page qui capture le plus de clics pour cette requête. Cliquer pour ouvrir la fiche page.",
+  volume_fr:
+    "Volume mensuel moyen de recherches en France pour cette requête (DataForSEO, sync hebdo). Estimation ± 30 %. Vide pour les requêtes long-tail / brand qui ne sont pas dans le top 500.",
+  cpc:
+    "Coût par clic en AdWords pour cette requête en France (€). Indique combien le cabinet paierait par lead s'il achetait cette requête. Proxy de la valeur business d'un clic SEO.",
+  click_yield:
+    "Part du volume mensuel capturée par le site = 100 × clicks / (volume × jours/30). Plus haut = on capte mieux notre share. > 100 % possible si plusieurs pages rankent (cannibalisation interne) ou si DFS sous-estime le volume.",
 };
 
 export function QueriesTable({ rows }: { rows: GscGlobalQueryRow[] }) {
@@ -173,6 +182,30 @@ export function QueriesTable({ rows }: { rows: GscGlobalQueryRow[] }) {
                   dir={sortDir}
                   onSort={onSort}
                 />
+                <ThSort
+                  label="Volume FR"
+                  hint={HINTS.volume_fr}
+                  col="volume_fr"
+                  active={sortCol}
+                  dir={sortDir}
+                  onSort={onSort}
+                />
+                <ThSort
+                  label="CPC"
+                  hint={HINTS.cpc}
+                  col="cpc"
+                  active={sortCol}
+                  dir={sortDir}
+                  onSort={onSort}
+                />
+                <ThSort
+                  label="Click yield"
+                  hint={HINTS.click_yield}
+                  col="click_yield"
+                  active={sortCol}
+                  dir={sortDir}
+                  onSort={onSort}
+                />
                 <th className="px-4 py-3 font-medium">
                   <InfoLabel label="Top page" hint={HINTS.top_page} />
                 </th>
@@ -182,7 +215,7 @@ export function QueriesTable({ rows }: { rows: GscGlobalQueryRow[] }) {
               {pageRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={10}
                     className="px-4 py-10 text-center text-sm text-muted-foreground"
                   >
                     Aucune requête ne matche le filtre.
@@ -213,6 +246,15 @@ export function QueriesTable({ rows }: { rows: GscGlobalQueryRow[] }) {
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular-nums">
                       <PagesCell n={q.nb_pages_targeted} />
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-muted-foreground">
+                      {q.volume_fr != null ? formatInt(q.volume_fr) : "—"}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums text-muted-foreground">
+                      {q.cpc != null ? `${formatNumber(q.cpc, 2)} €` : "—"}
+                    </td>
+                    <td className="px-3 py-3 text-right font-mono tabular-nums">
+                      <ClickYieldCell pct={q.click_yield_pct} />
                     </td>
                     <td className="max-w-[260px] truncate px-4 py-3">
                       {q.top_page ? (
@@ -364,6 +406,24 @@ function PagesCell({ n }: { n: number }) {
   return <span className={tone}>{formatInt(n)}</span>;
 }
 
+function ClickYieldCell({ pct }: { pct: number | null }) {
+  if (pct == null) return <span className="text-muted-foreground">—</span>;
+  // Capping visuel : > 100 % = aberrant (cannibalisation ou DFS sous-estimé)
+  if (pct > 100) {
+    return (
+      <span
+        className="text-warning"
+        title="Click yield > 100 % — souvent plusieurs pages rankent sur la même requête, ou DFS sous-estime le volume"
+      >
+        {formatNumber(pct, 0)} %
+      </span>
+    );
+  }
+  // Bon yield ≥ 10 % en vert, sinon neutre
+  const tone = pct >= 10 ? "text-success" : "text-muted-foreground";
+  return <span className={tone}>{formatNumber(pct, pct < 1 ? 2 : 1)} %</span>;
+}
+
 const SORT_GETTERS: Record<
   SortCol,
   (r: GscGlobalQueryRow) => number | null
@@ -374,4 +434,7 @@ const SORT_GETTERS: Record<
   ctr: (r) => r.ctr_pct,
   nb_pages: (r) => r.nb_pages_targeted,
   top_clicks: (r) => r.top_page_clicks,
+  volume_fr: (r) => r.volume_fr,
+  cpc: (r) => r.cpc,
+  click_yield: (r) => r.click_yield_pct,
 };
