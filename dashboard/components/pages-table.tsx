@@ -6,6 +6,11 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { CategoryBadge } from "@/components/category-badge";
 import { InfoLabel } from "@/components/info-label";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   BUCKET_LABEL,
   matchesBucket,
   type FilterBucket,
@@ -289,7 +294,11 @@ export function PagesTable({ rows }: { rows: GscPagesOverviewRow[] }) {
   );
 }
 
-/** Header de colonne triable. */
+/**
+ * Header de colonne triable. Le <button> est À LA FOIS le sort trigger
+ * et le tooltip trigger (Base UI `render` prop) — pas de bouton imbriqué
+ * (HTML interdit nested buttons).
+ */
 function ThSort({
   label,
   hint,
@@ -311,28 +320,37 @@ function ThSort({
   const Icon = !isActive ? ArrowUpDown : dir === "asc" ? ArrowUp : ArrowDown;
   return (
     <th
-      className={cn(
-        "py-3 text-right font-medium",
-        last ? "px-4" : "px-3"
-      )}
+      className={cn("py-3 text-right font-medium", last ? "px-4" : "px-3")}
     >
-      <button
-        type="button"
-        onClick={() => onSort(col)}
-        className={cn(
-          "inline-flex items-center justify-end gap-1 hover:text-foreground transition-colors",
-          isActive && "text-foreground"
-        )}
-      >
-        <InfoLabel label={label} hint={hint} />
-        <Icon
-          className={cn(
-            "h-3 w-3",
-            isActive ? "opacity-100" : "opacity-40"
-          )}
-          aria-hidden="true"
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={() => onSort(col)}
+              className={cn(
+                "inline-flex items-center justify-end gap-1 cursor-pointer bg-transparent p-0 transition-colors hover:text-foreground",
+                isActive && "text-foreground"
+              )}
+            >
+              {label}
+              <Icon
+                className={cn(
+                  "h-3 w-3",
+                  isActive ? "opacity-100" : "opacity-40"
+                )}
+                aria-hidden="true"
+              />
+            </button>
+          }
         />
-      </button>
+        <TooltipContent
+          side="top"
+          className="max-w-xs text-left text-xs leading-relaxed"
+        >
+          {hint}
+        </TooltipContent>
+      </Tooltip>
     </th>
   );
 }
