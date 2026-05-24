@@ -226,6 +226,13 @@ Sans `DFS_*` en env → le script s'arrête tout de suite (normal). Cursor
 n'a pas de MCP DataForSEO sur ce repo : les volumes passent par ce sync
 → table `dfs_keyword_volume`, pas par appel API live depuis l'agent.
 
+**Tests sanitize (local)** :
+
+```bash
+pip install -r scripts/requirements-dev.txt
+python3 -m pytest tests/test_dfs_common.py -q
+```
+
 ---
 
 ## Dashboard (`dashboard/`)

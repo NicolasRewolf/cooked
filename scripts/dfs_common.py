@@ -3,7 +3,7 @@ Shared DataForSEO → Supabase ingest (keyword volume + CPC).
 
 Aligné sur le pattern scripts/gsc_common.py : env vars, client singleton,
 upsert batch. Source de keywords à syncer = RPC dfs_keywords_to_sync(N)
-qui lit les top par clics GSC 90j.
+(union top clics GSC 28j ∪ 90j).
 
 API DataForSEO : Google Ads search_volume live (Keywords Data endpoint).
 Retourne : search_volume (moy 12 mois), cpc, competition, competition_level,
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import json
 import os
 import re
 import sys
@@ -98,6 +97,33 @@ def sanitize_for_dfs(kw: str) -> str | None:
     return kw
 
 
+def prepare_keywords_for_dfs(
+    keywords: Sequence[str],
+) -> tuple[list[str], dict[str, str], list[str], list[tuple[str, str]]]:
+    """Assainit une liste GSC pour l'API DFS.
+
+    Returns:
+        clean_keywords: clés uniques envoyables à DFS
+        original_by_sanitized: sanitized → keyword GSC d'origine (PK upsert)
+        skipped_keywords: requêtes GSC droppées (sanitize impossible)
+        collisions: paires (nouveau, existant) si 2 requêtes GSC → même sanitized
+    """
+    original_by_sanitized: dict[str, str] = {}
+    collisions: list[tuple[str, str]] = []
+    skipped_keywords: list[str] = []
+    for kw in keywords:
+        s = sanitize_for_dfs(kw)
+        if s is None:
+            skipped_keywords.append(kw)
+            continue
+        prev = original_by_sanitized.get(s)
+        if prev is not None and prev != kw:
+            collisions.append((kw, prev))
+            continue
+        original_by_sanitized.setdefault(s, kw)
+    return list(original_by_sanitized.keys()), original_by_sanitized, skipped_keywords, collisions
+
+
 def clients() -> tuple:
     supabase_url = os.environ.get("SUPABASE_URL", DEFAULT_SUPABASE_URL)
     supabase_key = os.environ.get("SUPABASE_SECRET_KEY")
@@ -115,7 +141,7 @@ def clients() -> tuple:
 
 
 def fetch_keywords_to_sync(sb, limit_n: int) -> list[str]:
-    """Lit les top N keywords par clics GSC 90j via RPC publiée."""
+    """Lit les top N keywords (union GSC 28j ∪ 90j) via RPC dfs_keywords_to_sync."""
     resp = sb.rpc("dfs_keywords_to_sync", {"limit_n": limit_n}).execute()
     rows = resp.data or []
     return [r["keyword"] for r in rows]
@@ -210,17 +236,19 @@ def run_sync(limit_n: int) -> None:
     sb, dfs_auth = clients()
     t0 = time.time()
 
-    print(f"=== DFS sync — top {limit_n} keywords GSC 90j → France ===", flush=True)
+    print(f"=== DFS sync — top {limit_n} keywords GSC (28j∪90j) → France ===", flush=True)
 
     keywords = fetch_keywords_to_sync(sb, limit_n)
     if not keywords:
-        sys.exit("Aucun keyword à syncer (gsc_query_daily vide sur 90j ?)")
+        sys.exit("Aucun keyword à syncer (gsc_query_daily vide ?)")
 
-    print(f"  {len(keywords)} keywords à syncer", flush=True)
+    total_requested = len(keywords)
+    print(f"  {total_requested} keywords à syncer", flush=True)
 
     total_upserted = 0
     total_with_volume = 0
     total_skipped = 0
+    total_collisions = 0
     total_failed = 0
 
     for i in range(0, len(keywords), BATCH_SIZE_DFS):
@@ -228,18 +256,18 @@ def run_sync(limit_n: int) -> None:
         batch_num = i // BATCH_SIZE_DFS + 1
         t_start = time.time()
 
-        # 1. Sanitization. On garde une map sanitized → original keyword pour
-        #    upserter la clé GSC d'origine (préserve le JOIN amont).
-        original_by_sanitized: dict[str, str] = {}
-        for kw in batch:
-            s = sanitize_for_dfs(kw)
-            if s is None:
-                total_skipped += 1
-                print(f"    SKIP (chars non DFS-safe): {kw!r}", flush=True)
-            else:
-                original_by_sanitized.setdefault(s, kw)
-
-        clean_batch = list(original_by_sanitized.keys())
+        clean_batch, original_by_sanitized, skipped, collisions = (
+            prepare_keywords_for_dfs(batch)
+        )
+        total_skipped += len(skipped)
+        total_collisions += len(collisions)
+        for kw in skipped:
+            print(f"    SKIP (chars non DFS-safe): {kw!r}", flush=True)
+        for new_kw, kept_kw in collisions:
+            print(
+                f"    COLLISION sanitize: {new_kw!r} → même clé que {kept_kw!r} (1er gardé)",
+                flush=True,
+            )
         if not clean_batch:
             continue
 
@@ -248,9 +276,9 @@ def run_sync(limit_n: int) -> None:
         try:
             items = fetch_dfs_search_volume(dfs_auth, clean_batch)
         except (DfsApiError, requests.RequestException) as e:
-            total_failed += len(clean_batch)
+            total_failed += len(batch)
             print(
-                f"  batch {batch_num}: FAIL ({e}) — skip {len(clean_batch)} keywords",
+                f"  batch {batch_num}: FAIL ({e}) — skip {len(batch)} keywords demandés",
                 flush=True,
             )
             continue
@@ -271,6 +299,7 @@ def run_sync(limit_n: int) -> None:
 
     elapsed_total = time.time() - t0
     print(f"\n=== DONE en {elapsed_total:.1f}s ===")
+    print(f"  demandés (RPC)      : {total_requested:,}")
     print(f"  upserts             : {total_upserted:,}")
     if total_upserted:
         print(
@@ -280,6 +309,8 @@ def run_sync(limit_n: int) -> None:
         print(f"  long-tail null      : {total_upserted - total_with_volume:,}")
     if total_skipped:
         print(f"  skipped (sanitize)  : {total_skipped:,}")
+    if total_collisions:
+        print(f"  collisions sanitize : {total_collisions:,}")
     if total_failed:
         print(f"  failed (DFS error)  : {total_failed:,}")
 
@@ -290,7 +321,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--limit", type=int, default=500,
-        help="Top N keywords par clics GSC 90j (défaut: 500)"
+        help="Top N keywords GSC 28j∪90j (défaut: 500)"
     )
     args = parser.parse_args(argv)
     run_sync(args.limit)

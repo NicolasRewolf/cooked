@@ -2,7 +2,7 @@ name: DFS Weekly Sync
 
 # Sprint 33+ (25/05/2026) — sync hebdo DataForSEO → Supabase
 #
-# Lit les top 500 keywords par clics GSC 90j et alimente la table
+# Lit les top 500 keywords (union GSC 28j ∪ 90j) et alimente la table
 # dfs_keyword_volume avec : search_volume mensuel France, CPC,
 # competition, monthly_searches 12 mois.
 #
@@ -43,12 +43,15 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: "scripts/requirements-dfs.txt"
+          cache-dependency-path: "scripts/requirements-dev.txt"
 
       - name: Install dependencies
-        run: pip install -r scripts/requirements-dfs.txt
+        run: pip install -r scripts/requirements-dev.txt
 
-      - name: Run DFS sync (top 500 keywords GSC 90j → France)
+      - name: Unit tests (sanitize DFS)
+        run: python3 -m pytest tests/test_dfs_common.py -q
+
+      - name: Run DFS sync (top 500 keywords GSC → France)
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           DFS_USERNAME: ${{ secrets.DFS_USERNAME }}
