@@ -183,7 +183,7 @@ Consommées par `dashboard/lib/cooked.ts` et les analyses ad-hoc. Toutes `servic
 | `gsc_pages_overview(max_rows)` | Vue SEO pure, tri clics GSC (v3 : contacts = phone + form) |
 | `gsc_top_queries_global(days, max)` | Top requêtes site + page cible (`/queries`) — v2 enrichi `volume_fr` / `cpc` / `click_yield_pct` via DataForSEO |
 | `gsc_x_dfs_opportunities(min_vol, pos_min, pos_max, days, max)` | Requêtes pos 5–15 avec volume FR ≥ 100 → lost potential (clics manqués si pos 1) |
-| `dfs_keywords_to_sync(limit_n)` | Top N keywords par clics GSC 90j (consommé par `scripts/dfs_sync.py`) |
+| `dfs_keywords_to_sync(limit_n)` | Top N keywords = union clics GSC **28j ∪ 90j** (consommé par `scripts/dfs_sync.py`) |
 | `site_pulse` / `pages_pulse` | Grille 2×2 GSC 28v28 × Cooked 7v7 (quadrants) |
 | `site_seo_funnel(period_days)` | Impressions → clics → sessions Google → contacts macro |
 | `gsc_page_daily_series` / `cooked_page_daily_series` | Sparklines fiche page |
@@ -197,18 +197,34 @@ Index migrations clés : `20260522113000_gsc_cross_source_rpcs.sql`,
 `20260524100000_contacts_macro_per_path.sql`,
 `20260524160000_pages_pulse.sql`, `20260524220000_pulse_helpers.sql`,
 `20260524260000_site_seo_funnel.sql`,
-`20260525100000_dfs_keyword_volume.sql` (enrichissement DataForSEO).
+`20260525100000_dfs_keyword_volume.sql`,
+`20260525120000_dfs_keywords_union_28d_90d.sql`.
 
 ### DataForSEO weekly sync (Sprint 33+)
 
 Source de vérité pour le volume mensuel France et le CPC sur les top
-500 keywords du site (réévalué chaque run). Alimente `gsc_top_queries_global`
-(colonnes `volume_fr` / `cpc` / `click_yield_pct`) et `gsc_x_dfs_opportunities`
-(quick wins SEO). Cron `.github/workflows/dfs-weekly-sync.yml` (lundi
-07:00 UTC), coût estimé ~$2/mois (3 appels DFS / run × 4 / mois).
+500 keywords du site (union **28j + 90j** GSC, réévalué chaque run).
+Alimente `gsc_top_queries_global` (colonnes `volume_fr` / `cpc` /
+`click_yield_pct`) et `gsc_x_dfs_opportunities` (quick wins SEO).
+Cron `.github/workflows/dfs-weekly-sync.yml` (lundi 07:00 UTC), coût
+estimé ~$2/mois.
 
-Secrets GitHub Actions requis : `DFS_USERNAME`, `DFS_PASSWORD`,
-`SUPABASE_SECRET_KEY`.
+**Secrets GitHub Actions** : `DFS_USERNAME`, `DFS_PASSWORD`,
+`SUPABASE_SECRET_KEY` (login + mot de passe **API** DataForSEO, pas le
+mot de passe du site web).
+
+**Run manuel en local** :
+
+```bash
+pip install -r scripts/requirements-dfs.txt
+cp scripts/.env.dfs.example scripts/.env.dfs   # puis remplir
+set -a && source scripts/.env.dfs && set +a
+python3 scripts/dfs_sync.py --limit 500
+```
+
+Sans `DFS_*` en env → le script s'arrête tout de suite (normal). Cursor
+n'a pas de MCP DataForSEO sur ce repo : les volumes passent par ce sync
+→ table `dfs_keyword_volume`, pas par appel API live depuis l'agent.
 
 ---
 

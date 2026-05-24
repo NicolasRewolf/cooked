@@ -2170,3 +2170,4 @@ create unique index if not exists events_form_submit_submission_id_uniq
 --   20260524240000_gsc_top_queries_global.sql
 --   20260524260000_site_seo_funnel.sql (+ 20260524270000 fix ambiguity)
 --   20260524300000_fix_off_by_one_28d.sql
+--   20260525120000_dfs_keywords_union_28d_90d.sql

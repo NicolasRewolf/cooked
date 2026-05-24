@@ -80,6 +80,8 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
   `scripts/deploy_track.py`, etc.)
 - Le dashboard `dashboard/` (UI lecture ; schéma/RPCs restent ici)
 - Le workflow GitHub Actions GSC (`.github/workflows/gsc-daily-ingest.yml`)
+- L'ingestion DataForSEO (`scripts/dfs_common.py`, `dfs_sync.py`,
+  table `dfs_keyword_volume`, cron `dfs-weekly-sync.yml`)
 - L'auth Service Account GSC (`gsc-mcp-claude@plouton-472207...`)
   et le fichier `~/.claude/gsc-credentials.json` qui ne doit JAMAIS
   être committé
@@ -194,6 +196,14 @@ RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
 - `site_pulse` / `pages_pulse` — quadrants GSC 28v28 × Cooked 7v7 (`pulse_quadrant` helper)
 - `site_seo_funnel(period_days)` — funnel impressions → contacts
 - `gsc_page_daily_series` / `cooked_page_daily_series` — séries quotidiennes (sparklines)
+- `dfs_keywords_to_sync(limit_n)` — liste keywords à syncer (union GSC 28j ∪ 90j)
+- `gsc_x_dfs_opportunities(...)` — quick wins SEO (volume DFS + position 5–15)
+
+**DataForSEO (agent Cooked)** : pas d'appel API live depuis Cursor (pas de MCP
+DFS ici). Volumes = `dfs_keyword_volume` alimentée par `scripts/dfs_sync.py`
+(env `DFS_USERNAME` / `DFS_PASSWORD` ou GitHub Actions). Sanitize keywords
+avant envoi (`sanitize_for_dfs` dans `dfs_common.py`). Après changement RPC
+ou script : relancer `dfs_sync.py --limit 500`.
 
 **Contacts dashboard** : `cooked_contacts_*` = `cta_phone_click` + `form_submit` uniquement.
 `cooked_booking_intent_*` = `cta_booking_click` (micro). Ne pas mélanger.

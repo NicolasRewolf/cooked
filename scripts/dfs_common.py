@@ -56,8 +56,14 @@ _DFS_TRANSLATIONS = str.maketrans({
     "﻿": "",   # BOM
 })
 
-# Charset jugé sûr APRES sanitization (Unicode letter via \w + ponctuation usuelle FR)
-_DFS_SAFE_RE = re.compile(r"^[\w\s'\".,\-()&/+:?!@#%]+$", re.UNICODE)
+# Ponctuation que DFS rejette : on remplace par espace pour préserver la
+# séparation des tokens (ex: "abc(def)" → "abc def", pas "abcdef").
+# Observé sur le run 24/05/2026 : parens, brackets, &, %, +, :, ?, ! etc.
+_DFS_STRIP = str.maketrans({c: " " for c in '()[]{}&%+:?!@#"*=<>|^~`;\\'})
+
+# Charset jugé sûr APRES sanitization : lettres Unicode, chiffres, espace,
+# apostrophe, hyphen, point, virgule. Liste minimale acceptée par Google Ads.
+_DFS_SAFE_RE = re.compile(r"^[\w\s'.,\-]+$", re.UNICODE)
 
 
 class DfsApiError(Exception):
@@ -75,7 +81,8 @@ def sanitize_for_dfs(kw: str) -> str | None:
     if not kw:
         return None
     kw = unicodedata.normalize("NFC", kw)
-    kw = kw.translate(_DFS_TRANSLATIONS)
+    kw = kw.translate(_DFS_TRANSLATIONS)  # smart Unicode → ASCII équivalent
+    kw = kw.translate(_DFS_STRIP)          # ponctuation rejetée → espace
     kw = " ".join(kw.split()).strip()
     if not kw:
         return None
