@@ -207,6 +207,9 @@ ou script : relancer `dfs_sync.py --limit 500`.
 
 **Contacts dashboard** : `cooked_contacts_*` = `cta_phone_click` + `form_submit` uniquement.
 `cooked_booking_intent_*` = `cta_booking_click` (micro). Ne pas mélanger.
+Source SQL unique : `macro_contacts_by_path(days_back)` — utilisée par
+`pages_overview_unified`, `gsc_pages_overview`, `gsc_page_performance`.
+Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
 
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
 Paris (première ingestion réelle). Le tracker est en sprint30
