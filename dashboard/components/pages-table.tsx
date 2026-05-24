@@ -23,6 +23,7 @@ import type {
   PagePulseRow,
   PulseQuadrant,
 } from "@/lib/cooked";
+import { hrefWithPeriod, type PeriodKind } from "@/lib/period";
 
 type SortCol =
   | "clicks"
@@ -50,12 +51,13 @@ type SortDir = "asc" | "desc";
 type PageSize = 25 | 50 | 100 | "all";
 const PAGE_SIZE_OPTIONS: PageSize[] = [25, 50, 100, "all"];
 
-const HINTS = {
+function buildHints(periodLabel: string) {
+  return {
   page: "URL de la page sur le site.",
   category: "Type de page (Accueil / Cabinet / Expertise / Article / Ressource).",
-  clicks: "Clics depuis Google Search Console sur les 28 derniers jours.",
+  clicks: `Clics depuis Google Search Console (${periodLabel}).`,
   impressions:
-    "Nombre de fois où la page est apparue dans les résultats Google (28 j).",
+    `Nombre de fois où la page est apparue dans les résultats Google (${periodLabel}).`,
   position:
     "Position moyenne dans les résultats Google, pondérée par les impressions (1 = top).",
   ctr:
@@ -68,8 +70,9 @@ const HINTS = {
   pogo:
     "Sessions arrivant de Google qui repartent rapidement (mauvais signal SEO si élevé).",
   pulse:
-    "Pulse cross-source : grille 2×2 entre clics Google 28j vs 28j-1 et visites Cooked 7j vs 7j-1. Seuil ±5 %. Survoler un badge pour les chiffres exacts.",
+    "Pulse cross-source : clics Google N vs N-1 et visites Cooked N vs N-1 sur la même période. Seuil ±5 %. Survoler un badge pour les chiffres exacts.",
 };
+}
 
 const BUCKETS: FilterBucket[] = [
   "all",
@@ -82,11 +85,15 @@ const BUCKETS: FilterBucket[] = [
 export function PagesTable({
   rows,
   pulseByPath = {},
+  period = "rolling_28",
+  periodLabel = "28 derniers jours",
 }: {
   rows: PagesOverviewRow[];
-  /** Map<path, PagePulseRow> (server-side, jamais re-fetché côté client) */
   pulseByPath?: Record<string, PagePulseRow>;
+  period?: PeriodKind;
+  periodLabel?: string;
 }) {
+  const HINTS = buildHints(periodLabel);
   const [bucket, setBucketState] = useState<FilterBucket>("all");
   const [sortCol, setSortColState] = useState<SortCol>("sessions");
   const [sortDir, setSortDirState] = useState<SortDir>("desc");
@@ -299,7 +306,7 @@ export function PagesTable({
                   >
                     <td className="max-w-[260px] truncate px-4 py-3">
                       <Link
-                        href={`/p${p.path}`}
+                        href={hrefWithPeriod(`/p${p.path}`, period)}
                         className="block truncate text-foreground hover:underline"
                         title={p.path}
                       >
@@ -310,29 +317,29 @@ export function PagesTable({
                       <CategoryBadge path={p.path} />
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular-nums">
-                      {formatInt(p.gsc_clicks_28d)}
+                      {formatInt(p.gsc_clicks)}
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular-nums text-muted-foreground">
-                      {formatInt(p.gsc_impressions_28d)}
+                      {formatInt(p.gsc_impressions)}
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular-nums">
-                      <PositionBadge value={p.gsc_position_avg_28d} />
+                      <PositionBadge value={p.gsc_position_avg} />
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular-nums text-muted-foreground">
-                      {formatPct(p.gsc_ctr_pct_28d, 2)}
+                      {formatPct(p.gsc_ctr_pct, 2)}
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular-nums">
-                      {formatInt(p.cooked_sessions_28d)}
+                      {formatInt(p.cooked_sessions)}
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular-nums text-muted-foreground">
-                      {p.cooked_dwell_avg_s_28d != null
-                        ? `${formatNumber(p.cooked_dwell_avg_s_28d, 0)}s`
+                      {p.cooked_dwell_avg_s != null
+                        ? `${formatNumber(p.cooked_dwell_avg_s, 0)}s`
                         : "—"}
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular-nums">
-                      {p.cooked_contacts_28d > 0 ? (
+                      {p.cooked_contacts > 0 ? (
                         <span className="font-medium text-success">
-                          {formatInt(p.cooked_contacts_28d)}
+                          {formatInt(p.cooked_contacts)}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">0</span>
@@ -342,7 +349,7 @@ export function PagesTable({
                       <QuadrantBadge row={pulseByPath[p.path]} />
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums text-muted-foreground">
-                      {formatPct(p.cooked_pogo_rate_28d, 1)}
+                      {formatPct(p.cooked_pogo_rate, 1)}
                     </td>
                   </tr>
                 ))
@@ -492,12 +499,12 @@ const SORT_GETTERS: Record<
   Exclude<SortCol, "pulse">,
   (r: PagesOverviewRow) => number | null
 > = {
-  clicks: (r) => r.gsc_clicks_28d,
-  impressions: (r) => r.gsc_impressions_28d,
-  position: (r) => r.gsc_position_avg_28d,
-  ctr: (r) => r.gsc_ctr_pct_28d,
-  sessions: (r) => r.cooked_sessions_28d,
-  dwell: (r) => r.cooked_dwell_avg_s_28d,
-  contacts: (r) => r.cooked_contacts_28d,
-  pogo: (r) => r.cooked_pogo_rate_28d,
+  clicks: (r) => r.gsc_clicks,
+  impressions: (r) => r.gsc_impressions,
+  position: (r) => r.gsc_position_avg,
+  ctr: (r) => r.gsc_ctr_pct,
+  sessions: (r) => r.cooked_sessions,
+  dwell: (r) => r.cooked_dwell_avg_s,
+  contacts: (r) => r.cooked_contacts,
+  pogo: (r) => r.cooked_pogo_rate,
 };

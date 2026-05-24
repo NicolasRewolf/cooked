@@ -3,11 +3,13 @@ import { formatDateFR } from "@/lib/format";
 export function DateBanner({
   periodStart,
   periodEnd,
+  periodLabel,
   gscLastDay,
   gscDataAgeDays,
 }: {
   periodStart: string | null;
   periodEnd: string | null;
+  periodLabel?: string;
   gscLastDay: string | null;
   gscDataAgeDays: number | null;
 }) {
@@ -25,8 +27,14 @@ export function DateBanner({
               Données{" "}
               <span className="text-foreground">
                 {formatDateFR(periodStart)} → {formatDateFR(periodEnd)}
-              </span>{" "}
-              · 28 jours · heure Paris
+              </span>
+              {periodLabel ? (
+                <>
+                  {" "}
+                  · <span className="text-foreground">{periodLabel}</span>
+                </>
+              ) : null}{" "}
+              · heure Paris
             </>
           ) : (
             "Période indisponible"

@@ -14,15 +14,29 @@ dashboard est strictement **READ-ONLY** sur Supabase.
 - Recharts, Framer Motion
 - `@supabase/supabase-js` server-only
 
+## Périodes (URL `?period=`)
+
+Sélecteur global dans la barre de navigation. Valeurs :
+
+| `period` | Libellé |
+|---|---|
+| `today` | Aujourd'hui (jour Paris) |
+| `week` | Semaine en cours (lundi → aujourd'hui) |
+| `month` | Mois en cours (1er → aujourd'hui) |
+| `rolling_28` | 28 derniers jours (défaut) |
+| `rolling_90` | 3 derniers mois (90 j) |
+
+Bornes calculées côté Postgres par `cooked_period_bounds(period_kind)` — heure **Europe/Paris**.
+
 ## Pages
 
 | Route | RPCs principales | Contenu |
 |---|---|---|
-| `/` | `site_kpis_compare`, `site_pulse`, `pages_pulse`, `site_seo_funnel`, `pages_overview_unified` | Pulse site-wide, funnel SEO (impressions → contacts), KPI **Contacts** macro, alertes Pulse `up_down`, top contributeurs |
-| `/pages` | `pages_overview_unified` | Univers exhaustif (~490 paths : snapshot Cooked 365j ∪ GSC 90j), filtres / tri / pagination |
-| `/queries` | `gsc_top_queries_global`, `gsc_x_dfs_opportunities` | Top requêtes Google du site (28j) avec page cible + volumes France DataForSEO (search_volume / CPC / click yield) + section "Opportunités SEO" (pos 5–15, lost potential) |
-| `/p/[...slug]` | `gsc_page_performance`, `gsc_top_queries_for_path`, `pages_pulse`, `gsc_page_daily_series`, `cooked_page_daily_series` | Fiche page, requêtes, quadrant Pulse, sparklines GSC (56j) + Cooked (14j) |
-| `/health` | `refresh_pipeline_health` | Self-diag pipeline (snapshot, cron, ingestion, GSC) |
+| `/` | `site_kpis_compare`, `site_pulse`, `pages_pulse`, `site_seo_funnel`, `pages_overview_unified` | Pulse, funnel SEO, KPI Contacts, alertes Pulse |
+| `/pages` | `pages_overview_unified(period_kind)` | Tableau pages GSC × Cooked sur la période choisie |
+| `/queries` | `gsc_top_queries_global`, `gsc_x_dfs_opportunities` | Top requêtes + opportunités SEO (DFS) |
+| `/p/[...slug]` | `gsc_page_performance`, `gsc_top_queries_for_path`, `pages_pulse` | Fiche page (hérite `?period=`) |
+| `/health` | `refresh_pipeline_health` | Pipeline (sans filtre période) |
 
 ## Définition Contacts (alignée cooked/CLAUDE.md)
 
@@ -34,15 +48,15 @@ dashboard est strictement **READ-ONLY** sur Supabase.
 
 | Wrapper TS | RPC Postgres |
 |---|---|
-| `siteKpisCompare(periodDays)` | `site_kpis_compare` |
-| `sitePulse(gscPeriod, cookedPeriod, threshold)` | `site_pulse` |
-| `pagesPulse(...)` | `pages_pulse` |
-| `siteSeoFunnel(periodDays)` | `site_seo_funnel` |
-| `pagesOverviewUnified(maxRows)` | `pages_overview_unified` |
-| `gscPagePerformance(path)` | `gsc_page_performance` |
-| `gscTopQueriesForPath(path, days, max)` | `gsc_top_queries_for_path` |
-| `gscTopQueriesGlobal(days, max)` | `gsc_top_queries_global` (v2 enrichi DFS) |
-| `gscXDfsOpportunities(minVol, posMin, posMax, days, max)` | `gsc_x_dfs_opportunities` |
+| `siteKpisCompare(periodKind)` | `site_kpis_compare(period_kind)` |
+| `sitePulse(periodKind, threshold)` | `site_pulse(period_kind, …)` |
+| `pagesPulse(periodKind, …)` | `pages_pulse(period_kind, …)` |
+| `siteSeoFunnel(periodKind)` | `site_seo_funnel(period_kind)` |
+| `pagesOverviewUnified(periodKind, maxRows)` | `pages_overview_unified(period_kind, …)` |
+| `gscPagePerformance(path, periodKind)` | `gsc_page_performance(path, period_kind)` |
+| `gscTopQueriesForPath(path, periodKind, max)` | `gsc_top_queries_for_path` (fenêtre = `cooked_period_bounds`) |
+| `gscTopQueriesGlobal(periodKind, max)` | `gsc_top_queries_global(period_kind, …)` |
+| `gscXDfsOpportunities(periodKind, …)` | `gsc_x_dfs_opportunities(…, period_kind, …)` |
 | `gscPageDailySeries(path, days)` | `gsc_page_daily_series` |
 | `cookedPageDailySeries(path, days)` | `cooked_page_daily_series` |
 | `pipelineHealth()` | `refresh_pipeline_health` |

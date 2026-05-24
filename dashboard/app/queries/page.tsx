@@ -1,54 +1,45 @@
-import { Nav } from "@/components/nav";
-import { DateBanner } from "@/components/date-banner";
+import { PeriodDashboardChrome } from "@/components/period-dashboard-chrome";
 import { QueriesTable } from "@/components/queries-table";
 import { SeoOpportunities } from "@/components/seo-opportunities";
 import {
   gscTopQueriesGlobal,
   gscXDfsOpportunities,
-  pipelineHealth,
-  siteKpisCompare,
 } from "@/lib/cooked";
+import { loadPeriodContext } from "@/lib/period-context";
+import { parsePeriod, periodLabel, periodSubtitle } from "@/lib/period";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function QueriesList() {
-  const [queries, opportunities, health, kpis] = await Promise.all([
-    gscTopQueriesGlobal(28, 500),
-    gscXDfsOpportunities(100, 5, 15, 28, 10),
-    pipelineHealth(),
-    siteKpisCompare(28),
+type Props = { searchParams: Promise<{ period?: string }> };
+
+export default async function QueriesList({ searchParams }: Props) {
+  const period = parsePeriod(await searchParams);
+  const label = periodLabel(period);
+  const { kpis, health } = await loadPeriodContext(period);
+
+  const [queries, opportunities] = await Promise.all([
+    gscTopQueriesGlobal(period, 500),
+    gscXDfsOpportunities(period, 100, 5, 15, 10),
   ]);
 
   return (
-    <>
-      <Nav />
-      <DateBanner
-        periodStart={kpis.period_n_start}
-        periodEnd={kpis.period_n_end}
-        gscLastDay={health.gsc_last_day}
-        gscDataAgeDays={health.gsc_data_age_days}
-      />
+    <PeriodDashboardChrome kpis={kpis} health={health}>
       <main className="mx-auto w-full max-w-6xl space-y-8 px-6 py-10">
         <header>
           <h1 className="font-heading text-2xl font-medium tracking-tight">
-            Requêtes Google — 28 derniers jours
+            Requêtes Google — {label}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Top {queries.length} requêtes du site avec la page cible et le
-            nombre de pages qui rankent dessus. Source : Google Search Console
-            × DataForSEO (volumes France, sync hebdo).
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Note : GSC anonymise ~54 % du volume impressions sur les
-            requêtes rares ; les clics restent quasi-tous attribuables.
+            {periodSubtitle(period)} Top {queries.length} requêtes avec page
+            cible et enrichissement DataForSEO (volumes France).
           </p>
         </header>
 
-        <SeoOpportunities rows={opportunities} />
+        <SeoOpportunities rows={opportunities} periodLabel={label} />
 
         <QueriesTable rows={queries} />
       </main>
-    </>
+    </PeriodDashboardChrome>
   );
 }

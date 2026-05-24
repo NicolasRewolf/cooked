@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { Nav } from "@/components/nav";
-import { DateBanner } from "@/components/date-banner";
+import { PeriodDashboardChrome } from "@/components/period-dashboard-chrome";
 import { KpiCard } from "@/components/kpi-card";
 import { CategoryBadge } from "@/components/category-badge";
 import { SitePulseCard } from "@/components/site-pulse-card";
@@ -8,45 +7,43 @@ import { SeoFunnel } from "@/components/seo-funnel";
 import { QuadrantBadge } from "@/components/quadrant-badge";
 import { StatusPill } from "@/components/status-pill";
 import {
-  pagesOverviewUnified,
   pagesPulse,
-  pipelineHealth,
-  siteKpisCompare,
+  topContactPages,
   sitePulse,
   siteSeoFunnel,
   type PagePulseRow,
 } from "@/lib/cooked";
+import { loadPeriodContext } from "@/lib/period-context";
+import {
+  hrefWithPeriod,
+  parsePeriod,
+  periodSubtitle,
+  prevPeriodCompareLabel,
+  type PeriodKind,
+} from "@/lib/period";
 import { formatInt } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// Seuil minimum de volume GSC pour qu'une alerte up_down soit
-// considérée comme actionnable. En dessous, le delta % est dominé
-// par le bruit (ex. 2 → 5 clics).
 const PULSE_ALERT_MIN_CLICKS = 20;
 
-export default async function Home() {
-  const [kpis, health, pages, pulse, pulseRows, funnel] = await Promise.all([
-    siteKpisCompare(28),
-    pipelineHealth(),
-    pagesOverviewUnified(200),
-    sitePulse(28, 7, 5.0),
-    pagesPulse(28, 7, 5.0),
-    siteSeoFunnel(28),
+type Props = { searchParams: Promise<{ period?: string }> };
+
+export default async function Home({ searchParams }: Props) {
+  const period = parsePeriod(await searchParams);
+  const prevLabel = prevPeriodCompareLabel(period);
+  const { kpis, health } = await loadPeriodContext(period);
+
+  const [contributors, pulse, pulseRows, funnel] = await Promise.all([
+    topContactPages(period, 10),
+    sitePulse(period, 5.0),
+    pagesPulse(period, 5.0),
+    siteSeoFunnel(period),
   ]);
 
   const pulseByPath = Object.fromEntries(pulseRows.map((r) => [r.path, r]));
 
-  // Top pages contributrices aux contacts (>= 1 conversion).
-  const contributors = [...pages]
-    .filter((p) => p.cooked_contacts_28d > 0)
-    .sort((a, b) => b.cooked_contacts_28d - a.cooked_contacts_28d)
-    .slice(0, 5);
-
-  // Alertes : pages où Google envoie plus de trafic mais Cooked
-  // baisse en engagement (quadrant up_down). Filtre par volume minimal
-  // pour exclure le bruit statistique des petites pages.
   const alerts = [...pulseRows]
     .filter(
       (p) =>
@@ -56,15 +53,7 @@ export default async function Home() {
     .slice(0, 5);
 
   return (
-    <>
-      <Nav />
-      <DateBanner
-        periodStart={kpis.period_n_start}
-        periodEnd={kpis.period_n_end}
-        gscLastDay={health.gsc_last_day}
-        gscDataAgeDays={health.gsc_data_age_days}
-      />
-
+    <PeriodDashboardChrome kpis={kpis} health={health}>
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
         <header className="mb-8 flex items-end justify-between">
           <div>
@@ -72,21 +61,18 @@ export default async function Home() {
               Vue d&apos;ensemble
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Ce que le cabinet a généré sur les 28 derniers jours.
+              {periodSubtitle(period)}
             </p>
           </div>
           <StatusPill status={health.status} />
         </header>
 
-        {/* Pulse site-wide */}
         <SitePulseCard pulse={pulse} />
 
-        {/* Funnel SEO — parcours acquisition Google */}
         <div className="mt-6">
           <SeoFunnel funnel={funnel} />
         </div>
 
-        {/* KPI primaire en pleine largeur */}
         <div className="mt-6">
           <KpiCard
             label="Contacts générés"
@@ -94,12 +80,12 @@ export default async function Home() {
             value={kpis.macro_conversions_n}
             deltaPct={kpis.macro_conversions_delta_pct}
             prevValue={kpis.macro_conversions_prev}
+            prevPeriodLabel={prevLabel}
             tone="positive"
             emphasis
           />
         </div>
 
-        {/* 3 sous-KPIs */}
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <KpiCard
             label="Appels téléphone"
@@ -107,6 +93,7 @@ export default async function Home() {
             value={kpis.phone_clicks_n}
             deltaPct={kpis.phone_clicks_delta_pct}
             prevValue={kpis.phone_clicks_prev}
+            prevPeriodLabel={prevLabel}
           />
           <KpiCard
             label="Formulaires"
@@ -114,6 +101,7 @@ export default async function Home() {
             value={kpis.form_submits_n}
             deltaPct={kpis.form_submits_delta_pct}
             prevValue={kpis.form_submits_prev}
+            prevPeriodLabel={prevLabel}
           />
           <KpiCard
             label="Visites"
@@ -121,10 +109,10 @@ export default async function Home() {
             value={kpis.sessions_n}
             deltaPct={kpis.sessions_delta_pct}
             prevValue={kpis.sessions_prev}
+            prevPeriodLabel={prevLabel}
           />
         </div>
 
-        {/* Alertes Pulse — top up_down (trafic monte, engagement baisse) */}
         {alerts.length > 0 && (
           <section className="mt-10">
             <div className="mb-3 flex items-baseline justify-between">
@@ -132,7 +120,7 @@ export default async function Home() {
                 À regarder — alertes Pulse
               </h2>
               <Link
-                href="/pages"
+                href={hrefWithPeriod("/pages", period)}
                 className="font-mono text-xs text-muted-foreground hover:text-foreground"
               >
                 Voir toutes les pages →
@@ -141,21 +129,19 @@ export default async function Home() {
             <p className="mb-3 text-sm text-muted-foreground">
               Pages où Google envoie plus de trafic mais le comportement
               Cooked baisse (quadrant SEO ↗ engagement ↘). Filtre :
-              ≥ {PULSE_ALERT_MIN_CLICKS} clics Google sur la fenêtre
-              pour exclure le bruit statistique.
+              ≥ {PULSE_ALERT_MIN_CLICKS} clics Google sur la fenêtre.
             </p>
-            <PulseAlertList rows={alerts} />
+            <PulseAlertList rows={alerts} period={period} />
           </section>
         )}
 
-        {/* Top contributors aux contacts */}
         <section className="mt-10">
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="font-heading text-base font-medium tracking-tight">
               Pages qui ont généré des contacts
             </h2>
             <Link
-              href="/pages"
+              href={hrefWithPeriod("/pages", period)}
               className="font-mono text-xs text-muted-foreground hover:text-foreground"
             >
               Voir toutes les pages →
@@ -164,20 +150,26 @@ export default async function Home() {
           {contributors.length === 0 ? (
             <EmptyHint text="Aucune page n'a généré de contact sur la fenêtre." />
           ) : (
-            <ContribList rows={contributors} pulseByPath={pulseByPath} />
+            <ContribList
+              rows={contributors}
+              pulseByPath={pulseByPath}
+              period={period}
+            />
           )}
         </section>
       </main>
-    </>
+    </PeriodDashboardChrome>
   );
 }
 
 function ContribList({
   rows,
   pulseByPath,
+  period,
 }: {
-  rows: Awaited<ReturnType<typeof pagesOverviewUnified>>;
+  rows: Awaited<ReturnType<typeof topContactPages>>;
   pulseByPath: Record<string, PagePulseRow>;
+  period: PeriodKind;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-xs">
@@ -185,7 +177,7 @@ function ContribList({
         {rows.map((p) => (
           <li key={p.path}>
             <Link
-              href={`/p${p.path}`}
+              href={hrefWithPeriod(`/p${p.path}`, period)}
               className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-surface-subtle/40"
             >
               <div className="flex min-w-0 items-center gap-3">
@@ -196,14 +188,14 @@ function ContribList({
               </div>
               <div className="flex shrink-0 items-baseline gap-5 font-mono text-xs">
                 <span className="text-muted-foreground">
-                  {formatInt(p.gsc_clicks_28d)} clics
+                  {formatInt(p.gsc_clicks)} clics
                 </span>
                 <span className="text-muted-foreground">
-                  {formatInt(p.cooked_sessions_28d)} visites
+                  {formatInt(p.cooked_sessions)} visites
                 </span>
                 <span className="font-medium text-success">
-                  {formatInt(p.cooked_contacts_28d)} contact
-                  {p.cooked_contacts_28d > 1 ? "s" : ""}
+                  {formatInt(p.cooked_contacts)} contact
+                  {p.cooked_contacts > 1 ? "s" : ""}
                 </span>
                 <QuadrantBadge row={pulseByPath[p.path]} />
               </div>
@@ -215,14 +207,20 @@ function ContribList({
   );
 }
 
-function PulseAlertList({ rows }: { rows: PagePulseRow[] }) {
+function PulseAlertList({
+  rows,
+  period,
+}: {
+  rows: PagePulseRow[];
+  period: PeriodKind;
+}) {
   return (
     <div className="overflow-hidden rounded-lg border border-warning/30 bg-warning/5 shadow-xs">
       <ul className="divide-y divide-[var(--border-subtle)]">
         {rows.map((p) => (
           <li key={p.path}>
             <Link
-              href={`/p${p.path}`}
+              href={hrefWithPeriod(`/p${p.path}`, period)}
               className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-warning/10"
             >
               <div className="flex min-w-0 items-center gap-3">

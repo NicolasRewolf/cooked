@@ -77,7 +77,7 @@ export function PageTrendPanel({
           n={pulse.gsc_clicks_n}
           prev={pulse.gsc_clicks_prev}
           deltaPct={pulse.gsc_delta_pct}
-          windowLabel="28 j vs 28 j-1"
+          windowLabel="N vs N-1"
           color={lineColor}
         />
 
@@ -89,7 +89,7 @@ export function PageTrendPanel({
           n={pulse.cooked_sessions_n}
           prev={pulse.cooked_sessions_prev}
           deltaPct={pulse.cooked_sessions_delta_pct}
-          windowLabel="7 j vs 7 j-1"
+          windowLabel="N vs N-1"
           color={lineColor}
         />
       </div>

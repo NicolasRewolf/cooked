@@ -187,10 +187,12 @@ RPCs publiées — analyses historiques & snapshot :
 
 RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
 
-- `site_kpis_compare(period_days)` — KPIs business N vs N-1 (macro = phone + form)
+- `cooked_period_bounds(period_kind)` — bornes Paris (today / week / month / rolling_28 / rolling_90)
+- `site_kpis_compare(period_kind)` — KPIs business N vs N-1 (macro = phone + form)
 - `pages_overview_unified(max_rows)` — univers pages (~490 paths), contacts macro séparés de booking_intent
 - `gsc_page_performance(target_path)` — fiche page complète
-- `gsc_top_queries_for_path(path, days_back, max_rows)` — requêtes → landing
+- `gsc_top_queries_for_path(path, period_kind, max_rows)` — requêtes → landing (overload `days_back` conservé)
+- `site_macro_counts(start, end)` — contacts macro site-wide (phone + form filtré)
 - `gsc_pages_overview(max_rows)` — top pages SEO (tri clics) ; v3 contacts macro
 - `gsc_top_queries_global(days_back, max_rows)` — top requêtes site
 - `site_pulse` / `pages_pulse` — quadrants GSC 28v28 × Cooked 7v7 (`pulse_quadrant` helper)
@@ -340,7 +342,9 @@ Le visiteur a réellement essayé de joindre le cabinet.
   quasi-certain ; sur desktop, c'est un signal plus faible mais reste
   une action explicite)
 - `form_submit` — soumission validée server-side par l'Edge Function
-  `form-webhook` via Wix Automation (irréfutable)
+ `form-webhook` via Wix Automation (irréfutable). Hors contact macro si
+ `props.objet_de_ma_demande` contient « Nous rejoindre » (candidatures).
+ Typologie stockée dans `props.objet_de_ma_demande` (pas de PII).
 
 **C'est la métrique business.** Si on doit choisir UN chiffre à
 remonter à Me Plouton ou à Adrien (Nomad Marketing), c'est celui-ci.

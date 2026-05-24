@@ -15,7 +15,7 @@ export const revalidate = 0;
 export default async function HealthPage() {
   const [h, kpis] = await Promise.all([
     pipelineHealth(),
-    siteKpisCompare(28),
+    siteKpisCompare("rolling_28"),
   ]);
 
   const axes: Axis[] = [

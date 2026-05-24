@@ -11,6 +11,7 @@ export function KpiCard({
   value,
   deltaPct,
   prevValue,
+  prevPeriodLabel = "période précédente",
   unit,
   tone = "neutral",
   emphasis = false,
@@ -20,10 +21,10 @@ export function KpiCard({
   value: number | null;
   deltaPct: number | null;
   prevValue: number | null;
-  /** Affichage facultatif sous la valeur */
+  /** Libellé court pour la comparaison N-1 (ex. « hier », « 28 j précédents ») */
+  prevPeriodLabel?: string;
   unit?: string;
   tone?: Tone;
-  /** Card plus grande / mise en avant (KPI primaire) */
   emphasis?: boolean;
 }) {
   return (
@@ -54,7 +55,11 @@ export function KpiCard({
         )}
       </div>
 
-      <DeltaRow deltaPct={deltaPct} prevValue={prevValue} />
+      <DeltaRow
+        deltaPct={deltaPct}
+        prevValue={prevValue}
+        prevPeriodLabel={prevPeriodLabel}
+      />
     </div>
   );
 }
@@ -62,9 +67,11 @@ export function KpiCard({
 function DeltaRow({
   deltaPct,
   prevValue,
+  prevPeriodLabel,
 }: {
   deltaPct: number | null;
   prevValue: number | null;
+  prevPeriodLabel: string;
 }) {
   // Pas de N-1 disponible (tracker démarré récemment)
   if (deltaPct == null) {
@@ -99,7 +106,7 @@ function DeltaRow({
         {formatNumber(deltaPct, 1)} %
       </span>
       <span className="text-muted-foreground">
-        vs {prevValue != null ? formatInt(prevValue) : "—"} 28j précédents
+        vs {prevValue != null ? formatInt(prevValue) : "—"} ({prevPeriodLabel})
       </span>
     </p>
   );

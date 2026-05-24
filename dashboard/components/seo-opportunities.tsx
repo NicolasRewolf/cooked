@@ -11,7 +11,13 @@ import type { GscDfsOpportunityRow } from "@/lib/cooked";
  *
  * Affichée en haut de /queries pour pousser à l'action.
  */
-export function SeoOpportunities({ rows }: { rows: GscDfsOpportunityRow[] }) {
+export function SeoOpportunities({
+  rows,
+  periodLabel = "période sélectionnée",
+}: {
+  rows: GscDfsOpportunityRow[];
+  periodLabel?: string;
+}) {
   if (rows.length === 0) {
     return (
       <section className="rounded-lg border border-dashed border-border bg-surface p-5 text-sm text-muted-foreground">
@@ -28,7 +34,7 @@ export function SeoOpportunities({ rows }: { rows: GscDfsOpportunityRow[] }) {
           <TrendingUp className="h-4 w-4" aria-hidden="true" />
           <InfoLabel
             label={`Opportunités SEO — top ${rows.length}`}
-            hint="Requêtes où le site est en position 5–15 sur Google avec ≥ 100 recherches mensuelles France. Lost potential = clics manqués sur 28j si on était en position 1 (CTR Sistrix benchmark). Trié par lost potential décroissant — priorité d'action SEO."
+            hint={`Requêtes où le site est en position 5–15 sur Google avec ≥ 100 recherches mensuelles France. Lost potential = clics manqués sur ${periodLabel} si on était en position 1 (CTR Sistrix benchmark). Trié par lost potential décroissant.`}
           />
         </h2>
       </div>
@@ -40,7 +46,7 @@ export function SeoOpportunities({ rows }: { rows: GscDfsOpportunityRow[] }) {
               <tr className="text-left font-mono text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-2.5 font-medium">Requête</th>
                 <th className="px-3 py-2.5 text-right font-medium">Pos.</th>
-                <th className="px-3 py-2.5 text-right font-medium">Clics 28j</th>
+                <th className="px-3 py-2.5 text-right font-medium">Clics</th>
                 <th className="px-3 py-2.5 text-right font-medium">Volume FR</th>
                 <th className="px-3 py-2.5 text-right font-medium">CPC</th>
                 <th className="px-3 py-2.5 text-right font-medium text-success">

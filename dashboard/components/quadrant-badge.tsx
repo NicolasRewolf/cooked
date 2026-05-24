@@ -162,13 +162,13 @@ function PulseTooltipBody({ row }: { row: PagePulseRow }) {
     <div className="space-y-1.5">
       <p className="font-medium text-background">{baseTitle}</p>
       <DeltaLine
-        label="Clics Google (28 j vs 28 j-1)"
+        label="Clics Google (N vs N-1)"
         n={row.gsc_clicks_n}
         prev={row.gsc_clicks_prev}
         deltaPct={row.gsc_delta_pct}
       />
       <DeltaLine
-        label="Visites Cooked (7 j vs 7 j-1)"
+        label="Visites Cooked (N vs N-1)"
         n={row.cooked_sessions_n}
         prev={row.cooked_sessions_prev}
         deltaPct={row.cooked_sessions_delta_pct}

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Nav } from "@/components/nav";
-import { DateBanner } from "@/components/date-banner";
+import { PeriodDashboardChrome } from "@/components/period-dashboard-chrome";
 import { CategoryBadge } from "@/components/category-badge";
 import { PageTrendPanel } from "@/components/page-trend-panel";
 import {
@@ -10,48 +9,50 @@ import {
   gscPagePerformance,
   gscTopQueriesForPath,
   pagesPulse,
-  pipelineHealth,
-  siteKpisCompare,
 } from "@/lib/cooked";
+import { loadPeriodContext } from "@/lib/period-context";
+import {
+  hrefWithPeriod,
+  parsePeriod,
+  periodChartDays,
+  periodLabel,
+} from "@/lib/period";
 import { formatInt, formatPct, formatNumber } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type Props = { params: Promise<{ slug: string[] }> };
+type Props = {
+  params: Promise<{ slug: string[] }>;
+  searchParams: Promise<{ period?: string }>;
+};
 
-export default async function PageDetail({ params }: Props) {
+export default async function PageDetail({ params, searchParams }: Props) {
   const { slug } = await params;
+  const period = parsePeriod(await searchParams);
+  const label = periodLabel(period);
   const path = "/" + slug.map((s) => decodeURIComponent(s)).join("/");
+  const chartDays = periodChartDays(period);
+  const { kpis, health } = await loadPeriodContext(period);
 
-  const [perf, queries, health, kpis, gscSeries, cookedSeries, pulseRows] =
+  const [perf, queries, gscSeries, cookedSeries, pulseRows] =
     await Promise.all([
-      gscPagePerformance(path),
-      gscTopQueriesForPath(path, 28, 20),
-      pipelineHealth(),
-      siteKpisCompare(28),
-      gscPageDailySeries(path, 56),
-      cookedPageDailySeries(path, 14),
-      pagesPulse(28, 7, 5.0),
+      gscPagePerformance(path, period),
+      gscTopQueriesForPath(path, period, 20),
+      gscPageDailySeries(path, Math.max(chartDays * 2, 14)),
+      cookedPageDailySeries(path, Math.max(chartDays, 14)),
+      pagesPulse(period, 5.0),
     ]);
 
   if (!perf) notFound();
 
-  // Le row Pulse de cette page (peut être null si hors fenêtre)
   const pulse = pulseRows.find((r) => r.path === perf.path) ?? null;
 
   return (
-    <>
-      <Nav />
-      <DateBanner
-        periodStart={kpis.period_n_start}
-        periodEnd={kpis.period_n_end}
-        gscLastDay={health.gsc_last_day}
-        gscDataAgeDays={health.gsc_data_age_days}
-      />
+    <PeriodDashboardChrome kpis={kpis} health={health}>
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
         <Link
-          href="/pages"
+          href={hrefWithPeriod("/pages", period)}
           className="mb-6 inline-block font-mono text-xs text-muted-foreground hover:text-foreground"
         >
           ← Pages
@@ -64,80 +65,77 @@ export default async function PageDetail({ params }: Props) {
           </h1>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Fiche cross-source sur les 28 derniers jours.
+          Fiche cross-source — {label}.
         </p>
 
-        {/* Panneau Tendance — sparkline GSC 56j + Cooked 14j + badge Pulse */}
         <PageTrendPanel
           pulse={pulse}
           gscSeries={gscSeries}
           cookedSeries={cookedSeries}
         />
 
-        {/* Métriques principales */}
         <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border shadow-xs md:grid-cols-4">
           <Stat
             label="Clics Google"
-            value={formatInt(perf.gsc_clicks_28d)}
-            sub={`${formatInt(perf.gsc_impressions_28d)} impressions`}
+            value={formatInt(perf.gsc_clicks)}
+            sub={`${formatInt(perf.gsc_impressions)} impressions`}
           />
           <Stat
             label="Position moyenne"
-            value={formatNumber(perf.gsc_position_avg_28d, 1)}
-            sub={`CTR ${formatPct(perf.gsc_ctr_pct_28d, 2)}`}
+            value={formatNumber(perf.gsc_position_avg, 1)}
+            sub={`CTR ${formatPct(perf.gsc_ctr_pct, 2)}`}
           />
           <Stat
             label="Sessions Cooked"
-            value={formatInt(perf.cooked_sessions_28d)}
-            sub={`${formatInt(perf.cooked_google_sessions_28d)} via Google`}
+            value={formatInt(perf.cooked_sessions)}
+            sub={`${formatInt(perf.cooked_google_sessions)} via Google`}
           />
           <Stat
             label="Contacts"
-            value={formatInt(perf.cooked_contacts_28d)}
-            sub={`${perf.cooked_phone_clicks_28d} appel${perf.cooked_phone_clicks_28d > 1 ? "s" : ""} · ${perf.cooked_form_submits_28d} formulaire${perf.cooked_form_submits_28d > 1 ? "s" : ""}`}
-            highlight={perf.cooked_contacts_28d > 0}
+            value={formatInt(perf.cooked_contacts)}
+            sub={`${perf.cooked_phone_clicks} appel${perf.cooked_phone_clicks > 1 ? "s" : ""} · ${perf.cooked_form_submits} formulaire${perf.cooked_form_submits > 1 ? "s" : ""}`}
+            highlight={perf.cooked_contacts > 0}
           />
         </div>
 
-        {/* Comportement + CWV */}
         <div className="mt-6 grid gap-6 md:grid-cols-2">
           <Panel title="Comportement">
             <Row
               label="Dwell moyen"
               value={
-                perf.cooked_dwell_avg_s_28d != null
-                  ? `${formatNumber(perf.cooked_dwell_avg_s_28d, 0)} s`
+                perf.cooked_dwell_avg_s != null
+                  ? `${formatNumber(perf.cooked_dwell_avg_s, 0)} s`
                   : "—"
               }
             />
             <Row
               label="Scroll médian"
               value={
-                perf.cooked_scroll_median_28d != null
-                  ? `${formatNumber(perf.cooked_scroll_median_28d, 0)} %`
+                perf.cooked_scroll_median != null
+                  ? `${formatNumber(perf.cooked_scroll_median, 0)} %`
                   : "—"
               }
             />
             <Row
               label="Bounce rate"
-              value={formatPct(perf.cooked_bounce_rate_28d, 1)}
+              value={formatPct(perf.cooked_bounce_rate, 1)}
             />
             <Row
               label="Pogo-stick rate"
-              value={formatPct(perf.cooked_pogo_rate_28d, 1)}
+              value={formatPct(perf.cooked_pogo_rate, 1)}
             />
             <Row
               label="Intent RDV (micro)"
-              value={`${formatInt(perf.cooked_booking_intent_28d)} clic${perf.cooked_booking_intent_28d > 1 ? "s" : ""}`}
+              value={`${formatInt(perf.cooked_booking_intent)} clic${perf.cooked_booking_intent > 1 ? "s" : ""}`}
               hint={
-                perf.cooked_booking_intent_28d > 0 && perf.cooked_contacts_28d === 0
+                perf.cooked_booking_intent > 0 && perf.cooked_contacts === 0
                   ? "intent sans contact"
                   : undefined
               }
             />
             <Row
               label="Top referrer"
-              value={perf.top_referrer_28d ?? "—"}
+              value={perf.top_referrer ?? "—"}
               mono
             />
           </Panel>
@@ -169,8 +167,8 @@ export default async function PageDetail({ params }: Props) {
             <Row
               label="Device split"
               value={
-                perf.device_split_28d
-                  ? Object.entries(perf.device_split_28d)
+                perf.device_split
+                  ? Object.entries(perf.device_split)
                       .map(([k, v]) => `${k} ${v}%`)
                       .join(" · ")
                   : "—"
@@ -180,15 +178,13 @@ export default async function PageDetail({ params }: Props) {
           </Panel>
         </div>
 
-        {/* Top requêtes Google */}
         <section className="mt-8">
           <h2 className="mb-3 font-heading text-base font-medium tracking-tight">
             Top requêtes Google
           </h2>
           {queries.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Aucune requête attribuable sur cette période (peut être anonymisé
-              par GSC).
+              Aucune requête attribuable sur cette période.
             </p>
           ) : (
             <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-xs">
@@ -226,7 +222,7 @@ export default async function PageDetail({ params }: Props) {
           )}
         </section>
       </main>
-    </>
+    </PeriodDashboardChrome>
   );
 }
 

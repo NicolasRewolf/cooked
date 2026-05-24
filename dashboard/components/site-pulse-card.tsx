@@ -16,12 +16,9 @@ import {
 } from "@/lib/pulse-quadrant";
 import { cn } from "@/lib/utils";
 
-/**
- * Carte Pulse site-wide pour la home.
- * Affiche le quadrant global + 2 axes chiffrés (GSC 28v28 et Cooked 7v7).
- */
-
 export function SitePulseCard({ pulse }: { pulse: SitePulse }) {
+  const periodLabel = pulse.period_label_fr ?? "période sélectionnée";
+
   return (
     <div
       className={cn(
@@ -33,8 +30,8 @@ export function SitePulseCard({ pulse }: { pulse: SitePulse }) {
         <div>
           <div className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
             <InfoLabel
-              label="Pulse de la semaine"
-              hint="Cross-source : direction globale du trafic Google (28 j vs 28 j précédents) croisée avec le comportement Cooked (visites 7 j vs 7 j précédents). Seuil ±5 % par axe."
+              label={`Pulse — ${periodLabel}`}
+              hint={`Cross-source : trafic Google (${periodLabel}) vs période précédente équivalente, croisé avec le comportement Cooked sur la même fenêtre. Seuil ±5 % par axe.`}
             />
           </div>
           <h2
@@ -55,14 +52,14 @@ export function SitePulseCard({ pulse }: { pulse: SitePulse }) {
           n={pulse.gsc_clicks_n}
           prev={pulse.gsc_clicks_prev}
           deltaPct={pulse.gsc_delta_pct}
-          subtitle={`28 j · ${formatDateFR(pulse.gsc_period_start)} → ${formatDateFR(pulse.gsc_period_end)}`}
+          subtitle={`${formatDateFR(pulse.gsc_period_start)} → ${formatDateFR(pulse.gsc_period_end)}`}
         />
         <AxisLine
           label="Visites Cooked"
           n={pulse.cooked_sessions_n}
           prev={pulse.cooked_sessions_prev}
           deltaPct={pulse.cooked_sessions_delta_pct}
-          subtitle={`7 j · ${formatDateFR(pulse.cooked_period_start)} → ${formatDateFR(pulse.cooked_period_end)}`}
+          subtitle={`${formatDateFR(pulse.cooked_period_start)} → ${formatDateFR(pulse.cooked_period_end)}`}
         />
       </div>
     </div>
@@ -94,7 +91,7 @@ function AxisLine({
         <DeltaInline deltaPct={deltaPct} />
       </div>
       <div className="mt-1 font-mono text-[10px] text-muted-foreground">
-        vs {prev == null ? "—" : formatInt(prev)} {subtitle}
+        vs {prev == null ? "—" : formatInt(prev)} · {subtitle}
       </div>
     </div>
   );

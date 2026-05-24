@@ -58,6 +58,48 @@ function s(v: unknown, max = 500): string | null {
   return str.length > max ? str.slice(0, max) : str;
 }
 
+/** Champ Wix typologie — pas de PII, whitelisté dans props (Sprint 27/05/2026). */
+function extractObjetDeMaDemande(d: Record<string, unknown>): string | null {
+  const direct =
+    s(d["field:objet_de_ma_demande"], 200) ??
+    s(d.objet_de_ma_demande, 200);
+  if (direct) return direct;
+
+  for (const [key, value] of Object.entries(d)) {
+    const k = key.toLowerCase();
+    if (
+      (k.startsWith("field:") || k.startsWith("field_")) &&
+      k.includes("objet") &&
+      k.includes("demande")
+    ) {
+      const v = s(value, 200);
+      if (v) return v;
+    }
+  }
+
+  const subs = d.submissions;
+  if (!Array.isArray(subs)) return null;
+  for (const item of subs) {
+    const row = item as { label?: unknown; value?: unknown };
+    const label = String(row.label ?? "").toLowerCase();
+    if (label.includes("objet") && label.includes("demande")) {
+      return s(row.value, 200);
+    }
+  }
+  return null;
+}
+
+/** Candidatures cabinet — ne comptent pas en contact business. */
+function isRecruitmentObjet(value: string | null): boolean {
+  if (!value) return false;
+  const n = value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .trim();
+  return n.includes("nous rejoindre");
+}
+
 // All non-2xx responses follow the same shape as `track/index.ts` so log
 // analysis can grep `ok:false` uniformly across both functions.
 const jsonError = (status: number, error: string) =>
@@ -172,6 +214,19 @@ Deno.serve(async (req) => {
   }
   const ps = resolvePageSource(pageSource);
 
+  const objetDeMaDemande = extractObjetDeMaDemande(
+    (d ?? {}) as Record<string, unknown>,
+  );
+  const countsAsMacro = !isRecruitmentObjet(objetDeMaDemande);
+  if (!objetDeMaDemande) {
+    const fieldKeys = Object.keys((d ?? {}) as Record<string, unknown>).filter(
+      (k) => k.toLowerCase().startsWith("field:"),
+    );
+    console.log(
+      `[form-webhook] objet_de_ma_demande absent — field:* keys=${fieldKeys.join(",") || "(none)"}`,
+    );
+  }
+
   // Sprint 30 — PII stripping (RGPD hardening). Wix sends the FULL form
   // payload including first_name / last_name / email / phone / message
   // body. Stored as-is in `raw_payload`, those fields make the `events`
@@ -191,6 +246,7 @@ Deno.serve(async (req) => {
       "submissionId",
       "submissionTime",
       "field:page_source",
+      "field:objet_de_ma_demande",
     ]) {
       if (key in d2) safe[key] = d2[key];
     }
@@ -227,6 +283,8 @@ Deno.serve(async (req) => {
       form_id: formId,
       submission_id: submissionId,
       page_source: pageSource,
+      objet_de_ma_demande: objetDeMaDemande,
+      counts_as_macro: countsAsMacro,
       capture_source: "wix-webhook",
       payload_meta: safePayloadMeta, // ⬅️ PII-stripped (Sprint 30)
     },
