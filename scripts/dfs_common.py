@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from typing import Sequence
 
 import requests
@@ -82,53 +83,43 @@ def fetch_dfs_search_volume(dfs_auth: str, keywords: Sequence[str]) -> list[dict
 
 
 def transform_dfs_result(items: list[dict]) -> list[dict]:
-    """Transforme les rows DFS en rows pour upsert dans dfs_keyword_volume."""
+    """Transforme les rows DFS en rows pour upsert dans dfs_keyword_volume.
+
+    Mapping DFS → table (attention au piège du naming croisé) :
+      DFS `competition`        = label "LOW" / "MEDIUM" / "HIGH"   → col `competition_level` (text)
+      DFS `competition_index`  = score 0–100                         → col `competition` (numeric 0.000–1.000)
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
     rows = []
     for item in items:
         keyword = item.get("keyword")
         if not keyword:
             continue
-        sv = item.get("search_volume")
+        comp_index = item.get("competition_index")
+        comp_numeric = round(comp_index / 100.0, 3) if comp_index is not None else None
         rows.append({
             "keyword": keyword,
             "location_code": LOCATION_CODE_FR,
             "language_code": LANGUAGE_CODE_FR,
-            "search_volume": sv if sv is not None else None,
+            "search_volume": item.get("search_volume"),
             "cpc": item.get("cpc"),
-            "competition": item.get("competition"),
-            "competition_level": item.get("competition_level"),
+            "competition": comp_numeric,
+            "competition_level": item.get("competition"),
             "monthly_searches": item.get("monthly_searches"),
-            "last_synced_at": "now()",  # on laisse Postgres mettre now()
+            "last_synced_at": now_iso,
         })
     return rows
 
 
 def upsert_batch(sb, rows: list[dict]) -> None:
-    """Upsert en batch dans dfs_keyword_volume."""
+    """Upsert en batch dans dfs_keyword_volume. last_synced_at est inclus
+    en ISO timestamp côté Python → le ON CONFLICT UPDATE le rafraîchit."""
     if not rows:
         return
-    # Le client supabase-py n'évalue pas now() en string → on retire et laisse le DEFAULT
-    for r in rows:
-        r.pop("last_synced_at", None)
     for i in range(0, len(rows), BATCH_SIZE_UPSERT):
         chunk = rows[i:i + BATCH_SIZE_UPSERT]
         sb.table("dfs_keyword_volume") \
           .upsert(chunk, on_conflict="keyword,location_code") \
-          .execute()
-
-
-def update_synced_at(sb, keywords: Sequence[str]) -> None:
-    """Force la mise à jour de last_synced_at pour les rows upsertées
-    (le COALESCE NOW() du DEFAULT ne s'applique pas sur conflict update)."""
-    if not keywords:
-        return
-    # update en batch via .in_()
-    for i in range(0, len(keywords), BATCH_SIZE_UPSERT):
-        chunk = list(keywords[i:i + BATCH_SIZE_UPSERT])
-        sb.table("dfs_keyword_volume") \
-          .update({"last_synced_at": "now()"}) \
-          .eq("location_code", LOCATION_CODE_FR) \
-          .in_("keyword", chunk) \
           .execute()
 
 
@@ -152,9 +143,6 @@ def run_sync(limit_n: int) -> None:
         items = fetch_dfs_search_volume(dfs_auth, batch)
         rows = transform_dfs_result(items)
         upsert_batch(sb, rows)
-        # Force last_synced_at sur les keywords upsertées
-        synced_keywords = [r["keyword"] for r in rows]
-        update_synced_at(sb, synced_keywords)
 
         elapsed = time.time() - t_start
         with_vol = sum(1 for r in rows if r.get("search_volume") is not None)
