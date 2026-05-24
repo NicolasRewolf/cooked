@@ -36,8 +36,9 @@ yarn-error.log*
 !.env.example
 !.env.local.example
 
-# vercel
-.vercel
+# vercel — project.json commité pour que la CLI sache quel projet cibler
+.vercel/*
+!.vercel/project.json
 
 # typescript
 *.tsbuildinfo
