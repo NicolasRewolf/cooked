@@ -91,6 +91,10 @@ def sanitize_for_dfs(kw: str) -> str | None:
     # DFS limite ~80 chars par keyword (au-delà → souvent rejet ou volume null)
     if len(kw) > 80:
         return None
+    # DFS limite à ~10 mots par keyword. Observé sur run 24/05/2026 :
+    #   "une garde a vue est elle inscrit dans le casier judiciaire" (11 mots) → rejet
+    if len(kw.split()) > 10:
+        return None
     return kw
 
 
