@@ -90,7 +90,7 @@ Toutes les pages sont des **Server Components** (`export const dynamic =
 | `pagesOverviewUnified(maxRows=1000)` | `pages_overview_unified(max_rows)` | univers exhaustif (snapshot Cooked 365j ∪ GSC 90j) avec contacts macro + booking_intent micro séparés |
 | `gscPagePerformance(path)` | `gsc_page_performance(target_path)` | fiche complète d'une page (contacts + intent séparés) |
 | `gscTopQueriesForPath(path, daysBack=28, maxRows=20)` | `gsc_top_queries_for_path(target_path, days_back, max_rows)` | top requêtes Google sur une page |
-| `pipelineHealth()` | `refresh_pipeline_health()` | self-diag 4 axes (snapshot, cron, ingestion, GSC) |
+| `pipelineHealth()` | `refresh_pipeline_health()` | self-diag 5 axes (snapshot, cron, ingestion, GSC, DFS) |
 | `siteKpisCompare(periodDays=28)` | `site_kpis_compare(period_days)` | KPIs business N vs N-1 (sessions, pageviews, phone, form_submit, macro) |
 | `siteContext()` | `site_context_export()` | contexte site-wide 28j |
 | `sitePulse(gsc, cooked, threshold)` | `site_pulse(...)` | agrégat site quadrant GSC 28v28 × Cooked 7v7 |

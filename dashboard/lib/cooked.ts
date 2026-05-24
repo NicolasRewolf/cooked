@@ -59,6 +59,9 @@ export type PipelineHealth = {
   gsc_data_age_days: number | null;
   gsc_last_ingest: string | null;
   gsc_ingest_age_hours: number | null;
+  dfs_last_synced_at: string | null;
+  dfs_row_count: number;
+  dfs_sync_age_hours: number | null;
   issues: string[];
 };
 

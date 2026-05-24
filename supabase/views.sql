@@ -2172,3 +2172,4 @@ create unique index if not exists events_form_submit_submission_id_uniq
 --   20260524300000_fix_off_by_one_28d.sql
 --   20260525120000_dfs_keywords_union_28d_90d.sql
 --   20260525140000_macro_contacts_by_path.sql
+--   20260525150000_pipeline_health_dfs.sql

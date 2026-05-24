@@ -187,7 +187,7 @@ Consommées par `dashboard/lib/cooked.ts` et les analyses ad-hoc. Toutes `servic
 | `site_pulse` / `pages_pulse` | Grille 2×2 GSC 28v28 × Cooked 7v7 (quadrants) |
 | `site_seo_funnel(period_days)` | Impressions → clics → sessions Google → contacts macro |
 | `gsc_page_daily_series` / `cooked_page_daily_series` | Sparklines fiche page |
-| `refresh_pipeline_health()` | Self-diag 4 axes (+ fraîcheur GSC) |
+| `refresh_pipeline_health()` | Self-diag 5 axes (snapshot, cron, events, GSC, DataForSEO) |
 
 **Contacts (canonique)** : macro = `cta_phone_click` + `form_submit`. Micro intent RDV =
 `cta_booking_click` (`cooked_booking_intent_*`). Ne jamais additionner booking aux contacts.
@@ -239,7 +239,7 @@ depuis l'UI. Setup : voir [`dashboard/README.md`](./dashboard/README.md).
 | `/pages` | Tableau exhaustif avec filtres / tri |
 | `/queries` | Top requêtes Google site-wide |
 | `/p/[...slug]` | Fiche page + requêtes + sparklines + quadrant Pulse |
-| `/health` | `refresh_pipeline_health` (snapshot, cron, ingestion, GSC) |
+| `/health` | `refresh_pipeline_health` (5 axes dont DataForSEO) |
 
 ---
 

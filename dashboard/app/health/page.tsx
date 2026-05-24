@@ -69,6 +69,16 @@ export default async function HealthPage() {
       ],
       note: "GitHub Actions — 06:00 UTC quotidien",
     },
+    {
+      title: "DataForSEO",
+      status: dfsStatus(h.dfs_row_count, h.dfs_sync_age_hours),
+      lines: [
+        ["Dernier sync", formatDateTimeFR(h.dfs_last_synced_at)],
+        ["Âge sync", formatAge(h.dfs_sync_age_hours)],
+        ["Keywords en base", formatInt(h.dfs_row_count)],
+      ],
+      note: "GitHub Actions — lundi 07:00 UTC (volumes FR /queries)",
+    },
   ];
 
   return (
@@ -87,7 +97,7 @@ export default async function HealthPage() {
               Pipeline
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Self-diagnostic 4 axes — `refresh_pipeline_health()`.
+              Self-diagnostic 5 axes — `refresh_pipeline_health()`.
             </p>
           </div>
           <StatusPill status={h.status} />
@@ -180,5 +190,15 @@ function gscStatus(
   if (dataAge == null) return "critical";
   if (dataAge > 7 || (ingestAge != null && ingestAge > 72)) return "critical";
   if (dataAge > 4 || (ingestAge != null && ingestAge > 30)) return "degraded";
+  return "healthy";
+}
+function dfsStatus(
+  rowCount: number,
+  syncAgeHours: number | null
+): Axis["status"] {
+  if (rowCount === 0) return "critical";
+  if (rowCount < 200) return "degraded";
+  if (syncAgeHours != null && syncAgeHours > 240) return "critical";
+  if (syncAgeHours != null && syncAgeHours > 192) return "degraded";
   return "healthy";
 }

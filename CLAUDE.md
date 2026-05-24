@@ -181,8 +181,8 @@ RPCs publiées — analyses historiques & snapshot :
   dwell + evenness_score par page (Sprint 30 : GROUP BY session_id)
 - `classify_channel(ref, utm_source, utm_medium, self_host)` —
   taxonomie unifiée des canaux d'acquisition (Sprint 28)
-- `refresh_pipeline_health()` — self-diagnostic 3-axes (snapshot
-  freshness, cron last status, ingestion last event)
+- `refresh_pipeline_health()` — self-diagnostic 5 axes (snapshot, cron,
+  ingestion, GSC, DataForSEO : dfs_last_synced_at, dfs_row_count)
 - `latest_rpc_health()` — dernier état des contract tests par RPC
 
 RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
