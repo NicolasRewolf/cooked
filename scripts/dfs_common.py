@@ -16,8 +16,10 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import time
+import unicodedata
 from datetime import datetime, timezone
 from typing import Sequence
 
@@ -32,6 +34,57 @@ LOCATION_CODE_FR     = 2250  # France entière
 LANGUAGE_CODE_FR     = "fr"
 BATCH_SIZE_DFS       = 200    # API limite à 1000 keywords par tâche, mais 200 = sweet spot pour la latence
 BATCH_SIZE_UPSERT    = 500
+
+
+# DataForSEO rejette les caractères "smart" Unicode (em dash, smart quotes…).
+# Sortie typique en cas d'envoi d'un keyword problématique :
+#   "Invalid Field: 'keywords'. Keyword text has invalid characters or symbols: '…'"
+# Et le batch ENTIER est rejeté → on assainit avant envoi.
+_DFS_TRANSLATIONS = str.maketrans({
+    "—": "-",  # — em dash
+    "–": "-",  # – en dash
+    "−": "-",  # − minus sign
+    "‒": "-",  # ‒ figure dash
+    "‐": "-",  # ‐ hyphen
+    "‘": "'",  # ' left single quote
+    "’": "'",  # ' right single quote
+    "“": '"',  # " left double quote
+    "”": '"',  # " right double quote
+    "…": "...",  # …
+    " ": " ",  # non-breaking space
+    "​": "",   # zero-width space
+    "﻿": "",   # BOM
+})
+
+# Charset jugé sûr APRES sanitization (Unicode letter via \w + ponctuation usuelle FR)
+_DFS_SAFE_RE = re.compile(r"^[\w\s'\".,\-()&/+:?!@#%]+$", re.UNICODE)
+
+
+class DfsApiError(Exception):
+    """Erreur API DataForSEO (batch rejeté, mauvais creds, etc.)."""
+
+
+def sanitize_for_dfs(kw: str) -> str | None:
+    """Renvoie une variante DFS-safe de `kw`, ou None si non nettoyable.
+
+    On garde l'idée de préserver la sémantique du keyword utilisateur tout en
+    purgeant les caractères que DFS rejette. Si le keyword reste hors charset
+    après normalisation, on le drop (perte du volume pour cette requête, mais
+    le reste du batch passe).
+    """
+    if not kw:
+        return None
+    kw = unicodedata.normalize("NFC", kw)
+    kw = kw.translate(_DFS_TRANSLATIONS)
+    kw = " ".join(kw.split()).strip()
+    if not kw:
+        return None
+    if not _DFS_SAFE_RE.match(kw):
+        return None
+    # DFS limite ~80 chars par keyword (au-delà → souvent rejet ou volume null)
+    if len(kw) > 80:
+        return None
+    return kw
 
 
 def clients() -> tuple:
@@ -58,7 +111,11 @@ def fetch_keywords_to_sync(sb, limit_n: int) -> list[str]:
 
 
 def fetch_dfs_search_volume(dfs_auth: str, keywords: Sequence[str]) -> list[dict]:
-    """Appel DataForSEO Google Ads search_volume pour 1 batch de keywords."""
+    """Appel DataForSEO Google Ads search_volume pour 1 batch de keywords.
+
+    Lève DfsApiError au lieu de sys.exit pour permettre au caller de skip
+    le batch en cas d'erreur (résilience cron).
+    """
     url = DFS_API_BASE + DFS_ENDPOINT
     headers = {
         "Authorization": f"Basic {dfs_auth}",
@@ -74,16 +131,25 @@ def fetch_dfs_search_volume(dfs_auth: str, keywords: Sequence[str]) -> list[dict
     r.raise_for_status()
     data = r.json()
     if data.get("status_code") != 20000:
-        sys.exit(f"ERROR DFS API: {data.get('status_message')} (code {data.get('status_code')})")
+        raise DfsApiError(
+            f"DFS API status {data.get('status_code')}: {data.get('status_message')}"
+        )
     tasks = data.get("tasks") or []
     if not tasks or tasks[0].get("status_code") != 20000:
         msg = tasks[0].get("status_message") if tasks else "no tasks"
-        sys.exit(f"ERROR DFS task: {msg}")
+        raise DfsApiError(f"DFS task: {msg}")
     return tasks[0].get("result") or []
 
 
-def transform_dfs_result(items: list[dict]) -> list[dict]:
+def transform_dfs_result(
+    items: list[dict],
+    original_by_sanitized: dict[str, str] | None = None,
+) -> list[dict]:
     """Transforme les rows DFS en rows pour upsert dans dfs_keyword_volume.
+
+    `original_by_sanitized` permet de stocker le keyword ORIGINAL en PK même
+    si on a envoyé une version sanitizée à DFS (préserve le JOIN avec
+    gsc_query_daily où le texte est intact).
 
     Mapping DFS → table (attention au piège du naming croisé) :
       DFS `competition`        = label "LOW" / "MEDIUM" / "HIGH"   → col `competition_level` (text)
@@ -92,9 +158,15 @@ def transform_dfs_result(items: list[dict]) -> list[dict]:
     now_iso = datetime.now(timezone.utc).isoformat()
     rows = []
     for item in items:
-        keyword = item.get("keyword")
-        if not keyword:
+        sanitized = item.get("keyword")
+        if not sanitized:
             continue
+        # Recover original keyword (so PK matches GSC query text)
+        keyword = (
+            original_by_sanitized.get(sanitized, sanitized)
+            if original_by_sanitized
+            else sanitized
+        )
         comp_index = item.get("competition_index")
         comp_numeric = round(comp_index / 100.0, 3) if comp_index is not None else None
         rows.append({
@@ -137,11 +209,42 @@ def run_sync(limit_n: int) -> None:
 
     total_upserted = 0
     total_with_volume = 0
+    total_skipped = 0
+    total_failed = 0
+
     for i in range(0, len(keywords), BATCH_SIZE_DFS):
         batch = keywords[i:i + BATCH_SIZE_DFS]
+        batch_num = i // BATCH_SIZE_DFS + 1
         t_start = time.time()
-        items = fetch_dfs_search_volume(dfs_auth, batch)
-        rows = transform_dfs_result(items)
+
+        # 1. Sanitization. On garde une map sanitized → original keyword pour
+        #    upserter la clé GSC d'origine (préserve le JOIN amont).
+        original_by_sanitized: dict[str, str] = {}
+        for kw in batch:
+            s = sanitize_for_dfs(kw)
+            if s is None:
+                total_skipped += 1
+                print(f"    SKIP (chars non DFS-safe): {kw!r}", flush=True)
+            else:
+                original_by_sanitized.setdefault(s, kw)
+
+        clean_batch = list(original_by_sanitized.keys())
+        if not clean_batch:
+            continue
+
+        # 2. Appel DFS. Si erreur API → on log et on continue au batch suivant
+        #    (mieux vaut 80 % de volumes que rien du tout).
+        try:
+            items = fetch_dfs_search_volume(dfs_auth, clean_batch)
+        except (DfsApiError, requests.RequestException) as e:
+            total_failed += len(clean_batch)
+            print(
+                f"  batch {batch_num}: FAIL ({e}) — skip {len(clean_batch)} keywords",
+                flush=True,
+            )
+            continue
+
+        rows = transform_dfs_result(items, original_by_sanitized)
         upsert_batch(sb, rows)
 
         elapsed = time.time() - t_start
@@ -149,16 +252,25 @@ def run_sync(limit_n: int) -> None:
         total_upserted += len(rows)
         total_with_volume += with_vol
         print(
-            f"  batch {i // BATCH_SIZE_DFS + 1}: "
-            f"{len(batch):>4} requested → {len(rows):>4} returned "
+            f"  batch {batch_num}: "
+            f"{len(batch):>4} requested → {len(clean_batch):>4} sent → {len(rows):>4} returned "
             f"({with_vol:>4} with volume), {elapsed:.1f}s",
             flush=True,
         )
 
-    print(f"\n=== DONE en {time.time() - t0:.1f}s ===")
-    print(f"  upserts : {total_upserted:,}")
-    print(f"  avec volume non-null : {total_with_volume:,} ({100 * total_with_volume / total_upserted:.1f}%)")
-    print(f"  long-tail null : {total_upserted - total_with_volume:,}")
+    elapsed_total = time.time() - t0
+    print(f"\n=== DONE en {elapsed_total:.1f}s ===")
+    print(f"  upserts             : {total_upserted:,}")
+    if total_upserted:
+        print(
+            f"  avec volume non-null: {total_with_volume:,} "
+            f"({100 * total_with_volume / total_upserted:.1f}%)"
+        )
+        print(f"  long-tail null      : {total_upserted - total_with_volume:,}")
+    if total_skipped:
+        print(f"  skipped (sanitize)  : {total_skipped:,}")
+    if total_failed:
+        print(f"  failed (DFS error)  : {total_failed:,}")
 
 
 def main(argv: list[str] | None = None) -> None:
