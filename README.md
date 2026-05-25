@@ -50,10 +50,17 @@ Postgres
    │
    ▼ RPCs cross-source (migrations Sprint 33+)
      │
-     ▼ dashboard/ (Next.js 15, READ-ONLY)
-       Vue d'ensemble · Pages · Requêtes · Fiche page · Pipeline
-       (Pulse GSC×Cooked, funnel SEO, sparklines — cf dashboard/README.md)
+     ▼ Requêtes ad-hoc via Claude Code + MCP Supabase
+       (pas d'UI — Nicolas pose une question, Claude appelle les RPCs)
 ```
+
+> **Historique** — Une app Next.js `dashboard/` a vécu dans ce repo
+> du 22/05/2026 au 25/05/2026 (Sprint 33 « Dashboard & contacts »).
+> Elle a été supprimée le 25/05/2026 pour repartir sur un usage plus
+> simple : tout passe par Claude Code + MCP Supabase, les RPCs sont
+> l'API canonique. Les wrappers `lib/cooked.ts` et les pages
+> `app/*` ne sont plus dans le repo — le contrat RPC publié reste,
+> lui, le même.
 
 ---
 
@@ -127,12 +134,6 @@ cooked/
 │   ├── deploy_track.py                — Déploi Edge Function track (MCP / CLI)
 │   ├── requirements-gsc.txt           — pip deps pour scripts GSC
 │   └── requirements-dfs.txt           — pip deps pour scripts DataForSEO
-├── dashboard/                         — Interface lecture Cooked × GSC (Next.js)
-│   ├── README.md                      — setup dev, routes, wrappers RPC
-│   ├── CLAUDE.md                      — règles agent dashboard (silo READ-ONLY)
-│   ├── app/                           — App Router (/, /pages, /queries, /p/…, /health)
-│   ├── components/                    — KPI, Pulse, funnel, tableaux…
-│   └── lib/cooked.ts                  — seul point d'accès Supabase (server-only)
 ├── .github/workflows/
 │   ├── gsc-daily-ingest.yml           — cron GSC quotidien (06:00 UTC)
 │   └── dfs-weekly-sync.yml            — cron DataForSEO hebdo (lundi 07:00 UTC)
@@ -170,9 +171,9 @@ All RPCs are `granted to service_role only`. No `anon` / `authenticated` access.
 
 The full SQL is in `supabase/views.sql`. Contract signatures are stable since Sprint 13bis.
 
-### RPCs cross-source & dashboard (Sprint 33+, migrations `supabase/migrations/`)
+### RPCs cross-source (Sprint 33+, migrations `supabase/migrations/`)
 
-Consommées par `dashboard/lib/cooked.ts` et les analyses ad-hoc. Toutes `service_role` only.
+Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Claude. Toutes `service_role` only.
 
 | RPC | Rôle |
 |---|---|
@@ -235,18 +236,21 @@ python3 -m pytest tests/test_dfs_common.py -q
 
 ---
 
-## Dashboard (`dashboard/`)
+## Pas d'UI — Q&A ad-hoc via Claude Code
 
-Interface Next.js **READ-ONLY** pour Nicolas et Me Plouton — pas d'écriture Supabase
-depuis l'UI. Setup : voir [`dashboard/README.md`](./dashboard/README.md).
+Le repo a hébergé une app Next.js `dashboard/` du 22/05/2026 au
+25/05/2026, supprimée pour repartir sur un usage plus simple :
 
-| Route | Contenu |
-|---|---|
-| `/` | Pulse site, funnel SEO, KPI contacts macro, alertes Pulse, top contributeurs |
-| `/pages` | Tableau exhaustif avec filtres / tri |
-| `/queries` | Top requêtes Google site-wide |
-| `/p/[...slug]` | Fiche page + requêtes + sparklines + quadrant Pulse |
-| `/health` | `refresh_pipeline_health` (5 axes dont DataForSEO) |
+- Nicolas pose une question dans Claude Code (ex : « combien de
+  contacts cette semaine ? », « quelles pages perdent du trafic ? »,
+  « top 10 requêtes pour /defense-penale ? »)
+- Claude appelle les RPCs publiées via le MCP Supabase
+- Les RPCs restent l'API canonique — leur signature et leur sortie
+  ne dépendent pas de l'existence d'une UI
+
+Si une UI redevient utile plus tard (ex : pour Me Plouton), le
+contrat RPC est toujours là — il suffira de re-coder un frontend
+au-dessus.
 
 ---
 
@@ -470,7 +474,8 @@ Defense-in-depth on the Supabase side:
 | Sprint | Date | Scope |
 |---|---|---|
 | **33+ — Pulse & funnel** | 24/05/2026 | `site_pulse`, `pages_pulse`, helpers SQL (`pulse_quadrant`, fenêtres 28j Paris). Funnel `site_seo_funnel`, sparklines `*_page_daily_series`, `/queries` via `gsc_top_queries_global`. Fix off-by-one fenêtres 28j (`20260524300000`). |
-| **33 — Dashboard & contacts** | 22-24/05/2026 | App Next.js `dashboard/`. RPCs `site_kpis_compare`, `pages_overview_unified`, extension `refresh_pipeline_health` (axe GSC). Cron GSC GitHub Actions. Fix P0 : contacts macro = phone + `form_submit` (plus booking) sur toutes les vues agrégées. |
+| **34 — Dashboard removal** | 25/05/2026 | Suppression de l'app Next.js `dashboard/`. Choix produit : Nicolas pose ses questions directement à Claude Code (MCP Supabase) — les RPCs publiées suffisent. Les wrappers et pages sont supprimés, les RPCs et migrations restent intactes (API canonique). Cleanup index Postgres dans la foulée : -6 index redondants GSC/DFS + 1 index fonctionnel Paris-date sur events. |
+| **33 — Dashboard & contacts** | 22-24/05/2026 | App Next.js `dashboard/` (supprimée Sprint 34). RPCs `site_kpis_compare`, `pages_overview_unified`, extension `refresh_pipeline_health` (axe GSC). Cron GSC GitHub Actions. Fix P0 : contacts macro = phone + `form_submit` (plus booking) sur toutes les vues agrégées. |
 | **32 — Brique attribution query × page** | 22/05/2026 | Création de la 3e table GSC `gsc_query_page_daily` (1 005 653 rows, 16 mois). Brique critique identifiée par audit multi-agent (5 idéation + 3 critique) : débloque ~13 idées d'analyses cross-source qui nécessitent l'attribution query → landing. Volume attribuable = 46 % du total GSC (le reste est anonymisé par GSC pour les queries rares, mais quasi-tous les clicks restent attribuables). Backfill via `scripts/gsc_ingest_query_page.py`. |
 | **31 — Ingestion Google Search Console** | 21/05/2026 | Projet Seo (repo + DB séparée) supprimé par Nicolas (« trop complexe pour le moment »). Cooked devient l'unique data platform. Tables `gsc_path_daily` (121k rows) et `gsc_query_daily` (872k rows) créées avec 16 mois d'historique GSC (01/02/2025 → 19/05/2026). Service Account `gsc-mcp-claude@plouton-472207...` ajouté comme utilisateur Restreint sur la propriété GSC `https://www.jplouton-avocat.fr/`. Path canonicalisation symétrique avec Cooked (decode + NFC + strip domain/query/slash) pour jointure directe. Script `scripts/gsc_ingest_path_and_query.py`. CLAUDE.md nettoyé de toutes les références à l'agent Seo (`docs(claude.md): supprime tout le protocole agent Seo`). |
 | **30 — Audit chirurgical** | 21/05/2026 | Audit 7-agents (DB / Edge / tracker). Fixes : `cta_breakdown_for_path` masquait 42 % des anchors (filtre `cta_type IS NOT NULL`) → `anchor_nav` exposé. `engagement_density_for_path` over-counted +19 % (CTE retournait 1 row par page_exit, fix `GROUP BY session_id + MAX`). `pogo_rates_for_period` +26 % via LEFT JOIN dup + sessions sans `page_exit` traitées comme pogo. Edge `track v14` : `props` array → `{}`, ISO strict `occurred_at`, logs des drops. Edge `form-webhook v6` : hostname-spoofing guard (`//evil.com` rejeté), PII stripped (nom/email/téléphone ne sont plus stockés), erreurs PG non-23505 → 200 (stop le retry loop Wix). Tracker `sprint30` : `pageshow` bfcache handler (iOS back-nav perdait page_exit), `exitSent` reset après SPA pushState, `[class*="FOOTER"]` viré du `placementOf`, debounce localStorage 5s, INP threshold 40 (spec), `PerformanceObserver` disconnect sur SPA. Zombies droppés : `idx_events_props_gin`, 5 vues mortes, 4 colonnes `email_clicks_*`. `tracker_first_seen_global()` PK `noise_sessions_pkey`. |
@@ -533,10 +538,8 @@ To rotate `ANON_SALT` : update the Edge Function secret. Old `anonymous_id`s wil
 
 See [`CLAUDE.md`](./CLAUDE.md) — it documents:
 
-- The autonomy boundaries for the Cooked agent (data layer + `dashboard/`)
+- The autonomy boundaries for the Cooked agent (data layer only depuis Sprint 34)
 - The site taxonomy (4 page types : expertise, cabinet, posts ressources, posts classiques)
 - Methodology takeaways from previous sprints
-
-Dashboard-specific rules : [`dashboard/CLAUDE.md`](./dashboard/CLAUDE.md).
 
 `CLAUDE.md` is auto-read by every Claude Code session that starts in this repo.
