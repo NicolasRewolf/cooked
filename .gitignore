@@ -27,3 +27,4 @@ wix/tracker.min.html
 service-account*.json
 *.pem
 *.key
+.vercel

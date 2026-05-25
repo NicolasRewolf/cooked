@@ -9,7 +9,7 @@ export function NavLogo() {
 
   return (
     <Link
-      href={hrefWithPeriod("/", period)}
+      href={hrefWithPeriod("/activite", period)}
       className="font-mono text-sm tracking-tight text-foreground"
     >
       cooked<span className="text-muted-foreground">/dashboard</span>

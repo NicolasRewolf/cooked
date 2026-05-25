@@ -87,17 +87,18 @@ Toutes les pages sont des **Server Components** (`export const dynamic =
 
 | Wrapper TS | RPC Postgres | Sortie |
 |---|---|---|
-| `pagesOverviewUnified(maxRows=1000)` | `pages_overview_unified(max_rows)` | univers exhaustif (snapshot Cooked 365j ∪ GSC 90j) avec contacts macro + booking_intent micro séparés |
-| `gscPagePerformance(path)` | `gsc_page_performance(target_path)` | fiche complète d'une page (contacts + intent séparés) |
-| `gscTopQueriesForPath(path, daysBack=28, maxRows=20)` | `gsc_top_queries_for_path(target_path, days_back, max_rows)` | top requêtes Google sur une page |
-| `pipelineHealth()` | `refresh_pipeline_health()` | self-diag 5 axes (snapshot, cron, ingestion, GSC, DFS) |
-| `siteKpisCompare(periodDays=28)` | `site_kpis_compare(period_days)` | KPIs business N vs N-1 (sessions, pageviews, phone, form_submit, macro) |
-| `siteContext()` | `site_context_export()` | contexte site-wide 28j |
-| `sitePulse(gsc, cooked, threshold)` | `site_pulse(...)` | agrégat site quadrant GSC 28v28 × Cooked 7v7 |
-| `pagesPulse(gsc, cooked, threshold)` | `pages_pulse(...)` | même logique par path (alertes home, fiche page) |
-| `siteSeoFunnel(periodDays)` | `site_seo_funnel(period_days)` | funnel SEO site-wide |
-| `gscTopQueriesGlobal(days, max)` | `gsc_top_queries_global(...)` | top requêtes + landing (v2 : enrichi `volume_fr` / `cpc` / `click_yield_pct` via DataForSEO) |
-| `gscXDfsOpportunities(minVol=100, posMin=5, posMax=15, days=28, max=30)` | `gsc_x_dfs_opportunities(...)` | requêtes en position 5–15 avec ≥ 100 vol FR → lost potential (clics manqués si pos 1, CTR Sistrix) |
+| `siteKpisCompare(periodKind)` | `site_kpis_compare(p_period_kind)` | KPIs business N vs N-1 (sessions, pageviews, phone, form_submit, macro) |
+| `pagesOverviewUnified(periodKind, maxRows)` | `pages_overview_unified(period_kind, max_rows)` | tableau pages GSC × Cooked sur la période |
+| `topContactPages(periodKind, maxRows)` | `top_contact_pages(p_period_kind, max_rows)` | top pages avec contacts (home, léger) |
+| `gscPagePerformance(path, periodKind)` | `gsc_page_performance(target_path, period_kind)` | fiche page |
+| `gscTopQueriesForPath(path, periodKind, maxRows)` | `gsc_top_queries_for_path(target_path, p_period_kind, max_rows)` | top requêtes Google sur une landing |
+| `sitePulse(periodKind, threshold)` | `site_pulse(p_period_kind, …)` | Pulse site (GSC × Cooked, même fenêtre) |
+| `pagesPulse(periodKind, threshold)` | `pages_pulse(period_kind, …)` | Pulse par path |
+| `siteSeoFunnel(periodKind)` | `site_seo_funnel(period_kind)` | funnel SEO site-wide |
+| `gscTopQueriesGlobal(periodKind, max)` | `gsc_top_queries_global(period_kind, max_rows)` | top requêtes + DFS |
+| `gscXDfsOpportunities(periodKind, …)` | `gsc_x_dfs_opportunities(…, period_kind, …)` | opportunités SEO |
+| `pipelineHealth()` | `refresh_pipeline_health()` | self-diag (sans filtre période) |
+| `siteContext()` | `site_context_export()` | contexte site-wide 28j (fixe) |
 | `gscPageDailySeries(path, days)` | `gsc_page_daily_series(...)` | série clics GSC (sparkline) |
 | `cookedPageDailySeries(path, days)` | `cooked_page_daily_series(...)` | série sessions Cooked (sparkline) |
 
@@ -121,7 +122,7 @@ Le terme **Contacts** dans le dashboard correspond UNIQUEMENT à la macro-conver
   contacts = phone_clicks (cta_phone_click) + form_submits (form_submit)
 
 Ne **jamais** y additionner `booking_cta_click` — c'est une **micro-conversion** (intent
-déclaré, pas matérialisé). Le champ correspondant est `cooked_booking_intent_28d`,
+déclaré, pas matérialisé). Le champ correspondant est `cooked_booking_intent`,
 affiché séparément.
 
 Le bug du 24/05/2026 (review code) a été causé par ce mélange : `gsc_pages_overview`

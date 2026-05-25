@@ -3,6 +3,8 @@
  * URL : ?period=today|week|month|rolling_28|rolling_90
  */
 
+import type { DataLens } from "@/lib/data-lens";
+
 export const PERIOD_KINDS = [
   "today",
   "week",
@@ -39,18 +41,46 @@ export function periodLabel(kind: PeriodKind): string {
   return LABELS[kind];
 }
 
-export function periodSubtitle(kind: PeriodKind): string {
+export function periodSubtitle(kind: PeriodKind, lens: DataLens = "live"): string {
+  if (lens === "gsc") {
+    switch (kind) {
+      case "today":
+        return "Dernier jour consolidé par Google (pas « aujourd'hui » calendaire).";
+      case "week":
+        return "Google — depuis le lundi de la semaine du dernier jour GSC.";
+      case "month":
+        return "Google — depuis le 1er du mois du dernier jour GSC.";
+      case "rolling_90":
+        return "Google — 90 jours se terminant au dernier jour ingéré.";
+      default:
+        return "Google — 28 jours se terminant au dernier jour ingéré.";
+    }
+  }
+  if (lens === "cross") {
+    switch (kind) {
+      case "today":
+        return "Croisement sur le dernier jour où Google et Cooked sont alignés.";
+      case "week":
+        return "Croisement honnête — même fenêtre calendaire, fin au dernier jour GSC.";
+      case "month":
+        return "Croisement — du 1er du mois au dernier jour GSC consolidé.";
+      case "rolling_90":
+        return "Croisement — 90 j inclusifs, fin au dernier jour GSC.";
+      default:
+        return "Croisement — 28 j inclusifs, fin au dernier jour GSC.";
+    }
+  }
   switch (kind) {
     case "today":
-      return "Ce que le cabinet a généré aujourd'hui (heure Paris).";
+      return "Activité site à jour — aujourd'hui (heure Paris).";
     case "week":
-      return "Ce que le cabinet a généré depuis lundi (semaine en cours, Paris).";
+      return "Activité site depuis lundi (semaine en cours, Paris).";
     case "month":
-      return "Ce que le cabinet a généré depuis le 1er du mois (Paris).";
+      return "Activité site depuis le 1er du mois (Paris).";
     case "rolling_90":
-      return "Ce que le cabinet a généré sur les 3 derniers mois (90 jours).";
+      return "Activité site sur les 3 derniers mois (90 jours).";
     default:
-      return "Ce que le cabinet a généré sur les 28 derniers jours.";
+      return "Activité site sur les 28 derniers jours.";
   }
 }
 

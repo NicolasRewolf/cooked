@@ -187,8 +187,10 @@ RPCs publiées — analyses historiques & snapshot :
 
 RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
 
-- `cooked_period_bounds(period_kind)` — bornes Paris (today / week / month / rolling_28 / rolling_90)
-- `site_kpis_compare(period_kind)` — KPIs business N vs N-1 (macro = phone + form)
+- `gsc_last_data_day()` — dernier jour `gsc_path_daily` (lag Google)
+- `cooked_period_bounds(period_kind, data_lens)` — `live` | `gsc` | `cross` (cross = fin alignée GSC)
+- `site_kpis_compare(period_kind)` — KPIs Cooked (lens live)
+- `site_gsc_kpis_compare(period_kind)` — KPIs GSC (lens gsc)
 - `pages_overview_unified(max_rows)` — univers pages (~490 paths), contacts macro séparés de booking_intent
 - `gsc_page_performance(target_path)` — fiche page complète
 - `gsc_top_queries_for_path(path, period_kind, max_rows)` — requêtes → landing (overload `days_back` conservé)

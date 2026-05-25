@@ -85,6 +85,7 @@ export default async function HealthPage() {
     <>
       <Nav />
       <DateBanner
+        lens="live"
         periodStart={kpis.period_n_start}
         periodEnd={kpis.period_n_end}
         gscLastDay={h.gsc_last_day}

@@ -4,6 +4,8 @@
 
 ## Ordre d’application prod (si pas encore fait)
 
+0. **Refonte 3 zones (29/05)** — `APPLIQUER_20260529_data_lens.sql` (ou `20260529120000` + `20260529120100`) — après les migrations périodes ci-dessous si première install.
+
 1. `20260526100000_cooked_period_bounds.sql` — sélecteur de périodes
 2. `20260527120000_form_submit_exclude_recruitment.sql` — exclusion candidatures
 3. `20260528120000_macro_dry_and_gsc_period.sql` — DRY macro + `gsc_top_queries` par période
@@ -25,3 +27,7 @@ Copier-coller : `supabase/scripts/APPLIQUER_20260528_perf_dashboard.sql`
 - `APPLIQUER_exclure_candidatures.sql` — doublon de `20260527120000`.
 
 En cas de doute, toujours préférer le fichier dans `migrations/`.
+
+## Validation bornes Paris
+
+`validate_period_bounds.sql` — requêtes de contrôle visuel après migration périodes.

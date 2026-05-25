@@ -18,6 +18,7 @@ import {
 import { formatInt, formatNumber, formatPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { GscGlobalQueryRow } from "@/lib/cooked";
+import { hrefWithPeriod, type PeriodKind } from "@/lib/period";
 
 type SortCol =
   | "clicks"
@@ -55,7 +56,13 @@ const HINTS = {
     "Part du volume mensuel capturée par le site = 100 × clicks / (volume × jours/30). Plus haut = on capte mieux notre share. > 100 % possible si plusieurs pages rankent (cannibalisation interne) ou si DFS sous-estime le volume.",
 };
 
-export function QueriesTable({ rows }: { rows: GscGlobalQueryRow[] }) {
+export function QueriesTable({
+  rows,
+  period,
+}: {
+  rows: GscGlobalQueryRow[];
+  period: PeriodKind;
+}) {
   const [sortCol, setSortColState] = useState<SortCol>("clicks");
   const [sortDir, setSortDirState] = useState<SortDir>("desc");
   const [pageSize, setPageSizeState] = useState<PageSize>(50);
@@ -259,7 +266,7 @@ export function QueriesTable({ rows }: { rows: GscGlobalQueryRow[] }) {
                     <td className="max-w-[260px] truncate px-4 py-3">
                       {q.top_page ? (
                         <Link
-                          href={`/p${q.top_page}`}
+                          href={hrefWithPeriod(`/p${q.top_page}`, period)}
                           className="block truncate text-foreground hover:underline"
                           title={q.top_page}
                         >

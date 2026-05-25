@@ -26,17 +26,26 @@ Sélecteur global dans la barre de navigation. Valeurs :
 | `rolling_28` | 28 derniers jours (défaut) |
 | `rolling_90` | 3 derniers mois (90 j) |
 
-Bornes calculées côté Postgres par `cooked_period_bounds(period_kind)` — heure **Europe/Paris**.
+Bornes : `cooked_period_bounds(period_kind, data_lens)` — heure **Europe/Paris**.
 
-## Pages
-
-| Route | RPCs principales | Contenu |
+| `data_lens` | Fin de période | Usage |
 |---|---|---|
-| `/` | `site_kpis_compare`, `site_pulse`, `pages_pulse`, `site_seo_funnel`, `pages_overview_unified` | Pulse, funnel SEO, KPI Contacts, alertes Pulse |
-| `/pages` | `pages_overview_unified(period_kind)` | Tableau pages GSC × Cooked sur la période choisie |
-| `/queries` | `gsc_top_queries_global`, `gsc_x_dfs_opportunities` | Top requêtes + opportunités SEO (DFS) |
-| `/p/[...slug]` | `gsc_page_performance`, `gsc_top_queries_for_path`, `pages_pulse` | Fiche page (hérite `?period=`) |
-| `/health` | `refresh_pipeline_health` | Pipeline (sans filtre période) |
+| `live` | Aujourd'hui | Activité site (Cooked pur) |
+| `gsc` | Dernier jour GSC ingéré | Google pur |
+| `cross` | Idem GSC | Cooked × Google (même fenêtre) |
+
+## Pages (3 zones)
+
+| Route | Zone | Contenu |
+|---|---|---|
+| `/activite` | Cooked `live` | KPIs contacts/sessions, tableau pages Cooked |
+| `/google` | GSC `gsc` | KPIs clics/impressions, extrait requêtes |
+| `/croisement` | `cross` | Pulse, funnel, tableau pages, alertes |
+| `/queries` | GSC | Top requêtes + opportunités DFS |
+| `/p/[...slug]` | `cross` | Fiche page (sparklines fin = `gsc_last_day`) |
+| `/health` | — | Pipeline (diagnostic) |
+| `/` | — | Redirige vers `/activite` |
+| `/pages` | — | Redirige vers `/croisement` |
 
 ## Définition Contacts (alignée cooked/CLAUDE.md)
 
@@ -48,7 +57,9 @@ Bornes calculées côté Postgres par `cooked_period_bounds(period_kind)` — he
 
 | Wrapper TS | RPC Postgres |
 |---|---|
-| `siteKpisCompare(periodKind)` | `site_kpis_compare(period_kind)` |
+| `siteKpisCompare(periodKind)` | `site_kpis_compare` — lens **live** |
+| `siteGscKpisCompare(periodKind)` | `site_gsc_kpis_compare` — lens **gsc** |
+| `cookedPagesSnapshot(periodKind)` | `cooked_pages_snapshot` — lens **live** |
 | `sitePulse(periodKind, threshold)` | `site_pulse(period_kind, …)` |
 | `pagesPulse(periodKind, …)` | `pages_pulse(period_kind, …)` |
 | `siteSeoFunnel(periodKind)` | `site_seo_funnel(period_kind)` |
@@ -95,5 +106,17 @@ Toutes les requêtes Supabase passent par `lib/cooked.ts`, qui :
 | `SUPABASE_SECRET_KEY` | Clé `sb_secret_*` server-only |
 
 ⚠️ Jamais de préfixe `NEXT_PUBLIC_` pour ces vars.
+
+## Validation périodes (checklist)
+
+1. `?period=today` sur `/` — KPIs = jour Paris (comparer à SQL `site_kpis_compare('today')`).
+2. `?period=week` un mercredi — bandeau dates = lundi → aujourd’hui.
+3. `?period=month` — dates = 1er du mois → aujourd’hui.
+4. `/` → `/pages` — l’URL garde `?period=`.
+5. `?period=rolling_90` — bandeau « données partielles » si tracker &lt; 90 j.
+6. `DateBanner` — dernier jour GSC ingéré affiché.
+
+SQL bornes : `supabase/scripts/validate_period_bounds.sql`.  
+Migrations prod : `supabase/scripts/README.md`.
 
 Règles agent : [`CLAUDE.md`](./CLAUDE.md).

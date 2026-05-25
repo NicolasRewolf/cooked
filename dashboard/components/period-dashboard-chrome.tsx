@@ -1,6 +1,4 @@
-import { Nav } from "@/components/nav";
-import { DateBanner } from "@/components/date-banner";
-import { PartialDataBanner } from "@/components/partial-data-banner";
+import { ZoneDashboardChrome } from "@/components/zone-dashboard-chrome";
 import type { PipelineHealth, SiteKpisCompare } from "@/lib/cooked";
 
 type Props = {
@@ -9,22 +7,19 @@ type Props = {
   children: React.ReactNode;
 };
 
-/** Nav + bandeaux période partagés par les pages dashboard principales. */
+/** @deprecated Utiliser ZoneDashboardChrome */
 export function PeriodDashboardChrome({ kpis, health, children }: Props) {
   return (
-    <>
-      <Nav />
-      {kpis.is_partial_period && (
-        <PartialDataBanner trackerFirstSeen={kpis.tracker_first_seen} />
-      )}
-      <DateBanner
-        periodStart={kpis.period_n_start}
-        periodEnd={kpis.period_n_end}
-        periodLabel={kpis.period_label_fr}
-        gscLastDay={health.gsc_last_day}
-        gscDataAgeDays={health.gsc_data_age_days}
-      />
+    <ZoneDashboardChrome
+      lens="live"
+      periodStart={kpis.period_n_start}
+      periodEnd={kpis.period_n_end}
+      periodLabel={kpis.period_label_fr}
+      health={health}
+      isPartialPeriod={kpis.is_partial_period}
+      trackerFirstSeen={kpis.tracker_first_seen}
+    >
       {children}
-    </>
+    </ZoneDashboardChrome>
   );
 }

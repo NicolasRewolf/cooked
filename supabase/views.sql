@@ -2173,3 +2173,7 @@ create unique index if not exists events_form_submit_submission_id_uniq
 --   20260525120000_dfs_keywords_union_28d_90d.sql
 --   20260525140000_macro_contacts_by_path.sql
 --   20260525150000_pipeline_health_dfs.sql
+--   20260526100000_cooked_period_bounds.sql (dashboard ?period=)
+--   20260527120000_form_submit_exclude_recruitment.sql
+--   20260528120000_macro_dry_and_gsc_period.sql
+--   20260528140000_pages_overview_perf.sql / 20260528141000_top_contact_pages.sql

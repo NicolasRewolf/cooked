@@ -201,6 +201,36 @@ export type SitePulse = {
   quadrant: PulseQuadrant;
 };
 
+export type CookedPagesSnapshotRow = {
+  path: string;
+  cooked_sessions: number;
+  cooked_contacts: number;
+  cooked_phone_clicks: number;
+  cooked_form_submits: number;
+};
+
+export type SiteGscKpisCompare = {
+  period_kind: string;
+  period_label_fr: string;
+  period_n_start: string;
+  period_n_end: string;
+  paris_today: string;
+  gsc_last_day: string | null;
+  lag_days: number | null;
+  period_prev_start: string;
+  period_prev_end: string;
+  clicks_n: number;
+  impressions_n: number;
+  ctr_pct_n: number | null;
+  position_avg_n: number | null;
+  clicks_prev: number;
+  impressions_prev: number;
+  ctr_pct_prev: number | null;
+  position_avg_prev: number | null;
+  clicks_delta_pct: number | null;
+  impressions_delta_pct: number | null;
+};
+
 export type SiteKpisCompare = {
   period_kind: string;
   period_label_fr: string;
@@ -353,11 +383,13 @@ export async function gscXDfsOpportunities(
 
 export async function gscPageDailySeries(
   targetPath: string,
-  daysBack = 56
+  daysBack = 56,
+  endDate?: string | null
 ): Promise<GscDailyPoint[]> {
   const { data, error } = await client().rpc("gsc_page_daily_series", {
     target_path: targetPath,
     days_back: daysBack,
+    end_date: endDate ?? null,
   });
   if (error) throw new Error(`gsc_page_daily_series: ${error.message}`);
   return (data ?? []) as GscDailyPoint[];
@@ -365,14 +397,40 @@ export async function gscPageDailySeries(
 
 export async function cookedPageDailySeries(
   targetPath: string,
-  daysBack = 14
+  daysBack = 14,
+  endDate?: string | null
 ): Promise<CookedDailyPoint[]> {
   const { data, error } = await client().rpc("cooked_page_daily_series", {
     target_path: targetPath,
     days_back: daysBack,
+    end_date: endDate ?? null,
   });
   if (error) throw new Error(`cooked_page_daily_series: ${error.message}`);
   return (data ?? []) as CookedDailyPoint[];
+}
+
+export async function cookedPagesSnapshot(
+  periodKind: PeriodKind = "rolling_28",
+  maxRows = 15
+): Promise<CookedPagesSnapshotRow[]> {
+  const { data, error } = await client().rpc("cooked_pages_snapshot", {
+    p_period_kind: periodKind,
+    max_rows: maxRows,
+  });
+  if (error) throw new Error(`cooked_pages_snapshot: ${error.message}`);
+  return (data ?? []) as CookedPagesSnapshotRow[];
+}
+
+export async function siteGscKpisCompare(
+  periodKind: PeriodKind = "rolling_28"
+): Promise<SiteGscKpisCompare> {
+  const { data, error } = await client().rpc("site_gsc_kpis_compare", {
+    p_period_kind: periodKind,
+  });
+  if (error) throw new Error(`site_gsc_kpis_compare: ${error.message}`);
+  const rows = (data ?? []) as SiteGscKpisCompare[];
+  if (!rows[0]) throw new Error("site_gsc_kpis_compare returned no rows");
+  return rows[0];
 }
 
 export async function sitePulse(

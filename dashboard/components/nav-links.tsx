@@ -5,9 +5,9 @@ import { hrefWithPeriod } from "@/lib/period";
 import { usePeriodFromUrl } from "@/lib/use-period-from-url";
 
 const LINKS: { href: string; label: string }[] = [
-  { href: "/", label: "Vue d'ensemble" },
-  { href: "/pages", label: "Pages" },
-  { href: "/queries", label: "Requêtes" },
+  { href: "/activite", label: "Activité site" },
+  { href: "/google", label: "Google" },
+  { href: "/croisement", label: "Croisement" },
   { href: "/health", label: "Pipeline" },
 ];
 

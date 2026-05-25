@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { PeriodDashboardChrome } from "@/components/period-dashboard-chrome";
+import { ZoneDashboardChrome } from "@/components/zone-dashboard-chrome";
 import { CategoryBadge } from "@/components/category-badge";
 import { PageTrendPanel } from "@/components/page-trend-panel";
 import {
@@ -10,7 +10,7 @@ import {
   gscTopQueriesForPath,
   pagesPulse,
 } from "@/lib/cooked";
-import { loadPeriodContext } from "@/lib/period-context";
+import { loadCrossContext } from "@/lib/period-context";
 import {
   hrefWithPeriod,
   parsePeriod,
@@ -33,14 +33,15 @@ export default async function PageDetail({ params, searchParams }: Props) {
   const label = periodLabel(period);
   const path = "/" + slug.map((s) => decodeURIComponent(s)).join("/");
   const chartDays = periodChartDays(period);
-  const { kpis, health } = await loadPeriodContext(period);
+  const { health, banner } = await loadCrossContext(period);
+  const chartEnd = health.gsc_last_day;
 
   const [perf, queries, gscSeries, cookedSeries, pulseRows] =
     await Promise.all([
       gscPagePerformance(path, period),
       gscTopQueriesForPath(path, period, 20),
-      gscPageDailySeries(path, Math.max(chartDays * 2, 14)),
-      cookedPageDailySeries(path, Math.max(chartDays, 14)),
+      gscPageDailySeries(path, Math.max(chartDays * 2, 14), chartEnd),
+      cookedPageDailySeries(path, Math.max(chartDays, 14), chartEnd),
       pagesPulse(period, 5.0),
     ]);
 
@@ -49,10 +50,10 @@ export default async function PageDetail({ params, searchParams }: Props) {
   const pulse = pulseRows.find((r) => r.path === perf.path) ?? null;
 
   return (
-    <PeriodDashboardChrome kpis={kpis} health={health}>
+    <ZoneDashboardChrome {...banner}>
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
         <Link
-          href={hrefWithPeriod("/pages", period)}
+          href={hrefWithPeriod("/croisement", period)}
           className="mb-6 inline-block font-mono text-xs text-muted-foreground hover:text-foreground"
         >
           ← Pages
@@ -222,7 +223,7 @@ export default async function PageDetail({ params, searchParams }: Props) {
           )}
         </section>
       </main>
-    </PeriodDashboardChrome>
+    </ZoneDashboardChrome>
   );
 }
 
