@@ -38,11 +38,14 @@ gsc_path_daily        — day × path        (~121k rows, 16 mois)
 gsc_query_daily       — day × query       (~872k rows, 16 mois)
 gsc_query_page_daily  — day × path × query (~1M rows, brique
                         d'attribution query → landing, Sprint 32)
-
-dashboard/ (Next.js 15, READ-ONLY)
-   ↓ lib/cooked.ts → RPCs cross-source (site_kpis, pages_overview_unified,
-     pulse, funnel, sparklines…)
 ```
+
+**Pas de dashboard UI.** Le repo a hébergé une app Next.js
+`dashboard/` jusqu'au 25/05/2026, supprimée pour repartir sur un
+usage plus simple : Nicolas pose des questions ad-hoc via Claude
+Code, qui interroge directement les RPCs Postgres via le MCP
+Supabase. Les RPCs publiées restent l'API canonique (cf. liste
+plus bas) — elles servent aux requêtes ad-hoc, pas à une UI.
 
 Capture côté browser : pageview / scroll_depth / engagement_tick /
 web_vitals / click_outbound / page_exit / cta_phone_click /
@@ -51,8 +54,8 @@ inséré directement par la deuxième Edge Function `form-webhook` qui
 reçoit les webhooks Wix Automations (Sprint 18). Bot filtering via la
 vue `events_human` (Sprint 17). Sert de remplaçant GA4 pour fournir
 des données comportementales fiables à Nicolas et à Me Plouton, et
-permet désormais les analyses Cooked × GSC (intent matching, funnel
-SEO complet, pogo-stick × ranking).
+permet les analyses Cooked × GSC (intent matching, funnel SEO
+complet, pogo-stick × ranking) consommées en mode question/réponse.
 
 ---
 
@@ -78,7 +81,6 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
 - Les scripts d'outillage (`scripts/minify-tracker.py`,
   `scripts/gsc_ingest.py`, `scripts/gsc_common.py`,
   `scripts/deploy_track.py`, etc.)
-- Le dashboard `dashboard/` (UI lecture ; schéma/RPCs restent ici)
 - Le workflow GitHub Actions GSC (`.github/workflows/gsc-daily-ingest.yml`)
 - L'ingestion DataForSEO (`scripts/dfs_common.py`, `dfs_sync.py`,
   table `dfs_keyword_volume`, cron `dfs-weekly-sync.yml`)
@@ -90,7 +92,7 @@ L'agent peut prendre toutes les décisions techniques sur ces objets.
 Demander une validation explicite à Nicolas uniquement pour :
 
 - Une décision business ou de produit (ex : multi-tenancy, nouveau client,
-  refonte produit dashboard visible par le client final)
+  re-création d'une UI visible par le client final)
 - Une suppression de donnée irrécupérable (DROP TABLE, DELETE de masse)
 - Un changement de coût significatif (ex : passer à un plan Supabase
   payant supérieur, activer une API tierce facturée)
@@ -157,7 +159,7 @@ seo_url_snapshot (70 colonnes post-Sprint-30 : 4 fenêtres × ~11
                   + device CTA rate. Sprint 30 a dropé 4 colonnes
                   email_clicks_* qui étaient à 0 depuis le début)
        ↓
-RPCs internes + dashboard (`dashboard/lib/cooked.ts`)
+RPCs internes (interrogées en ad-hoc via MCP Supabase)
 ```
 
 RPCs publiées — analyses historiques & snapshot :
@@ -209,7 +211,7 @@ DFS ici). Volumes = `dfs_keyword_volume` alimentée par `scripts/dfs_sync.py`
 avant envoi (`sanitize_for_dfs` dans `dfs_common.py`). Après changement RPC
 ou script : relancer `dfs_sync.py --limit 500`.
 
-**Contacts dashboard** : `cooked_contacts_*` = `cta_phone_click` + `form_submit` uniquement.
+**Contacts (taxonomie)** : `cooked_contacts_*` = `cta_phone_click` + `form_submit` uniquement.
 `cooked_booking_intent_*` = `cta_booking_click` (micro). Ne pas mélanger.
 Source SQL unique : `macro_contacts_by_path(days_back)` — utilisée par
 `pages_overview_unified`, `gsc_pages_overview`, `gsc_page_performance`.
