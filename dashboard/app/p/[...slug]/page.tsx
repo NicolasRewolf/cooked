@@ -30,7 +30,7 @@ type Props = {
 export default async function PageDetail({ params, searchParams }: Props) {
   const { slug } = await params;
   const period = parsePeriod(await searchParams);
-  const label = periodLabel(period);
+  const label = periodLabel(period, "cross");
   const path = "/" + slug.map((s) => decodeURIComponent(s)).join("/");
   const chartDays = periodChartDays(period);
   const { health, banner } = await loadCrossContext(period);

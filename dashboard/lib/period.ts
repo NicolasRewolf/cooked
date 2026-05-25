@@ -17,12 +17,31 @@ export type PeriodKind = (typeof PERIOD_KINDS)[number];
 
 export const DEFAULT_PERIOD: PeriodKind = "rolling_28";
 
-const LABELS: Record<PeriodKind, string> = {
+/** Boutons + bandeau — zone Activité (calendrier Paris, Cooked live). */
+const LABELS_LIVE: Record<PeriodKind, string> = {
   today: "Aujourd'hui",
   week: "Semaine en cours",
   month: "Mois en cours",
   rolling_28: "28 derniers jours",
   rolling_90: "3 derniers mois",
+};
+
+/** Boutons — zone Google (fenêtres ancrées sur gsc_last_day). */
+const LABELS_GSC: Record<PeriodKind, string> = {
+  today: "Dernier jour",
+  week: "Semaine",
+  month: "Mois",
+  rolling_28: "28 j",
+  rolling_90: "90 j",
+};
+
+/** Boutons — zone Croisement (même ancrage GSC, lecture mixte). */
+const LABELS_CROSS: Record<PeriodKind, string> = {
+  today: "Dernier jour aligné",
+  week: "Semaine alignée",
+  month: "Mois aligné",
+  rolling_28: "28 j alignés",
+  rolling_90: "90 j alignés",
 };
 
 export function isPeriodKind(value: string | undefined): value is PeriodKind {
@@ -37,8 +56,22 @@ export function parsePeriod(
   return DEFAULT_PERIOD;
 }
 
-export function periodLabel(kind: PeriodKind): string {
-  return LABELS[kind];
+/** Libellé court de la période (boutons, titres KPI) — dépend de la zone. */
+export function periodLabel(kind: PeriodKind, lens: DataLens = "live"): string {
+  if (lens === "gsc") return LABELS_GSC[kind];
+  if (lens === "cross") return LABELS_CROSS[kind];
+  return LABELS_LIVE[kind];
+}
+
+/** Une ligne sous les boutons quand la sémantique n'est pas calendaire « aujourd'hui ». */
+export function periodSelectorHint(lens: DataLens): string | null {
+  if (lens === "gsc") {
+    return "Les fenêtres se terminent au dernier jour ingéré par Google — pas à aujourd'hui (Paris).";
+  }
+  if (lens === "cross") {
+    return "Même fin de fenêtre que Google ; Cooked est lu sur les mêmes dates.";
+  }
+  return null;
 }
 
 export function periodSubtitle(kind: PeriodKind, lens: DataLens = "live"): string {
@@ -117,7 +150,24 @@ export function hrefWithPeriod(path: string, period: PeriodKind): string {
   return `${base}?${params.toString()}`;
 }
 
-export function prevPeriodCompareLabel(kind: PeriodKind): string {
+export function prevPeriodCompareLabel(
+  kind: PeriodKind,
+  lens: DataLens = "live"
+): string {
+  if (lens === "gsc" || lens === "cross") {
+    switch (kind) {
+      case "today":
+        return "jour précédent (GSC)";
+      case "week":
+        return "semaine précédente (même plage, fin GSC)";
+      case "month":
+        return "mois précédent (même plage, fin GSC)";
+      case "rolling_90":
+        return "90 j précédents (fin GSC)";
+      default:
+        return "28 j précédents (fin GSC)";
+    }
+  }
   switch (kind) {
     case "today":
       return "hier";

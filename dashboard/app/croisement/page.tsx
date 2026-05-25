@@ -31,7 +31,7 @@ type Props = { searchParams: Promise<{ period?: string }> };
 
 export default async function CroisementPage({ searchParams }: Props) {
   const period = parsePeriod(await searchParams);
-  const label = periodLabel(period);
+  const label = periodLabel(period, "cross");
   const { pulse, health, banner } = await loadCrossContext(period);
 
   const [pages, pulseRows, funnel, contributors] = await Promise.all([

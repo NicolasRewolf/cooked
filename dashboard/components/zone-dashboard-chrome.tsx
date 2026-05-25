@@ -58,7 +58,7 @@ export function ZoneDashboardChrome({
             ) : null}
           </div>
           <Suspense fallback={null}>
-            <PeriodSelector />
+            <PeriodSelector lens={lens} />
           </Suspense>
           <DateBanner
             periodStart={periodStart}

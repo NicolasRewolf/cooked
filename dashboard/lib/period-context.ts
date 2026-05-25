@@ -11,7 +11,7 @@ import {
   type SitePulse,
 } from "@/lib/cooked";
 import type { DataLens } from "@/lib/data-lens";
-import type { PeriodKind } from "@/lib/period";
+import { periodLabel, type PeriodKind } from "@/lib/period";
 import type { ZoneBannerProps } from "@/components/zone-dashboard-chrome";
 
 export type CookedPeriodContext = {
@@ -50,7 +50,7 @@ export async function loadCookedContext(
       lens: "live",
       periodStart: kpis.period_n_start,
       periodEnd: kpis.period_n_end,
-      periodLabel: kpis.period_label_fr,
+      periodLabel: periodLabel(period, "live"),
       health,
       isPartialPeriod: kpis.is_partial_period,
       trackerFirstSeen: kpis.tracker_first_seen,
@@ -73,7 +73,7 @@ export async function loadGscContext(
       lens: "gsc",
       periodStart: kpis.period_n_start,
       periodEnd: kpis.period_n_end,
-      periodLabel: kpis.period_label_fr,
+      periodLabel: periodLabel(period, "gsc"),
       health,
     },
   };
@@ -94,7 +94,7 @@ export async function loadCrossContext(
       lens: "cross",
       periodStart: pulse.gsc_period_start,
       periodEnd: pulse.gsc_period_end,
-      periodLabel: pulse.period_label_fr,
+      periodLabel: periodLabel(period, "cross"),
       health,
     },
   };

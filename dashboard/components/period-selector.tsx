@@ -1,22 +1,38 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { PERIOD_KINDS, type PeriodKind, periodLabel } from "@/lib/period";
+import type { DataLens } from "@/lib/data-lens";
+import {
+  PERIOD_KINDS,
+  type PeriodKind,
+  periodLabel,
+  periodSelectorHint,
+} from "@/lib/period";
 import { usePeriodFromUrl } from "@/lib/use-period-from-url";
 import { cn } from "@/lib/utils";
 
-/** Sélecteur de période — affiché sous la zone active, pas dans la nav globale. */
-export function PeriodSelector() {
+type Props = { lens: DataLens };
+
+/** Sélecteur de période — libellés selon la zone (live vs GSC vs croisement). */
+export function PeriodSelector({ lens }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const current = usePeriodFromUrl();
+  const hint = periodSelectorHint(lens);
 
   function setPeriod(kind: PeriodKind) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("period", kind);
     router.push(`${pathname}?${params.toString()}`);
   }
+
+  const tablistLabel =
+    lens === "live"
+      ? "Période d'analyse — activité site"
+      : lens === "gsc"
+        ? "Période d'analyse — Google Search Console"
+        : "Période d'analyse — croisement Cooked × Google";
 
   return (
     <div className="space-y-2">
@@ -26,7 +42,7 @@ export function PeriodSelector() {
       <div
         className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-canvas/80 p-0.5"
         role="tablist"
-        aria-label="Période d'analyse"
+        aria-label={tablistLabel}
       >
         {PERIOD_KINDS.map((kind) => (
           <button
@@ -34,6 +50,7 @@ export function PeriodSelector() {
             type="button"
             role="tab"
             aria-selected={current === kind}
+            title={periodLabel(kind, lens)}
             onClick={() => setPeriod(kind)}
             className={cn(
               "rounded px-2.5 py-1 font-mono text-xs transition-colors",
@@ -42,10 +59,13 @@ export function PeriodSelector() {
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            {periodLabel(kind)}
+            {periodLabel(kind, lens)}
           </button>
         ))}
       </div>
+      {hint ? (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      ) : null}
     </div>
   );
 }

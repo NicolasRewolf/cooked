@@ -15,7 +15,7 @@ type Props = { searchParams: Promise<{ period?: string }> };
 
 export default async function QueriesList({ searchParams }: Props) {
   const period = parsePeriod(await searchParams);
-  const label = periodLabel(period);
+  const label = periodLabel(period, "gsc");
   const { health, banner } = await loadGscContext(period);
 
   const [queries, opportunities] = await Promise.all([

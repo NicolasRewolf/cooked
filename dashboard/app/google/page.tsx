@@ -19,8 +19,8 @@ type Props = { searchParams: Promise<{ period?: string }> };
 
 export default async function GooglePage({ searchParams }: Props) {
   const period = parsePeriod(await searchParams);
-  const label = periodLabel(period);
-  const prevLabel = prevPeriodCompareLabel(period);
+  const label = periodLabel(period, "gsc");
+  const prevLabel = prevPeriodCompareLabel(period, "gsc");
   const { kpis, health, banner } = await loadGscContext(period);
   const topQueries = await gscTopQueriesGlobal(period, 10);
 
