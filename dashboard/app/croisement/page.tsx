@@ -18,7 +18,6 @@ import {
   hrefWithPeriod,
   parsePeriod,
   periodLabel,
-  periodSubtitle,
   type PeriodKind,
 } from "@/lib/period";
 import { formatInt } from "@/lib/format";
@@ -53,19 +52,15 @@ export default async function CroisementPage({ searchParams }: Props) {
     .slice(0, 5);
 
   return (
-    <ZoneDashboardChrome {...banner}>
-      <main className="mx-auto w-full max-w-6xl px-6 py-10">
-        <header className="mb-8 flex items-end justify-between">
-          <div>
-            <h1 className="font-heading text-2xl font-medium tracking-tight">
-              Croisement — {label}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {periodSubtitle(period, "cross")}
-            </p>
-          </div>
+    <ZoneDashboardChrome
+      {...banner}
+      zoneTitle="Croisement Cooked × Google"
+      zoneSubtitle="Même fenêtre calendaire pour les deux sources — sans extrapolation sur les derniers jours."
+    >
+      <main className="mx-auto w-full max-w-6xl px-6 py-8">
+        <div className="mb-6 flex justify-end">
           <StatusPill status={health.status} />
-        </header>
+        </div>
 
         <SitePulseCard pulse={pulse} />
 

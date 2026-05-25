@@ -50,24 +50,25 @@ export default async function PageDetail({ params, searchParams }: Props) {
   const pulse = pulseRows.find((r) => r.path === perf.path) ?? null;
 
   return (
-    <ZoneDashboardChrome {...banner}>
-      <main className="mx-auto w-full max-w-6xl px-6 py-10">
+    <ZoneDashboardChrome
+      {...banner}
+      zoneTitle="Croisement Cooked × Google"
+      zoneSubtitle={`Fiche page · ${label}`}
+    >
+      <main className="mx-auto w-full max-w-6xl px-6 py-8">
         <Link
           href={hrefWithPeriod("/croisement", period)}
           className="mb-6 inline-block font-mono text-xs text-muted-foreground hover:text-foreground"
         >
-          ← Pages
+          ← Toutes les pages
         </Link>
 
         <div className="flex flex-wrap items-center gap-3">
           <CategoryBadge path={perf.path} />
-          <h1 className="break-words font-mono text-xl tracking-tight text-foreground">
+          <p className="break-words font-mono text-lg tracking-tight text-foreground">
             {perf.path}
-          </h1>
+          </p>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Fiche cross-source — {label}.
-        </p>
 
         <PageTrendPanel
           pulse={pulse}

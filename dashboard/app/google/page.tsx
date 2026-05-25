@@ -8,7 +8,6 @@ import {
   hrefWithPeriod,
   parsePeriod,
   periodLabel,
-  periodSubtitle,
   prevPeriodCompareLabel,
 } from "@/lib/period";
 import { formatInt, formatNumber } from "@/lib/format";
@@ -26,19 +25,15 @@ export default async function GooglePage({ searchParams }: Props) {
   const topQueries = await gscTopQueriesGlobal(period, 10);
 
   return (
-    <ZoneDashboardChrome {...banner}>
-      <main className="mx-auto w-full max-w-6xl px-6 py-10">
-        <header className="mb-8 flex items-end justify-between">
-          <div>
-            <h1 className="font-heading text-2xl font-medium tracking-tight">
-              Google Search Console
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {periodSubtitle(period, "gsc")}
-            </p>
-          </div>
+    <ZoneDashboardChrome
+      {...banner}
+      zoneTitle="Google Search Console"
+      zoneSubtitle="Données Google consolidées (retard habituel ~3–4 jours)."
+    >
+      <main className="mx-auto w-full max-w-6xl px-6 py-8">
+        <div className="mb-6 flex justify-end">
           <StatusPill status={health.status} />
-        </header>
+        </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <KpiCard

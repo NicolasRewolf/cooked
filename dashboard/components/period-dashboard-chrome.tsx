@@ -11,6 +11,7 @@ type Props = {
 export function PeriodDashboardChrome({ kpis, health, children }: Props) {
   return (
     <ZoneDashboardChrome
+      zoneTitle="Activité du site"
       lens="live"
       periodStart={kpis.period_n_start}
       periodEnd={kpis.period_n_end}

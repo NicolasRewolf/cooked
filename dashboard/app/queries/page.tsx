@@ -6,7 +6,7 @@ import {
   gscXDfsOpportunities,
 } from "@/lib/cooked";
 import { loadGscContext } from "@/lib/period-context";
-import { parsePeriod, periodLabel, periodSubtitle } from "@/lib/period";
+import { parsePeriod, periodLabel } from "@/lib/period";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -24,18 +24,12 @@ export default async function QueriesList({ searchParams }: Props) {
   ]);
 
   return (
-    <ZoneDashboardChrome {...banner}>
-      <main className="mx-auto w-full max-w-6xl space-y-8 px-6 py-10">
-        <header>
-          <h1 className="font-heading text-2xl font-medium tracking-tight">
-            Requêtes Google — {label}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {periodSubtitle(period, "gsc")} Top {queries.length} requêtes avec page
-            cible et enrichissement DataForSEO (volumes France).
-          </p>
-        </header>
-
+    <ZoneDashboardChrome
+      {...banner}
+      zoneTitle="Google Search Console"
+      zoneSubtitle={`Requêtes — ${label}. Top ${queries.length} requêtes avec page cible et volumes DataForSEO.`}
+    >
+      <main className="mx-auto w-full max-w-6xl space-y-8 px-6 py-8">
         <SeoOpportunities rows={opportunities} periodLabel={label} />
 
         <QueriesTable rows={queries} period={period} />

@@ -7,7 +7,6 @@ import { loadCookedContext } from "@/lib/period-context";
 import {
   hrefWithPeriod,
   parsePeriod,
-  periodSubtitle,
   prevPeriodCompareLabel,
 } from "@/lib/period";
 import { formatInt } from "@/lib/format";
@@ -24,19 +23,15 @@ export default async function ActivitePage({ searchParams }: Props) {
   const pages = await cookedPagesSnapshot(period, 15);
 
   return (
-    <ZoneDashboardChrome {...banner}>
-      <main className="mx-auto w-full max-w-6xl px-6 py-10">
-        <header className="mb-8 flex items-end justify-between">
-          <div>
-            <h1 className="font-heading text-2xl font-medium tracking-tight">
-              Activité site
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {periodSubtitle(period, "live")}
-            </p>
-          </div>
+    <ZoneDashboardChrome
+      {...banner}
+      zoneTitle="Activité du site"
+      zoneSubtitle="Comportement sur le site (Cooked), à jour — sans mélange Google."
+    >
+      <main className="mx-auto w-full max-w-6xl px-6 py-8">
+        <div className="mb-6 flex justify-end">
           <StatusPill status={health.status} />
-        </header>
+        </div>
 
         <div className="mb-6">
           <KpiCard
