@@ -19,16 +19,17 @@
 -- gsc_path_daily — PK (day, path)
 -- ============================================================
 
+-- Composites path-first AVANT drop des index path seuls (greenfield-safe).
+CREATE INDEX IF NOT EXISTS gsc_path_daily_path_day_idx
+  ON public.gsc_path_daily (path, day DESC);
+
 -- day DESC seul : redondant, PK commence par day → range scan day OK
 DROP INDEX IF EXISTS public.gsc_path_daily_day_idx;
 
--- path seul : redondant, gsc_path_daily_path_day_idx (path, day DESC)
--- couvre tous les lookups sur path seul (leftmost prefix)
+-- path seul : redondant une fois path_day_idx en place (leftmost prefix)
 DROP INDEX IF EXISTS public.gsc_path_daily_path_idx;
 
--- Conservé : gsc_path_daily_path_day_idx (path, day DESC)
---   Utilisé par gsc_page_performance, gsc_page_daily_series :
---   WHERE path = $1 AND day >= ...
+-- gsc_path_daily_path_day_idx : gsc_page_performance, gsc_page_daily_series
 
 -- ============================================================
 -- gsc_query_daily — PK (day, query)
@@ -45,16 +46,16 @@ DROP INDEX IF EXISTS public.gsc_query_daily_day_idx;
 -- gsc_query_page_daily — PK (day, path, query)
 -- ============================================================
 
+CREATE INDEX IF NOT EXISTS gsc_query_page_daily_path_day_idx
+  ON public.gsc_query_page_daily (path, day DESC);
+
 -- day DESC seul : redondant, PK commence par day (247 MB indexes !)
 DROP INDEX IF EXISTS public.gsc_query_page_daily_day_idx;
 
--- path seul : redondant, gsc_query_page_daily_path_day_idx (path, day DESC)
--- couvre tous les lookups sur path seul
+-- path seul : redondant une fois path_day_idx en place
 DROP INDEX IF EXISTS public.gsc_query_page_daily_path_idx;
 
--- Conservé : gsc_query_page_daily_path_day_idx (path, day DESC)
---   Utilisé par gsc_page_daily_series, gsc_page_performance :
---   WHERE path = $1 AND day >= ...
+-- gsc_query_page_daily_path_day_idx : gsc_page_daily_series, gsc_top_queries_for_path
 
 -- ============================================================
 -- dfs_keyword_volume — PK (keyword, location_code)

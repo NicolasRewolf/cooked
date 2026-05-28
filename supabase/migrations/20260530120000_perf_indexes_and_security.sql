@@ -23,15 +23,11 @@ DROP INDEX IF EXISTS public.gsc_query_page_daily_query_idx;
 
 
 -- ── 2. Index composites (path, day DESC) ──────────────────────────────────────
--- Pattern dominant des RPCs cross-source : WHERE path = X AND day BETWEEN a AND b
--- L'index existant path_idx trouve les lignes par path mais laisse Postgres
--- filtrer day en heap scan. Le composite élimine ce second passage.
-
--- gsc_query_page_daily (1M lignes) — gsc_top_queries_for_path, pages_pulse
+-- Créés dans 20260525160000_drop_redundant_indexes.sql (avant DROP path_idx).
+-- IF NOT EXISTS ici = no-op si déjà appliqué via 251600 ; rattrape les envs
+-- où 301200 a été appliqué avant correction de l'ordre 251600.
 CREATE INDEX IF NOT EXISTS gsc_query_page_daily_path_day_idx
   ON public.gsc_query_page_daily (path, day DESC);
-
--- gsc_path_daily (122k lignes) — gsc_page_performance, gsc_page_daily_series
 CREATE INDEX IF NOT EXISTS gsc_path_daily_path_day_idx
   ON public.gsc_path_daily (path, day DESC);
 
@@ -52,3 +48,9 @@ AS $function$
   END
   FROM (SELECT normalize(COALESCE(p, ''), NFC) AS n) AS s;
 $function$;
+
+
+-- ── 4. Stats planner après changements d'index ─────────────────────────────────
+ANALYZE public.gsc_path_daily;
+ANALYZE public.gsc_query_daily;
+ANALYZE public.gsc_query_page_daily;

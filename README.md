@@ -175,31 +175,34 @@ The full SQL is in `supabase/views.sql`. Contract signatures are stable since Sp
 
 Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Claude. Toutes `service_role` only.
 
+**Périodes** : `period_kind` = `today` | `week` | `month` | `rolling_28` | `rolling_90`.  
+**Lens** (`cooked_period_bounds`) : `live` (Cooked, calendrier Paris) | `gsc` | `cross` (fin alignée sur dernier jour GSC ingéré).
+
 | RPC | Rôle |
 |---|---|
-| `site_kpis_compare(period_days)` | KPIs site N vs N-1 (sessions, phone, form, **macro** contacts) |
-| `pages_overview_unified(max_rows)` | Univers ~490 paths (snapshot ∪ GSC 90j), tri sessions |
-| `gsc_page_performance(target_path)` | Fiche page : GSC + Cooked + CWV + device |
-| `gsc_top_queries_for_path(path, days, max)` | Top requêtes Google sur une landing |
-| `gsc_pages_overview(max_rows)` | Vue SEO pure, tri clics GSC (v3 : contacts = phone + form) |
-| `gsc_top_queries_global(days, max)` | Top requêtes site + page cible (`/queries`) — v2 enrichi `volume_fr` / `cpc` / `click_yield_pct` via DataForSEO |
-| `gsc_x_dfs_opportunities(min_vol, pos_min, pos_max, days, max)` | Requêtes pos 5–15 avec volume FR ≥ 100 → lost potential (clics manqués si pos 1) |
-| `dfs_keywords_to_sync(limit_n)` | Top N keywords = union clics GSC **28j ∪ 90j** (consommé par `scripts/dfs_sync.py`) |
-| `site_pulse` / `pages_pulse` | Grille 2×2 GSC 28v28 × Cooked 7v7 (quadrants) |
-| `site_seo_funnel(period_days)` | Impressions → clics → sessions Google → contacts macro |
-| `gsc_page_daily_series` / `cooked_page_daily_series` | Sparklines fiche page |
+| `gsc_last_data_day()` | Dernier jour consolidé GSC + lag en jours |
+| `cooked_period_bounds(period_kind, data_lens)` | Bornes `n_start` / `n_end` selon zone (live / gsc / cross) |
+| `site_kpis_compare(period_kind)` | KPIs Cooked N vs N-1 (lens **live**) |
+| `site_gsc_kpis_compare(period_kind)` | KPIs GSC N vs N-1 (lens **gsc**) |
+| `pages_overview_unified(period_kind, max_rows)` | Univers ~490 paths, tri sessions |
+| `gsc_page_performance(target_path, period_kind)` | Fiche page : GSC + Cooked + CWV + device |
+| `gsc_top_queries_for_path(path, period_kind, max)` | Top requêtes Google sur une landing |
+| `gsc_pages_overview(period_kind, max_rows)` | Top pages SEO (tri clics) ; contacts macro = phone + form |
+| `gsc_top_queries_global(period_kind, max)` | Top requêtes site + page cible + `volume_fr` / `cpc` / `click_yield_pct` (DataForSEO) |
+| `gsc_x_dfs_opportunities(min_vol, pos_min, pos_max, period_kind, max)` | Quick wins SEO (pos 5–15, volume FR ≥ 100) |
+| `dfs_keywords_to_sync(limit_n)` | Top N keywords = union clics GSC **28j ∪ 90j** (`scripts/dfs_sync.py`) |
+| `site_pulse(period_kind, …)` / `pages_pulse(period_kind, …)` | Quadrants GSC 28v28 × Cooked 7v7 |
+| `site_seo_funnel(period_kind)` | Impressions → clics → sessions Google → contacts macro |
+| `gsc_page_daily_series(path, days, end_date)` / `cooked_page_daily_series(…)` | Séries journalières par page |
 | `refresh_pipeline_health()` | Self-diag 5 axes (snapshot, cron, events, GSC, DataForSEO) |
 
 **Contacts (canonique)** : macro = `cta_phone_click` + `form_submit`. Micro intent RDV =
 `cta_booking_click` (`cooked_booking_intent_*`). Ne jamais additionner booking aux contacts.
 
-Index migrations clés : `20260522113000_gsc_cross_source_rpcs.sql`,
-`20260523140000_pages_overview_unified_v2_exhaustive.sql`,
-`20260524100000_contacts_macro_per_path.sql`,
-`20260524160000_pages_pulse.sql`, `20260524220000_pulse_helpers.sql`,
-`20260524260000_site_seo_funnel.sql`,
-`20260525100000_dfs_keyword_volume.sql`,
-`20260525120000_dfs_keywords_union_28d_90d.sql`.
+Index migrations clés : `20260526100000_cooked_period_bounds.sql`,
+`20260529120000_period_data_lens.sql`, `20260529120100_period_data_lens_rpcs.sql`,
+`20260525100000_dfs_keyword_volume.sql`, `20260525120000_dfs_keywords_union_28d_90d.sql`,
+`20260525160000_drop_redundant_indexes.sql`, `20260530120000_perf_indexes_and_security.sql`.
 
 ### DataForSEO weekly sync (Sprint 33+)
 

@@ -16,7 +16,7 @@
 -- effectivement immuable (la conversion ne dépend que de occurred_at).
 -- Postgres accepte AT TIME ZONE comme IMMUTABLE quand le tz est un literal.
 --
--- Bénéficiaires (RPCs filtrant sur Paris-date) :
+-- Bénéficiaires (RPCs filtrant sur Paris-date via events_human / events) :
 --   - macro_contacts_by_path (3 RPCs en dépendent)
 --   - site_seo_funnel
 --   - pogo_rates_for_period
@@ -31,4 +31,4 @@ CREATE INDEX IF NOT EXISTS idx_events_paris_date
   ((((occurred_at AT TIME ZONE 'Europe/Paris'))::date) DESC);
 
 COMMENT ON INDEX public.idx_events_paris_date IS
-  'Index fonctionnel pour les filtres (occurred_at AT TIME ZONE ''Europe/Paris'')::date utilisés par toutes les RPCs Cooked (règle CLAUDE.md timezone Paris).';
+  'Index fonctionnel Paris-date sur events (table brute). Les RPCs lisent events_human ; le planner peut pousser le prédicat sous la vue.';

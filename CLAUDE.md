@@ -198,9 +198,9 @@ RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
 - `gsc_top_queries_for_path(path, period_kind, max_rows)` — requêtes → landing (overload `days_back` conservé)
 - `site_macro_counts(start, end)` — contacts macro site-wide (phone + form filtré)
 - `gsc_pages_overview(max_rows)` — top pages SEO (tri clics) ; v3 contacts macro
-- `gsc_top_queries_global(days_back, max_rows)` — top requêtes site
+- `gsc_top_queries_global(period_kind, max_rows)` — top requêtes site (+ volume DFS)
 - `site_pulse` / `pages_pulse` — quadrants GSC 28v28 × Cooked 7v7 (`pulse_quadrant` helper)
-- `site_seo_funnel(period_days)` — funnel impressions → contacts
+- `site_seo_funnel(period_kind)` — funnel impressions → contacts
 - `gsc_page_daily_series` / `cooked_page_daily_series` — séries quotidiennes (sparklines)
 - `dfs_keywords_to_sync(limit_n)` — liste keywords à syncer (union GSC 28j ∪ 90j)
 - `gsc_x_dfs_opportunities(...)` — quick wins SEO (volume DFS + position 5–15)
