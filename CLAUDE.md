@@ -205,11 +205,19 @@ RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
 - `dfs_keywords_to_sync(limit_n)` — liste keywords à syncer (union GSC 28j ∪ 90j)
 - `gsc_x_dfs_opportunities(...)` — quick wins SEO (volume DFS + position 5–15)
 
-**DataForSEO (agent Cooked)** : pas d'appel API live depuis Cursor (pas de MCP
-DFS ici). Volumes = `dfs_keyword_volume` alimentée par `scripts/dfs_sync.py`
-(env `DFS_USERNAME` / `DFS_PASSWORD` ou GitHub Actions). Sanitize keywords
-avant envoi (`sanitize_for_dfs` dans `dfs_common.py`). Après changement RPC
-ou script : relancer `dfs_sync.py --limit 500`.
+**DataForSEO (agent Cooked)** : le MCP DataForSEO est connecté → lookups de
+volume **en live** via `mcp__dataforseo__kw_data_google_ads_search_volume`
+(location `France`, language `fr`). Pièges : max ~10 mots / 80 car. par keyword
+(sinon le batch ENTIER est rejeté, code 40501) ; réponse MCP plafonnée à ~10
+keywords → découper en lots de 8. La table `dfs_keyword_volume` reste la
+**source durable**, alimentée par `scripts/dfs_sync.py` (env `DFS_USERNAME` /
+`DFS_PASSWORD` / `SUPABASE_SECRET_KEY` — en GitHub Actions, **absents en local**
+donc script non lançable depuis Cursor). Sanitize avant envoi (`sanitize_for_dfs`
+dans `dfs_common.py`). Un lookup MCP live n'écrit PAS en base : pour persister,
+upsert dans `dfs_keyword_volume` (clé `keyword, location_code` ; mapping
+`competition = competition_index/100`, `competition_level = label`) ou laisser
+le `dfs_sync.py` hebdo rattraper. Après changement RPC/script : relancer
+`dfs_sync.py --limit 500`.
 
 **Contacts (taxonomie)** : `cooked_contacts_*` = `cta_phone_click` + `form_submit` uniquement.
 `cooked_booking_intent_*` = `cta_booking_click` (micro). Ne pas mélanger.
