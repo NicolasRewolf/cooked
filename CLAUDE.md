@@ -528,3 +528,27 @@ L'info catégorie n'est PAS dans la DB Cooked (`events`,
 **Avant de parler de "ressources" vs "affaires" dans une analyse :
 toujours vérifier la liste des slugs de la catégorie.** Ne JAMAIS
 présumer la catégorie d'un article à partir de son slug.
+
+---
+
+## Agent skills
+
+> Configuration consommée par les skills d'ingénierie (Matt Pocock :
+> `triage`, `to-issues`, `to-prd`, `tdd`, `diagnose`,
+> `improve-codebase-architecture`…). Détails dans `docs/agents/*.md`.
+
+### Issue tracker
+
+Issues & PRDs → **GitHub Issues** du repo (`github.com/NicolasRewolf/cooked`),
+via la CLI `gh`. Voir `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+5 rôles canoniques, vocabulaire **par défaut** (`needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`, `wontfix`). Voir
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+**Mono-contexte** : `CONTEXT.md` + `docs/adr/` à la racine (créés à la demande
+par `/grill-with-docs`). Voir `docs/agents/domain.md`.
