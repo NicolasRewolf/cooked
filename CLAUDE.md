@@ -371,6 +371,23 @@ Le visiteur a manifesté son intention mais n'est pas allé au bout.
   rendez-vous — table des matières" qui scrolle vers le formulaire de
   la même page (sticky bar mobile expertise, table des matières, etc.)
 
+⚠️ **Caveat `cta_anchor_click` (Sprint 35, 03/06/2026)** : avant le
+Sprint 35, le sticky-fallback du tracker comptait **tout** clic dans un
+conteneur sticky/fixed comme un anchor. Audit prod : **~90 % des
+`cta_anchor_click` (6 629 / 7 318) étaient du chrome UI** — bandeau
+Cookiebot (boutons + clics sur le corps du dialog), burger, liens de nav,
+et dumps de texte (`<script>` inline, méga-menu, indicatifs tél captés
+comme libellé). C'est corrigé côté tracker (sélecteur Cookiebot + cap de
+longueur ≥ 80 + règle structurelle nav) ET rétroactivement dans
+`events_human` (helper `cooked_is_chrome_anchor(props)`, migration
+`anchor_click_exclude_chrome`) : `events_human` est passé de 7 318 à 689
+`cta_anchor_click`. Donc : requêter `events_human` donne déjà des
+`cta_anchor_click` propres ; les chiffres anchor d'avant le 03/06/2026
+dans ce fichier (ex. le « 53 » du récap 06→15/05) sont **très gonflés** et
+ne sont plus reproductibles tels quels. Reste ~343 libellés de nav courts
+(Équipe, Affaires…) non filtrables rétroactivement par le libellé seul.
+Pour auditer le chrome retiré : `events` brut + `cooked_is_chrome_anchor`.
+
 À utiliser pour mesurer l'efficacité des CTAs et la qualité du funnel
 intermédiaire, **pas** pour annoncer un taux de conversion business.
 
