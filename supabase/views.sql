@@ -2080,9 +2080,13 @@ grant  execute on function public.url_decode(text) to service_role;
 -- 4. À investiguer (Sprint 30) : bots Adwords/Display WebView Android
 --    qui passent à travers events_human (4 sessions identifiées sur
 --    2026-05-19 → 21, ~88 anchor clicks sur /). Pattern : UA contient
---    "wv)" + country='IE' + referrer ad-tech (safeframe.googlesyndication,
---    doubleclick.net, atlas.taboolanews) + >5 anchor_clicks/session.
+--    "wv)" + referrer ad-tech (safeframe.googlesyndication, doubleclick.net,
+--    atlas.taboolanews) + >5 anchor_clicks/session.
 --    À ajouter dans refresh_noise_sessions().
+--    NB (Sprint 36) : le critère « country='IE' » noté initialement ici était
+--    un FAUX signal — country reflétait le datacenter (72 % de TOUT le trafic
+--    = IE), pas le visiteur. Capture country retirée de l'Edge. Se baser sur
+--    UA "wv)" + referrer ad-tech + volume d'anchors.
 
 
 -- ============================================================
