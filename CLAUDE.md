@@ -49,7 +49,9 @@ plus bas) — elles servent aux requêtes ad-hoc, pas à une UI.
 
 Capture côté browser : pageview / scroll_depth / engagement_tick /
 web_vitals / click_outbound / page_exit / cta_phone_click /
-cta_booking_click / cta_anchor_click (Sprint 19). Plus `form_submit`
+cta_booking_click / cta_anchor_click (Sprint 19) / click_internal
+(Sprint 36 — nav interne : quel élément mène à quelle page, placement +
+target_path). Plus `form_submit`
 inséré directement par la deuxième Edge Function `form-webhook` qui
 reçoit les webhooks Wix Automations (Sprint 18). Bot filtering via la
 vue `events_human` (Sprint 17). Sert de remplaçant GA4 pour fournir
