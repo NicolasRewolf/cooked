@@ -1,6 +1,13 @@
 <!--
   COOKED — first-party SEO tracker (cookieless, RGPD-exempt)
-  Version: Sprint 35 (2026-06-03) — cta_anchor_click stops counting UI
+  Version: Sprint 36 (2026-06-03) — new click_internal event. Every click on
+           an internal link to ANOTHER page (other than the booking page) is
+           now captured with placement (header/footer/sticky/body) + target
+           path, so we can attribute which UI element drives each page-to-page
+           hop toward a conversion. Page-to-page navigation itself was already
+           covered by the pageview sequence; this adds the missing element
+           attribution. Mirrors the existing cta_booking_click pattern.
+           Sprint 35 (2026-06-03) — cta_anchor_click stops counting UI
            chrome. The sticky-fallback (§4c) was emitting a micro-conversion
            for every Cookiebot consent-banner tap (#CybotCookiebotDialog:
            "Tout autoriser" / "Refuser" / "Personnaliser" / "Autoriser la
@@ -26,7 +33,8 @@
 
   Events emitted (see Edge Function ALLOWED_EVENTS for the canonical list):
     pageview, scroll_depth, engagement_tick, web_vitals, page_exit,
-    cta_phone_click, cta_booking_click, cta_anchor_click, click_outbound.
+    cta_phone_click, cta_booking_click, cta_anchor_click, click_internal,
+    click_outbound.
 
   `form_submit` is server-side only and never flows through this tracker;
   it's inserted by the `form-webhook` Edge Function on every Wix Forms
@@ -49,7 +57,7 @@
   // version label never appears after a Wix republish, the paste
   // failed or was truncated. Bump this string on every meaningful
   // tracker change.
-  var COOKED_VERSION       = 'sprint35';
+  var COOKED_VERSION       = 'sprint36';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -382,6 +390,8 @@
   //    tel:                       → cta_phone_click
   //    href="#xxx" / same-page#x  → cta_anchor_click (sticky index, FAQ, top)
   //    /honoraires-rendez-vous    → cta_booking_click
+  //    other internal page        → click_internal (Sprint 36 — nav element
+  //                                 attribution: placement + target_path)
   //    cross-origin               → click_outbound
   // ==============================================================
   var BOOKING_TARGET_PATHS = ['/honoraires-rendez-vous'];
@@ -563,12 +573,25 @@
             return;
           }
         }
+        // Cross-page internal navigation. /honoraires-rendez-vous is the
+        // booking funnel (its own micro-conversion); every OTHER internal
+        // link is captured as click_internal (Sprint 36) so we know which
+        // UI element drove each page-to-page hop toward a conversion —
+        // disambiguated by `placement` (header / footer / sticky / body).
+        // Self-links (same path, no #hash/data-anchor) are skipped: the
+        // pageview already records arrival, there's no navigation.
         if (isBookingTarget(u.pathname)) {
-          var place = placementOf(el);
           send('cta_booking_click', {
             anchor:      anchor,
-            placement:   place,
+            placement:   placementOf(el),
             target_path: normalizePath(u.pathname),
+            href:        el.href
+          });
+        } else if (normalizePath(u.pathname) !== normalizePath(location.pathname)) {
+          send('click_internal', {
+            target_path: normalizePath(u.pathname),
+            anchor:      anchor,
+            placement:   placementOf(el),
             href:        el.href
           });
         }

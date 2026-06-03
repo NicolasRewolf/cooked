@@ -79,6 +79,13 @@ const ALLOWED_EVENTS = new Set([
                        // (header / footer / sticky / body), source
                        // (click | hashchange | sticky-fallback),
                        // data_anchor (Wix-internal ID, optional).
+  // Phase 4 — internal navigation attribution (Sprint 36):
+  "click_internal",    // click on an internal <a> to ANOTHER page (not the
+                       // booking page → that stays cta_booking_click). Props:
+                       // target_path, href, anchor (label), placement
+                       // (header / footer / sticky / body). Adds the "which
+                       // UI element drove this hop" attribution that the
+                       // pageview sequence alone can't give.
 ]);
 
 function dailySalt(): string {
