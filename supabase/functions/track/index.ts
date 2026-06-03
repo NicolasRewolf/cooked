@@ -143,15 +143,6 @@ function clientIp(req: Request): string {
   );
 }
 
-function clientCountry(req: Request): string | null {
-  return (
-    req.headers.get("cf-ipcountry") ??
-    req.headers.get("x-vercel-ip-country") ??
-    req.headers.get("x-country") ??
-    null
-  );
-}
-
 function s(v: unknown, max = 500): string | null {
   if (v == null) return null;
   const str = String(v);
@@ -255,7 +246,6 @@ Deno.serve(async (req) => {
 
   const ip = clientIp(req);
   const ua = req.headers.get("user-agent") ?? "";
-  const country = clientCountry(req);
   // Sprint 22 — prefer browser-supplied anonymous_id (stable localStorage UUID)
   // over the server-side IP hash. The IP hash was unreliable because Wix Velo
   // routes each request through a different serverless worker (different outbound
@@ -314,7 +304,6 @@ Deno.serve(async (req) => {
       browser,
       viewport_width: n(e.viewport_width),
       viewport_height: n(e.viewport_height),
-      country,
       props: plainObject(e.props),                  // Sprint 30 — arrays rejected
       occurred_at: iso(e.occurred_at) ?? now,       // Sprint 30 — strict ISO
       received_at: now,

@@ -41,7 +41,11 @@ create table if not exists public.events (
   viewport_height int,
 
   -- Geo
-  country text,                      -- ISO-3166 alpha-2 (from CDN headers if available)
+  country text,                      -- DEPRECATED (Sprint 36) : le header CDN renvoyait le
+                                     -- datacenter (IE/US), jamais le visiteur. Capture retirée
+                                     -- de l'Edge `track` → NULL pour tout nouvel event. Colonne
+                                     -- conservée (events_human est `select e.*` → drop = cascade
+                                     -- sur ~30 RPCs). Ne pas requêter. Géo fiable = via GSC.
 
   -- Custom payload (per-event extras: scroll percent, web-vital value, etc.)
   props jsonb not null default '{}'::jsonb,
