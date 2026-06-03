@@ -353,8 +353,70 @@ revoke execute on function public.refresh_noise_sessions() from authenticated;
 grant  execute on function public.refresh_noise_sessions() to service_role;
 
 
--- events_human (Sprint 24 — serial pipeline):
--- Stage 2 of the serial filter: events_no_bots minus noise_sessions.
+-- cooked_is_chrome_anchor (Sprint 35 — 20260603120000):
+-- true si un cta_anchor_click est en réalité du chrome UI, pas un vrai
+-- anchor in-page. Le tracker §4c "sticky-fallback" comptait TOUT clic
+-- sticky/fixed comme un anchor. Audit prod (03/06/2026) : ~90 % des
+-- cta_anchor_click étaient du chrome (consent Cookiebot boutons + corps de
+-- dialog, burger, dumps de texte de conteneur : <script> inline, méga-menu,
+-- liste d'indicatifs téléphoniques). Ce helper en récupère 90,6 %
+-- rétroactivement, SANS jeter un seul vrai anchor (vérifié). Miroir de la
+-- logique tracker : denylist CHROME_LABELS + cap de longueur ≥ 80. Le résidu
+-- (~343 libellés de nav courts type "Équipe"/"Affaires") n'est PAS filtré
+-- ici : par le seul libellé on ne distingue pas un lien de nav d'une section
+-- in-page de même nom (homepage) ; le tracker le sépare structurellement
+-- (pas de #hash/data-anchor). Embarquée dans events_human (security_invoker)
+-- → grant public.
+create or replace function public.cooked_is_chrome_anchor(props jsonb)
+returns boolean
+language sql
+immutable
+parallel safe
+set search_path = public, pg_catalog
+as $$
+  select
+    -- (a) dump de texte : <script> inline, méga-menu, corps du dialog
+    --     consent, liste d'indicatifs… Les vrais libellés d'anchor sont
+    --     courts (max observé en prod : 78). Miroir du cap §4c (≥ 80).
+    char_length(coalesce(props->>'anchor', '')) >= 80
+    -- (b) boutons consent + burger + quelques libellés chrome courts
+    --     (miroir de var CHROME_LABELS)
+    or lower(trim(coalesce(props->>'anchor', ''))) = any (array[
+      'tout autoriser', 'tout refuser', 'refuser',
+      'autoriser la sélection', 'autoriser la selection',
+      'personnaliser', 'tout accepter', 'accepter', 'continuer sans accepter',
+      'enregistrer', 'afficher les détails', 'menu', 'menu mobile',
+      'menu mobile - burger', 'fermer', 'close', 'recherche sur le site'
+    ])
+    or lower(coalesce(props->>'anchor', '')) like '%burger%'
+    -- (c) corps du dialog Cookiebot < 80 car. Phrases SPÉCIFIQUES cookies
+    --     uniquement — PAS le bare 'consentement' (site de droit pénal où
+    --     le consentement est un vrai sujet d'article). Forward, le sélecteur
+    --     #CybotCookiebotDialog les attrape ; ici on ne peut que matcher la
+    --     phrase.
+    or lower(coalesce(props->>'anchor', '')) like '%sélection du consentement%'
+    or lower(coalesce(props->>'anchor', '')) like '%modifiez consentement%'
+    or lower(coalesce(props->>'anchor', '')) like '%utilise des cookies%'
+    or lower(coalesce(props->>'anchor', '')) like '%vendre ou partager mes information%'
+    or lower(coalesce(props->>'anchor', '')) like '%iabv2settings%'
+    or lower(coalesce(props->>'anchor', '')) like '%paramètres des cookies%'
+    -- (d) miroir slugifié (target_section)
+    or lower(trim(coalesce(props->>'target_section', ''))) = any (array[
+      'tout-autoriser', 'tout-refuser', 'refuser',
+      'autoriser-la-selection', 'personnaliser', 'tout-accepter',
+      'accepter', 'continuer-sans-accepter', 'menu', 'menu-mobile-burger'
+    ]);
+$$;
+
+grant execute on function public.cooked_is_chrome_anchor(jsonb) to public;
+
+
+-- events_human (Sprint 24 — serial pipeline ; Sprint 35 — chrome anchors):
+-- Stage 2 of the serial filter: events_no_bots minus noise_sessions, minus
+-- cta_anchor_click rows that are UI chrome (consent banner / burger) wrongly
+-- recorded as anchors by the pre-Sprint-35 sticky-fallback. Mislabeled junk,
+-- so excluded from the canonical clean base (unlike form_submit_counts_as_macro
+-- which filters at the counting layer because those events are correctly typed).
 -- security_invoker = true: enforce caller's RLS, not creator's (Postgres 15+).
 create or replace view public.events_human
 with (security_invoker = true) as
@@ -363,6 +425,10 @@ from public.events_no_bots e
 where not exists (
   select 1 from public.noise_sessions n
   where n.session_id = e.session_id
+)
+and not (
+  e.name = 'cta_anchor_click'
+  and public.cooked_is_chrome_anchor(e.props)
 );
 
 

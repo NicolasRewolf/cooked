@@ -1,6 +1,16 @@
 <!--
   COOKED — first-party SEO tracker (cookieless, RGPD-exempt)
-  Version: Sprint 30 (2026-05-21) — bfcache, SPA nav, placement & debounce fixes
+  Version: Sprint 35 (2026-06-03) — cta_anchor_click stops counting UI
+           chrome. The sticky-fallback (§4c) was emitting a micro-conversion
+           for every Cookiebot consent-banner tap (#CybotCookiebotDialog:
+           "Tout autoriser" / "Refuser" / "Personnaliser" / "Autoriser la
+           sélection"), the mobile burger toggle, and main-nav links — ~61 %
+           of all cta_anchor_click site-wide were consent chrome. Now filtered
+           via a shared isAnchorNoise() guard (consent selector + label
+           denylist) plus a structural rule: a real in-page anchor always
+           carries a #hash or data-anchor; plain same-origin nav links never
+           do, so they no longer fall through to the fallback.
+           Sprint 30 (2026-05-21) — bfcache, SPA nav, placement & debounce fixes
            Multi-agent audit landed: bfcache page_exit loss, exitSent
            not reset on pushState, [class*="FOOTER"] over-classify body
            CTAs as footer, localStorage write per event (35× iOS Safari),
@@ -39,7 +49,7 @@
   // version label never appears after a Wix republish, the paste
   // failed or was truncated. Bump this string on every meaningful
   // tracker change.
-  var COOKED_VERSION       = 'sprint30';
+  var COOKED_VERSION       = 'sprint35';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -421,6 +431,58 @@
     return 'body';
   }
 
+  // ==============================================================
+  // 4a. Anchor-noise guard (Sprint 35) — keep UI chrome out of
+  //     cta_anchor_click.
+  //
+  // The sticky-fallback (§4c) treats *any* click inside a sticky/fixed
+  // container as an in-page anchor CTA. A prod audit (03/06/2026) found
+  // ~85-90 % of cta_anchor_click were chrome, in four families:
+  //   1. Cookiebot consent banner (#CybotCookiebotDialog, fixed) — buttons
+  //      ("Tout autoriser"/"Refuser"/"Personnaliser"/"Autoriser la
+  //      sélection") AND clicks on the dialog body text. ~75 % on its own.
+  //   2. Mobile menu / burger toggle ("Menu mobile - burger" / "Menu") — a
+  //      <button> with no <a href>, so only a label match catches it.
+  //   3. Main-nav links to other pages (Équipe, Mentions Légales, Accueil…)
+  //      — a real in-page anchor always carries a #hash or a data-anchor;
+  //      site nav never does (handled in §4c's link guard).
+  //   4. Long-text dumps: when a click bubbles to a container with no inner
+  //      button, label = its whole textContent — an inline <script>, a
+  //      mega-menu, a phone-prefix list, the consent dialog body… Real
+  //      labels are short (longest in prod: 78), so §4c drops labels ≥ 80.
+  // (1)+(2)+short chrome labels → isAnchorNoise(); (3) → §4c link guard;
+  // (4) → §4c length cap. The consent *selector* in isAnchorNoise catches
+  // family 1 wholesale (buttons + body) regardless of label. Shared so the
+  // primary handler (§4) and hashchange fallback (§4b) inherit (1)+(2).
+  // ==============================================================
+  var CHROME_LABELS = {
+    'tout autoriser': 1, 'tout refuser': 1, 'refuser': 1,
+    'autoriser la sélection': 1, 'autoriser la selection': 1,
+    'personnaliser': 1, 'tout accepter': 1, 'accepter': 1,
+    'continuer sans accepter': 1, 'enregistrer': 1, 'afficher les détails': 1,
+    'menu': 1, 'menu mobile': 1, 'menu mobile - burger': 1,
+    'fermer': 1, 'close': 1, 'recherche sur le site': 1
+  };
+  function isAnchorNoise(el, label) {
+    // Structural: the Cookiebot consent dialog / reopener widget. Its
+    // buttons sit in a position:fixed dialog, so the sticky-fallback was
+    // counting every consent tap as a micro-conversion. closest() walks
+    // up from the deepest click target, so an inner <span> still matches.
+    try {
+      if (el && el.closest && el.closest(
+        '#CybotCookiebotDialog,#CookiebotWidget,[id^="CybotCookiebot"],[class*="CybotCookiebot"]'
+      )) return true;
+    } catch (e) {}
+    // Label denylist — locale-stable insurance that survives a future
+    // consent-tool swap (which would break the selector above), and the
+    // only way to catch the burger toggle (no <a href>, so §4c's link
+    // guard can't see it). Exact match on the trimmed, lowercased label.
+    var lc = (label || '').toLowerCase().trim();
+    if (!lc) return false;
+    if (lc.indexOf('burger') !== -1) return true;
+    return CHROME_LABELS[lc] === 1;
+  }
+
   // Track the most-recently-clicked element so the hashchange fallback
   // (below) can pull a sensible `anchor` label from it. Wix Studio's
   // anchor-menu widget triggers scroll-to-section via JS (location.hash
@@ -454,6 +516,7 @@
     // Hash-only hrefs like "#section" are intercepted here BEFORE we try
     // to parse them as full URLs. We skip the pure "#" no-op case.
     if (rawHref.charAt(0) === '#' && rawHref.length > 1) {
+      if (isAnchorNoise(el, anchor)) return; // consent / menu chrome, not an anchor
       lastClickAnchorAt = Date.now();
       send('cta_anchor_click', {
         target_section: rawHref.slice(1).slice(0, 200),
@@ -488,6 +551,7 @@
             } else {
               section = dataAnchor.slice(0, 200);
             }
+            if (isAnchorNoise(el, anchor)) return; // consent / menu chrome, not an anchor
             lastClickAnchorAt = Date.now();
             send('cta_anchor_click', {
               target_section: section,
@@ -563,6 +627,14 @@
         try { u2 = new URL(aAncestor.href); } catch (e2) {}
         if (u2 && u2.hostname && u2.hostname !== location.hostname) return;
         if (isBookingTarget((u2 && u2.pathname) || '')) return;
+        // A plain same-origin link with no #hash and no data-anchor is
+        // site-nav chrome (Accueil, Équipe, Mentions Légales…), not an
+        // in-page anchor. The anchor-menu widget this fallback targets
+        // uses buttons (no <a>) or same-page #/data-anchor links, so a
+        // genuine anchor CTA always has one of those and is never dropped.
+        var da2 = (aAncestor.getAttribute('data-anchor') ||
+                   (aAncestor.dataset && aAncestor.dataset.anchor) || '');
+        if (u2 && !u2.hash && !da2) return;
       }
     } catch (e3) {}
 
@@ -594,6 +666,12 @@
       ''
     ).trim().slice(0, 100);
     if (!label) return;
+    // Sprint 35 — a label ≥ 80 chars is not a button/section name; it's the
+    // textContent of a container the click bubbled to (inline <script>,
+    // mega-menu dump, consent dialog body, phone-prefix list, Wix link
+    // panel). Real anchor labels are short (longest observed in prod: 78).
+    if (label.length >= 80) return;
+    if (isAnchorNoise(el, label)) return; // consent banner / burger / menu chrome
 
     var slug = slugify(label);
     if (!slug) return;
@@ -647,6 +725,7 @@
         placement = placementOf(lastClickedEl);
       } catch (e) {}
     }
+    if (isAnchorNoise(lastClickedEl, anchor)) return; // consent / menu chrome
     send('cta_anchor_click', {
       target_section: section,
       anchor:         anchor,
