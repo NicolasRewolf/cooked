@@ -429,6 +429,21 @@ where not exists (
 and not (
   e.name = 'cta_anchor_click'
   and public.cooked_is_chrome_anchor(e.props)
+)
+-- Sprint 37 — dédup double-embed : le snippet tracker était embarqué 2×
+-- dans le Custom Code Wix → clics dupliqués même seconde (phone +13,6 %).
+-- Le tracker sprint37 a un execution guard ; ici on nettoie le rétroactif.
+and not (
+  e.name in ('cta_phone_click','cta_booking_click','cta_anchor_click','click_internal','click_outbound')
+  and exists (
+    select 1 from public.events d
+    where d.session_id = e.session_id
+      and d.name = e.name
+      and d.path is not distinct from e.path
+      and date_trunc('second', d.occurred_at) = date_trunc('second', e.occurred_at)
+      and (d.props->>'anchor') is not distinct from (e.props->>'anchor')
+      and d.id < e.id
+  )
 );
 
 
@@ -941,101 +956,6 @@ grant  execute on function public.refresh_seo_url_snapshot() to service_role;
 
 
 -- ---------- 4. Companion views (28d) -----------------------------
-
-create or replace view public.seo_traffic_sources_28d
-with (security_invoker = true) as
-  with we as (
-    select * from public.events_human
-    where name = 'pageview'
-      and occurred_at >= now() - interval '28 days'
-  ),
-  ss as (
-    select
-      session_id,
-      max(referrer_hostname) as referrer_hostname,
-      max(utm_source)        as utm_source,
-      max(utm_medium)        as utm_medium,
-      min(occurred_at)       as session_start,
-      max(occurred_at)       as session_end,
-      count(*)               as pages_viewed
-    from we
-    group by session_id
-  )
-  select
-    coalesce(utm_source, referrer_hostname, 'direct') as source,
-    coalesce(utm_medium, case when referrer_hostname is null then 'none' else 'referral' end) as medium,
-    count(*)::bigint as sessions,
-    round(avg(pages_viewed)::numeric, 2) as avg_pages_per_session,
-    round(avg(extract(epoch from (session_end - session_start)))::numeric, 1) as avg_session_seconds,
-    round((100.0 * count(*) filter (
-      where pages_viewed = 1
-        and extract(epoch from (session_end - session_start)) < 10
-    ) / nullif(count(*), 0))::numeric, 2) as bounce_rate
-  from ss
-  group by 1, 2
-  order by sessions desc;
-
-
-create or replace view public.seo_landing_pages_28d
-with (security_invoker = true) as
-  with we as (
-    select * from public.events_human
-    where occurred_at >= now() - interval '28 days'
-  ),
-  ss as (
-    select
-      session_id,
-      min(occurred_at) as session_start,
-      max(occurred_at) as session_end,
-      count(*) filter (where name = 'pageview') as pages_viewed,
-      (array_agg(path order by occurred_at)
-        filter (where name = 'pageview'))[1] as entry_path,
-      max(referrer_hostname) as referrer_hostname
-    from we
-    group by session_id
-  )
-  select
-    entry_path as path,
-    count(*)::bigint as landings,
-    count(distinct referrer_hostname)::bigint as distinct_referrers,
-    round((100.0 * count(*) filter (
-      where pages_viewed = 1
-        and extract(epoch from (session_end - session_start)) < 10
-    ) / nullif(count(*), 0))::numeric, 2) as bounce_rate,
-    round(avg(pages_viewed)::numeric, 2) as avg_pages_per_session,
-    round(avg(extract(epoch from (session_end - session_start)))::numeric, 1) as avg_session_seconds
-  from ss
-  where entry_path is not null
-  group by entry_path
-  order by landings desc;
-
-
-create or replace view public.seo_daily_summary
-with (security_invoker = true) as
-  with ss as (
-    select
-      session_id,
-      date_trunc('day', min(occurred_at))::date as day,
-      min(occurred_at) as session_start,
-      max(occurred_at) as session_end,
-      count(*) filter (where name = 'pageview') as pages_viewed
-    from public.events_human
-    group by session_id
-  )
-  select
-    day,
-    count(*)::bigint                                                    as sessions,
-    sum(pages_viewed)::bigint                                           as pageviews,
-    round(avg(pages_viewed)::numeric, 2)                                as avg_pages_per_session,
-    round(avg(extract(epoch from (session_end - session_start)))::numeric, 1) as avg_session_seconds,
-    round((100.0 * count(*) filter (
-      where pages_viewed = 1
-        and extract(epoch from (session_end - session_start)) < 10
-    ) / nullif(count(*), 0))::numeric, 2)                               as bounce_rate
-  from ss
-  group by day
-  order by day desc;
-
 
 -- ---------- 5. Cross-project RPC consumed by seo audit tool ------
 -- Combines seo_pages_overview + CWV p75 + outbound clicks + per-session
@@ -1600,29 +1520,11 @@ end $$;
 --
 -- Inherits seo_url_snapshot's RLS deny-all: only service_role can SELECT.
 
-create or replace view public.seo_expertise_pages
-with (security_invoker = true) as
-select
-  case
-    when path ~ '^/defense-penale'                       then 'defense_penale'
-    when path ~ '^/indemnisation-des-victimes'           then 'indemnisation_victimes'
-    when path ~ '^/droit-des-contrats-et-des-personnes'  then 'droit_contrats_personnes'
-  end as expertise_area,
-  case
-    when path ~ '^/[^/]+$' then 'hub'
-    else 'leaf'
-  end as expertise_level,
-  s.*
-from public.seo_url_snapshot s
-where
-  path ~ '^/(defense-penale|indemnisation-des-victimes|droit-des-contrats-et-des-personnes)(/|$)'
-  and right(path, 1) <> ''''
-;
+-- seo_expertise_pages / seo_traffic_sources_28d / seo_landing_pages_28d /
+-- seo_daily_summary : retirées du fichier au Sprint 37 — ces vues n'existaient
+-- PLUS en prod (supprimées sans nettoyer ce fichier). views.sql doit refléter
+-- la prod : il est documenté comme rejouable.
 
-comment on view public.seo_expertise_pages is
-  'Filtered view of seo_url_snapshot restricted to the 3 practice-area URL trees + tagged with expertise_area / expertise_level. Excludes malformed paths ending with apostrophe.';
-
-grant select on public.seo_expertise_pages to service_role;
 
 -- ---------- 10. Pogo-stick rates per page (NavBoost signal) ----
 --

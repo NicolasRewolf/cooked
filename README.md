@@ -84,7 +84,7 @@ The browser-side `tracker.html` emits these events. Anything else is rejected by
 |---|---|---|
 | `pageview` | Initial load + every SPA navigation | `path`, `title`, `referrer`, `utm_*`, `viewport_*` |
 | `scroll_depth` | 25 / 50 / 75 / 100 % milestones (once per page) | `percent` |
-| `engagement_tick` | Every 10s of active time (paused on idle / hidden tab) | `active_ms` |
+| `engagement_tick` | Every 10s of active time (paused on idle / hidden tab). **Sprint 37**: batched — non-critical events queue and flush every 30 s / 10 events / pagehide in a single `{events:[…]}` POST (−60/70 % network requests); critical events (pageview, clicks, page_exit) still flush immediately | `active_ms` |
 | `web_vitals` | LCP / INP / CLS / TTFB | `metric`, `value` |
 | `click_outbound` | Click on an external `<a>` | `href`, `hostname`, `anchor` |
 | `page_exit` | `pagehide` / `beforeunload` / tab hidden | `duration_seconds`, `max_scroll` |
@@ -92,7 +92,7 @@ The browser-side `tracker.html` emits these events. Anything else is rejected by
 | `cta_booking_click` | Click on any `<a>` pointing to `/honoraires-rendez-vous` | `anchor`, `placement` (header / footer / sticky / body), `target_path`, `href` |
 | `click_internal` (Sprint 36) | Click on any internal `<a>` to **another** page (except `/honoraires-rendez-vous` → that stays `cta_booking_click`). Captures *which* UI element drives each page-to-page hop (the journey itself is already in the `pageview` sequence; this adds element attribution). Self-links (same path, no `#`/`data-anchor`) skipped. | `target_path`, `anchor`, `placement` (header / footer / sticky / body), `href` |
 | `cta_anchor_click` (Sprint 19) | Click on an in-page anchor: classic `href="#x"`, Wix anchor-menu (`<a href=current data-anchor="anchors-xxx">`), or any interactive element inside a sticky container. **Sprint 35**: UI chrome is excluded — the Cookiebot consent banner (`#CybotCookiebotDialog`), the mobile burger toggle, and plain nav links (no `#hash`/`data-anchor`) no longer count. | `target_section` (slugified label or hash), `anchor`, `placement` (header / footer / sticky / body), `source` (`click` / `hashchange` / `sticky-fallback`), `data_anchor` (Wix internal ID, optional) |
-| `form_submit` (Sprint 18) | Wix Form successfully submitted — fired **server-side** by the `form-webhook` Edge Function, triggered by a Wix Automation on form submission | `form_id`, `submission_id`, `page_source`, `capture_source: 'wix-webhook'` |
+| `form_submit` (Sprint 18) | Wix Form successfully submitted — fired **server-side** by the `form-webhook` Edge Function, triggered by a Wix Automation on form submission. **Sprint 37**: the tracker seeds hidden form fields `cooked_aid`/`cooked_sid`; webhook v10 stores them in `props` → attribution via `form_submits_attributed()` (hidden_field > temporal_unique > unresolved) | `form_id`, `submission_id`, `page_source`, `cooked_aid`, `cooked_sid`, `capture_source: 'wix-webhook'` |
 
 ### Anchor capture convention (depuis le 10/05/2026)
 

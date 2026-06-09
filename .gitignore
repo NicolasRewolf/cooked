@@ -28,3 +28,8 @@ service-account*.json
 *.pem
 *.key
 .vercel
+
+# Artefacts de tests locaux (jsdom)
+package.json
+package-lock.json
+node_modules/

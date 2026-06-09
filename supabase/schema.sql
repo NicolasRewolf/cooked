@@ -62,7 +62,8 @@ create index if not exists idx_events_session        on public.events (session_i
 create index if not exists idx_events_anonymous      on public.events (anonymous_id);
 create index if not exists idx_events_occurred       on public.events (occurred_at desc);
 create index if not exists idx_events_referrer_host  on public.events (referrer_hostname);
-create index if not exists idx_events_props_gin      on public.events using gin (props);
+-- idx_events_props_gin : droppé Sprint 30 (coûteux en écriture, inutilisé).
+-- Ne PAS recréer — schema.sql est rejouable et doit refléter la prod.
 
 -- Lock down: only service-role inserts (via Edge Function) and reads (via Studio).
 alter table public.events enable row level security;

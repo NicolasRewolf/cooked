@@ -54,7 +54,30 @@ cta_booking_click / cta_anchor_click (Sprint 19) / click_internal
 target_path). Plus `form_submit`
 inséré directement par la deuxième Edge Function `form-webhook` qui
 reçoit les webhooks Wix Automations (Sprint 18). Bot filtering via la
-vue `events_human` (Sprint 17). Sert de remplaçant GA4 pour fournir
+vue `events_human` (Sprint 17 ; Sprint 37 : dédup des clics dupliqués
+même-seconde causés par le double-embed du snippet — phone +13,6 % corrigé
+rétroactivement).
+
+**Sprint 37 (09/06/2026) — attribution & fiabilité :**
+- Tracker `sprint37` : execution guard (`window.__cookedLoaded`), batching
+  ({events:[…]} — flush 30 s / 10 events / pagehide ; events critiques
+  immédiats) → −60/70 % de requêtes, et seeding des champs cachés Wix
+  `cooked_aid`/`cooked_sid` dans les formulaires.
+- Webhook `form-webhook` v10 : lit les champs cachés → `props.cooked_aid`/
+  `cooked_sid` (les colonnes identité restent `webhook-…`, invariants
+  Sprint 24/29 préservés). L'attribution vit en LECTURE :
+  - `form_submits_attributed(days)` — hidden_field > temporal_unique >
+    unresolved (75 % résolu avant champs cachés, ~95 % attendu après).
+  - `conversion_journeys(days)` — un row par contact macro avec entry_path,
+    entry_channel, journey[] (séquence de pages), device.
+  - `content_performance(days)` — perf par page_type × theme (sessions,
+    dwell/scroll médians, booking_intents, contacts assistés).
+- Taxonomie : `cooked_page_type(path)` (cabinet/hub/expertise/post/blog-nav)
+  + table `page_taxonomy` (theme par heuristique slug, source tracée ;
+  la catégorie Wix ressource/classique reste NULL — non déductible du slug,
+  à enrichir via le hub).
+- Vestiges purgés : events_stitched, session_canonical_id,
+  sessions_corrected_daily ; views.sql resynchronisé avec la prod. Sert de remplaçant GA4 pour fournir
 des données comportementales fiables à Nicolas et à Me Plouton, et
 permet les analyses Cooked × GSC (intent matching, funnel SEO
 complet, pogo-stick × ranking) consommées en mode question/réponse.

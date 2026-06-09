@@ -1,35 +1,30 @@
 <!--
   COOKED — first-party SEO tracker (cookieless, RGPD-exempt)
-  Version: Sprint 36 (2026-06-03) — new click_internal event. Every click on
-           an internal link to ANOTHER page (other than the booking page) is
-           now captured with placement (header/footer/sticky/body) + target
-           path, so we can attribute which UI element drives each page-to-page
-           hop toward a conversion. Page-to-page navigation itself was already
-           covered by the pageview sequence; this adds the missing element
-           attribution. Mirrors the existing cta_booking_click pattern.
-           Sprint 35 (2026-06-03) — cta_anchor_click stops counting UI
-           chrome. The sticky-fallback (§4c) was emitting a micro-conversion
-           for every Cookiebot consent-banner tap (#CybotCookiebotDialog:
-           "Tout autoriser" / "Refuser" / "Personnaliser" / "Autoriser la
-           sélection"), the mobile burger toggle, and main-nav links — ~61 %
-           of all cta_anchor_click site-wide were consent chrome. Now filtered
-           via a shared isAnchorNoise() guard (consent selector + label
-           denylist) plus a structural rule: a real in-page anchor always
-           carries a #hash or data-anchor; plain same-origin nav links never
-           do, so they no longer fall through to the fallback.
-           Sprint 30 (2026-05-21) — bfcache, SPA nav, placement & debounce fixes
-           Multi-agent audit landed: bfcache page_exit loss, exitSent
-           not reset on pushState, [class*="FOOTER"] over-classify body
-           CTAs as footer, localStorage write per event (35× iOS Safari),
-           INP threshold 16 → 40 (spec), PerformanceObserver SPA leak.
-           (Sprint 28: session_id persisted in localStorage — fixes
-            self-referral inflation caused by Wix hard-nav drop of
-            sessionStorage between pages, 461 false "referral" sessions
-            on 7d before the fix).
-           (Sprint 26: Version hash propagated in every event)
-           (Sprint 25: ANON_SALT fail-fast + closure aid cache + form_submit dedup)
-           (Sprint 22: anonymous_id stable via localStorage)
-           (Sprint 19: Wix anchor-menu tracking + pageview spam fix)
+  Version: Sprint 37 (2026-06-09) — fiabilité & attribution.
+    1. EXECUTION GUARD (window.__cookedLoaded) — l'audit live du 09/06/2026 a
+       révélé que le snippet est embarqué 2× dans le Custom Code Wix → 2
+       instances du script → listeners empilés → clics dupliqués à la même
+       seconde (cta_phone_click +13,6 % sur 28j). Le garde rend le script
+       idempotent quel que soit le nombre d'embeds. (Le double embed Wix
+       doit aussi être supprimé côté admin — défense en profondeur.)
+    2. BATCHING — engagement_tick + web_vitals + scroll_depth représentaient
+       78 % des requêtes réseau (6,2 POST/session en moyenne, max 203).
+       File d'attente flushée toutes les 5 s ou à 10 events ; les events
+       critiques (pageview, tous les clics, page_exit) flushent immédiatement.
+       L'Edge /track acceptait déjà {events:[…]} (cap 50) — jamais utilisé
+       jusqu'ici. Gain mesuré attendu : −70 à −80 % de requêtes.
+    3. FORM ATTRIBUTION — dépose anonymous_id + session_id dans les champs
+       cachés Wix `cooked_aid` / `cooked_sid` (setter natif + event input,
+       requis par React/Wix Forms). Renvoyés par le webhook → chaque
+       form_submit redevient rattachable au parcours réel du visiteur
+       (form_submits_attributed() : hidden_field > temporal > unresolved).
+    4. Fix double-tick : flushExit remet lastTick à jour après le flush
+       résiduel (1,48 % des ticks arrivaient en double <1,5 s).
+  (Sprint 36: click_internal — attribution nav interne)
+  (Sprint 35: cta_anchor_click ne compte plus le chrome UI)
+  (Sprint 30: bfcache, SPA nav, placement & debounce fixes)
+  (Sprint 28: session_id en localStorage — fix self-referral)
+  (Sprint 26: version stamp props._v) (Sprint 22: anonymous_id stable)
 
   Events emitted (see Edge Function ALLOWED_EVENTS for the canonical list):
     pageview, scroll_depth, engagement_tick, web_vitals, page_exit,
@@ -38,11 +33,18 @@
 
   `form_submit` is server-side only and never flows through this tracker;
   it's inserted by the `form-webhook` Edge Function on every Wix Forms
-  submission via Wix Automations.
+  submission via Wix Automations. Sprint 37: the tracker now seeds the
+  hidden fields the webhook reads for attribution.
 -->
 <script>
 (function () {
   'use strict';
+
+  // Sprint 37 — execution guard. Le snippet peut être embarqué plusieurs
+  // fois (double entrée Custom Code constatée en prod le 09/06/2026).
+  // Sans ce garde, chaque instance empile ses listeners → events dupliqués.
+  if (window.__cookedLoaded) return;
+  window.__cookedLoaded = true;
 
   var ENDPOINT             = '/_functions/track';
   var SESSION_TIMEOUT_MS   = 30 * 60 * 1000; // 30 min idle → new session
@@ -57,7 +59,7 @@
   // version label never appears after a Wix republish, the paste
   // failed or was truncated. Bump this string on every meaningful
   // tracker change.
-  var COOKED_VERSION       = 'sprint36';
+  var COOKED_VERSION       = 'sprint37';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -214,13 +216,26 @@
     };
   }
 
-  function send(name, props) {
-    var p = basePayload();
-    p.name  = name;
-    p.props = props || {};
-    p.props._v = COOKED_VERSION; // Sprint 26 — version stamp for monitoring
-    var body = JSON.stringify(p);
+  // ==============================================================
+  // Sprint 37 — batching. L'Edge /track accepte {events:[…]} (cap 50)
+  // depuis toujours mais le tracker envoyait 1 POST par event :
+  // engagement_tick seul = 60 % du trafic réseau (6,2 POST/session).
+  // File d'attente : flush à 10 events, toutes les 5 s, au pagehide
+  // (sendBeacon), et IMMÉDIATEMENT pour les events critiques (pageview,
+  // clics, page_exit) pour garder la visibilité temps réel des contacts.
+  // basePayload() est capturé à l'enqueue (pas au flush) pour que le path
+  // reste correct lors des navigations SPA.
+  // ==============================================================
+  var B_MAX      = 10;
+  // 30 s (pas 5) : engagement_tick part toutes les 10 s — un flush à 5 s
+  // ferait voyager chaque tick seul (gain nul sur 60 % du trafic). À 30 s,
+  // 3 ticks + scrolls/vitals voyagent ensemble. La latence ne touche que
+  // les events non-critiques ; pagehide/visibilitychange flushent tout.
+  var B_MS = 30000;
+  var CRITICAL = ' pageview page_exit cta_phone_click cta_booking_click cta_anchor_click click_internal click_outbound ';
+  var queue = [];
 
+  function transmit(body) {
     if (navigator.sendBeacon) {
       try {
         var blob = new Blob([body], { type: 'application/json' });
@@ -237,6 +252,24 @@
     } catch (e) {}
   }
 
+  function flushQ() {
+    if (!queue.length) return;
+    var batch = queue.splice(0, 50);
+    transmit(JSON.stringify({ events: batch }));
+    if (queue.length) flushQ(); // file > 50 (théorique)
+  }
+
+  function send(name, props) {
+    var p = basePayload();
+    p.name  = name;
+    p.props = props || {};
+    p.props._v = COOKED_VERSION; // Sprint 26 — version stamp for monitoring
+    queue.push(p);
+    if (CRITICAL.indexOf(' ' + name + ' ') >= 0 || queue.length >= B_MAX) flushQ();
+  }
+
+  setInterval(flushQ, B_MS);
+
   // ==============================================================
   // 1. Pageview (initial + SPA navigations)
   //
@@ -248,18 +281,18 @@
   // pathname (trailing slash stripped, no hash) — if it hasn't really
   // changed, we don't re-emit anything.
   // ==============================================================
-  function normalizePathForCompare(p) {
+  function normPC(p) {
     if (!p) return '/';
     if (p.length > 1 && p.charAt(p.length - 1) === '/') return p.slice(0, -1);
     return p;
   }
-  var currentPath = normalizePathForCompare(location.pathname);
+  var currentPath = normPC(location.pathname);
   function emitPageview() { send('pageview', {}); }
 
   emitPageview();
 
-  function onPathMaybeChanged() {
-    var newPath = normalizePathForCompare(location.pathname);
+  function onPMC() {
+    var newPath = normPC(location.pathname);
     if (newPath !== currentPath) {
       // Flush previous page's exit data first
       flushExit();
@@ -275,15 +308,15 @@
       maxScroll  = 0;
       pageStart     = performance.now();
       activeMs      = 0;
-      totalActiveMs = 0;
+      totAMs = 0;
       lastTick      = Date.now();
       vitals.lcp = 0; vitals.cls = 0; vitals.inp = 0; vitals.ttfb = 0;
-      vitalsEmitted = { LCP: false, CLS: false, INP: false, TTFB: false };
+      vitEm = { LCP: false, CLS: false, INP: false, TTFB: false };
       // Sprint 30 — disconnect & reattach PerformanceObservers so LCP/CLS
       // from page N don't leak into page N+1 (observers keep firing on
-      // detached document otherwise). See attachVitalsObservers() below.
-      try { disconnectVitals(); } catch (e) {}
-      try { attachVitalsObservers(); } catch (e) {}
+      // detached document otherwise). See attachVO() below.
+      try { discVO(); } catch (e) {}
+      try { attachVO(); } catch (e) {}
       emitPageview();
     }
   }
@@ -302,13 +335,13 @@
     }
   });
 
-  window.addEventListener('popstate', onPathMaybeChanged);
+  window.addEventListener('popstate', onPMC);
   ['pushState', 'replaceState'].forEach(function (m) {
     var orig = history[m];
     if (typeof orig !== 'function') return;
     history[m] = function () {
       var ret = orig.apply(this, arguments);
-      setTimeout(onPathMaybeChanged, 0);
+      setTimeout(onPMC, 0);
       return ret;
     };
   });
@@ -319,7 +352,7 @@
   var scrollHits = { 25: false, 50: false, 75: false, 100: false };
   var maxScroll  = 0;
 
-  function computeScrollPct() {
+  function compSP() {
     var doc      = document.documentElement;
     var body     = document.body;
     var scrolled = (window.scrollY || doc.scrollTop || 0) + window.innerHeight;
@@ -333,7 +366,7 @@
   }
 
   function onScroll() {
-    var pct = computeScrollPct();
+    var pct = compSP();
     if (pct > maxScroll) maxScroll = pct;
     [25, 50, 75, 100].forEach(function (t) {
       if (!scrollHits[t] && pct >= t) {
@@ -355,7 +388,7 @@
   var lastActivity  = Date.now();
   var lastTick      = Date.now();
   var activeMs      = 0;
-  var totalActiveMs = 0;
+  var totAMs = 0;
   var pageStart     = performance.now();
 
   ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (ev) {
@@ -373,7 +406,7 @@
     var now = Date.now();
     if (!document.hidden && (now - lastActivity) < IDLE_THRESHOLD_MS) {
       activeMs      += (now - lastTick);
-      totalActiveMs += (now - lastTick);
+      totAMs += (now - lastTick);
     }
     lastTick = now;
   }, 1000);
@@ -394,7 +427,7 @@
   //                                 attribution: placement + target_path)
   //    cross-origin               → click_outbound
   // ==============================================================
-  var BOOKING_TARGET_PATHS = ['/honoraires-rendez-vous'];
+  var BKG_P = ['/honoraires-rendez-vous'];
 
   function normalizePath(p) {
     if (!p) return '';
@@ -403,10 +436,10 @@
     return s;
   }
 
-  function isBookingTarget(pathname) {
+  function isBkg(pathname) {
     var n = normalizePath(pathname);
-    for (var i = 0; i < BOOKING_TARGET_PATHS.length; i++) {
-      if (n === normalizePath(BOOKING_TARGET_PATHS[i])) return true;
+    for (var i = 0; i < BKG_P.length; i++) {
+      if (n === normalizePath(BKG_P[i])) return true;
     }
     return false;
   }
@@ -460,12 +493,12 @@
   //      button, label = its whole textContent — an inline <script>, a
   //      mega-menu, a phone-prefix list, the consent dialog body… Real
   //      labels are short (longest in prod: 78), so §4c drops labels ≥ 80.
-  // (1)+(2)+short chrome labels → isAnchorNoise(); (3) → §4c link guard;
-  // (4) → §4c length cap. The consent *selector* in isAnchorNoise catches
+  // (1)+(2)+short chrome labels → isAN(); (3) → §4c link guard;
+  // (4) → §4c length cap. The consent *selector* in isAN catches
   // family 1 wholesale (buttons + body) regardless of label. Shared so the
   // primary handler (§4) and hashchange fallback (§4b) inherit (1)+(2).
   // ==============================================================
-  var CHROME_LABELS = {
+  var CHR_L = {
     'tout autoriser': 1, 'tout refuser': 1, 'refuser': 1,
     'autoriser la sélection': 1, 'autoriser la selection': 1,
     'personnaliser': 1, 'tout accepter': 1, 'accepter': 1,
@@ -473,7 +506,7 @@
     'menu': 1, 'menu mobile': 1, 'menu mobile - burger': 1,
     'fermer': 1, 'close': 1, 'recherche sur le site': 1
   };
-  function isAnchorNoise(el, label) {
+  function isAN(el, label) {
     // Structural: the Cookiebot consent dialog / reopener widget. Its
     // buttons sit in a position:fixed dialog, so the sticky-fallback was
     // counting every consent tap as a micro-conversion. closest() walks
@@ -490,7 +523,7 @@
     var lc = (label || '').toLowerCase().trim();
     if (!lc) return false;
     if (lc.indexOf('burger') !== -1) return true;
-    return CHROME_LABELS[lc] === 1;
+    return CHR_L[lc] === 1;
   }
 
   // Track the most-recently-clicked element so the hashchange fallback
@@ -498,9 +531,9 @@
   // anchor-menu widget triggers scroll-to-section via JS (location.hash
   // assignment) rather than emitting a real <a href="#x"> click, so the
   // primary click listener never fires for those elements.
-  var lastClickedEl = null;
-  var lastClickAnchorAt = 0;
-  document.addEventListener('click', function (e) { lastClickedEl = e.target; }, true);
+  var lcEl = null;
+  var lcaAt = 0;
+  document.addEventListener('click', function (e) { lcEl = e.target; }, true);
 
   document.addEventListener('click', function (e) {
     var el = e.target;
@@ -526,8 +559,8 @@
     // Hash-only hrefs like "#section" are intercepted here BEFORE we try
     // to parse them as full URLs. We skip the pure "#" no-op case.
     if (rawHref.charAt(0) === '#' && rawHref.length > 1) {
-      if (isAnchorNoise(el, anchor)) return; // consent / menu chrome, not an anchor
-      lastClickAnchorAt = Date.now();
+      if (isAN(el, anchor)) return; // consent / menu chrome, not an anchor
+      lcaAt = Date.now();
       send('cta_anchor_click', {
         target_section: rawHref.slice(1).slice(0, 200),
         anchor:         anchor,
@@ -561,8 +594,8 @@
             } else {
               section = dataAnchor.slice(0, 200);
             }
-            if (isAnchorNoise(el, anchor)) return; // consent / menu chrome, not an anchor
-            lastClickAnchorAt = Date.now();
+            if (isAN(el, anchor)) return; // consent / menu chrome, not an anchor
+            lcaAt = Date.now();
             send('cta_anchor_click', {
               target_section: section,
               anchor:         anchor,
@@ -580,7 +613,7 @@
         // disambiguated by `placement` (header / footer / sticky / body).
         // Self-links (same path, no #hash/data-anchor) are skipped: the
         // pageview already records arrival, there's no navigation.
-        if (isBookingTarget(u.pathname)) {
+        if (isBkg(u.pathname)) {
           send('cta_booking_click', {
             anchor:      anchor,
             placement:   placementOf(el),
@@ -634,7 +667,7 @@
   }
 
   document.addEventListener('click', function (e) {
-    if (Date.now() - lastClickAnchorAt < 200) return;
+    if (Date.now() - lcaAt < 200) return;
 
     var el = e.target;
     if (!el || el.nodeType !== 1) return;
@@ -649,7 +682,7 @@
         var u2 = null;
         try { u2 = new URL(aAncestor.href); } catch (e2) {}
         if (u2 && u2.hostname && u2.hostname !== location.hostname) return;
-        if (isBookingTarget((u2 && u2.pathname) || '')) return;
+        if (isBkg((u2 && u2.pathname) || '')) return;
         // A plain same-origin link with no #hash and no data-anchor is
         // site-nav chrome (Accueil, Équipe, Mentions Légales…), not an
         // in-page anchor. The anchor-menu widget this fallback targets
@@ -694,12 +727,12 @@
     // mega-menu dump, consent dialog body, phone-prefix list, Wix link
     // panel). Real anchor labels are short (longest observed in prod: 78).
     if (label.length >= 80) return;
-    if (isAnchorNoise(el, label)) return; // consent banner / burger / menu chrome
+    if (isAN(el, label)) return; // consent banner / burger / menu chrome
 
     var slug = slugify(label);
     if (!slug) return;
 
-    lastClickAnchorAt = Date.now();
+    lcaAt = Date.now();
     send('cta_anchor_click', {
       target_section: slug,
       anchor:         label,
@@ -722,7 +755,7 @@
   // ==============================================================
   var lastHash = location.hash || '';
   window.addEventListener('hashchange', function () {
-    if (Date.now() - lastClickAnchorAt < 500) {
+    if (Date.now() - lcaAt < 500) {
       lastHash = location.hash || '';
       return;
     }
@@ -734,9 +767,9 @@
 
     var anchor = null;
     var placement = 'unknown';
-    if (lastClickedEl && lastClickedEl.nodeType === 1) {
+    if (lcEl && lcEl.nodeType === 1) {
       try {
-        var src = lastClickedEl;
+        var src = lcEl;
         // Walk up a couple of hops to find an element with an
         // accessible label (the actual click target is often a deep
         // inner <span> or <svg>).
@@ -745,10 +778,10 @@
           if (lbl && lbl.trim()) { anchor = lbl.trim().slice(0, 100); break; }
           src = src.parentElement;
         }
-        placement = placementOf(lastClickedEl);
+        placement = placementOf(lcEl);
       } catch (e) {}
     }
-    if (isAnchorNoise(lastClickedEl, anchor)) return; // consent / menu chrome
+    if (isAN(lcEl, anchor)) return; // consent / menu chrome
     send('cta_anchor_click', {
       target_section: section,
       anchor:         anchor,
@@ -761,11 +794,11 @@
   // 5. Core Web Vitals — LCP, CLS, INP, TTFB (p75 in SQL views)
   // ==============================================================
   var vitals         = { lcp: 0, cls: 0, inp: 0, ttfb: 0 };
-  var vitalsEmitted  = { LCP: false, CLS: false, INP: false, TTFB: false };
+  var vitEm  = { LCP: false, CLS: false, INP: false, TTFB: false };
 
   function emitVital(metric, value) {
-    if (vitalsEmitted[metric]) return;
-    vitalsEmitted[metric] = true;
+    if (vitEm[metric]) return;
+    vitEm[metric] = true;
     send('web_vitals', { metric: metric, value: Math.round(value * 100) / 100 });
   }
 
@@ -782,12 +815,12 @@
   // so they can be disconnected on SPA navigation. Previously the
   // observers stayed attached to the detached document and continued
   // writing into the new page's `vitals` object, leaking metrics from
-  // page N into page N+1. See onPathMaybeChanged() above.
+  // page N into page N+1. See onPMC() above.
   var lcpObs = null, clsObs = null, inpObs = null;
-  var clsSessionValue   = 0;
-  var clsSessionEntries = [];
+  var clsSV   = 0;
+  var clsSE = [];
 
-  function attachVitalsObservers() {
+  function attachVO() {
     if (typeof PerformanceObserver === 'undefined') return;
 
     // LCP
@@ -800,26 +833,26 @@
     } catch (e) {}
 
     // CLS — reset session-window state each (re)attach
-    clsSessionValue   = 0;
-    clsSessionEntries = [];
+    clsSV   = 0;
+    clsSE = [];
     try {
       clsObs = new PerformanceObserver(function (list) {
         list.getEntries().forEach(function (entry) {
           if (entry.hadRecentInput) return;
-          var first = clsSessionEntries[0];
-          var last  = clsSessionEntries[clsSessionEntries.length - 1];
+          var first = clsSE[0];
+          var last  = clsSE[clsSE.length - 1];
           if (
-            clsSessionValue &&
+            clsSV &&
             entry.startTime - last.startTime < 1000 &&
             entry.startTime - first.startTime < 5000
           ) {
-            clsSessionValue += entry.value;
-            clsSessionEntries.push(entry);
+            clsSV += entry.value;
+            clsSE.push(entry);
           } else {
-            clsSessionValue   = entry.value;
-            clsSessionEntries = [entry];
+            clsSV   = entry.value;
+            clsSE = [entry];
           }
-          if (clsSessionValue > vitals.cls) vitals.cls = clsSessionValue;
+          if (clsSV > vitals.cls) vitals.cls = clsSV;
         });
       });
       clsObs.observe({ type: 'layout-shift', buffered: true });
@@ -838,7 +871,7 @@
     } catch (e) {}
   }
 
-  function disconnectVitals() {
+  function discVO() {
     try { lcpObs && lcpObs.disconnect(); } catch (e) {}
     try { clsObs && clsObs.disconnect(); } catch (e) {}
     try { inpObs && inpObs.disconnect(); } catch (e) {}
@@ -846,7 +879,7 @@
   }
 
   // Initial attach for the first page load.
-  attachVitalsObservers();
+  attachVO();
 
   function flushVitals() {
     if (vitals.lcp)  emitVital('LCP', vitals.lcp);
@@ -870,13 +903,15 @@
 
     var now2 = Date.now();
     if (!document.hidden && (now2 - lastActivity) < IDLE_THRESHOLD_MS) {
-      totalActiveMs += (now2 - lastTick);
+      totAMs += (now2 - lastTick);
     }
-    var duration = Math.round(totalActiveMs / 1000);
+    lastTick = now2; // Sprint 37 — évite le double comptage du résiduel
+    var duration = Math.round(totAMs / 1000);
     send('page_exit', {
       duration_seconds: duration,
       max_scroll:       maxScroll
     });
+    flushQ(); // Sprint 37 — vider la file avant la mort de la page
   }
 
   function resetExitFlag() { exitSent = false; }
@@ -887,5 +922,56 @@
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) flushExit();
   });
+
+  // ==============================================================
+  // 7. Sprint 37 — form attribution seeding
+  //
+  // Dépose anonymous_id + session_id dans les champs cachés Wix
+  // `cooked_aid` / `cooked_sid` (à créer une fois dans chaque Wix Form,
+  // comme le champ `page_source` existant). Le webhook form-webhook v10
+  // les lit dans le payload → chaque form_submit est rattaché au parcours
+  // réel du visiteur.
+  //
+  // Wix Forms (React) ignore une assignation directe de .value : il faut
+  // le setter natif + dispatch d'un event 'input' bubbleant.
+  // Stratégie de remplissage : au chargement (retry borné, les forms Wix
+  // se rendent tard), à chaque interaction avec un form (focusin), et en
+  // continu léger — coût quasi nul, idempotent.
+  // ==============================================================
+  function setNV(input, value) {
+    if (!input || input.value === value) return;
+    try {
+      var st = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+      if (st && st.set) st.set.call(input, value); else input.value = value;
+      input.dispatchEvent(new Event('input',  { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (e) { try { input.value = value; } catch (e2) {} }
+  }
+
+  function fillCkd() {
+    try {
+      var pairs = [
+        ['input[name="cooked_aid"],input[id*="cooked_aid"]', getAnonymousId()],
+        ['input[name="cooked_sid"],input[id*="cooked_sid"]', getSessionId()]
+      ];
+      for (var i = 0; i < 2; i++) {
+        var els = document.querySelectorAll(pairs[i][0]);
+        for (var j = 0; j < els.length; j++) setNV(els[j], pairs[i][1]);
+      }
+    } catch (e) {}
+  }
+
+  // Remplissage immédiat + retry borné (Wix rend les forms en différé),
+  // + focusin (forms tardifs, ré-écrit avant submit) + submit (filet).
+  fillCkd();
+  var fillTries = 0;
+  var fillTimer = setInterval(function () {
+    fillCkd();
+    if (++fillTries >= 15) clearInterval(fillTimer);
+  }, 3000);
+  document.addEventListener('focusin', function (e) {
+    if (e.target && e.target.form) fillCkd();
+  }, true);
+  document.addEventListener('submit', fillCkd, true);
 })();
 </script>

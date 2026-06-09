@@ -1,4 +1,4 @@
-// COOKED — form-webhook Edge Function
+// COOKED — form-webhook Edge Function (v10 — Sprint 37, 09/06/2026)\n// Sprint 37: lit les champs cachés cooked_aid/cooked_sid déposés par le\n// tracker → attribution conversion → parcours (~95 % vs 75 % temporal).
 // POST /functions/v1/form-webhook?token=<WEBHOOK_SECRET>
 //
 // Receives Wix Automations webhooks fired when a Wix Form is successfully
@@ -173,6 +173,25 @@ Deno.serve(async (req) => {
     s(body?.submittedAt, 35) ??
     new Date().toISOString();
 
+  // Sprint 37 — attribution : le tracker (sprint37) dépose l'identité du
+  // visiteur dans deux champs cachés Wix (`cooked_aid`, `cooked_sid`).
+  // On les lit ici avec la MÊME validation que l'Edge `track` (8-128 chars
+  // alphanum). Ils sont stockés dans props uniquement : les colonnes
+  // anonymous_id / session_id de la ligne restent synthétiques (webhook-…)
+  // pour préserver les invariants Sprint 24/29 (form_submit jamais classé
+  // bot/noise). L'attribution vit en lecture via form_submits_attributed().
+  function validId(v: unknown): string | null {
+    return typeof v === "string" &&
+      v.length >= 8 && v.length <= 128 &&
+      /^[a-zA-Z0-9_-]+$/.test(v)
+      ? v
+      : null;
+  }
+  const cookedAid =
+    validId(d?.["field:cooked_aid"]) ?? validId(d?.cooked_aid) ?? null;
+  const cookedSid =
+    validId(d?.["field:cooked_sid"]) ?? validId(d?.cooked_sid) ?? null;
+
   // Generate a synthetic session_id for this server-side event. Format:
   // "webhook-<submission_id_or_random>" — clearly identifies it as a
   // webhook-sourced event so it doesn't collide with browser sessions.
@@ -247,6 +266,8 @@ Deno.serve(async (req) => {
       "submissionTime",
       "field:page_source",
       "field:objet_de_ma_demande",
+      "field:cooked_aid",
+      "field:cooked_sid",
     ]) {
       if (key in d2) safe[key] = d2[key];
     }
@@ -285,6 +306,8 @@ Deno.serve(async (req) => {
       page_source: pageSource,
       objet_de_ma_demande: objetDeMaDemande,
       counts_as_macro: countsAsMacro,
+      cooked_aid: cookedAid,      // Sprint 37 — identité visiteur (champ caché)
+      cooked_sid: cookedSid,      // Sprint 37 — session visiteur (champ caché)
       capture_source: "wix-webhook",
       payload_meta: safePayloadMeta, // ⬅️ PII-stripped (Sprint 30)
     },
