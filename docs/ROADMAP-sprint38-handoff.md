@@ -66,9 +66,8 @@ est le « quoi faire » ; CLAUDE.md est le « comment se comporter ».
    contacts téléphone de 110 → 95 sur 28j. Si Me Plouton compare avec un
    chiffre antérieur, il verra une « baisse » : c'est une **correction**,
    pas une baisse. Préparer une phrase claire pour Nico.
-5. **Étendre `run_rpc_contract_tests`** aux 3 RPCs Sprint 37
-   (form_submits_attributed, conversion_journeys, content_performance) —
-   elles ne sont couvertes par aucun test de contrat aujourd'hui.
+5. ~~Étendre les contract tests aux RPCs S37~~ **FAIT (Sprint 37b)** :
+   `cooked_alerts_refresh()` les teste toutes les heures (+ insert rpc_health).
 
 ---
 
@@ -82,7 +81,8 @@ est le « quoi faire » ; CLAUDE.md est le « comment se comporter ».
   Velo (action Nico) + rate-limit Edge par anonymous_id (ex. max 3
   cta_phone_click/min/aid, silently dropped au-delà) + monitoring de
   bursts (cf. §2 monitoring). Pas de HMAC : sur-ingénierie pour ce site.
-- **Identité instable en Safari privé / localStorage bloqué** : constaté
+- ~~Identité instable en Safari privé~~ **FAIT (Sprint 37b)** : fallback
+  sessionStorage dans getAnonymousId (testé localStorage bloqué). Constaté
   en prod (2 anonymous_id différents dans la même session, 09/06 16:58).
   Le fallback aid est un id par-instance en closure. Amélioration simple :
   fallback aid en **sessionStorage** (comme le sid) → stable dans l'onglet,
@@ -175,7 +175,11 @@ C'est la partie « ressenti » demandée par Nico. Sans langue de bois.
    chaque RPC `-- @deprecated` ou la consolider sur la couture
    `period_kind`. Cible : ~30 fonctions cohérentes. La qualité d'un
    système de question/réponse dépend de la lisibilité de son API.
-5. **Le monitoring est passif.** `rpc_health` et
+5. ~~Le monitoring est passif~~ **FAIT (Sprint 37b)** : table `alerts` +
+   `cooked_alerts_refresh()` cron horaire (pipeline mort, récidive
+   double-embed, RPCs S37, attribution dégradée, retard GSC). Première
+   requête de session : `select * from alerts where not acked`. Détail
+   d'origine : `rpc_health` et
    `tracker_version_distribution` existent mais personne ne les regarde
    entre les sessions. Ajouter un job pg_cron `cooked_alerts` qui écrit
    dans une table `alerts` quand : sprint attendu absent des events
@@ -198,8 +202,10 @@ C'est la partie « ressenti » demandée par Nico. Sans langue de bois.
    finale avec GSC : **`seo_to_contact_funnel(period)`** — requête Google
    → landing → parcours → contact, la seule vue qui répond à « quoi
    écrire ensuite ». Les briques existent toutes
-   (gsc_query_page_daily × conversion_journeys sur entry_path). C'est LA
-   RPC à construire au Sprint 38, c'est elle qui rend l'outil « de rêve ».
+   (gsc_query_page_daily × conversion_journeys sur entry_path). **FAIT
+   (Sprint 37b)** : `seo_to_contact_funnel(days)` — premiers enseignements
+   28j : home 6,1 % (branded), expertise famille 13,3 %, post DDSE 328
+   entrées / 0,3 % (intent informationnel).
 8. **Un digest hebdo auto** (pg_cron → table `weekly_digest` : contacts
    par canal, top pages en hausse/baisse via pages_pulse, thèmes qui
    convertissent, alertes) que Nico lit le lundi via Claude en une
