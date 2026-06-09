@@ -103,9 +103,20 @@
       _cachedAid = aid;
       return aid;
     } catch (e) {
-      // localStorage blocked. Fall back to a per-page-load random ID
-      // and cache it so all events from this page share the same id.
-      _cachedAid = rid() + rid();
+      // Sprint 37 — localStorage bloqué (Safari privé/Lockdown, constaté
+      // en prod le 09/06) : fallback sessionStorage → l'aid reste stable
+      // dans l'onglet (attribution intra-session correcte), au lieu d'un
+      // id par chargement de page.
+      try {
+        var aid2 = sessionStorage.getItem('_ckd_aid');
+        if (!aid2 || aid2.length < 8) {
+          aid2 = rid() + rid();
+          sessionStorage.setItem('_ckd_aid', aid2);
+        }
+        _cachedAid = aid2;
+      } catch (e2) {
+        _cachedAid = rid() + rid(); // dernier recours : par chargement
+      }
       return _cachedAid;
     }
   }
