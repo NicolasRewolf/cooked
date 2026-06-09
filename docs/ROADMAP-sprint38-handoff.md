@@ -118,6 +118,14 @@ est le « quoi faire » ; CLAUDE.md est le « comment se comporter ».
   (existe déjà) pour absorber trailing slash/query.
 
 ### P2 — améliorations opportunistes
+- **Clamp horloge client à l'ingestion** (audit 10/06 : 0,28 % d'events avec
+  occurred_at client déréglé, dont 15/90j à > 24 h → mauvais jour Paris).
+  Spec : dans l'Edge `track`, si |occurred_at − now()| > 48 h → remplacer
+  par now() et tracer `props.clock_clamped=true`. Idem cap
+  `engagement_tick.active_ms` à 60 000 (9 cas/90j). Voir
+  docs/data-quality-audit-2026-06-10.md.
+- Jour GSC 31/05/2026 absent : trou côté API Google (re-fetché ~10× par le
+  daily --months 1). Documenté, aucune action — ne pas le « réparer ».
 - **Catégorie Wix ressource/classique** : toujours NULL dans
   `page_taxonomy` (non déductible du slug, règle CLAUDE.md). La liste
   authoritative est sur `/comprendre-le-droit`, rendu client-side → il
