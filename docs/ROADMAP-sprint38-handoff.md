@@ -121,6 +121,21 @@ est le « quoi faire » ; CLAUDE.md est le « comment se comporter ».
 - **CPI v2.1** : RPC `cooked_page_index(days)` + table `cpi_daily` + snapshot
   quotidien (cron 07:30 UTC). Spec et grille de lecture :
   docs/cpi-cooked-page-index.md. Reste P1 : protocole de validation à J+28.
+- **CPI reprise (après-midi du 10/06)** :
+  (1) vue `cpi_movers` (dérivée ~7 j, statuts present/nouveau/disparu,
+  delta_z par composante) + alerte `cpi_drop` dans `cooked_alerts_refresh()`
+  — migration `20260610142622_sprint38_cpi_movers`, premier rendu ~17/06 ;
+  (2) harnais de validation J+28 committé (`scripts/cpi_validation_j28.sql`,
+  à lancer dès le 08/07/2026) — dry-run : recomposition exacte 194/194,
+  stabilité des poids PASSE (τ-b ≥ 0,952), calibration CTR R²=0,915 stable
+  mais courbure non captée (obs +44/+67 % en pos 3-4, −28/−42 % en pos 9-13)
+  → candidat v2.2 fit 2 segments. Le §3 du harnais EST le check mensuel de
+  la courbe (backlog #3 : le fit est inline 90 j glissants dans la RPC,
+  donc déjà auto-refitté — c'est la calibration qu'il faut surveiller) ;
+  (3) idées v2.2 instruites (doc CPI §v2.2) : thèmes NO-GO (1-5 contacts/
+  trimestre/thème), INP GO-si-relatif-au-site (médiane p75 221 ms, un gate
+  absolu mordrait 57 % des pages), cannibales DÉFER (8 paires dont 2 réelles,
+  rival commun marginal — mais SARVI pos 10,4 / 5,2k imps = quick win).
 
 ### P2 — améliorations opportunistes
 - **Clamp horloge client à l'ingestion** (audit 10/06 : 0,28 % d'events avec

@@ -97,7 +97,15 @@ rétroactivement).
 - Snapshot quotidien `cpi_daily` (cron `30 7 * * *`, 90 min après
   l'ingest GSC) → trajectoire du score lui-même = alerte decay précoce.
 - Premier snapshot 10/06/2026 : 192 pages, CPI pondéré trafic 32,
-  446 clics perdus/28j. Sert de remplaçant GA4 pour fournir
+  446 clics perdus/28j.
+- Reprise 10/06 après-midi : vue `cpi_movers` (dérivée ~7j du CPI, delta_z
+  par composante, statuts present/nouveau/disparu — premier rendu ~17/06)
+  + alerte `cpi_drop` (chute ≥15 pts d'une page grade A/B) dans
+  `cooked_alerts_refresh()` ; harnais de validation J+28 committé
+  (`scripts/cpi_validation_j28.sql`, à lancer dès le 08/07/2026 — dry-run :
+  stabilité poids τ-b≥0,952 PASSE, calibration CTR R²=0,915 stable) ;
+  idées v2.2 instruites dans la doc CPI (thèmes NO-GO, INP go-si-relatif,
+  cannibales défer). Sert de remplaçant GA4 pour fournir
 des données comportementales fiables à Nicolas et à Me Plouton, et
 permet les analyses Cooked × GSC (intent matching, funnel SEO
 complet, pogo-stick × ranking) consommées en mode question/réponse.
@@ -288,6 +296,9 @@ RPCs attribution & santé (Sprint 37-38) :
   par landing
 - `cooked_page_index(days)` / `cooked_cpi_snapshot()` — score santé par page
   + snapshot quotidien `cpi_daily`
+- `cpi_movers` (vue) — Δ CPI sur ~7j glissants depuis `cpi_daily` : statuts
+  present/nouveau/disparu, `fiable` (grade A/B aux deux dates), delta_z par
+  composante ; alimente l'alerte `cpi_drop` (chute ≥15 pts, warn)
 - `cooked_alerts_refresh()` — recalcul des alertes (cron horaire) ; table
   `alerts` (acked boolean)
 - `cooked_page_type(path)` — cabinet / hub / expertise / post / blog-nav ;
