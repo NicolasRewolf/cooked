@@ -147,6 +147,16 @@ cooked/
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
 │       └── form-webhook/index.ts      — Wix Automations webhook for forms
+├── docs/
+│   ├── PLAYBOOK-analyse-seo.md        — SEO analysis playbook (traps & recipes)
+│   ├── cpi-cooked-page-index.md       — CPI v2.1 spec
+│   ├── ROADMAP-sprint38-handoff.md    — remaining work P0/P1/P2
+│   ├── HISTORY-sprints.md             — sprint chronology
+│   ├── data-quality-audit-*.md        — trust audits
+│   └── agents/                        — engineering-skills config
+├── tests/
+│   ├── tracker.test.js                — 28 asserts, source + minified (jsdom)
+│   └── test_dfs_common.py             — DataForSEO sanitize tests
 └── wix/
     ├── http-functions.js              — Velo proxy backend
     └── tracker.html                   — Wix Custom Code <head>
@@ -345,7 +355,7 @@ ALL RPCs + snapshot read from events_human
 
 **Detection rule** : `anonymous_id` with > 20 pageviews/day AND 0 scroll events = crawler. Catches the nightly Ahrefs audit crawler and similar bots.
 
-**4 active pg_cron jobs** (verified live, post-Sprint-30) :
+**6 active pg_cron jobs** (verified live, 10/06/2026) :
 
 | Job | Schedule | What |
 |---|---|---|
@@ -353,6 +363,54 @@ ALL RPCs + snapshot read from events_human
 | `refresh_noise_filters_hourly` | `5 * * * *` | Re-scan bot fingerprints + noise sessions every hour (Sprint 28) |
 | `run_rpc_contract_tests` | `30 3 * * *` (05:30 Paris) | Nightly contract-test of the 8 published RPCs → logs to `rpc_health` (Sprint 27) |
 | `purge_old_events_monthly` | `0 4 1 * *` (06:00 Paris, 1st of month) | Retention policy : deletes events > 400 days (Sprint 27) |
+| `cooked-alerts-hourly` | `15 * * * *` | Recompute `alerts` table — pipeline death, double-embed recurrence, S37 RPC health, degraded attribution, GSC lag (Sprint 37) |
+| `cooked-cpi-daily-snapshot` | `30 7 * * *` (90 min after GSC ingest) | `cooked_cpi_snapshot()` → daily CPI per page into `cpi_daily` (Sprint 38) |
+
+---
+
+## Attribution & funnel (Sprint 37)
+
+Read-side attribution, no schema change on identity columns:
+
+- `form_submits_attributed(days)` — per form_submit: method = `hidden_field`
+  (tracker-seeded `cooked_aid`/`cooked_sid` read by webhook v10) >
+  `temporal_unique` > `unresolved`. ~75 % resolved before hidden fields,
+  ~95 % expected after.
+- `conversion_journeys(days)` — one row per macro contact: entry_path,
+  entry_channel, journey[] (page sequence), pages_count, device.
+- `content_performance(days)` — page_type × theme: sessions, median
+  dwell/scroll, booking_intents, assisted contacts.
+- `seo_to_contact_funnel(days)` — GSC clicks → organic entries → contacts
+  per landing page.
+- `page_taxonomy` table + `cooked_page_type(path)` — page typing
+  (cabinet/hub/expertise/post/blog-nav) + theme (slug heuristic).
+- `alerts` table + `cooked_alerts_refresh()` (hourly cron) — self-monitoring.
+  Session reflex: `SELECT * FROM alerts WHERE NOT acked`.
+
+## CPI — Cooked Page Index (Sprint 38)
+
+One health score 0-100 per page over a rolling 28d window, crossing GSC
+(capture vs own CTR curve) × Cooked (retention, qualified reading,
+conversion incl. diluted assists), × site-relative momentum × LCP gate.
+Confidence grades A/B/C. Daily snapshot in `cpi_daily` (07:30 UTC cron).
+
+```sql
+SELECT * FROM cooked_page_index(28) ORDER BY cpi ASC;   -- worst first
+```
+
+Full spec, reading grid, detected archetypes: `docs/cpi-cooked-page-index.md`.
+
+## Documentation index
+
+| Doc | Purpose |
+|---|---|
+| `CLAUDE.md` | Agent rules, autonomy scope, hard rules (Paris TZ, events_human, FR dates), session reflexes |
+| `docs/PLAYBOOK-analyse-seo.md` | How to run SEO analyses without falling into the 6 classic traps |
+| `docs/cpi-cooked-page-index.md` | CPI v2.1 spec, usage, archetypes |
+| `docs/ROADMAP-sprint38-handoff.md` | Remaining P0/P1/P2 work |
+| `docs/data-quality-audit-2026-06-10.md` | Latest trust audit (events, GSC, pipeline) |
+| `docs/HISTORY-sprints.md` | One-line-per-sprint chronology |
+| `docs/agents/*.md` | Engineering-skills config (issues, labels, domain docs) |
 
 ---
 

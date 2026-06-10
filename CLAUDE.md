@@ -77,10 +77,58 @@ rétroactivement).
   la catégorie Wix ressource/classique reste NULL — non déductible du slug,
   à enrichir via le hub).
 - Vestiges purgés : events_stitched, session_canonical_id,
-  sessions_corrected_daily ; views.sql resynchronisé avec la prod. Sert de remplaçant GA4 pour fournir
+  sessions_corrected_daily ; views.sql resynchronisé avec la prod.
+- Monitoring : table `alerts` + `cooked_alerts_refresh()` (cron horaire
+  `15 * * * *`) — pipeline mort, récidive double-embed, santé RPCs S37,
+  attribution dégradée, retard GSC. Réflexe : `SELECT * FROM alerts
+  WHERE NOT acked`.
+- `seo_to_contact_funnel(days)` — la boucle GSC → landing → contacts
+  (entry_channel LIKE 'organic%' : classify_channel retourne
+  organic_google / organic_other / organic_ai).
+
+**Sprint 38 (10/06/2026) — CPI (Cooked Page Index) :**
+- `cooked_page_index(days)` — score santé 0-100 par page : capture GSC
+  (standardisation indirecte sur la courbe CTR propre du site, loi de
+  puissance R²=0,917), rétention/lecture organiques (cascade orthogonale,
+  empirical Bayes), conversion (direct + assists dilués 1/L +
+  0,25×bookings), momentum log-symétrique **relatif au site**, gate LCP.
+  Grades de confiance A/B/C. Spec complète et grille de lecture :
+  `docs/cpi-cooked-page-index.md`.
+- Snapshot quotidien `cpi_daily` (cron `30 7 * * *`, 90 min après
+  l'ingest GSC) → trajectoire du score lui-même = alerte decay précoce.
+- Premier snapshot 10/06/2026 : 192 pages, CPI pondéré trafic 32,
+  446 clics perdus/28j. Sert de remplaçant GA4 pour fournir
 des données comportementales fiables à Nicolas et à Me Plouton, et
 permet les analyses Cooked × GSC (intent matching, funnel SEO
 complet, pogo-stick × ranking) consommées en mode question/réponse.
+
+---
+
+## 🚨 Réflexes de démarrage de session
+
+Avant toute analyse, dans cet ordre (30 secondes) :
+
+```sql
+SELECT * FROM alerts WHERE NOT acked;          -- 1. rien d'anormal ?
+SELECT * FROM refresh_pipeline_health();       -- 2. pipeline healthy ?
+SELECT gsc_last_data_day();                    -- 3. fraîcheur GSC (lag J-2 normal)
+```
+
+Si une alerte est active : la traiter ou l'expliquer AVANT de produire des
+chiffres (un chiffre produit pendant un incident pipeline est un chiffre
+faux). Pour prioriser le travail SEO/contenu :
+`SELECT * FROM cooked_page_index(28) WHERE grade IN ('A','B') ORDER BY cpi ASC`.
+
+**Carte de la documentation** (lire selon le besoin) :
+
+| Besoin | Fichier |
+|---|---|
+| Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
+| Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
+| Ce qui reste à faire (P0/P1/P2) | `docs/ROADMAP-sprint38-handoff.md` |
+| État de fiabilité des données (audits) | `docs/data-quality-audit-2026-06-10.md` |
+| Chronologie des sprints | `docs/HISTORY-sprints.md` |
+| Architecture détaillée, déploiement, events | `README.md` |
 
 ---
 
@@ -230,6 +278,21 @@ RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
 - `dfs_keywords_to_sync(limit_n)` — liste keywords à syncer (union GSC 28j ∪ 90j)
 - `gsc_x_dfs_opportunities(...)` — quick wins SEO (volume DFS + position 5–15)
 
+RPCs attribution & santé (Sprint 37-38) :
+- `form_submits_attributed(days)` — attribution des forms : hidden_field >
+  temporal_unique > unresolved
+- `conversion_journeys(days)` — un row par contact macro : entry_path,
+  entry_channel, journey[] (séquence de pages), pages_count, device
+- `content_performance(days)` — perf par page_type × theme
+- `seo_to_contact_funnel(days)` — GSC clics → entrées organiques → contacts
+  par landing
+- `cooked_page_index(days)` / `cooked_cpi_snapshot()` — score santé par page
+  + snapshot quotidien `cpi_daily`
+- `cooked_alerts_refresh()` — recalcul des alertes (cron horaire) ; table
+  `alerts` (acked boolean)
+- `cooked_page_type(path)` — cabinet / hub / expertise / post / blog-nav ;
+  table `page_taxonomy` (theme par heuristique slug)
+
 **DataForSEO (agent Cooked)** : le MCP DataForSEO est connecté → lookups de
 volume **en live** via `mcp__dataforseo__kw_data_google_ads_search_volume`
 (location `France`, language `fr`). Pièges : max ~10 mots / 80 car. par keyword
@@ -361,6 +424,33 @@ immédiatement la requête.
 des bots = une décision business fausse. Le filet anti-bruit a été construit
 exprès pour produire des chiffres propres ; il faut que je le respecte
 systématiquement.
+
+---
+
+## 🚨 Leçons d'analyse SEO (retex 09-10/06/2026) — les 6 pièges
+
+Détail et requêtes types : `docs/PLAYBOOK-analyse-seo.md`. Résumé dur :
+
+1. **Toujours décomposer par canal avant de juger une page.** Un dwell
+   médian global mélange social (1 s) et Google (45 s) → chiffre menteur.
+   Les métriques de lecture se calculent sur les entrées **organiques
+   uniquement** (`classify_channel(...) LIKE 'organic%'`).
+2. **La position moyenne est un piège** (pondérée impressions, mélange des
+   requêtes). Pour juger un CTR : attendu requête par requête via la courbe
+   du site, puis somme (standardisation indirecte — cf. terme capture du CPI).
+3. **`gsc_query_page_daily` ne couvre qu'une fraction du trafic** (Google
+   anonymise jusqu'à ~94 % des requêtes d'une page). Les TOTAUX viennent de
+   `gsc_path_daily` ; qpd sert au mix positionnel et à l'attribution.
+4. **Marée vs ranking** : clics en baisse à position CONSTANTE = demande ou
+   SERP qui bouge (pas la page). Clics en baisse + position qui glisse =
+   vrai decay. Deux maladies, deux remèdes. Le momentum du CPI est relatif
+   au site pour cette raison.
+5. **Exclure le branded** (`query !~* 'plouton'`) de toute mesure de
+   capture/CTR, sinon la home triche.
+6. **Petits volumes = pas de verdict.** Empirical Bayes + grades de
+   confiance (A/B/C). Un champion à 12 visites est une hypothèse, pas un
+   résultat. Le CPI trie, les quatre z diagnostiquent — ne jamais livrer le
+   nombre sans ses composantes.
 
 ---
 
@@ -538,7 +628,15 @@ articles "ressources" sans les distinguer des "affaires").
   /honoraires-rendez-vous (au 11/05/2026, sur 5j, 3 conversions article →
   honoraires venaient TOUTES de posts classiques, pas de ressources).
 
-### Cooked ne stocke PAS la catégorie
+### Catégorie & thème : ce que Cooked stocke depuis le Sprint 37
+
+`page_taxonomy` (table) + `cooked_page_type(path)` stockent le **type**
+(cabinet/hub/expertise/post/blog-nav) et le **theme** (heuristique slug,
+source tracée). En revanche la **catégorie Wix Blog** (ressource vs
+classique) reste NULL — non déductible du slug, à enrichir via le hub
+`/comprendre-le-droit` (browser requis, item P2 roadmap).
+
+### Cooked ne stocke PAS la catégorie Wix (historique pré-S37)
 
 L'info catégorie n'est PAS dans la DB Cooked (`events`,
 `seo_url_snapshot`). Pour filtrer une analyse par type, il faut soit :
@@ -551,6 +649,29 @@ L'info catégorie n'est PAS dans la DB Cooked (`events`,
 **Avant de parler de "ressources" vs "affaires" dans une analyse :
 toujours vérifier la liste des slugs de la catégorie.** Ne JAMAIS
 présumer la catégorie d'un article à partir de son slug.
+
+---
+
+## Git — routine de push (MCP GitHub souvent HS)
+
+Le MCP `github:push_files` est en panne récurrente depuis le 09/06/2026
+(toute opération, même lecture). Le canal fiable est le **bundle** :
+
+```bash
+# Côté agent (container) :
+git bundle create /mnt/user-data/outputs/cooked-<sujet>.bundle <base>..main
+
+# Côté Nicolas (one-liner, base = dernier commit connu de GitHub) :
+cd ~/Desktop/cooked && git fetch ~/Downloads/cooked-<sujet>.bundle main:tmp \
+  && git merge tmp && git push origin main && git branch -d tmp
+```
+
+Règles : (1) toujours `git bundle verify` avant de livrer ; (2) base du
+bundle = dernier commit CONFIRMÉ poussé (un bundle cumulatif est sûr, le
+fetch déduplique) ; (3) si on retente le MCP, JAMAIS avec un contenu
+placeholder — uniquement le vrai contenu final ; (4) les migrations
+appliquées en prod via MCP Supabase doivent TOUJOURS avoir leur miroir
+exact dans `supabase/migrations/` (timestamp réel via `list_migrations`).
 
 ---
 
