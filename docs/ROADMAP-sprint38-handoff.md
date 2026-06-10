@@ -117,6 +117,11 @@ est le « quoi faire » ; CLAUDE.md est le « comment se comporter ».
   joint sur l'égalité de `path` brute — utiliser `canonical_path()`
   (existe déjà) pour absorber trailing slash/query.
 
+### Livré pendant le Sprint 38 (10/06)
+- **CPI v2.1** : RPC `cooked_page_index(days)` + table `cpi_daily` + snapshot
+  quotidien (cron 07:30 UTC). Spec et grille de lecture :
+  docs/cpi-cooked-page-index.md. Reste P1 : protocole de validation à J+28.
+
 ### P2 — améliorations opportunistes
 - **Clamp horloge client à l'ingestion** (audit 10/06 : 0,28 % d'events avec
   occurred_at client déréglé, dont 15/90j à > 24 h → mauvais jour Paris).
