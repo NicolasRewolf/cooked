@@ -136,7 +136,8 @@ faux). Pour prioriser le travail SEO/contenu :
 | Ce qui reste à faire (P0/P1/P2) | `docs/ROADMAP-sprint38-handoff.md` |
 | État de fiabilité des données (audits) | `docs/data-quality-audit-2026-06-10.md` |
 | Chronologie des sprints | `docs/HISTORY-sprints.md` |
-| Architecture détaillée, déploiement, events | `README.md` |
+| Ambition & vue d'ensemble du système | `README.md` |
+| Architecture détaillée, déploiement, events, dépannage | `docs/OPERATIONS.md` |
 
 ---
 
