@@ -201,6 +201,33 @@ Demander une validation explicite à Nicolas uniquement pour :
 
 ---
 
+## 🚨 RÈGLE ABSOLUE — Aucun chiffre orienté décision sans contre-vérification
+
+Tout chiffre qui appuie une recommandation (« quick win », « page à
+réécrire », « meilleure page du site », « scaler X ») doit avoir passé
+**au moins une contre-vérification AVANT d'être livré** :
+
+1. **Décomposition** : un agrégat (position moyenne, total d'impressions,
+   dwell global) se décompose toujours une maille en dessous (par requête,
+   par canal, par jour) avant d'être interprété.
+2. **Croisement de sources** : quand deux systèmes mesurent la même chose
+   (clics GSC vs visites Cooked, export Wix vs form_submit), comparer sur
+   fenêtre alignée. Les divergences sont des informations, pas du bruit.
+3. **Dire le statut** : si un chiffre n'a pas pu être contre-vérifié, la
+   réponse doit le dire explicitement (« non recoupé »). Nicolas ne doit
+   jamais avoir à se demander si un chiffre livré a été vérifié ou pas.
+
+**Pourquoi cette règle existe :** le 11/06/2026, le rapport pages
+expertise a présenté trois « quick wins SEO » comme meilleure action du
+site. Challengé par Nicolas, le contrôle (10 minutes) a montré qu'un des
+trois était un faux gisement (81 % d'impressions navigationnelles d'un
+concurrent) et que les clics GSC sous-comptaient les visites réelles de
+2,4×. Le piège était documenté dans le playbook depuis la veille — il n'a
+pas été appliqué. La confiance se perd sur UN chiffre faux livré avec
+aplomb ; aucune vitesse de livraison ne vaut ce coût.
+
+---
+
 ## Méthodologie qui marche (retex Sprints 12-13)
 
 À garder comme grille de qualité pour les sprints futurs :
