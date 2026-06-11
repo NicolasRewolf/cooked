@@ -101,6 +101,14 @@ est le « quoi faire » ; CLAUDE.md est le « comment se comporter ».
   `getAnonymousId()`. Attention budget 15k (marge actuelle : 512 chars).
 
 ### P1 — dette qui mord
+- **`click_internal.target_path` URL-encodé (constat 11/06/2026)** : 101/391
+  clics sur 28j ont un target_path type `/indemnisation-des-victimes/
+  victimes-de-d%c3%a9lits-ou-crimes` — non joignable avec `events.path`
+  (canonicalisé NFC, lui). L'Edge `track` applique `canonicalPath()` à
+  `path` mais pas à `props.target_path`. Fix : canonicaliser target_path
+  dans l'Edge (events futurs) + migration rétroactive (la fonction
+  `url_decode` existe déjà, migration `20260507132254`). Toute analyse de
+  nav interne d'ici là doit décoder à la lecture.
 - **`events` = 405 MB pour 392k rows (~1 Ko/row)** : bloat + props lourds.
   `payload_meta` est dupliqué dans chaque form_submit ; les index pèsent.
   Audit : `pgstattuple`, politique `purge_old_events` (vérifier la
@@ -157,12 +165,12 @@ est le « quoi faire » ; CLAUDE.md est le « comment se comporter ».
   docs/data-quality-audit-2026-06-10.md.
 - Jour GSC 31/05/2026 absent : trou côté API Google (re-fetché ~10× par le
   daily --months 1). Documenté, aucune action — ne pas le « réparer ».
-- **Catégorie Wix ressource/classique** : toujours NULL dans
-  `page_taxonomy` (non déductible du slug, règle CLAUDE.md). La liste
-  authoritative est sur `/comprendre-le-droit`, rendu client-side → il
-  faut un navigateur (Claude in Chrome) ou un export Velo. Une session de
-  scrape → `source='hub_scrape'`, et `content_performance` gagne l'axe
-  catégorie.
+- ~~Catégorie Wix ressource/classique~~ **FAIT (11/06/2026)** via l'API
+  Wix Blog (MCP Wix, pas de browser nécessaire) : 56 `ressource` /
+  328 `classique` dans `page_taxonomy`, migration
+  `20260611202556_page_taxonomy_wix_blog_categories`. Reste : pas de
+  refresh auto — rejouer la synchro quand de nouveaux articles sortent
+  (~4/mois), ou l'automatiser (job hebdo qui appelle l'API Wix).
 - **Thèmes heuristiques à valider** : trier `page_taxonomy` par trafic
   desc, vérifier manuellement le top 50, corriger en `source='manual'`
   (l'upsert heuristique ne touche jamais manual).

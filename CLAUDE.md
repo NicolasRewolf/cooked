@@ -116,8 +116,15 @@ rétroactivement).
   pose par `setFieldValues()` — le rail du `page_source` de
   faq-system.js. Webhook v10 inchangé. **Première attribution
   `hidden_field` vérifiée le 11/06/2026 à 08:53** (form de test Nicolas,
-  compte comme contact macro dans les chiffres du 11/06). ⚠️ Le
-  « Formulaire Divorce » n'a pas encore ses champs cachés (action Wix).
+  compte comme contact macro dans les chiffres du 11/06). Champs cachés
+  ajoutés au « Formulaire Divorce » par Nicolas le 11/06 après-midi (à
+  vérifier à la première soumission).
+- Reprise 11/06 après-midi : table `annotations` (événements hors-site,
+  migration `20260611201942`) ; **catégorie Wix Blog renseignée dans
+  `page_taxonomy`** via l'API Wix MCP (56 `ressource` / 328 `classique`,
+  migration `20260611202556`) ; constat P1 `click_internal.target_path`
+  URL-encodé (101/391 sur 28j, non joignable avec `path` — décoder à la
+  lecture en attendant le fix Edge).
   Sert de remplaçant GA4 pour fournir
 des données comportementales fiables à Nicolas et à Me Plouton, et
 permet les analyses Cooked × GSC (intent matching, funnel SEO
@@ -653,27 +660,55 @@ articles "ressources" sans les distinguer des "affaires").
   /honoraires-rendez-vous (au 11/05/2026, sur 5j, 3 conversions article →
   honoraires venaient TOUTES de posts classiques, pas de ressources).
 
-### Catégorie & thème : ce que Cooked stocke depuis le Sprint 37
+### Catégorie & thème : ce que Cooked stocke (à jour 11/06/2026)
 
 `page_taxonomy` (table) + `cooked_page_type(path)` stockent le **type**
-(cabinet/hub/expertise/post/blog-nav) et le **theme** (heuristique slug,
-source tracée). En revanche la **catégorie Wix Blog** (ressource vs
-classique) reste NULL — non déductible du slug, à enrichir via le hub
-`/comprendre-le-droit` (browser requis, item P2 roadmap).
+(cabinet/hub/expertise/post/blog-nav), le **theme** (heuristique slug,
+source tracée) et — depuis le 11/06/2026 — la **catégorie Wix Blog** :
+`category` = `ressource` (56 paths) ou `classique` (328 paths observés),
+renseignée depuis l'**API Wix Blog via le MCP Wix** (migration
+`20260611202556_page_taxonomy_wix_blog_categories`). Convention : un post
+multi-catégories qui contient « Ressources et notions juridiques » est
+`ressource` ; les autres posts publiés vus dans le trafic sont `classique`.
+La colonne `source` trace la provenance du THEME ; la provenance de
+`category` est toujours `wix_api`.
 
-### Cooked ne stocke PAS la catégorie Wix (historique pré-S37)
+⚠️ **Pas de refresh automatique** : un nouvel article publié n'a pas de
+`category` tant qu'on ne rejoue pas la synchro API Wix (ListPosts filtré
+sur la catégorie id `9477320f-5902-40e9-ace3-b0e3b6b8b51f`, site Cabinet
+Plouton `0870235c-b92d-4a69-a2f4-25a976ae5f0c`). Réflexe : si une analyse
+par catégorie montre des posts récents à `category IS NULL`, relancer la
+synchro (même mécanique que la migration). Ne JAMAIS présumer la catégorie
+d'un article à partir de son slug : l'API Wix est la seule référence
+(remplace l'ancien plan « scraper /comprendre-le-droit »).
 
-L'info catégorie n'est PAS dans la DB Cooked (`events`,
-`seo_url_snapshot`). Pour filtrer une analyse par type, il faut soit :
-1. Lister manuellement les slugs de la catégorie en allant sur
-   `/blog/categories/...` côté browser
-2. Considérer un futur enrichissement de Cooked : table
-   `post_categories(slug, category)` mise à jour par job quotidien qui
-   scrape `/blog/categories/*` ou appelle Wix Blog API
+### Contexte business (recueilli auprès de Nicolas le 11/06/2026)
 
-**Avant de parler de "ressources" vs "affaires" dans une analyse :
-toujours vérifier la liste des slugs de la catégorie.** Ne JAMAIS
-présumer la catégorie d'un article à partir de son slug.
+- **Le cabinet a de la capacité** : Me Plouton « n'attend que ça » →
+  l'objectif du système est le **volume de contacts qualifiés** (pas un
+  arbitrage de mix sous contrainte de capacité).
+- **~40 nouveaux dossiers signés/mois** toutes sources confondues (réseau,
+  bouche-à-oreille, SEO, site, GMB…) — pas de ventilation connue. Les appels
+  passent par le standard (une secrétaire) ; pas de comptage par source.
+- **Nicolas est seul sur la maintenance du site** ; Adrien (Nomad) ne gère
+  QUE les Google Ads. Contrat éditorial : **4 articles « ressources et
+  notions juridiques » par mois** rédigés par Nicolas (750 €/mois) → la
+  question « les ressources convertissent-elles ? » est une question de
+  pilotage de SON livrable, à traiter avec ce niveau de soin.
+- **Valeur par domaine** : grille relative demandée à Me Plouton (en
+  attente) — préalable à la pondération par thème du CPI v2.2.
+- **Paid** : utm_source seul (pas de utm_campaign), ~1 800 entrées/28j,
+  atterrit surtout home + pages expertise. Le CPI n'est PAS pollué (toutes
+  ses composantes filtrent `organic%`), mais toute analyse de conversion
+  par page hors CPI doit décomposer par canal.
+- **Table `annotations`** (`day`, `kind` media/presse/site_change/campagne/
+  autre, `label`, `paths[]`) : à remplir quand Me Plouton passe à la TV ou
+  dans la presse (migration `20260611201942`). À terme : neutralisation des
+  pics dans le momentum CPI.
+- **Formulaire Divorce** : champs cachés `cooked_aid`/`cooked_sid` ajoutés
+  par Nicolas le 11/06/2026 — à VÉRIFIER à la première soumission
+  (`props.cooked_aid` non NULL sur un form_submit dont
+  `objet_de_ma_demande` est vide/divorce).
 
 ---
 
