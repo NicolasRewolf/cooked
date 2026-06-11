@@ -1,25 +1,22 @@
 <!--
   COOKED — first-party SEO tracker (cookieless, RGPD-exempt)
-  Version: Sprint 37 (2026-06-09) — fiabilité & attribution.
-    1. EXECUTION GUARD (window.__cookedLoaded) — l'audit live du 09/06/2026 a
-       révélé que le snippet est embarqué 2× dans le Custom Code Wix → 2
-       instances du script → listeners empilés → clics dupliqués à la même
-       seconde (cta_phone_click +13,6 % sur 28j). Le garde rend le script
-       idempotent quel que soit le nombre d'embeds. (Le double embed Wix
-       doit aussi être supprimé côté admin — défense en profondeur.)
-    2. BATCHING — engagement_tick + web_vitals + scroll_depth représentaient
-       78 % des requêtes réseau (6,2 POST/session en moyenne, max 203).
-       File d'attente flushée toutes les 5 s ou à 10 events ; les events
-       critiques (pageview, tous les clics, page_exit) flushent immédiatement.
-       L'Edge /track acceptait déjà {events:[…]} (cap 50) — jamais utilisé
-       jusqu'ici. Gain mesuré attendu : −70 à −80 % de requêtes.
-    3. FORM ATTRIBUTION — dépose anonymous_id + session_id dans les champs
-       cachés Wix `cooked_aid` / `cooked_sid` (setter natif + event input,
-       requis par React/Wix Forms). Renvoyés par le webhook → chaque
-       form_submit redevient rattachable au parcours réel du visiteur
-       (form_submits_attributed() : hidden_field > temporal > unresolved).
-    4. Fix double-tick : flushExit remet lastTick à jour après le flush
-       résiduel (1,48 % des ticks arrivaient en double <1,5 s).
+  Version: Sprint 38 (2026-06-11) — form attribution via query params.
+    FORM ATTRIBUTION v2 — Wix Forms V2 ne rend PAS les champs cachés dans
+    le DOM de la page publiée (vérifié en prod le 11/06/2026 : payloads
+    sans field:cooked_aid, 0 input cooked_* dans le DOM). Le seeding DOM
+    du Sprint 37 (fillCkd/setNV) était donc mort-né : remplacé par
+    exposeIds() — les ids sont exposés en query params (?cooked_aid=…&
+    cooked_sid=…) via history.replaceState ; le masterPage.js Velo les lit
+    (wixLocation.query) et les pose dans les forms via setFieldValues(),
+    même rail que le page_source de public/faq-system.js (Rewolf).
+    replaceState ne crée pas d'URL crawlable (jamais liée → pas d'impact
+    SEO) ; les paths Cooked sont canonicalisés sans query (pas d'impact
+    data). URL partagée portant l'aid d'autrui : le tracker écrase avec
+    SES valeurs au premier pageview.
+  (Sprint 37: execution guard window.__cookedLoaded — snippet embarqué 2×
+    → clics dupliqués même-seconde ; batching {events:[…]} flush 30 s /
+    10 events / pagehide, critiques immédiats, −60/70 % de requêtes ;
+    fix double-tick flushExit)
   (Sprint 36: click_internal — attribution nav interne)
   (Sprint 35: cta_anchor_click ne compte plus le chrome UI)
   (Sprint 30: bfcache, SPA nav, placement & debounce fixes)
@@ -59,7 +56,7 @@
   // version label never appears after a Wix republish, the paste
   // failed or was truncated. Bump this string on every meaningful
   // tracker change.
-  var COOKED_VERSION       = 'sprint37';
+  var COOKED_VERSION       = 'sprint38';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -329,6 +326,10 @@
       try { discVO(); } catch (e) {}
       try { attachVO(); } catch (e) {}
       emitPageview();
+      // Sprint 38 — ré-expose les ids sur la nouvelle URL (la nav SPA
+      // remplace la query). Pas de boucle : le replaceState interne
+      // re-déclenche onPMC qui early-return (path inchangé).
+      exposeIds();
     }
   }
 
@@ -935,54 +936,36 @@
   });
 
   // ==============================================================
-  // 7. Sprint 37 — form attribution seeding
+  // 7. Sprint 38 — form attribution : ids exposés en query params
   //
-  // Dépose anonymous_id + session_id dans les champs cachés Wix
-  // `cooked_aid` / `cooked_sid` (à créer une fois dans chaque Wix Form,
-  // comme le champ `page_source` existant). Le webhook form-webhook v10
-  // les lit dans le payload → chaque form_submit est rattaché au parcours
-  // réel du visiteur.
+  // Wix Forms V2 ne rend pas les champs cachés dans le DOM de la page
+  // publiée (vérifié en prod le 11/06/2026 : 0 input cooked_*, payloads
+  // webhook sans field:cooked_aid) : le seeding DOM du Sprint 37
+  // (fillCkd/setNV) ne pouvait pas fonctionner. À la place :
+  // cooked_aid/cooked_sid sont exposés dans l'URL (history.replaceState) ;
+  // le masterPage.js Velo les lit via wixLocation.query et les pose dans
+  // les champs cachés des forms via setFieldValues() — même rail que le
+  // page_source de public/faq-system.js. Le webhook form-webhook v10 lit
+  // ensuite field:cooked_aid / field:cooked_sid, inchangé.
   //
-  // Wix Forms (React) ignore une assignation directe de .value : il faut
-  // le setter natif + dispatch d'un event 'input' bubbleant.
-  // Stratégie de remplissage : au chargement (retry borné, les forms Wix
-  // se rendent tard), à chaque interaction avec un form (focusin), et en
-  // continu léger — coût quasi nul, idempotent.
+  // - replaceState : URL jamais liée → jamais crawlée (pas d'impact SEO) ;
+  //   les paths Cooked sont canonicalisés sans query (pas d'impact data).
+  // - URL partagée portant l'aid d'un autre visiteur : écrasée par les
+  //   valeurs locales au premier pageview (q.set inconditionnel).
+  // - Ré-exposé à chaque nav SPA (cf. onPMC) : la query suit la page.
+  // - Vieux navigateurs sans URLSearchParams : catch silencieux (pas
+  //   d'attribution hidden_field, le fallback temporal du webhook reste).
   // ==============================================================
-  function setNV(input, value) {
-    if (!input || input.value === value) return;
+  function exposeIds() {
     try {
-      var st = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
-      if (st && st.set) st.set.call(input, value); else input.value = value;
-      input.dispatchEvent(new Event('input',  { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    } catch (e) { try { input.value = value; } catch (e2) {} }
-  }
-
-  function fillCkd() {
-    try {
-      var pairs = [
-        ['input[name="cooked_aid"],input[id*="cooked_aid"]', getAnonymousId()],
-        ['input[name="cooked_sid"],input[id*="cooked_sid"]', getSessionId()]
-      ];
-      for (var i = 0; i < 2; i++) {
-        var els = document.querySelectorAll(pairs[i][0]);
-        for (var j = 0; j < els.length; j++) setNV(els[j], pairs[i][1]);
-      }
+      var q = new URLSearchParams(location.search);
+      var aid = getAnonymousId(), sid = getSessionId();
+      if (q.get('cooked_aid') === aid && q.get('cooked_sid') === sid) return;
+      q.set('cooked_aid', aid);
+      q.set('cooked_sid', sid);
+      history.replaceState(history.state, '', location.pathname + '?' + q.toString() + location.hash);
     } catch (e) {}
   }
-
-  // Remplissage immédiat + retry borné (Wix rend les forms en différé),
-  // + focusin (forms tardifs, ré-écrit avant submit) + submit (filet).
-  fillCkd();
-  var fillTries = 0;
-  var fillTimer = setInterval(function () {
-    fillCkd();
-    if (++fillTries >= 15) clearInterval(fillTimer);
-  }, 3000);
-  document.addEventListener('focusin', function (e) {
-    if (e.target && e.target.form) fillCkd();
-  }, true);
-  document.addEventListener('submit', fillCkd, true);
+  exposeIds();
 })();
 </script>

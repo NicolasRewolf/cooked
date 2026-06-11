@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-// Cooked — suite de tests du tracker (Sprint 37).
+// Cooked — suite de tests du tracker (Sprint 38).
 // Usage : npm i jsdom && node tests/tracker.test.js
 // Teste SOURCE (wix/tracker.html) et MINIFIÉ (wix/tracker.min.html) :
 //   1. execution guard (double-embed → 1 seul event par action)
 //   2. classification des clics (phone/booking/internal/outbound)
-//   3. seeding des champs cachés cooked_aid/cooked_sid (immédiat + tardif)
+//   3. exposition des ids en query params (?cooked_aid/&cooked_sid via
+//      replaceState) au boot + ré-exposition après nav SPA — Sprint 38 :
+//      Wix Forms V2 ne rend pas les champs cachés dans le DOM, le pont
+//      vers les forms est masterPage.js (wixLocation.query → setFieldValues)
 //   4. localStorage bloqué → aid stable via sessionStorage
 //   5. batching : format {events:[…]}, critiques immédiats, gain réseau,
 //      exactitude active_ms / duration (horloge simulée 120 s)
@@ -17,7 +20,6 @@ const ok = (cond, label) => { console.log((cond ? '  ✅ ' : '  ❌ ') + label);
 function makeDom(opts = {}) {
   const vc = new VirtualConsole(); vc.on('error', () => {});
   const dom = new JSDOM(`<!DOCTYPE html><body>
-    <form><input name="cooked_aid"><input name="cooked_sid"><input name="email"></form>
     <a id="tel" href="tel:+33500000000">T</a>
     <a id="bkg" href="/honoraires-rendez-vous">R</a>
     <a id="int" href="/autre-page">I</a>
@@ -52,18 +54,19 @@ async function suite(label, js) {
   ok(counts.cta_phone_click === 1 && counts.cta_booking_click === 1
     && counts.click_internal === 1 && counts.click_outbound === 1, 'clics : 4 classes, 1 event chacune');
   ok(ev.every(e => e.props._v && /^sprint\d+$/.test(e.props._v)), 'version stamp présent');
-  const aid = w.document.querySelector('input[name="cooked_aid"]').value;
-  ok(aid.length >= 8 && aid === ev[0].anonymous_id, 'cooked_aid rempli == aid des events');
-  ok(w.document.querySelector('input[name="cooked_sid"]').value.length >= 8, 'cooked_sid rempli');
-  ok(w.document.querySelector('input[name="email"]').value === '', 'champs utilisateur intacts');
+  const u1 = new w.URL(w.location.href);
+  const aid = u1.searchParams.get('cooked_aid') || '';
+  ok(aid.length >= 8 && aid === ev[0].anonymous_id, 'cooked_aid exposé en query == aid des events');
+  ok((u1.searchParams.get('cooked_sid') || '').length >= 8, 'cooked_sid exposé en query');
+  ok(u1.pathname === '/article-test', 'path inchangé par replaceState');
   ok(w.__SENT.every(b => Array.isArray(b.events)), 'tous les POST au format {events:[…]}');
-  // form tardif via focusin
-  const late = w.document.createElement('form');
-  late.innerHTML = '<input name="cooked_aid" id="la"><input id="msg">';
-  w.document.body.appendChild(late);
-  w.document.getElementById('msg').dispatchEvent(new w.FocusEvent('focusin', { bubbles: true }));
-  await wait(50);
-  ok(w.document.getElementById('la').value.length >= 8, 'form rendu tardivement rempli via focusin');
+  // nav SPA : la query est ré-exposée sur la nouvelle URL (hook pushState → onPMC)
+  w.eval(`history.pushState({}, '', '/page-suivante');`);
+  await wait(80);
+  const u2 = new w.URL(w.location.href);
+  ok(u2.pathname === '/page-suivante'
+    && u2.searchParams.get('cooked_aid') === aid, 'nav SPA : ids ré-exposés sur la nouvelle URL');
+  ok(events(w).filter(e => e.name === 'pageview').length === 2, 'nav SPA : pageview émis, pas de boucle replaceState');
 
   // 4 : localStorage bloqué
   w = makeDom({ blockLocalStorage: true });
