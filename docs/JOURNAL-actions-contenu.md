@@ -20,6 +20,27 @@ Hors plan initial, même jour : champs cachés `cooked_aid`/`cooked_sid`
 ajoutés au Formulaire Divorce (11/06/2026, déclaré — vérification au
 premier form_submit venant de ce formulaire).
 
+## Vague 2 — maillage interne vers les étoiles montantes (11/06/2026)
+
+7 liens éditoriaux posés **par l'agent via l'API Wix Blog** (autorisation
+explicite Nicolas ; insertion auto-vérifiée : assert d'intégrité avant
+chaque envoi, blocs identifiables `ckdmlg*` retirables en un appel,
+publication vérifiée page par page en live). Métrique de suivi : momentum
++ zc des 3 cibles dans `cpi_daily` (effet attendu sous 2-4 semaines).
+
+| Depuis | Vers | Détail |
+|---|---|---|
+| faute-lourde (188 v/mois) | **délai-déraisonnable** | après le § L.141-1 (même fondement) |
+| guide CIVI (690) | **délai-déraisonnable** | fin de section recours |
+| guide CIVI (690) | **ONIAM** | FAQ exclusions (accident médical ∉ CIVI) |
+| mis-en-cause (457) | **délai-déraisonnable** | après la section évolutions de statuts |
+| accident-travail (359) | **ONIAM** | section prise en charge des soins |
+| GAV durée (1 738) | **nullité-dépistage** | section dépassement des délais/nullités |
+| après-GAV (303) | **nullité-dépistage** | section rôle de l'avocat |
+
+Non posé (hors API Blog — page Studio, action manuelle Nicolas) : lien
+ONIAM depuis l'expertise `/indemnisation-des-victimes/accidents-et-erreurs-medicales`.
+
 Reportés sciemment (archétype « dictionnaire » : des clics sans valeur
 business directe — zl/zv au plancher) : `période-de-sûreté`,
 `garde-à-vue-définition`, `mis-en-cause`. On ne dépense pas d'énergie
