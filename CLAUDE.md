@@ -695,8 +695,23 @@ d'un article à partir de son slug : l'API Wix est la seule référence
   notions juridiques » par mois** rédigés par Nicolas (750 €/mois) → la
   question « les ressources convertissent-elles ? » est une question de
   pilotage de SON livrable, à traiter avec ce niveau de soin.
-- **Valeur par domaine** : grille relative demandée à Me Plouton (en
-  attente) — préalable à la pondération par thème du CPI v2.2.
+- **Valeur par domaine (grille PROVISOIRE, Nicolas 11/06/2026)** :
+  FORT = **indemnisation des victimes** toutes déclinaisons (victimes de
+  délits/crimes, accidents route/travail/médical/vie courante, CIVI/SARVI)
+  — « c'est ce qui rapporte beaucoup à Julien ». Le pénal (stup,
+  féminicides, criminel) = l'ADN et la notoriété de Me Plouton (Julien),
+  valeur dossier à préciser. Paniers moyen/faible NON validés — ne pas
+  pondérer le CPI tant que la grille n'est pas confirmée.
+- **Nicolas a la main totale sur les articles** (choix des sujets, contenu,
+  template) → les deux leviers contenu (sujets pilotés par Cooked, CTA/
+  maillage dans le corps des posts) sont actionnables sans tiers.
+- **Cooked est mono-utilisateur (Nicolas)** : pas de digest/rapport pour
+  des tiers ; le mode de sortie reste le question/réponse ad-hoc.
+- **GMB : non branché (décision agent 11/06/2026)** — angle mort assumé
+  (appels directs fiche invisibles). À revisiter si on attaque
+  l'attribution téléphone ou si la part GMB des formulaires monte.
+- **Google Ads : MCP non connecté** à l'environnement à date — à ajouter
+  par Nicolas dans les connecteurs pour obtenir campagnes/coûts/CPA.
 - **Paid** : utm_source seul (pas de utm_campaign), ~1 800 entrées/28j,
   atterrit surtout home + pages expertise. Le CPI n'est PAS pollué (toutes
   ses composantes filtrent `organic%`), mais toute analyse de conversion
