@@ -112,6 +112,16 @@ snippet malade + decay (zc−− M↘) = le prochain à réparer, étoile montan
 5. **Branded** : `query !~* 'plouton'` partout où on juge un CTR.
 6. **Petits volumes** : lissage empirical Bayes + grades A/B/C. Sous
    n_org 30, on émet des hypothèses, pas des verdicts.
+7. **Quick win GSC non vérifié** (retex 11/06/2026) : avant d'annoncer
+   un « gisement » (grosses impressions, peu de clics), DEUX contrôles
+   obligatoires. (a) Décomposer requête par requête (piège 2 appliqué) :
+   defense-des-consommateurs affichait 3 434 imp pos 10 → 81 % venaient
+   d'une requête navigationnelle d'un cabinet concurrent (« avocats-lpbc »),
+   gisement réel ~650 imp. (b) Croiser clics GSC × visites Cooked
+   (`organic_google`, fenêtre alignée sur `gsc_last_data_day()`) : GSC
+   sous-compte ~2,4× sur les pages à enjeu local (clics pack local/fiche
+   GMB invisibles dans Search Console). Les visites Cooked font foi pour
+   le trafic réel ; GSC fait foi pour impressions/positions.
 
 ## 6. Livraison à Nicolas
 
