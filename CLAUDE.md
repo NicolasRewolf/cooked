@@ -62,7 +62,8 @@ rétroactivement).
 - Tracker `sprint37` : execution guard (`window.__cookedLoaded`), batching
   ({events:[…]} — flush 30 s / 10 events / pagehide ; events critiques
   immédiats) → −60/70 % de requêtes, et seeding des champs cachés Wix
-  `cooked_aid`/`cooked_sid` dans les formulaires.
+  `cooked_aid`/`cooked_sid` dans les formulaires (⚠️ seeding DOM mort-né,
+  remplacé au sprint38 — voir bloc Sprint 38).
 - Webhook `form-webhook` v10 : lit les champs cachés → `props.cooked_aid`/
   `cooked_sid` (les colonnes identité restent `webhook-…`, invariants
   Sprint 24/29 préservés). L'attribution vit en LECTURE :
@@ -105,7 +106,19 @@ rétroactivement).
   (`scripts/cpi_validation_j28.sql`, à lancer dès le 08/07/2026 — dry-run :
   stabilité poids τ-b≥0,952 PASSE, calibration CTR R²=0,915 stable) ;
   idées v2.2 instruites dans la doc CPI (thèmes NO-GO, INP go-si-relatif,
-  cannibales défer). Sert de remplaçant GA4 pour fournir
+  cannibales défer).
+- Form attribution v2 (11/06) : Wix Forms V2 **ne rend pas les champs
+  cachés dans le DOM** de la page publiée → le seeding DOM du S37 ne
+  pouvait pas fonctionner (payloads sans `field:cooked_aid`). Remplacé :
+  tracker `sprint38` expose les ids en query params (`replaceState`,
+  jamais crawlé, paths Cooked sans query) ; `wix/masterpage-cooked.js`
+  (Velo, collé dans masterPage.js) les lit via `wixLocation.query` et les
+  pose par `setFieldValues()` — le rail du `page_source` de
+  faq-system.js. Webhook v10 inchangé. **Première attribution
+  `hidden_field` vérifiée le 11/06/2026 à 08:53** (form de test Nicolas,
+  compte comme contact macro dans les chiffres du 11/06). ⚠️ Le
+  « Formulaire Divorce » n'a pas encore ses champs cachés (action Wix).
+  Sert de remplaçant GA4 pour fournir
 des données comportementales fiables à Nicolas et à Me Plouton, et
 permet les analyses Cooked × GSC (intent matching, funnel SEO
 complet, pogo-stick × ranking) consommées en mode question/réponse.
@@ -326,8 +339,8 @@ Source SQL unique : `macro_contacts_by_path(days_back)` — utilisée par
 Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
 
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
-Paris (première ingestion réelle). Le tracker est en sprint30
-depuis le 21/05/2026 21:19 Paris.
+Paris (première ingestion réelle). Le tracker est en **sprint38**
+depuis le 11/06/2026 ~08:45 Paris (sprint37 : nuit du 10/06).
 
 ---
 

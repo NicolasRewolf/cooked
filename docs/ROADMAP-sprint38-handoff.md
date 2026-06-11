@@ -47,6 +47,17 @@ est le « quoi faire » ; CLAUDE.md est le « comment se comporter ».
      Wix Form (même mécanique que le champ caché `page_source` existant).
    - Optionnel : durcir `wix/http-functions.js` (origin `startsWith` →
      égalité stricte).
+
+   > **Résolu le 11/06/2026** (avec un détour) : tracker sprint37 déployé
+   > dans la nuit du 10/06 ; MAIS le seeding DOM était mort-né — Wix
+   > Forms V2 ne rend pas les champs cachés dans le DOM de la page
+   > publiée (payloads webhook sans `field:cooked_aid` malgré les champs
+   > présents dans l'éditeur). Fix sprint38 le 11/06 : ids exposés en
+   > query params par le tracker (`replaceState`) + `wix/masterpage-cooked.js`
+   > (Velo `setFieldValues`, rail du `page_source` de faq-system.js).
+   > Première attribution `hidden_field` vérifiée à 08:53. Il reste :
+   > champs cachés à ajouter au « Formulaire Divorce » (seul « Prise de
+   > contact site-web » les a) ; l'option origin stricte Velo reste ouverte.
 3. **Contrôles post-déploiement** (dès que Nico a publié) :
    ```sql
    -- le sprint37 doit apparaître, le sprint36 s'éteindre :
