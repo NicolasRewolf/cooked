@@ -100,6 +100,23 @@ est le « quoi faire » ; CLAUDE.md est le « comment se comporter ».
   l'attribution intra-session redevient correcte. ~3 lignes dans
   `getAnonymousId()`. Attention budget 15k (marge actuelle : 512 chars).
 
+### Incident 13/06/2026 — rebuild snapshot en timeout (corrigé en tampon, fond P1)
+- **Symptôme** : cron `refresh_seo_url_snapshot` (03:00 UTC) a échoué le 13/06
+  sur `statement timeout` ; snapshot figé à J-2. La requête 365j (4× seo_pages_overview
+  + pogo + CWV) met ~120 s et a franchi le timeout cron en grossissant avec `events`.
+- **Aggravant** : `refresh_pipeline_health()` plantait sur `format('%.1f')`
+  (Postgres ne supporte que %s/%I/%L) → l'auto-diagnostic était AVEUGLE à l'incident.
+- **Corrigé** (migration `20260614013457`) : `statement_timeout=600000` propre à
+  la fonction de rebuild + format() réécrit en `round()||`. Snapshot restauré à la
+  main (job pg_cron one-shot, car la connexion MCP coupe à 60 s et rollback).
+- **RESTE (P1)** : (a) le rebuild est lent par design — optimiser (matérialiser
+  seo_pages_overview ? réduire la fenêtre 365j ? incrémental ?) avant que 600 s ne
+  suffise plus ; lié à la dette `events` bloat ci-dessous. (b) **Trou de monitoring** :
+  `cooked_alerts_refresh()` n'a PAS levé d'alerte sur snapshot stale / cron failed
+  (seules form_attribution + gsc_lag remontent). Ajouter un check pipeline_health
+  dans le refresh d'alertes horaire — sinon un prochain échec sera de nouveau muet
+  jusqu'au réflexe de démarrage manuel.
+
 ### P1 — dette qui mord
 - **`click_internal.target_path` URL-encodé (constat 11/06/2026)** : 101/391
   clics sur 28j ont un target_path type `/indemnisation-des-victimes/
