@@ -283,6 +283,17 @@ Deno.serve(async (req) => {
     if (!name || !session_id) { droppedMissingFields++; continue; }
     if (!ALLOWED_EVENTS.has(name)) { droppedDisallowedName++; continue; }
 
+    // 16/06/2026 — click_internal.target_path arrivait URL-encodé : contrairement
+    // au champ `path`, les `props` ne passaient pas par canonicalPath(), donc
+    // 26,8 % des target_path (sur 28j) n'étaient pas joignables avec `path`. On
+    // applique la même canonicalisation (decode → NFC → strip slash) à ce seul
+    // champ, pour ce seul event. Ne corrige que le futur (lignes déjà encodées
+    // restent à décoder à la lecture, cf. backfill optionnel).
+    const props = plainObject(e.props);
+    if (name === "click_internal" && typeof props.target_path === "string") {
+      props.target_path = canonicalPath(props.target_path) ?? props.target_path;
+    }
+
     rows.push({
       anonymous_id: resolveAnonId(e?.anonymous_id),
       session_id,
@@ -304,7 +315,7 @@ Deno.serve(async (req) => {
       browser,
       viewport_width: n(e.viewport_width),
       viewport_height: n(e.viewport_height),
-      props: plainObject(e.props),                  // Sprint 30 — arrays rejected
+      props,                                        // Sprint 30 — arrays rejected ; target_path décodé ci-dessus (16/06)
       occurred_at: iso(e.occurred_at) ?? now,       // Sprint 30 — strict ISO
       received_at: now,
     });
