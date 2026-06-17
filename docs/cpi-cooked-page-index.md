@@ -1,8 +1,16 @@
-# CPI — Cooked Page Index (v2.1, Sprint 38)
+# CPI — Cooked Page Index (v2.2, Sprint 38)
 
 Score de santé 0-100 par page, calculé sur 28 jours glissants. Croise GSC
 (capture) et Cooked (rétention, lecture, conversion), avec momentum relatif
 au site et gate technique LCP.
+
+> **v2.2 (16/06/2026)** — deux raffinements adoptés après revue mathématique
+> externe (corr 0,9855 avec v2.1, aucun verdict fiable A/B déplacé de ≥5 pts) :
+> momentum à **transition continue** (fin de la bascule discrète à 20 clics) et
+> lissage **empirical Bayes dynamique** (Beta-Binomial par type) pour rétention
+> et lecture. Formules : `cpi-modele-mathematique.md`. Analyse de sensibilité :
+> la conversion porte **65 % de la variance** du score (surpoids effectif vs
+> poids nominal 0,35 — point ouvert, à juger au J+28).
 
 ## Usage
 
@@ -51,15 +59,18 @@ nombre sans ses composantes.
 
 - **zc capture** : clics réels vs attendus à ces positions (courbe CTR propre
   au site, loi de puissance R²=0,917, branded exclu). zc<0 = snippet malade.
-- **zr rétention** : survie des 15 premières secondes (organique).
+- **zr rétention** : survie des 15 premières secondes (organique) ; lissage
+  empirical Bayes **dynamique** (pseudo-compte κ estimé par type, v2.2).
 - **zl lecture** : profondeur qualifiée *parmi les retenus* (seuils = médianes
-  du type). Orthogonal à zr par construction.
+  du type), même lissage EB dynamique. Orthogonal à zr par construction.
 - **zv conversion** : contacts directs + assists dilués (1/longueur du
   parcours) + 0,25×bookings, par entrée organique, lissage empirical Bayes.
 
 `momentum` ∈ [0,71-1,40] : tendance clics **relative au site** (une marée qui
-baisse partout ne punit personne). `couv_gsc_pct` : part des impressions dont
-Google révèle la requête (peut descendre à 6 % — d'où le scaling v2.1).
+baisse partout ne punit personne) ; **transition continue** entre régime
+position (peu de clics) et régime clics relatif (v2.2 — fin du saut à 20 clics).
+`couv_gsc_pct` : part des impressions dont Google révèle la requête (peut
+descendre à 6 % — d'où le scaling v2.1).
 
 ## Archétypes détectés (run de validation 10/06/2026)
 
