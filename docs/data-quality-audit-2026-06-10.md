@@ -70,3 +70,27 @@ par les RPCs est traçable jusqu'à l'event brut.
 
 **Restatement à communiquer à Me Plouton** : contacts téléphone 28 j
 110 → 95. C'est une correction de mesure, pas une baisse d'activité.
+
+## 5. Addendum Sprint 39 (18/06/2026)
+
+Suivi post-audit, même exigence de fiabilité :
+
+- **Double-embed — diagnostic clos.** L'alerte `double_embed_suspect` n'était
+  PAS réellement éteinte : elle continuait de sonner en comptant des **clics
+  bruts** (un seul visiteur « tapeur » suffisait à la déclencher). Recalibrée
+  le 16/06 (`20260616082041`) pour compter les **sessions distinctes** avec
+  pageview/web_vitals dupliqués même-seconde (seuil 30). Conclusion : le
+  double-embed résiduel est un artefact de mesure + comportement, pas une
+  falsification systémique — `events_human` déduplique déjà les clics, donc
+  les chiffres business restent propres.
+- **Croisement export Wix ↔ `form_submit`.** L'export des formulaires fourni
+  par Nicolas a été comparé aux `form_submit` captés par Cooked : **aucun
+  formulaire manquant** côté Cooked (comptage fiable). Seules des métadonnées
+  ont été lues (dates, objets, pages) — aucune donnée personnelle stockée ni
+  exposée.
+- **`click_internal.target_path` URL-encodé : résolu.** Edge `track` v22
+  décode désormais `target_path` + backfill 143 lignes (`20260615234052`) —
+  la nav interne est joignable avec `path`, sans décodage à la lecture.
+- **`events` : ~406 MB confirmé sain** (poids légitime des `props` + index,
+  pas du bloat) ; purge `payload_meta` > 90 j toujours P2 d'optimisation,
+  pas de fiabilité.

@@ -10,6 +10,48 @@ est le « quoi faire » ; CLAUDE.md est le « comment se comporter ».
 
 ---
 
+## ⭐ MISE À JOUR 18/06/2026 — Sprint 39 : passage en PROD OPÉRATIONNELLE
+
+> Ce document reste la mémoire de travail de Fable 5 (09/06). Cette section
+> en synchronise l'état au 18/06 et **réoriente la priorité** ; le détail
+> historique ci-dessous est conservé tel quel.
+
+**Désormais : l'outil est en prod opérationnelle, le focus passe au SITE
+(conversion), plus à l'outil.** 3 revues d'experts du CPI ont conclu que le
+modèle est suffisant ; le benchmark a montré que « réparer » la conversion en
+continu est une impasse vu la rareté des contacts (~10/mois). Le levier n'est
+plus mathématique — il est dans l'**action sur le gisement** (pages à fort
+trafic qui ne convertissent pas).
+
+**Items de ce ROADMAP désormais RÉSOLUS :**
+- ✅ **P1 `click_internal.target_path` URL-encodé** → Edge `track` v22 décode
+  `canonical_path(url_decode(...))` + backfill 143 lignes (`20260615234052`).
+- ✅ **Incident 13/06 snapshot timeout** → corrigé le 14/06 (`20260614013457`,
+  `statement_timeout` propre + `format()` réécrit).
+- ✅ **`snapshot_pages_export` cassée** (colonnes email_clicks droppées S30)
+  → réparée (`20260615220500`, renvoie `0::bigint`, contrat préservé).
+- ✅ **CPI v2.2** déployé (`20260616142127`) : momentum continu + empirical
+  Bayes dynamique. Validation J+28 (08/07) inchangée, harnais rebasé v2.2.
+- ✅ **Alertes recalibrées** : `double_embed_suspect` (sessions réelles, seuil
+  30, `20260616082041`), `cpi_drop` (vrai decay uniquement, `20260617215132`).
+- ✅ **Vue `cpi_gisement`** (`20260618102429`) : pilotage conversion (potentiel
+  vs conversion réalisée) — l'outil pointe désormais où agir sur le site.
+- ✅ **Croisement export Wix ↔ `form_submit`** : comptage fiable, aucun raté.
+
+**Reste ouvert mais DÉPRIORISÉ (l'outil est « assez bon ») :**
+- P0 anti-forge `cta_phone_click` (égalité origin Velo + rate-limit Edge) —
+  à faire si un burst suspect apparaît.
+- Dette `events` bloat (~405 MB), 2 overloads ambigus, colonne `country` morte,
+  `conversion_journeys` 5 sous-requêtes, API sprawl (~55 RPCs).
+- Chantiers de fond §2 (loader tracker, CI, source de vérité SQL unique) —
+  valables, mais hors du cap conversion immédiat.
+
+**Nouveau cap : agir sur le site.** Voir la vue `cpi_gisement` et le PLAYBOOK
+(§4) — les pages indemnisation à fort trafic / 0 contact sont les premières
+cibles (ponts vers le contact dans le corps des articles).
+
+---
+
 ## 0. État exact au moment de la passation (09/06/2026 ~20h Paris)
 
 ### Fait, déployé, vérifié en prod

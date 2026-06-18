@@ -1,4 +1,4 @@
-# CPI — Cooked Page Index (v2.2, Sprint 38)
+# CPI — Cooked Page Index (v2.2)
 
 Score de santé 0-100 par page, calculé sur 28 jours glissants. Croise GSC
 (capture) et Cooked (rétention, lecture, conversion), avec momentum relatif
@@ -36,11 +36,27 @@ WHERE fiable AND delta_cpi <= -10 ORDER BY delta_cpi;
 
 -- Les pages sorties du radar (souvent le decay le plus avancé)
 SELECT path, ptype, cpi_ref, grade_ref FROM cpi_movers WHERE statut = 'disparu';
+
+-- Pilotage conversion (Sprint 39) : le gisement = potentiel haut, ne convertit pas
+SELECT path, ptype, n_org, potentiel, cpi, convertit
+FROM cpi_gisement
+WHERE grade IN ('A','B') AND NOT convertit
+ORDER BY potentiel DESC;
 ```
 
 L'alerte `cpi_drop` (cron horaire, bloc 6 de `cooked_alerts_refresh`) pointe
-les pages fiables (grade A/B aux deux dates) qui perdent ≥ 15 pts sur ~7 j.
+les pages fiables (grade A/B aux deux dates) qui perdent ≥ 15 pts sur ~7 j,
+**uniquement si la chute est portée par un vrai decay** (momentum ≤ −0,10 ou
+capture delta_zc ≤ −0,5). La volatilité pure de la conversion (un contact qui
+sort de la fenêtre 28 j) ne déclenche plus l'alerte (recalibrée 17/06/2026).
 Le diagnostic vit dans les `delta_z*` de la vue — même grille que les z.
+
+Pour le **pilotage conversion**, la vue `cpi_gisement` sépare le *potentiel*
+(capture + rétention + lecture, renormalisés hors conversion) du badge
+*conversion réalisée* (`convertit`) — voir la requête « gisement » ci-dessus.
+Elle ne recalcule rien : elle relit le dernier `cpi_daily`. Le gisement
+(potentiel haut + ne convertit pas) = les pages où agir, à croiser avec
+l'intention du sujet (indemnisation > pénal éducatif).
 
 ## Grille de lecture
 

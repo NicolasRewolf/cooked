@@ -28,7 +28,7 @@ Wix Velo HTTP proxy
 Supabase Edge Function `/track` (Deno)
    │  resolve anonymous_id (browser-supplied UUID or IP+UA hash fallback)
    │  parse UA → device / browser / os
-   │  canonicalPath(path)        (decode + NFC + strip slash — Sprint 13 + refactor 22/05/2026)
+   │  canonicalPath(path)        (decode + NFC + strip slash — Sprint 13 ; v22/S39 : aussi props.target_path des click_internal)
    │  reject `props` arrays (Sprint 30 hardening)
    ▼ INSERT
 
@@ -151,7 +151,7 @@ cooked/
 ├── docs/
 │   ├── OPERATIONS.md                  — ce fichier
 │   ├── PLAYBOOK-analyse-seo.md        — SEO analysis playbook (traps & recipes)
-│   ├── cpi-cooked-page-index.md       — CPI v2.1 spec
+│   ├── cpi-cooked-page-index.md       — CPI v2.2 spec
 │   ├── ROADMAP-sprint38-handoff.md    — remaining work P0/P1/P2
 │   ├── HISTORY-sprints.md             — sprint chronology
 │   ├── data-quality-audit-*.md        — trust audits
@@ -172,7 +172,7 @@ All RPCs are `granted to service_role only`. No `anon` / `authenticated` access.
 
 | RPC | Returns |
 |---|---|
-| `snapshot_pages_export(paths text[])` | Latest snapshot rows (70 cols : 4 windows × ~11 metrics + CWV + provenance + device + CTAs + pogo + device CTA rate, post-Sprint-30). Filter by paths optional. |
+| `snapshot_pages_export(paths text[])` | Latest snapshot rows (70 cols : 4 windows × ~11 metrics + CWV + provenance + device + CTAs + pogo + device CTA rate, post-Sprint-30 ; réparée S39 : colonnes `email_clicks_*` droppées au S30 renvoyées en `0::bigint`, contrat préservé). Filter by paths optional. |
 | `site_context_export()` | One row of site-wide context 28d (sessions, bounce rate, top sources, sessions trend) |
 | `behavior_pages_for_period(from, to)` | One row / URL with 12-col subset over the requested window |
 | `seo_pages_overview(from, to)` | Same as above, parametric date range |
@@ -223,9 +223,13 @@ Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Cla
 - `seo_to_contact_funnel(days)` — GSC clicks → organic entries → contacts
   per landing page.
 - `cooked_page_index(days)` / `cooked_cpi_snapshot()` / table `cpi_daily` —
-  CPI, score santé 0-100 par page (spec : `docs/cpi-cooked-page-index.md`).
+  CPI **v2.2**, score santé 0-100 par page (spec : `docs/cpi-cooked-page-index.md`).
 - `cpi_movers` (vue) — Δ CPI ~7j : statuts present/nouveau/disparu, delta_z
-  par composante, flag `fiable` ; alimente l'alerte `cpi_drop`.
+  par composante, flag `fiable` ; alimente l'alerte `cpi_drop` (recalibrée S39 :
+  vrai decay momentum/capture uniquement, volatilité conversion exclue).
+- `cpi_gisement` (vue, S39) — pilotage conversion : `potentiel` (capture +
+  rétention + lecture, hors conversion) vs badge `convertit`, relu depuis
+  `cpi_daily`. Gisement = grade A/B + `NOT convertit`, trié par potentiel.
 - `page_taxonomy` table + `cooked_page_type(path)` — page typing
   (cabinet/hub/expertise/post/blog-nav) + theme (slug heuristic).
 - `alerts` table + `cooked_alerts_refresh()` (hourly cron) — self-monitoring.
@@ -363,7 +367,7 @@ ALL RPCs + snapshot read from events_human
 | `refresh_noise_filters_hourly` | `5 * * * *` | Re-scan bot fingerprints + noise sessions every hour (Sprint 28) |
 | `run_rpc_contract_tests` | `30 3 * * *` (05:30 Paris) | Nightly contract-test of the published RPCs → logs to `rpc_health` (Sprint 27) |
 | `purge_old_events_monthly` | `0 4 1 * *` (06:00 Paris, 1st of month) | Retention policy : deletes events > 400 days (Sprint 27) |
-| `cooked-alerts-hourly` | `15 * * * *` | Recompute `alerts` table — pipeline death, double-embed recurrence, S37 RPC health, degraded attribution, GSC lag, CPI drop (Sprints 37-38) |
+| `cooked-alerts-hourly` | `15 * * * *` | Recompute `alerts` table — pipeline death, double-embed recurrence (recalibré S39 : sessions dupliquées, seuil 30), S37 RPC health, degraded attribution, GSC lag, CPI drop (recalibré S39 : vrai decay uniquement) (Sprints 37-39) |
 | `cooked-cpi-daily-snapshot` | `30 7 * * *` (90 min after GSC ingest) | `cooked_cpi_snapshot()` → daily CPI per page into `cpi_daily` (Sprint 38) |
 | `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | Voir sections GSC / DataForSEO ci-dessus |
 
@@ -531,6 +535,7 @@ To rotate `ANON_SALT` : update the Edge Function secret. Old `anonymous_id`s wil
 
 | Sprint | Date | Scope |
 |---|---|---|
+| **39 — Consolidation & prod opérationnelle** | 15-18/06/2026 | Edge `track` v22 (`target_path` décodé + backfill 143), `snapshot_pages_export` réparée, **CPI v2.2** (momentum continu + EB dynamique), alertes recalibrées (`double_embed_suspect` seuil 30 ; `cpi_drop` vrai decay), vue `cpi_gisement` (pilotage conversion), 3 revues experts → outil suffisant, croisement Wix↔form_submit fiable. Passage focus site. |
 | **38 — CPI & form attribution v2** | 10-11/06/2026 | CPI v2.1 (`cooked_page_index`, `cpi_daily`, cron 07:30 UTC) + vue `cpi_movers` + alerte `cpi_drop`, harnais de validation J+28 (`scripts/cpi_validation_j28.sql`), idées v2.2 instruites. **11/06** : Wix Forms V2 ne rend pas les champs cachés dans le DOM → seeding DOM S37 mort-né ; tracker `sprint38` (ids en query params via replaceState) + `wix/masterpage-cooked.js` (setFieldValues). Première attribution `hidden_field` 08:53. |
 | **37 / 37b — Attribution & fiabilité** | 09/06/2026 | Tracker sprint37 (execution guard, batching, seeding champs cachés), webhook v10, `form_submits_attributed` / `conversion_journeys` / `content_performance` / `seo_to_contact_funnel`, dédup double-embed rétroactive (phone 110→95/28j, restatement), table `alerts` + cron horaire, taxonomie `page_taxonomy`, aid stable Safari privé. |
 | **36 — click_internal** | 04/06/2026 | Nav interne : quel élément UI mène à quelle page (placement + target_path). |

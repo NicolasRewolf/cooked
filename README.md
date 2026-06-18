@@ -170,29 +170,40 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 |---|---|
 | « Combien de contacts cette semaine, et d'où ? » | `site_macro_counts` + `conversion_journeys` |
 | « Quelles pages vont mal ? Lesquelles réparer d'abord ? » | `cooked_page_index(28)` — tri par CPI, grades A/B |
-| « Cette page chute — c'est la SERP ou c'est elle ? » | momentum relatif + `cpi_movers` (la dérivée du score) |
+| « Cette page chute — c'est la SERP ou c'est elle ? » | momentum relatif + `cpi_movers` (la dérivée du score) + alerte `cpi_drop` (vrai decay) |
 | « Cet article est-il bon ? » | `gsc_page_performance` + lecture décomposée par canal |
 | « Le SEO rapporte-t-il des clients ? » | `seo_to_contact_funnel` — requête → landing → contact |
 | « Quoi écrire ensuite ? Quels quick wins ? » | `content_performance` + `gsc_x_dfs_opportunities` |
+| « Quelles pages ont du trafic mais ne convertissent pas ? » | `cpi_gisement` — potentiel vs conversion réalisée |
 | « Le système va bien ? » | `alerts` + `refresh_pipeline_health()` |
 
 ---
 
-## Où en est le système (10/06/2026)
+## Où en est le système (18/06/2026)
 
-- **En production depuis le 06/05/2026** — tracker `sprint37` (batching,
-  garde anti-double-embed, attribution formulaires par champs cachés).
-- ~390 000 événements bruts, ~2 millions de lignes Search Console
+- **En production depuis le 06/05/2026.** Tracker navigateur `sprint38`
+  (batching, garde anti-double-embed, attribution formulaires par champs
+  cachés Wix). Edge Function `track` en **v22**.
+- ~390 000+ événements bruts, ~2 millions de lignes Search Console
   (16 mois), ~190 pages scorées par le CPI chaque matin.
-- Premier snapshot CPI le 10/06/2026 : CPI moyen pondéré par le trafic
-  de **32/100**, 446 clics Google « perdus » par mois identifiés — le
-  site a une vraie marge de progression, désormais chiffrée page par page.
-- Attribution des contacts : ~75 % des formulaires rattachés à leur
-  parcours, ~95 % attendus avec les champs cachés déployés cette nuit.
-- **Prochaines échéances** : premiers « movers » CPI vers le 17/06
-  (il faut 7 jours de trajectoire) ; **validation prédictive le
-  08/07/2026** — le CPI du 10/06 prédit-il les contacts des 28 jours
-  suivants ? Le protocole est écrit, prêt à lancer
+- **Sprint 39 (15-18/06) — consolidation & passage en prod opérationnelle :**
+  - **CPI v2.2** : momentum à transition continue + lissage empirical Bayes
+    dynamique par type (corr 0,9855 avec v2.1, aucun verdict fiable déplacé).
+  - Vue **`cpi_gisement`** : sépare le *potentiel* d'une page (capture +
+    rétention + lecture) de sa *conversion réalisée* → pointe les pages à
+    fort trafic qui ne convertissent pas encore (le gisement à « ponter »).
+  - Alertes recalibrées : `cpi_drop` n'alerte que sur un vrai decay
+    (momentum/capture), `double_embed_suspect` compte des sessions réelles.
+  - Bug P1 `click_internal.target_path` (URL-encodé) **résolu** (Edge v22 +
+    backfill) ; RPC `snapshot_pages_export` réparée.
+  - 3 revues d'experts externes du CPI passées au crible → verdict : l'outil
+    est suffisant, on ne le complexifie pas, **le levier est l'action sur le
+    gisement** (désormais le site, plus l'outil).
+- **Repère 10/06/2026** (premier snapshot CPI, v2.1) : CPI moyen pondéré
+  trafic **32/100**, 446 clics Google « perdus »/mois — marge chiffrée page
+  par page.
+- **Prochaine échéance** : **validation prédictive le 08/07/2026** — le CPI
+  prédit-il les contacts des 28 jours suivants ? Protocole prêt
   ([scripts/cpi_validation_j28.sql](scripts/cpi_validation_j28.sql)).
   S'il échoue, on recalibre les poids — on ne masque pas le résultat.
 

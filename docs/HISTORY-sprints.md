@@ -21,11 +21,13 @@ docs/audits. Les sprints non listés n'ont pas laissé de trace durable.
 | 04-07/06 | — | Paris date seam ; session restitch MPA ghosts |
 | 09-10/06 | **37** | Tracker sprint37 : execution guard `__cookedLoaded` (neutralise le double-embed Wix), batching {events:[…]} (−57 % POST), seeding champs cachés `cooked_aid`/`cooked_sid` ; webhook v10 ; dédup rétroactive double-embed (**restatement : phone 28j 110→95, +13,6 % corrigé**) ; `page_taxonomy` + `cooked_page_type` ; attribution lecture (`form_submits_attributed`, `conversion_journeys`, `content_performance`) ; `seo_to_contact_funnel` ; table `alerts` + cron horaire ; purge vestiges ; suite tests tracker (28 asserts) ; audit qualité données (verdict : sain) |
 | 10/06 | **38** | **CPI v2.1** : `cooked_page_index(days)` + `cpi_daily` + cron 07:30 UTC. Conçu, validé en live (3 bugs de calibration trouvés et corrigés : couverture GSC scalée, λ_pos 0,08, cpi borné + badge), premier snapshot 192 pages / CPI pondéré 32 / 446 clics perdus. Reste P1 : validation prédictive à J+28 (Spearman CPI→Δcontacts > 0,3) |
+| 15-18/06 | **39** | **Consolidation & passage en prod opérationnelle.** Edge `track` v22 (`click_internal.target_path` décodé + backfill 143 lignes — bug P1 résolu) ; `snapshot_pages_export` réparée (colonnes email_clicks droppées S30 → 0) ; **CPI v2.2** (momentum transition continue + empirical Bayes dynamique par type) ; alertes recalibrées (`double_embed_suspect` = sessions pageview/web_vitals dupliquées même-seconde, seuil 30 ; `cpi_drop` = vrai decay momentum/capture, exclut la volatilité conversion) ; vue `cpi_gisement` (pilotage conversion : potentiel vs conversion réalisée) ; 3 revues d'experts du CPI → verdict « outil suffisant, complexité refusée, levier = action sur le gisement » ; croisement export Wix ↔ `form_submit` (comptage fiable, aucun raté) |
 
 ## Constantes du projet
 
 - Projet Supabase : `mxycmjkeotrycyneacje` — site : `https://www.jplouton-avocat.fr`
-- Tracker en prod : **sprint37** depuis le 10/06/2026 ~01:00 Paris
-  (limite Wix Custom Code : 15 000 caractères — minifié à 14 649)
+- Tracker navigateur en prod : **sprint38** depuis le 11/06/2026 ~08:45 Paris
+  (limite Wix Custom Code : 15 000 caractères). Edge Function `track` en **v22**
+  (Sprint 39 : `target_path` des `click_internal` décodé)
 - 6 crons pg_cron actifs (cf. README) ; GSC ingéré à 06:00 UTC ; lag J-2
 - Le client final des chiffres : Me Plouton (+ Adrien, Nomad Marketing)

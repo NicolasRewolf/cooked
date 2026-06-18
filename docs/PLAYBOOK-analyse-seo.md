@@ -2,7 +2,8 @@
 
 Guide opérationnel pour mener les analyses que Nicolas demande, sans
 retomber dans les pièges déjà payés. Issu des sessions des 09-10/06/2026
-(Sprint 37-38). À lire AVANT la première analyse d'une session.
+(Sprint 37-38), à jour CPI **v2.2** + vue `cpi_gisement` (Sprint 39). À lire
+AVANT la première analyse d'une session.
 
 ## 0. Démarrage de session (30 secondes)
 
@@ -21,6 +22,7 @@ Traiter ou expliquer l'alerte d'abord.
 |---|---|
 | « Bilan de cette page / cet article » | `gsc_page_performance(path)` + décomposition canal (recette §2) |
 | « Quelles pages vont bien/mal ? » | `cooked_page_index(28)` — trier `cpi ASC`, filtrer `grade IN ('A','B')` |
+| « Pages à fort trafic qui ne convertissent pas ? » | `cpi_gisement` — `grade IN ('A','B') AND NOT convertit ORDER BY potentiel DESC` |
 | « Qui monte, qui chute ? » | momentum 28v28 sur `gsc_path_daily` (recette §3.1) |
 | « Des pages qui se cannibalisent ? » | requêtes multi-paths sur `gsc_query_page_daily` (§3.2) |
 | « Quelles pages aident à convertir ? » | `conversion_journeys(days)` + unnest journey (§3.3) |
@@ -96,6 +98,17 @@ Le CPI **trie**, les quatre z **diagnostiquent**. Archétypes (cf.
 mauvaise cible (zr++ zl++ zv−−), hors-périmètre déclinant (zv−− M↘),
 snippet malade + decay (zc−− M↘) = le prochain à réparer, étoile montante
 (zv++ M↗) = pousser maintenant. La trajectoire vit dans `cpi_daily`.
+
+**CPI v2.2 (Sprint 39)** : momentum à transition continue + empirical Bayes
+dynamique par type (formules dans `cpi-cooked-page-index.md`). Pour le
+**pilotage conversion**, la vue `cpi_gisement` sépare le *potentiel* d'une
+page (capture + rétention + lecture, hors conversion) du badge *conversion
+réalisée*. Le gisement (`grade IN ('A','B') AND NOT convertit ORDER BY
+potentiel DESC`) = les pages qui captent une audience mais ne la convertissent
+pas encore → où poser un pont vers le contact. **Croiser avec l'intention du
+sujet** (indemnisation = audience concernée > pénal éducatif = curieux).
+L'alerte `cpi_drop` ne sonne que sur un vrai decay (momentum/capture en baisse),
+pas sur la volatilité de la conversion (recalibrée 17/06).
 
 ## 5. Les 6 pièges (chacun a déjà coûté une fausse conclusion)
 

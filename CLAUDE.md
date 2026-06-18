@@ -56,7 +56,9 @@ inséré directement par la deuxième Edge Function `form-webhook` qui
 reçoit les webhooks Wix Automations (Sprint 18). Bot filtering via la
 vue `events_human` (Sprint 17 ; Sprint 37 : dédup des clics dupliqués
 même-seconde causés par le double-embed du snippet — phone +13,6 % corrigé
-rétroactivement).
+rétroactivement ; Sprint 39 : diagnostic complété — artefact de mesure +
+comportement « tapeur », pas un bug systémique ; alerte `double_embed_suspect`
+recalibrée sur les sessions réellement dupliquées, seuil 30).
 
 **Sprint 37 (09/06/2026) — attribution & fiabilité :**
 - Tracker `sprint37` : execution guard (`window.__cookedLoaded`), batching
@@ -123,8 +125,49 @@ rétroactivement).
   migration `20260611201942`) ; **catégorie Wix Blog renseignée dans
   `page_taxonomy`** via l'API Wix MCP (56 `ressource` / 328 `classique`,
   migration `20260611202556`) ; constat P1 `click_internal.target_path`
-  URL-encodé (101/391 sur 28j, non joignable avec `path` — décoder à la
-  lecture en attendant le fix Edge).
+  URL-encodé (101/391 sur 28j) — **RÉSOLU au Sprint 39** (voir ci-dessous).
+
+**Sprint 39 (15-18/06/2026) — consolidation & passage en prod opérationnelle :**
+- Edge Function `track` **v22** : `click_internal.target_path` décodé
+  (`canonical_path(url_decode(...))`) + backfill rétroactif de 143 lignes
+  (migration `20260615234052`) → le constat P1 du Sprint 38 est clos. Lire
+  `target_path` est désormais direct (plus de décodage à la volée).
+- `snapshot_pages_export` réparée (`20260615220500`) : elle référençait des
+  colonnes `email_clicks_*` droppées au Sprint 30 → renvoie `0::bigint`,
+  contrat de sortie préservé (cassée depuis le 21/05).
+- **CPI v2.2** (`20260616142127`) : momentum à **transition continue** (fin
+  de la bascule discrète à 20 clics) + lissage **empirical Bayes dynamique**
+  (Beta-Binomial, κ estimé par type) pour rétention/lecture. corr 0,9855 avec
+  v2.1, aucun verdict fiable A/B déplacé ≥5 pts. Sensibilité connue : la
+  conversion porte ~65 % de la variance du score (point ouvert, à juger au J+28).
+- Alertes recalibrées : `double_embed_suspect` (`20260616082041`) compte les
+  **sessions distinctes** avec pageview/web_vitals dupliqués même-seconde
+  (seuil 30) — fini les faux positifs sur un visiteur « tapeur » ; le
+  double-embed est un artefact de mesure + comportement, pas un bug systémique.
+  `cpi_drop` (`20260617215132`) n'alerte que sur un **vrai decay** (momentum
+  ≤ −0,10 OU capture delta_zc ≤ −0,5), exclut la volatilité pure de la
+  conversion (un contact qui sort de la fenêtre 28 j faisait plonger une page
+  de ~50 pts sans déclin réel).
+- Vue **`cpi_gisement`** (`20260618102429`) : pilotage conversion. Relit le
+  dernier `cpi_daily` et sépare le **potentiel** (capture+rétention+lecture,
+  hors conversion, renormalisés) du badge **conversion réalisée** ; **ne
+  complexifie PAS le CPI** (aucun nouveau calcul). Gisement = `grade IN
+  ('A','B') AND NOT convertit ORDER BY potentiel DESC` = pages à fort trafic
+  qui ne convertissent pas → où poser un pont vers le contact (croiser avec
+  l'intention : indemnisation > pénal éducatif).
+- Décision produit : 3 revues d'experts externes du CPI passées au crible
+  (fenêtre zv étendue, attribution non conservée, MAD saturée, score 2-volets…).
+  Verdict — **l'outil est suffisant, on ne le complexifie pas** : le benchmark
+  a montré que « réparer » zv en continu est une impasse vu la rareté des
+  contacts (~10/mois). Le levier est l'**action sur le gisement**, pas une
+  v2.3. **On passe en prod opérationnelle : focus site (conversion), plus
+  l'outil.**
+- Croisement export Wix ↔ `form_submit` Cooked validé : Cooked ne rate aucun
+  formulaire (comptage fiable).
+- Bug **SITE** (hors Cooked) repéré : sur la home, les boutons d'ancre
+  « Domaines d'expertises »/« Nos affaires » pointent vers `/` au lieu d'une
+  ancre → rechargent la page si le JS Wix n'est pas prêt (≈ plusieurs clics
+  nécessaires). À corriger côté Wix Studio.
   Sert de remplaçant GA4 pour fournir
 des données comportementales fiables à Nicolas et à Me Plouton, et
 permet les analyses Cooked × GSC (intent matching, funnel SEO
@@ -346,7 +389,13 @@ RPCs attribution & santé (Sprint 37-38) :
   + snapshot quotidien `cpi_daily`
 - `cpi_movers` (vue) — Δ CPI sur ~7j glissants depuis `cpi_daily` : statuts
   present/nouveau/disparu, `fiable` (grade A/B aux deux dates), delta_z par
-  composante ; alimente l'alerte `cpi_drop` (chute ≥15 pts, warn)
+  composante ; alimente l'alerte `cpi_drop` (chute ≥15 pts **+ vrai decay
+  momentum/capture**, warn — recalibré S39, exclut la volatilité conversion)
+- `cpi_gisement` (vue, S39) — pilotage conversion : relit le dernier
+  `cpi_daily` et sépare le **potentiel** (capture+rétention+lecture, hors
+  conversion, renormalisés) du badge **conversion réalisée** (`convertit`).
+  Gisement = `grade IN ('A','B') AND NOT convertit ORDER BY potentiel DESC`.
+  Ne recalcule rien, ne complexifie pas le CPI
 - `cooked_alerts_refresh()` — recalcul des alertes (cron horaire) ; table
   `alerts` (acked boolean)
 - `cooked_page_type(path)` — cabinet / hub / expertise / post / blog-nav ;
@@ -373,8 +422,9 @@ Source SQL unique : `macro_contacts_by_path(days_back)` — utilisée par
 Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
 
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
-Paris (première ingestion réelle). Le tracker est en **sprint38**
-depuis le 11/06/2026 ~08:45 Paris (sprint37 : nuit du 10/06).
+Paris (première ingestion réelle). Le tracker navigateur est en **sprint38**
+depuis le 11/06/2026 ~08:45 Paris (sprint37 : nuit du 10/06). L'Edge Function
+`track` est en **v22** (Sprint 39 : décodage `target_path` des `click_internal`).
 
 ---
 
