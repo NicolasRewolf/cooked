@@ -110,7 +110,7 @@ sujet** (indemnisation = audience concernée > pénal éducatif = curieux).
 L'alerte `cpi_drop` ne sonne que sur un vrai decay (momentum/capture en baisse),
 pas sur la volatilité de la conversion (recalibrée 17/06).
 
-## 5. Les 6 pièges (chacun a déjà coûté une fausse conclusion)
+## 5. Les 8 pièges (chacun a déjà coûté une fausse conclusion)
 
 1. **Mix de canaux** → métriques de lecture sur organique uniquement.
 2. **Position moyenne** → pondérée impressions, mélange des requêtes.
@@ -135,6 +135,16 @@ pas sur la volatilité de la conversion (recalibrée 17/06).
    sous-compte ~2,4× sur les pages à enjeu local (clics pack local/fiche
    GMB invisibles dans Search Console). Les visites Cooked font foi pour
    le trafic réel ; GSC fait foi pour impressions/positions.
+8. **Date de publication Wix trompeuse (antidatable)** (retex 22/06/2026) :
+   `firstPublishedDate` (API Wix) et le `<lastmod>` du sitemap peuvent être
+   **antidatés** à la main → ils ne reflètent PAS la mise en ligne réelle. Pour
+   juger l'âge SEO d'un article (« a-t-il eu le temps de ranker ? »), utiliser la
+   **1ère impression GSC** (`min(day)` de `gsc_path_daily`) et la **1ère vue
+   tracker** (`min(occurred_at)` de `events_human`) — jamais la date Wix seule.
+   Cas `cycliste-renversé` : date affichée 12/05, 1ère impression Google 17/06
+   → âge réel **5 jours**, pas 6 semaines (conclu « n'a pas pris » à tort). Un
+   fort écart date Wix ↔ 1ère vue/impression = mise en ligne tardive : recompter
+   l'âge depuis la découverte Google.
 
 ## 6. Livraison à Nicolas
 
