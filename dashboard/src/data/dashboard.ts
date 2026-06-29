@@ -1,6 +1,6 @@
 import "server-only";
 import { admin } from "@/lib/supabase-admin";
-import type { Period, ResourceRow, ResourceKpis, SeoQueryRow } from "@/lib/types";
+import type { Period, ResourceRow, ResourceKpis, SeoQueryRow, SeoKpis } from "@/lib/types";
 
 class RpcError extends Error {
   constructor(rpc: string, cause: unknown) {
@@ -36,4 +36,14 @@ export async function getSeoByQuery(
   });
   if (error) throw new RpcError("dashboard_seo_by_query", error);
   return (data ?? []) as SeoQueryRow[];
+}
+
+// KPI SEO agrégés côté SQL — total quick wins / requêtes / clics indépendants du cap du tableau.
+export async function getSeoKpis(period: Period): Promise<SeoKpis | null> {
+  const { data, error } = await admin.rpc("dashboard_seo_kpis", {
+    period_kind: period,
+    scope: "ressource",
+  });
+  if (error) throw new RpcError("dashboard_seo_kpis", error);
+  return ((data ?? [])[0] as SeoKpis) ?? null;
 }

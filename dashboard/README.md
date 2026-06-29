@@ -52,13 +52,16 @@ npm run dev                        # http://localhost:3000
 | `SUPABASE_SECRET_KEY` | lecture des données (`sb_secret_…`) | **NON — serveur only** |
 | `DASHBOARD_ALLOWED_EMAILS` | allowlist (séparée par virgules) | non |
 
-## Authentification (Supabase Auth — magic-link + allowlist)
-Côté Supabase (dashboard du projet `mxycmjkeotrycyneacje`) :
+## Authentification (Supabase Auth — magic-link + allowlist) — réglages OBLIGATOIRES
+Le gate `proxy.ts` est **fail-closed** : allowlist vide ⇒ personne ne passe. `DASHBOARD_ALLOWED_EMAILS`
+est donc requis (le build échoue s'il manque). Défense en profondeur : chaque page serveur
+re-vérifie via `requireUser()` (`src/lib/auth.ts`). Côté Supabase (projet `mxycmjkeotrycyneacje`) :
 1. **Auth → URL Configuration** : Site URL = l'URL du dashboard ; **Redirect URLs** = ajouter
-   `http://localhost:3000/auth/callback` et `https://<sous-domaine>.rewolf.../auth/callback`.
-2. (Optionnel) **Auth → Providers → Email** : désactiver les inscriptions publiques — l'allowlist
-   `DASHBOARD_ALLOWED_EMAILS` reste le gate dur côté `proxy.ts`.
-3. Renseigner les emails autorisés dans `DASHBOARD_ALLOWED_EMAILS`.
+   `http://localhost:3000/auth/callback` et `https://data.rewolf.studio/auth/callback`.
+2. **OBLIGATOIRE — Auth → Sign In / Providers → Email** : désactiver « Allow new users to sign up »
+   (sinon n'importe qui peut se créer un compte ; seule l'allowlist le bloquerait). Activer le
+   rate-limit OTP.
+3. Renseigner les emails autorisés dans `DASHBOARD_ALLOWED_EMAILS` (obligatoire).
 
 ## Déploiement (Vercel)
 1. Nouveau projet Vercel pointant sur ce repo, **Root Directory = `dashboard`** (framework Next.js

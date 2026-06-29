@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { parsePeriod } from "@/lib/periods";
 import { getResourcesKpis, getResourcesOverview } from "@/data/dashboard";
+import { requireUser } from "@/lib/auth";
 import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
 import { PeriodSelector } from "@/components/PeriodSelector";
@@ -16,6 +17,7 @@ export default async function Page({
 }: {
   searchParams: Promise<{ period?: string }>;
 }) {
+  await requireUser(); // défense en profondeur (au-delà du proxy)
   const period = parsePeriod((await searchParams).period);
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
@@ -35,31 +37,11 @@ async function Content({ period }: { period: Period }) {
 
   const items: KpiItem[] = kpis
     ? [
-        {
-          label: "Visiteurs uniques",
-          value: num(kpis.visitors_n),
-          delta: delta(kpis.visitors_n, kpis.visitors_prev),
-        },
-        {
-          label: "Pages vues",
-          value: num(kpis.pageviews_n),
-          delta: delta(kpis.pageviews_n, kpis.pageviews_prev),
-        },
-        {
-          label: "Contacts",
-          value: num(kpis.contacts_n),
-          delta: delta(kpis.contacts_n, kpis.contacts_prev),
-        },
-        {
-          label: "Clics Google",
-          value: num(kpis.gsc_clicks_n),
-          delta: delta(kpis.gsc_clicks_n, kpis.gsc_clicks_prev),
-        },
-        {
-          label: "Affichages Google",
-          value: num(kpis.gsc_impressions_n),
-          delta: delta(kpis.gsc_impressions_n, kpis.gsc_impressions_prev),
-        },
+        { label: "Visiteurs uniques", value: num(kpis.visitors_n), delta: delta(kpis.visitors_n, kpis.visitors_prev) },
+        { label: "Pages vues", value: num(kpis.pageviews_n), delta: delta(kpis.pageviews_n, kpis.pageviews_prev) },
+        { label: "Contacts", value: num(kpis.contacts_n), delta: delta(kpis.contacts_n, kpis.contacts_prev) },
+        { label: "Clics Google", value: num(kpis.gsc_clicks_n), delta: delta(kpis.gsc_clicks_n, kpis.gsc_clicks_prev) },
+        { label: "Affichages Google", value: num(kpis.gsc_impressions_n), delta: delta(kpis.gsc_impressions_n, kpis.gsc_impressions_prev) },
       ]
     : [];
 
@@ -70,7 +52,9 @@ async function Content({ period }: { period: Period }) {
           cookedEnd={kpis.cooked_end}
           gscLastDay={kpis.gsc_last_day}
           lagDays={kpis.lag_days}
-          isPartial={kpis.is_partial}
+          refreshedAt={kpis.refreshed_at}
+          currentDayPartial={kpis.current_day_partial}
+          noPrevBaseline={kpis.no_prev_baseline}
         />
       )}
       <KpiHeader items={items} />
@@ -82,7 +66,7 @@ async function Content({ period }: { period: Period }) {
         <p className="mt-2 text-[11px] text-neutral-400">
           Visiteurs uniques (hors robots/Baidu) · lecture médiane des vrais lecteurs (hors
           ré-ouvertures réseaux sociaux) · totaux Google depuis Search Console · volume DataForSEO
-          (France).
+          (France) · fiabilité notée par visiteurs/jour.
         </p>
       </section>
     </div>

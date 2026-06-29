@@ -8,7 +8,11 @@ const schema = z.object({
   SUPABASE_SECRET_KEY: z
     .string()
     .regex(/^sb_secret_/, "SUPABASE_SECRET_KEY doit commencer par sb_secret_ (clé service)"),
-  DASHBOARD_ALLOWED_EMAILS: z.string().default(""),
+  // OBLIGATOIRE : une allowlist vide bloquerait tout le monde (fail-closed côté proxy).
+  // On exige au moins une adresse pour éviter un déploiement avec un gate inopérant.
+  DASHBOARD_ALLOWED_EMAILS: z
+    .string()
+    .min(3, "DASHBOARD_ALLOWED_EMAILS est obligatoire (au moins un email autorisé)"),
 });
 
 const parsed = schema.safeParse(process.env);

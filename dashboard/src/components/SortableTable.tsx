@@ -69,12 +69,20 @@ export function SortableTable<T>({
                   className={cn(
                     "px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500",
                     c.align === "right" ? "text-right" : "text-left",
-                    sortable && "cursor-pointer select-none hover:text-neutral-800 dark:hover:text-neutral-200",
                   )}
-                  onClick={sortable ? () => toggle(c.key) : undefined}
                 >
-                  {c.header}
-                  {active ? (dir === "asc" ? " ↑" : " ↓") : ""}
+                  {sortable ? (
+                    <button
+                      type="button"
+                      onClick={() => toggle(c.key)}
+                      className="select-none uppercase tracking-wide hover:text-neutral-800 focus-visible:underline dark:hover:text-neutral-200"
+                    >
+                      {c.header}
+                      {active ? (dir === "asc" ? " ↑" : " ↓") : ""}
+                    </button>
+                  ) : (
+                    c.header
+                  )}
                 </th>
               );
             })}

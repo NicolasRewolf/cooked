@@ -47,7 +47,8 @@ export async function proxy(request: NextRequest) {
 
   const allow = allowedEmails();
   const email = user?.email?.toLowerCase();
-  const authorized = !!email && (allow.length === 0 || allow.includes(email));
+  // Fail-CLOSED : allowlist vide ou email non listé => accès refusé (jamais d'ouverture par défaut).
+  const authorized = !!email && allow.includes(email);
 
   if (!authorized) {
     const url = request.nextUrl.clone();

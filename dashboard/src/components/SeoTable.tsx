@@ -19,7 +19,10 @@ const columns: Column<SeoQueryRow>[] = [
           {r.is_quick_win && <Badge tone="good">quick win</Badge>}
         </div>
         {r.top_page && (
-          <div className="truncate text-[11px] text-neutral-400">→ {prettyPath(r.top_page)}</div>
+          <div className="truncate text-[11px] text-neutral-400">
+            → {prettyPath(r.top_page)}
+            {r.top_page_theme ? <span className="text-neutral-500"> · {r.top_page_theme}</span> : ""}
+          </div>
         )}
       </div>
     ),

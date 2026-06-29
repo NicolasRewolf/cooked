@@ -1,12 +1,13 @@
 import { Suspense } from "react";
 import { parsePeriod } from "@/lib/periods";
-import { getResourcesKpis, getSeoByQuery } from "@/data/dashboard";
+import { getSeoKpis, getSeoByQuery } from "@/data/dashboard";
+import { requireUser } from "@/lib/auth";
 import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
 import { PeriodSelector } from "@/components/PeriodSelector";
 import { SeoTable } from "@/components/SeoTable";
 import { SectionTitle } from "@/components/ui";
-import { num, delta } from "@/lib/format";
+import { num } from "@/lib/format";
 import type { Period } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ export default async function SeoPage({
 }: {
   searchParams: Promise<{ period?: string }>;
 }) {
+  await requireUser();
   const period = parsePeriod((await searchParams).period);
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
@@ -31,44 +33,47 @@ export default async function SeoPage({
 }
 
 async function Content({ period }: { period: Period }) {
-  const [kpis, rows] = await Promise.all([getResourcesKpis(period), getSeoByQuery(period)]);
-  const quickWins = rows.filter((r) => r.is_quick_win).length;
+  const [seo, rows] = await Promise.all([getSeoKpis(period), getSeoByQuery(period, { maxRows: 200 })]);
+  const lag = seo ? Math.max(0, Math.floor((Date.now() - new Date(seo.gsc_end).getTime()) / 86_400_000)) : null;
 
+  // B2/B3 : total quick wins calculé SQL (indépendant du cap du tableau) ; 2 niveaux de clics distincts.
   const items: KpiItem[] = [
     {
       label: "Clics Google",
-      value: num(kpis?.gsc_clicks_n ?? 0),
-      delta: kpis ? delta(kpis.gsc_clicks_n, kpis.gsc_clicks_prev) : undefined,
+      value: num(seo?.clicks_path_total ?? 0),
+      hint: "toutes requêtes, marque incluse",
     },
     {
       label: "Affichages Google",
-      value: num(kpis?.gsc_impressions_n ?? 0),
-      delta: kpis ? delta(kpis.gsc_impressions_n, kpis.gsc_impressions_prev) : undefined,
+      value: num(seo?.impressions_path_total ?? 0),
     },
-    { label: "Requêtes", value: num(rows.length) },
-    { label: "Quick wins", value: num(quickWins), hint: "position 5–15 · volume ≥ 100" },
+    {
+      label: "Requêtes connues",
+      value: num(seo?.total_queries ?? 0),
+      hint: "hors marque (fraction nommée par Google)",
+    },
+    {
+      label: "Quick wins",
+      value: num(seo?.total_quick_wins ?? 0),
+      hint: "position 5–15 · volume ≥ 100",
+    },
   ];
 
   return (
     <div className="space-y-6">
-      {kpis && (
-        <FreshnessBanner
-          cookedEnd={kpis.cooked_end}
-          gscLastDay={kpis.gsc_last_day}
-          lagDays={kpis.lag_days}
-          isPartial={kpis.is_partial}
-        />
-      )}
+      {seo && <FreshnessBanner gscLastDay={seo.gsc_end} lagDays={lag} live />}
       <KpiHeader items={items} />
       <section>
-        <SectionTitle>Requêtes ({rows.length})</SectionTitle>
+        <SectionTitle>Requêtes — top 200 par clics ({rows.length})</SectionTitle>
         <div className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
           <SeoTable rows={rows} />
         </div>
         <p className="mt-2 text-[11px] text-neutral-400">
-          Requêtes de marque (« plouton ») exclues · volume DataForSEO (France) comme référence ·
-          captation = clics / demande mensuelle estimée. Google n'expose qu'une partie des requêtes
-          (le reste est anonymisé).
+          ⚠ Deux univers de clics : le KPI « Clics Google » ({num(seo?.clicks_path_total ?? 0)}) est au
+          niveau page, marque incluse ; le tableau ci-dessus somme {num(seo?.clicks_named_nonbranded ?? 0)}{" "}
+          clics sur les requêtes <em>connues hors marque</em> — Google n'expose qu'une fraction des
+          requêtes (le reste est anonymisé). Volume DataForSEO (France) = référence. Captation = clics /
+          demande mensuelle estimée.
         </p>
       </section>
     </div>
