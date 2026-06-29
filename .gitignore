@@ -33,3 +33,9 @@ service-account*.json
 package.json
 package-lock.json
 node_modules/
+
+# Sous-app dashboard (Next.js isolée) : son manifeste DOIT être suivi
+# (les règles ci-dessus, pour le setup jsdom racine, le masqueraient sinon).
+# node_modules/ et .env.local restent ignorés.
+!dashboard/package.json
+!dashboard/package-lock.json
