@@ -1,19 +1,15 @@
 import { cn } from "@/lib/cn";
 import type { Delta } from "@/lib/format";
 
-// Flèche de tendance par ligne (visiteurs/clics vs période précédente).
-// Vert = hausse (bien), rouge = baisse, gris = stable / pas de base de comparaison.
+// Flèche de tendance par ligne (visiteurs / clics vs période précédente).
+// Vert = hausse · rouge = baisse · gris = stable / pas de base. Chiffres en mono.
 export function Trend({ d }: { d: Delta }) {
-  if (d.dir === "na") return <span className="text-[11px] text-neutral-300 dark:text-neutral-600">—</span>;
+  if (d.dir === "na") return <span className="font-mono text-[10px] text-dim">—</span>;
   const cls =
-    d.dir === "up"
-      ? "text-emerald-600 dark:text-emerald-400"
-      : d.dir === "down"
-        ? "text-red-600 dark:text-red-400"
-        : "text-neutral-400";
+    d.dir === "up" ? "text-up" : d.dir === "down" ? "text-down" : "text-faint";
   const glyph = d.dir === "up" ? "▲" : d.dir === "down" ? "▼" : "▬";
   return (
-    <span className={cn("text-[11px] font-medium tabular-nums", cls)} title="vs période précédente">
+    <span className={cn("font-mono text-[10px] font-medium", cls)} title="vs période précédente">
       {glyph} {d.label}
     </span>
   );
@@ -21,7 +17,7 @@ export function Trend({ d }: { d: Delta }) {
 
 export function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-neutral-500">
+    <h2 className="mb-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
       {children}
     </h2>
   );
@@ -35,15 +31,15 @@ export function Badge({
   tone?: "neutral" | "good" | "warn" | "info";
 }) {
   const tones: Record<string, string> = {
-    neutral: "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300",
-    good: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-    warn: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-    info: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
+    neutral: "bg-[#f0f0ee] text-muted",
+    good: "bg-[#e6f0e9] text-up",
+    warn: "bg-[#fbf0e0] text-warn",
+    info: "bg-[#e7eef7] text-info",
   };
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex items-center px-[7px] py-[2px] font-mono text-[10px] font-medium",
         tones[tone],
       )}
     >

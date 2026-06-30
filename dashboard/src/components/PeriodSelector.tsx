@@ -3,7 +3,11 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { PERIODS } from "@/lib/periods";
+import { cn } from "@/lib/cn";
 import type { Period } from "@/lib/types";
+
+// Contrôle segmenté « instrument » : 28 j / 90 j.
+const SHORT: Record<Period, string> = { rolling_28: "28 j", rolling_90: "90 j" };
 
 export function PeriodSelector({ value }: { value: Period }) {
   const router = useRouter();
@@ -11,25 +15,32 @@ export function PeriodSelector({ value }: { value: Period }) {
   const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
 
-  function onChange(next: string) {
+  function set(next: string) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("period", next);
     startTransition(() => router.push(`${pathname}?${params.toString()}`));
   }
 
   return (
-    <select
-      value={value}
-      disabled={pending}
-      onChange={(e) => onChange(e.target.value)}
-      aria-label="Période"
-      className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-800 outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200"
-    >
-      {PERIODS.map((p) => (
-        <option key={p.value} value={p.value}>
-          {p.label}
-        </option>
-      ))}
-    </select>
+    <div className={cn("inline-flex border border-line-strong", pending && "opacity-60")}>
+      {PERIODS.map((p) => {
+        const active = p.value === value;
+        return (
+          <button
+            key={p.value}
+            type="button"
+            onClick={() => set(p.value)}
+            disabled={pending}
+            title={p.label}
+            className={cn(
+              "px-3 py-1.5 font-mono text-[11px] transition-colors",
+              active ? "border-b-2 border-accent bg-white text-ink" : "text-faint hover:text-ink",
+            )}
+          >
+            {SHORT[p.value] ?? p.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }

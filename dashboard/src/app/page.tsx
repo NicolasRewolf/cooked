@@ -1,12 +1,13 @@
 import { Suspense } from "react";
 import { parsePeriod } from "@/lib/periods";
 import { getResourcesKpis, getResourcesOverview } from "@/data/dashboard";
+import { getResourcesTrend } from "@/data/trend";
 import { requireUser } from "@/lib/auth";
 import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
 import { PeriodSelector } from "@/components/PeriodSelector";
 import { ResourcesTable } from "@/components/ResourcesTable";
-import { SectionTitle } from "@/components/ui";
+import { TrendChart } from "@/components/TrendChart";
 import { num, delta } from "@/lib/format";
 import type { Period } from "@/lib/types";
 
@@ -20,9 +21,14 @@ export default async function Page({
   await requireUser(); // défense en profondeur (au-delà du proxy)
   const period = parsePeriod((await searchParams).period);
   return (
-    <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Synthèse — articles ressources</h1>
+    <main className="mx-auto max-w-[1240px] px-8 py-[30px] pb-16">
+      <div className="mb-[18px] flex items-end justify-between gap-5">
+        <div>
+          <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-faint">
+            Articles ressources
+          </div>
+          <h1 className="mt-2 text-[25px] font-semibold tracking-[-0.02em]">Synthèse</h1>
+        </div>
         <PeriodSelector value={period} />
       </div>
       <Suspense key={period} fallback={<Loading />}>
@@ -33,20 +39,24 @@ export default async function Page({
 }
 
 async function Content({ period }: { period: Period }) {
-  const [kpis, rows] = await Promise.all([getResourcesKpis(period), getResourcesOverview(period)]);
+  const [kpis, rows, trend] = await Promise.all([
+    getResourcesKpis(period),
+    getResourcesOverview(period),
+    getResourcesTrend(period),
+  ]);
 
   const items: KpiItem[] = kpis
     ? [
-        { label: "Visiteurs uniques", value: num(kpis.visitors_n), delta: delta(kpis.visitors_n, kpis.visitors_prev) },
-        { label: "Pages vues", value: num(kpis.pageviews_n), delta: delta(kpis.pageviews_n, kpis.pageviews_prev) },
-        { label: "Contacts", value: num(kpis.contacts_n), delta: delta(kpis.contacts_n, kpis.contacts_prev) },
-        { label: "Clics Google", value: num(kpis.gsc_clicks_n), delta: delta(kpis.gsc_clicks_n, kpis.gsc_clicks_prev) },
-        { label: "Affichages Google", value: num(kpis.gsc_impressions_n), delta: delta(kpis.gsc_impressions_n, kpis.gsc_impressions_prev) },
+        { label: "Visiteurs uniques", value: num(kpis.visitors_n), delta: delta(kpis.visitors_n, kpis.visitors_prev), series: trend?.visitors_daily },
+        { label: "Pages vues", value: num(kpis.pageviews_n), delta: delta(kpis.pageviews_n, kpis.pageviews_prev), series: trend?.pageviews_daily },
+        { label: "Contacts", value: num(kpis.contacts_n), delta: delta(kpis.contacts_n, kpis.contacts_prev), series: trend?.contacts_daily },
+        { label: "Clics Google", value: num(kpis.gsc_clicks_n), delta: delta(kpis.gsc_clicks_n, kpis.gsc_clicks_prev), series: trend?.gsc_clicks_daily },
+        { label: "Affichages Google", value: num(kpis.gsc_impressions_n), delta: delta(kpis.gsc_impressions_n, kpis.gsc_impressions_prev), series: trend?.gsc_impressions_daily },
       ]
     : [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-[18px]">
       {kpis && (
         <FreshnessBanner
           cookedEnd={kpis.cooked_end}
@@ -58,16 +68,11 @@ async function Content({ period }: { period: Period }) {
         />
       )}
       <KpiHeader items={items} />
+      {trend?.visitors_daily?.length ? (
+        <TrendChart series={trend.visitors_daily} label="Visiteurs uniques / jour" />
+      ) : null}
       <section>
-        <SectionTitle>Articles ({rows.length})</SectionTitle>
-        <div className="rounded-xl border border-neutral-200 bg-white p-1 dark:border-neutral-800 dark:bg-neutral-950">
-          <ResourcesTable rows={rows} />
-        </div>
-        <p className="mt-2 text-[11px] text-neutral-400">
-          Visiteurs uniques (hors robots/Baidu) · lecture médiane des vrais lecteurs (hors
-          ré-ouvertures réseaux sociaux) · totaux Google depuis Search Console · volume DataForSEO
-          (France) · fiabilité notée par visiteurs/jour.
-        </p>
+        <ResourcesTable rows={rows} />
       </section>
     </div>
   );
@@ -75,14 +80,15 @@ async function Content({ period }: { period: Period }) {
 
 function Loading() {
   return (
-    <div className="space-y-6">
-      <div className="h-9 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-800" />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="space-y-[18px]">
+      <div className="h-9 w-72 animate-pulse bg-line" />
+      <div className="grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-3 lg:grid-cols-5">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-20 animate-pulse rounded-xl bg-neutral-200 dark:bg-neutral-800" />
+          <div key={i} className="h-28 animate-pulse bg-panel" />
         ))}
       </div>
-      <div className="h-64 animate-pulse rounded-xl bg-neutral-200 dark:bg-neutral-800" />
+      <div className="h-44 animate-pulse border border-line bg-panel" />
+      <div className="h-80 animate-pulse border border-line bg-panel" />
     </div>
   );
 }
