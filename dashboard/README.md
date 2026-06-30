@@ -28,17 +28,43 @@ src/
 ```
 
 ## Données (couche serveur, source de vérité)
-4 RPC `service_role` (migrations `20260629112816` v1 + `20260629135836` v2) qui figent les leçons de mesure :
+RPC `service_role` (migrations `20260629112816` v1 + `20260629135836` v2 + `20260630133301`
+facteurs de pilotage) qui figent les leçons de mesure :
 - `dashboard_resources_overview(period_kind, max_rows)` — 1 ligne / article ressource.
 - `dashboard_resources_kpis(period_kind)` — KPI d'en-tête N vs N-1.
 - `dashboard_seo_by_query(period_kind, scope, min_volume, max_rows)` — requêtes + volume DFS.
 - `dashboard_seo_kpis(period_kind, scope)` — totaux SEO calculés SQL (quick wins, 2 niveaux de clics) indépendants du cap du tableau.
 
-Les RPC lisent des **snapshots quotidiens** (tables `dashboard_*_snapshot`, refresh cron) — l'agrégation
-live des events était trop lente (~106 s). Garanties intégrées : visiteurs **uniques** (pas sessions),
-spam **Baidu exclu** (filtrage inline dans les RPC `dashboard_*` ; la vue `events_human_clean` d'origine
-a été dropée), lecture sur **vrais lecteurs** (hors ré-ouvertures réseaux sociaux), totaux Google depuis
-`gsc_path_daily`, requêtes **de marque exclues**, volume **DataForSEO** (France, 2250).
+Les RPC lisent des **snapshots quotidiens** (tables `dashboard_*_snapshot`, refresh
+`refresh_dashboard_snapshots(p_window)` en cron) — l'agrégation live des events était trop lente
+(~106 s). Garanties intégrées : visiteurs **uniques** (pas sessions), spam **Baidu exclu** (filtrage
+inline dans les RPC `dashboard_*` ; la vue `events_human_clean` d'origine a été dropée), lecture sur
+**vrais lecteurs** (hors ré-ouvertures réseaux sociaux), totaux Google depuis `gsc_path_daily`,
+requêtes **de marque exclues**, volume **DataForSEO** (France, 2250).
+
+### Facteurs de pilotage (migration `20260630133301_dashboard_pilotage_factors`, 30/06/2026)
+Pour répondre à « est-ce que ça va ou pas ? » au niveau de chaque ligne (et pas juste des KPI
+d'en-tête), les tableaux croisent les sources existantes. Ajout **additif** : la table snapshot
+gagne des colonnes, `dashboard_resources_overview` (SETOF) les expose sans changement de signature.
+
+- **Tableau Articles** — colonnes snapshot ajoutées : `unique_visitors_prev`, `gsc_clicks_prev`
+  (tendance N-1, déjà chargée par le refresh) ; `cpi`, `cpi_grade`, `momentum`, `potentiel`,
+  `convertit` (croisés depuis `cpi_daily` / `cpi_gisement` par `path`) ; `ctr_expected`
+  (= `ctr_for_position(position) × 100`, la courbe CTR du site). Rendu UI :
+  - **Santé** = verdict momentum relatif au site (monte / stable / ralentit) + ⭐ *gisement*
+    (grade A/B mais sans contact). On affiche le **potentiel hors-conversion**, pas le CPI brut —
+    le CPI complet est tiré vers le bas par la conversion, rare sur des articles éducatifs, et
+    ferait passer une page saine pour malade (le score CPI reste en infobulle).
+  - **Tendance ▲▼** inline sur Visiteurs et Clics Google.
+  - **CTR / attendu** : rouge si le CTR réel passe sous la courbe du site (titre/méta à retravailler).
+  - **Source** : part du trafic venant de Google vs réseaux/IA/direct (clics GSC ÷ visiteurs Cooked).
+- **Tableau SEO** — `dashboard_seo_by_query` recréée (RETURNS TABLE) avec `clicks_prev`,
+  `position_prev`, `ctr_expected`, `opportunity_clicks` (clics/mois estimés si la requête passait
+  en top 3 au CTR du site). Rendu UI : tendances ▲▼ (clics, places gagnées) + colonne **Gain pot.
+  / mois** qui trie les quick wins par enjeu réel plutôt que par volume brut.
+
+Composant `Trend` partagé dans `components/ui.tsx`. Le contrat typé de ces colonnes vit dans
+`lib/types.ts` (`ResourceRow`, `SeoQueryRow`).
 
 ## Développement local
 ```bash
