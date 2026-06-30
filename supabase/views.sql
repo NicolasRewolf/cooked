@@ -162,6 +162,7 @@ CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
 -- dashboard_check_stale() -> void
 -- dashboard_resources_kpis(period_kind text) -> SETOF dashboard_kpis_snapshot
 -- dashboard_resources_overview(period_kind text, max_rows integer) -> SETOF dashboard_resources_snapshot
+-- dashboard_resources_trend(period_kind text) -> TABLE(visitors_daily numeric[], pageviews_daily numeric[], contacts_daily numeric[], gsc_clicks_daily numeric[], gsc_impressions_daily numeric[])
 -- dashboard_seo_by_query(period_kind text, scope text, min_volume integer, max_rows integer) -> TABLE(query text, clicks bigint, impressions bigint, position_avg numeric, ctr_pct numeric, nb_pages integer, top_page text, top_page_clicks bigint, top_page_theme text, volume_fr integer, cpc numeric, competition_level text, capture_pct numeric, is_quick_win boolean, clicks_prev bigint, position_prev numeric, ctr_expected numeric, opportunity_clicks numeric, gsc_start date, gsc_end date)
 -- dashboard_seo_kpis(period_kind text, scope text) -> TABLE(total_queries bigint, total_quick_wins bigint, clicks_named_nonbranded bigint, clicks_path_total bigint, impressions_path_total bigint, gsc_start date, gsc_end date)
 -- dfs_keywords_to_sync(limit_n integer) -> TABLE(keyword text, clicks_total bigint)
