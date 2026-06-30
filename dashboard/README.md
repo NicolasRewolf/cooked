@@ -8,7 +8,7 @@ Sous-app **isolée** du repo : aucun import du pipeline (`/scripts`, `/wix`, `/s
 contrat avec la base est l'ensemble des **RPC Postgres** (migration `20260629112816_dashboard_v1_rpcs`).
 
 ## Stack
-Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · Recharts · `@supabase/supabase-js`
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · `@supabase/supabase-js`
 (lecture, clé service, serveur uniquement) · `@supabase/ssr` (auth) · zod. Déploiement Vercel.
 
 ## Architecture (pourquoi)
@@ -22,20 +22,23 @@ src/
   env.ts                 validation zod (serveur)
   proxy.ts               gate auth (ex-middleware Next 16) : session + allowlist d'emails
   lib/                   supabase-admin (clé service), types (contrat RPC), format fr-FR, periods, cn
-  data/dashboard.ts      appels typés aux 3 RPC
+  data/dashboard.ts      appels typés aux 4 RPC
   components/            KpiHeader, SortableTable, ResourcesTable, SeoTable, FreshnessBanner, …
   app/                   / (synthèse)  ·  /seo (requêtes)  ·  /login  ·  /auth/{callback,signout}
 ```
 
 ## Données (couche serveur, source de vérité)
-3 RPC `service_role` (migration `20260629112816`) qui figent les leçons de mesure :
+4 RPC `service_role` (migrations `20260629112816` v1 + `20260629135836` v2) qui figent les leçons de mesure :
 - `dashboard_resources_overview(period_kind, max_rows)` — 1 ligne / article ressource.
 - `dashboard_resources_kpis(period_kind)` — KPI d'en-tête N vs N-1.
 - `dashboard_seo_by_query(period_kind, scope, min_volume, max_rows)` — requêtes + volume DFS.
+- `dashboard_seo_kpis(period_kind, scope)` — totaux SEO calculés SQL (quick wins, 2 niveaux de clics) indépendants du cap du tableau.
 
-Garanties intégrées : visiteurs **uniques** (pas sessions), spam **Baidu exclu** (vue
-`events_human_clean`), lecture sur **vrais lecteurs** (hors ré-ouvertures réseaux sociaux), totaux
-Google depuis `gsc_path_daily`, requêtes **de marque exclues**, volume **DataForSEO** (France, 2250).
+Les RPC lisent des **snapshots quotidiens** (tables `dashboard_*_snapshot`, refresh cron) — l'agrégation
+live des events était trop lente (~106 s). Garanties intégrées : visiteurs **uniques** (pas sessions),
+spam **Baidu exclu** (filtrage inline dans les RPC `dashboard_*` ; la vue `events_human_clean` d'origine
+a été dropée), lecture sur **vrais lecteurs** (hors ré-ouvertures réseaux sociaux), totaux Google depuis
+`gsc_path_daily`, requêtes **de marque exclues**, volume **DataForSEO** (France, 2250).
 
 ## Développement local
 ```bash
@@ -74,7 +77,7 @@ re-vérifie via `requireUser()` (`src/lib/auth.ts`). Côté Supabase (projet `mx
 ## À savoir
 - `params`/`searchParams` sont **async** (Next 16) ; pages `/` et `/seo` en `force-dynamic` (toujours
   frais, pas de cache — adapté à un usage interne 1-3 utilisateurs).
-- Le dashboard type les 3 RPC à la main (`src/lib/types.ts`) ; si une signature RPC change, mettre à
+- Le dashboard type les 4 RPC à la main (`src/lib/types.ts`) ; si une signature RPC change, mettre à
   jour ce fichier.
 - Le bandeau de fraîcheur affiche le décalage Google (lag J-2 normal) — le dashboard dit toujours à
   quel point il est à jour.

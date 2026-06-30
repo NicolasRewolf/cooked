@@ -52,17 +52,19 @@ Postgres
    │
    ▼ RPCs cross-source (migrations Sprint 33+)
      │
-     ▼ Requêtes ad-hoc via Claude Code + MCP Supabase
-       (pas d'UI — Nicolas pose une question, Claude appelle les RPCs)
+     ▼ Requêtes ad-hoc via Claude Code + MCP Supabase (mode principal)
+       (Nicolas pose une question, Claude appelle les RPCs)
+       + dashboard de lecture (articles ressources) sur data.rewolf.studio
 ```
 
-> **Historique** — Une app Next.js `dashboard/` a vécu dans ce repo
-> du 22/05/2026 au 25/05/2026 (Sprint 33 « Dashboard & contacts »).
-> Elle a été supprimée le 25/05/2026 pour repartir sur un usage plus
-> simple : tout passe par Claude Code + MCP Supabase, les RPCs sont
-> l'API canonique. Les wrappers `lib/cooked.ts` et les pages
-> `app/*` ne sont plus dans le repo — le contrat RPC publié reste,
-> lui, le même.
+> **Historique & état** — Une 1ʳᵉ app `dashboard/` a vécu du 22 au
+> 25/05/2026 (Sprint 33), supprimée pour repartir sur Claude Code + MCP.
+> Puis une **V1 lecture-seule a été reconstruite le 29/06/2026** (Next.js
+> 16, sous-app isolée `dashboard/`, articles ressources) — live sur
+> **data.rewolf.studio** (Vercel, rootDir=`dashboard`). Le Q/R ad-hoc
+> reste le mode principal ; le dashboard le complète. Détails :
+> `dashboard/README.md`. Le contrat RPC publié reste l'API canonique
+> (le dashboard consomme un sous-ensemble `dashboard_*`).
 
 ---
 
@@ -155,7 +157,7 @@ cooked/
 │   ├── data-quality-audit-*.md        — trust audits
 │   └── agents/                        — engineering-skills config
 ├── tests/
-│   ├── tracker.test.js                — 28 asserts, source + minified (jsdom)
+│   ├── tracker.test.js                — suite jsdom (source + minifié), câblée en CI (.github/workflows/tracker-test.yml)
 │   └── test_dfs_common.py             — DataForSEO sanitize tests
 └── wix/
     ├── http-functions.js              — Velo proxy backend
@@ -353,16 +355,18 @@ ALL RPCs + snapshot read from events_human
 
 **Detection rule** : `anonymous_id` with > 20 pageviews/day AND 0 scroll events = crawler. Catches the nightly Ahrefs audit crawler and similar bots.
 
-**7 active pg_cron jobs** (verified live, 10/06/2026) :
+**8 pg_cron jobs + 2 GitHub Actions** (état 30/06/2026) :
 
 | Job | Schedule | What |
 |---|---|---|
-| `refresh_seo_url_snapshot` | `0 3 * * *` (05:00 Paris) | Nightly rebuild of `seo_url_snapshot` (calls `refresh_bot_fingerprints()` first) |
+| `refresh_seo_url_snapshot` | `0 3 * * *` (05:00 Paris) | Nightly rebuild of `seo_url_snapshot` (calls `refresh_bot_fingerprints()` first) · `SET statement_timeout='1500s'` (stopgap 30/06 ; rebuild ≈ 671 s, optimisation `events_human` en temp table tracée) |
 | `refresh_noise_filters_hourly` | `5 * * * *` | Re-scan bot fingerprints + noise sessions every hour (Sprint 28) |
 | `run_rpc_contract_tests` | `30 3 * * *` (05:30 Paris) | Nightly contract-test of the published RPCs → logs to `rpc_health` (Sprint 27) |
 | `purge_old_events_monthly` | `0 4 1 * *` (06:00 Paris, 1st of month) | Retention policy : deletes events > 400 days (Sprint 27) |
 | `cooked-alerts-hourly` | `15 * * * *` | Recompute `alerts` table — pipeline death, double-embed recurrence (recalibré S39 : sessions dupliquées, seuil 30), S37 RPC health, degraded attribution, GSC lag, CPI drop (recalibré S39 : vrai decay uniquement) (Sprints 37-39) |
-| `cooked-cpi-daily-snapshot` | `30 7 * * *` (90 min after GSC ingest) | `cooked_cpi_snapshot()` → daily CPI per page into `cpi_daily` (Sprint 38) |
+| `cooked-cpi-daily-snapshot` | `30 7 * * *` (90 min after GSC ingest) | `cooked_cpi_snapshot()` → daily CPI per page into `cpi_daily` (Sprint 38) · `SET statement_timeout='600s'` (fix 30/06 — plantait en silence depuis le 21/06) |
+| `refresh-dashboard-snapshots` | `0 8 * * *` (10:00 Paris) | Snapshots du dashboard (`dashboard_*_snapshot`) · `SET statement_timeout='600s'` (29/06) |
+| `dashboard-stale-check` | `30 * * * *` | Alerte `dashboard_stale` si le snapshot dashboard > 36 h (cron raté) (29/06) |
 | `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | Voir sections GSC / DataForSEO ci-dessus |
 
 ---
@@ -382,18 +386,20 @@ supabase functions deploy track --no-verify-jwt
 
 ### Re-applying the schema
 
-In the Supabase SQL Editor:
+**Source de vérité = `supabase/migrations/*.sql`** (timestamps réels), à
+rejouer via `supabase migration up`. C'est la procédure de bootstrap
+canonique d'une base fraîche.
 
-1. `supabase/schema.sql` (idempotent, safe to re-run)
-2. `supabase/views.sql` (idempotent, safe to re-run — also re-schedules the cron)
-
-Les migrations `supabase/migrations/*.sql` sont la source de vérité du DDL
-depuis le Sprint 37 (miroir exact de la prod, timestamps réels).
+`supabase/schema.sql` et `supabase/views.sql` sont des **dumps de référence
+en lecture seule** : pratiques pour lire le DDL d'un coup d'œil, mais
+**désynchronisés** (views.sql est figé au Sprint 37, ~40 migrations de
+retard — ne référence ni le CPI, ni l'attribution, ni le dashboard). **Ne
+pas les rejouer comme source d'un déploiement.**
 
 ### Updating the browser tracker
 
 Wix Custom Code is capped at **15 000 characters**. The source
-`wix/tracker.html` is ~27 KB (comments + formatting kept for auditability),
+`wix/tracker.html` is ~40 KB (comments + formatting kept for auditability),
 so it must be minified before pasting into Wix.
 
 **Workflow:**

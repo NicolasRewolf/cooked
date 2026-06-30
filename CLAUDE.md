@@ -40,12 +40,17 @@ gsc_query_page_daily  — day × path × query (~1M rows, brique
                         d'attribution query → landing, Sprint 32)
 ```
 
-**Pas de dashboard UI.** Le repo a hébergé une app Next.js
-`dashboard/` jusqu'au 25/05/2026, supprimée pour repartir sur un
-usage plus simple : Nicolas pose des questions ad-hoc via Claude
-Code, qui interroge directement les RPCs Postgres via le MCP
-Supabase. Les RPCs publiées restent l'API canonique (cf. liste
-plus bas) — elles servent aux requêtes ad-hoc, pas à une UI.
+**Dashboard de lecture (V1, depuis le 29/06/2026).** Après une période
+sans UI (l'app `dashboard/` initiale supprimée le 25/05/2026), une
+sous-app **Next.js 16 isolée** a été reconstruite dans `dashboard/` :
+vue lecture-seule des **articles ressources** (comportement Cooked + SEO
+par requête, volume DataForSEO en référence). Live sur
+**data.rewolf.studio** (Vercel, rootDir=`dashboard`), lectures
+server-side via clé service, auth Supabase magic-link + allowlist.
+Détails : `dashboard/CLAUDE.md` + `dashboard/README.md`. Le mode
+principal reste le **question/réponse ad-hoc** via Claude Code + MCP
+Supabase ; les RPCs publiées restent l'API canonique — le dashboard en
+consomme un sous-ensemble (`dashboard_*`).
 
 Capture côté browser : pageview / scroll_depth / engagement_tick /
 web_vitals / click_outbound / page_exit / cta_phone_click /

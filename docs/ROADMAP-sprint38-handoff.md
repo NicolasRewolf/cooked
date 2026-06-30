@@ -38,6 +38,24 @@ trafic qui ne convertissent pas).
   vs conversion réalisée) — l'outil pointe désormais où agir sur le site.
 - ✅ **Croisement export Wix ↔ `form_submit`** : comptage fiable, aucun raté.
 
+## ⭐ MISE À JOUR 30/06/2026 — Dashboard V1 + fiabilité pipeline
+
+> Synchronise l'état au 30/06 ; détail durable dans HISTORY-sprints.md.
+
+- ✅ **Dashboard V1** (lecture seule, articles ressources) live sur
+  data.rewolf.studio (Next 16 + Supabase). Auto-analyse multi-agents →
+  corrigée (allowlist fail-closed, garde de fraîcheur, KPI SEO calculés SQL).
+- ⚠️→✅ **L'incident snapshot-timeout a RÉCIDIVÉ** : le fix du 14/06 ne
+  protégeait pas tous les crons. Le cron CPI a planté **en silence depuis le
+  21/06** (`cpi_daily` gelé 8 j) — réparé le 29/06 (`SET statement_timeout`
+  dans la commande cron **et** la fonction) puis rattrapé. La cause des
+  deadlocks `refresh_noise_filters` / `refresh_seo_url_snapshot` (le
+  `TRUNCATE` à verrou exclusif) est supprimée (`TRUNCATE`→`DELETE`). Snapshot
+  SEO : stopgap 1500 s (rebuild ≈ 671 s) ; **vrai fix tracé** = matérialiser
+  `events_human` en table temporaire (pattern dashboard).
+- ✅ **Ménage repo** (audit multi-agents) : scaffold + doublons SQL morts
+  supprimés, CI tracker câblée, doc resynchronisée (le dashboard est revenu).
+
 **Reste ouvert mais DÉPRIORISÉ (l'outil est « assez bon ») :**
 - P0 anti-forge `cta_phone_click` (égalité origin Velo + rate-limit Edge) —
   à faire si un burst suspect apparaît.

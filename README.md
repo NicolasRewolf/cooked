@@ -6,7 +6,7 @@ qu'est-ce qui amène réellement des clients au cabinet — et que faut-il
 faire ensuite ?**
 
 Pas de cookies, pas de bandeau de consentement, pas d'échantillonnage,
-pas de dashboard. Une base de données qu'on possède, un traceur écrit
+pas de gros tableau de bord BI. Une base de données qu'on possède, un traceur écrit
 sur mesure, Google Search Console ingéré dans la même base, un score de
 santé par page, et une IA qui interroge le tout en langage naturel.
 
@@ -27,9 +27,12 @@ construit. Les vraies questions arrivent après, et elles sont toutes
 différentes : « cet article vaut-il la peine d'être réécrit ? »,
 « d'où viennent les contacts de la semaine ? », « pourquoi cette page
 perd-elle des clics alors qu'elle est toujours bien positionnée ? ».
-Ce repo a hébergé un dashboard pendant trois jours (Sprint 33-34,
-mai 2026), puis l'a supprimé : personne ne pose ses questions à un
-tableau de bord.
+Ce repo a hébergé un dashboard généraliste pendant trois jours (Sprint
+33-34, mai 2026), puis l'a supprimé : personne ne pose ses questions à un
+tableau de bord généraliste. (Un dashboard **focalisé** en lecture seule a
+depuis été rebâti — suivi des articles ressources, `dashboard/`, live sur
+data.rewolf.studio depuis le 29/06/2026 — il complète le Q/R, il ne le
+remplace pas.)
 
 **Constat 3 — acquisition et comportement vivent séparés.** Search
 Console sait ce que Google montre (requêtes, impressions, clics,

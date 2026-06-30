@@ -7,6 +7,7 @@ Carte de la documentation. Points d'entrée à la racine du repo :
 ## Opérer & analyser
 - [`OPERATIONS.md`](OPERATIONS.md) — architecture, events captés, RPCs publiées, crons, déploiement, dépannage.
 - [`PLAYBOOK-analyse-seo.md`](PLAYBOOK-analyse-seo.md) — recettes d'analyse SEO × GSC et les pièges déjà payés.
+- [`../dashboard/README.md`](../dashboard/README.md) — sous-app de lecture (articles ressources), Next 16 + Supabase, live sur data.rewolf.studio depuis le 29/06/2026.
 
 ## CPI — Cooked Page Index (score de santé par page)
 - [`cpi-cooked-page-index.md`](cpi-cooked-page-index.md) — spec, usage & grille de lecture (**v2.2**).
