@@ -1,9 +1,41 @@
 @import "tailwindcss";
 
+/* ── Cooked · redesign « Instrument » (d'après Dieter Rams) ────────────────
+   Thème clair uniquement. Accent = orange rewolf #FF4F04 (≈ orange Braun).
+   Tokens exposés en utilitaires Tailwind v4 : bg-paper, text-ink, border-line,
+   text-muted/faint/dim, text-accent/up/down/warn/info, font-sans/mono.        */
 @theme inline {
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-ibm-plex-sans);
+  --font-mono: var(--font-ibm-plex-mono);
+
+  --color-accent: #ff4f04;
+  --color-ink: #141414;
+  --color-paper: #f4f4f2;
+  --color-panel: #ffffff;
+  --color-line: #e7e7e5;
+  --color-line-strong: #e2e2e0;
+  --color-zebra: #fafaf9;
+  --color-muted: #6b6b69;
+  --color-faint: #9a9a98;
+  --color-dim: #b3b3b1;
+
+  --color-up: #2f7a52;     /* hausse / fiable */
+  --color-down: #c0392b;   /* baisse */
+  --color-warn: #c77a1e;   /* ralentit / hors-Google */
+  --color-info: #2f6fb0;   /* source Google / indicatif */
+  --color-alert: #c2410c;  /* CTR sous l'attendu */
 }
 
 html {
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+::selection {
+  background: var(--color-accent);
+  color: #fff;
 }

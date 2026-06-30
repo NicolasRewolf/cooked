@@ -33,21 +33,28 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-dvh items-center justify-center p-6">
       <div className="w-full max-w-sm">
-        <div className="mb-8">
-          <p className="text-xs uppercase tracking-widest text-neutral-500">Cooked</p>
-          <h1 className="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-            Tableau de bord
-          </h1>
+        <div className="mb-8 flex items-center gap-3">
+          <span
+            className="inline-flex h-7 w-7 items-center justify-center border-[1.5px] border-accent font-mono text-sm font-bold text-accent"
+            style={{ transform: "scaleX(-1)" }}
+            aria-hidden
+          >
+            R
+          </span>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Cooked</p>
+            <h1 className="text-lg font-semibold tracking-[-0.01em] text-ink">Tableau de bord</h1>
+          </div>
         </div>
 
         {status === "sent" ? (
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
-            Lien de connexion envoyé à <strong>{email}</strong>. Ouvre-le sur cet appareil pour
-            accéder au dashboard.
+          <div className="border border-line bg-panel p-4 text-sm text-muted">
+            Lien de connexion envoyé à <strong className="text-ink">{email}</strong>. Ouvre-le sur cet
+            appareil pour accéder au dashboard.
           </div>
         ) : (
           <form onSubmit={onSubmit} className="space-y-3">
-            <label htmlFor="email" className="block text-sm text-neutral-600 dark:text-neutral-400">
+            <label htmlFor="email" className="block text-sm text-muted">
               Adresse e-mail autorisée
             </label>
             <input
@@ -57,16 +64,16 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="prenom@exemple.fr"
-              className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+              className="w-full border border-line-strong bg-white px-3 py-2 text-sm text-ink outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/30"
             />
             <button
               type="submit"
               disabled={status === "sending"}
-              className="w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+              className="w-full bg-ink px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent disabled:opacity-50"
             >
               {status === "sending" ? "Envoi…" : "Recevoir un lien de connexion"}
             </button>
-            {status === "error" && <p className="text-sm text-red-600">{message}</p>}
+            {status === "error" && <p className="text-sm text-down">{message}</p>}
           </form>
         )}
       </div>

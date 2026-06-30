@@ -6,7 +6,7 @@ import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
 import { PeriodSelector } from "@/components/PeriodSelector";
 import { SeoTable } from "@/components/SeoTable";
-import { SectionTitle } from "@/components/ui";
+import { GisementsPanel } from "@/components/GisementsPanel";
 import { num } from "@/lib/format";
 import type { Period } from "@/lib/types";
 
@@ -20,9 +20,14 @@ export default async function SeoPage({
   await requireUser();
   const period = parsePeriod((await searchParams).period);
   return (
-    <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">SEO — requêtes des articles ressources</h1>
+    <main className="mx-auto max-w-[1240px] px-8 py-[30px] pb-16">
+      <div className="mb-[18px] flex items-end justify-between gap-5">
+        <div>
+          <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-faint">
+            Requêtes Google · top 200 par clics
+          </div>
+          <h1 className="mt-2 text-[25px] font-semibold tracking-[-0.02em]">SEO · requêtes</h1>
+        </div>
         <PeriodSelector value={period} />
       </div>
       <Suspense key={period} fallback={<Loading />}>
@@ -34,46 +39,30 @@ export default async function SeoPage({
 
 async function Content({ period }: { period: Period }) {
   const [seo, rows] = await Promise.all([getSeoKpis(period), getSeoByQuery(period, { maxRows: 200 })]);
-  const lag = seo ? Math.max(0, Math.floor((Date.now() - new Date(seo.gsc_end).getTime()) / 86_400_000)) : null;
+  const lag = seo
+    // eslint-disable-next-line react-hooks/purity -- Server Component rendu à la requête : heure courante lue une fois
+    ? Math.max(0, Math.floor((Date.now() - new Date(seo.gsc_end).getTime()) / 86_400_000))
+    : null;
 
   // B2/B3 : total quick wins calculé SQL (indépendant du cap du tableau) ; 2 niveaux de clics distincts.
   const items: KpiItem[] = [
-    {
-      label: "Clics Google",
-      value: num(seo?.clicks_path_total ?? 0),
-      hint: "toutes requêtes, marque incluse",
-    },
-    {
-      label: "Affichages Google",
-      value: num(seo?.impressions_path_total ?? 0),
-    },
-    {
-      label: "Requêtes connues",
-      value: num(seo?.total_queries ?? 0),
-      hint: "hors marque (fraction nommée par Google)",
-    },
-    {
-      label: "Quick wins",
-      value: num(seo?.total_quick_wins ?? 0),
-      hint: "position 5–15 · volume ≥ 100",
-    },
+    { label: "Clics Google", value: num(seo?.clicks_path_total ?? 0), hint: "toutes requêtes · marque incluse" },
+    { label: "Affichages Google", value: num(seo?.impressions_path_total ?? 0), hint: "niveau page" },
+    { label: "Requêtes connues", value: num(seo?.total_queries ?? 0), hint: "hors marque (fraction nommée par Google)" },
+    { label: "Quick wins", value: num(seo?.total_quick_wins ?? 0), hint: "position 5–15 · volume ≥ 100" },
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-[18px]">
       {seo && <FreshnessBanner gscLastDay={seo.gsc_end} lagDays={lag} live />}
       <KpiHeader items={items} />
+      <GisementsPanel rows={rows} />
       <section>
-        <SectionTitle>Requêtes — top 200 par clics ({rows.length})</SectionTitle>
-        <div className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
-          <SeoTable rows={rows} />
-        </div>
-        <p className="mt-2 text-[11px] text-neutral-400">
+        <SeoTable rows={rows} />
+        <p className="mt-[11px] max-w-[920px] font-mono text-[10.5px] leading-relaxed text-dim">
           ⚠ Deux univers de clics : le KPI « Clics Google » ({num(seo?.clicks_path_total ?? 0)}) est au
-          niveau page, marque incluse ; le tableau ci-dessus somme {num(seo?.clicks_named_nonbranded ?? 0)}{" "}
-          clics sur les requêtes <em>connues hors marque</em> — Google n'expose qu'une fraction des
-          requêtes (le reste est anonymisé). Volume DataForSEO (France) = référence. Captation = clics /
-          demande mensuelle estimée.
+          niveau page, marque incluse ; le tableau somme {num(seo?.clicks_named_nonbranded ?? 0)} clics
+          sur les requêtes <em>connues hors marque</em>. Volume DataForSEO (France) = référence.
         </p>
       </section>
     </div>
@@ -82,14 +71,15 @@ async function Content({ period }: { period: Period }) {
 
 function Loading() {
   return (
-    <div className="space-y-6">
-      <div className="h-9 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-800" />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="space-y-[18px]">
+      <div className="h-9 w-72 animate-pulse bg-line" />
+      <div className="grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-20 animate-pulse rounded-xl bg-neutral-200 dark:bg-neutral-800" />
+          <div key={i} className="h-24 animate-pulse bg-panel" />
         ))}
       </div>
-      <div className="h-96 animate-pulse rounded-xl bg-neutral-200 dark:bg-neutral-800" />
+      <div className="h-48 animate-pulse border border-line bg-panel" />
+      <div className="h-96 animate-pulse border border-line bg-panel" />
     </div>
   );
 }

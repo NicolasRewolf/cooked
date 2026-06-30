@@ -8,18 +8,25 @@ export function Header() {
   if (pathname.startsWith("/login") || pathname.startsWith("/auth")) return null;
 
   return (
-    <header className="sticky top-0 z-10 border-b border-neutral-200 bg-white/80 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Cooked</span>
-          <span className="text-xs text-neutral-400">Articles ressources</span>
-        </div>
-        <Nav />
-        <form action="/auth/signout" method="post">
-          <button
-            type="submit"
-            className="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+    <header className="sticky top-0 z-40 border-b border-line-strong bg-white/90 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-[1240px] items-center justify-between gap-6 px-8">
+        <div className="flex items-center gap-3">
+          {/* marque rewolf : « R » inversé (rewolf = flower à l'envers) */}
+          <span
+            className="inline-flex h-[26px] w-[26px] items-center justify-center border-[1.5px] border-accent font-mono text-[13px] font-bold text-accent"
+            style={{ transform: "scaleX(-1)" }}
+            aria-hidden
           >
+            R
+          </span>
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">Cooked</span>
+          <span className="font-mono text-[11px] text-faint">jplouton-avocat.fr</span>
+        </div>
+
+        <Nav />
+
+        <form action="/auth/signout" method="post">
+          <button type="submit" className="text-xs text-faint transition-colors hover:text-ink">
             Déconnexion
           </button>
         </form>

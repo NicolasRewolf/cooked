@@ -11,17 +11,21 @@ export interface Column<T> {
   sortValue?: (row: T) => number | string | null;
 }
 
+// Table triable « instrument » : chaque en-tête sortable est un bouton (tri asc/desc,
+// flèche sur la colonne active). Défilement horizontal au besoin (min-width).
 export function SortableTable<T>({
   columns,
   rows,
   initialSortKey,
   initialDir = "desc",
+  minWidth = 1080,
   emptyLabel = "Aucune donnée.",
 }: {
   columns: Column<T>[];
   rows: T[];
   initialSortKey?: string;
   initialDir?: "asc" | "desc";
+  minWidth?: number;
   emptyLabel?: string;
 }) {
   const [sortKey, setSortKey] = useState<string | undefined>(initialSortKey);
@@ -50,15 +54,13 @@ export function SortableTable<T>({
     }
   }
 
-  if (rows.length === 0) {
-    return <p className="py-6 text-sm text-neutral-500">{emptyLabel}</p>;
-  }
+  if (rows.length === 0) return <p className="py-6 text-sm text-muted">{emptyLabel}</p>;
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm tabular-nums">
+    <div className="overflow-x-auto border border-line bg-panel">
+      <table className="w-full border-collapse" style={{ minWidth }}>
         <thead>
-          <tr className="border-b border-neutral-200 dark:border-neutral-800">
+          <tr className="border-b border-line-strong bg-zebra">
             {columns.map((c) => {
               const sortable = !!c.sortValue;
               const active = sortKey === c.key;
@@ -67,15 +69,16 @@ export function SortableTable<T>({
                   key={c.key}
                   aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
                   className={cn(
-                    "px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500",
+                    "whitespace-nowrap px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.02em]",
                     c.align === "right" ? "text-right" : "text-left",
+                    active ? "text-ink" : "text-faint",
                   )}
                 >
                   {sortable ? (
                     <button
                       type="button"
                       onClick={() => toggle(c.key)}
-                      className="select-none uppercase tracking-wide hover:text-neutral-800 focus-visible:underline dark:hover:text-neutral-200"
+                      className="select-none uppercase transition-colors hover:text-accent"
                     >
                       {c.header}
                       {active ? (dir === "asc" ? " ↑" : " ↓") : ""}
@@ -92,13 +95,13 @@ export function SortableTable<T>({
           {sorted.map((row, i) => (
             <tr
               key={i}
-              className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900/50"
+              className="border-b border-[#f2f2f0] transition-colors last:border-0 hover:bg-[#fafaf8]"
             >
               {columns.map((c) => (
                 <td
                   key={c.key}
                   className={cn(
-                    "px-3 py-2.5 text-neutral-800 dark:text-neutral-200",
+                    "px-3 py-2.5 align-middle",
                     c.align === "right" ? "text-right" : "text-left",
                   )}
                 >

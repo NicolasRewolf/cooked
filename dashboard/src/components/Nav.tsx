@@ -12,7 +12,7 @@ const links = [
 export function Nav() {
   const pathname = usePathname();
   return (
-    <nav className="flex items-center gap-1">
+    <nav className="flex h-14 items-stretch gap-1">
       {links.map((l) => {
         const active = pathname === l.href;
         return (
@@ -20,10 +20,8 @@ export function Nav() {
             key={l.href}
             href={l.href}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              active
-                ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800",
+              "inline-flex items-center border-b-2 px-3.5 text-[13px] font-semibold transition-colors",
+              active ? "border-accent text-ink" : "border-transparent text-faint hover:text-ink",
             )}
           >
             {l.label}

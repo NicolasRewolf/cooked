@@ -1,45 +1,46 @@
 import { cn } from "@/lib/cn";
 import type { Delta } from "@/lib/format";
+import { Sparkline } from "./Sparkline";
 
 export interface KpiItem {
   label: string;
   value: string;
   delta?: Delta;
   hint?: string;
+  /** Série journalière optionnelle (sparkline). Absente ⇒ pas de sparkline.
+   *  Voir HANDOFF.md : nécessite un RPC renvoyant la série par métrique. */
+  series?: number[];
 }
 
 function DeltaTag({ delta }: { delta: Delta }) {
-  if (delta.dir === "na") return <span className="text-xs text-neutral-400">—</span>;
-  const cls =
-    delta.dir === "up"
-      ? "text-emerald-600 dark:text-emerald-400"
-      : delta.dir === "down"
-        ? "text-red-600 dark:text-red-400"
-        : "text-neutral-500";
+  if (delta.dir === "na") return <span className="font-mono text-[11.5px] text-faint">—</span>;
+  const cls = delta.dir === "up" ? "text-up" : delta.dir === "down" ? "text-down" : "text-faint";
   const glyph = delta.dir === "up" ? "▲" : delta.dir === "down" ? "▼" : "▬";
   return (
-    <span className={cn("text-xs font-medium", cls)}>
-      {glyph} {delta.label}
+    <span className={cn("font-mono text-[11.5px] font-medium", cls)}>
+      {glyph} {delta.label} <span className="text-dim">N-1</span>
     </span>
   );
 }
 
+// Grappe d'instruments : une rangée, chiffres mono, séparateurs filaires.
 export function KpiHeader({ items }: { items: KpiItem[] }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="flex flex-wrap border border-line bg-panel">
       {items.map((it) => (
         <div
           key={it.label}
-          className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950"
+          className="min-w-[150px] flex-1 border-l border-[#efefed] px-[17px] pb-[13px] pt-[15px] first:border-l-0"
         >
-          <div className="text-2xl font-semibold tracking-tight tabular-nums text-neutral-900 dark:text-neutral-100">
+          <div className="min-h-6 text-[10px] font-medium uppercase tracking-[0.07em] text-faint">
+            {it.label}
+          </div>
+          <div className="mt-2.5 font-mono text-[25px] font-semibold tracking-[-0.02em] text-ink">
             {it.value}
           </div>
-          <div className="mt-1 flex items-center justify-between gap-2">
-            <span className="text-[11px] uppercase tracking-wide text-neutral-500">{it.label}</span>
-            {it.delta && <DeltaTag delta={it.delta} />}
-          </div>
-          {it.hint && <div className="mt-1 text-[10px] text-neutral-400">{it.hint}</div>}
+          {it.delta && <div className="mt-[7px]">{<DeltaTag delta={it.delta} />}</div>}
+          {it.hint && <div className="mt-2 font-mono text-[10px] text-dim">{it.hint}</div>}
+          <Sparkline series={it.series} />
         </div>
       ))}
     </div>
