@@ -22,11 +22,6 @@ export function seconds(n: number | null | undefined): string {
   return `${Math.round(n)} s`;
 }
 
-export function euros(n: number | null | undefined): string {
-  if (n == null) return "—";
-  return `${n.toFixed(2).replace(".", ",")} €`;
-}
-
 // "2026-06-29" -> "29/06/2026"
 export function dateFr(iso: string | null | undefined): string {
   if (!iso) return "—";

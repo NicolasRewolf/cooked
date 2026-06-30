@@ -1,18 +1,5 @@
 import { cn } from "@/lib/cn";
 
-export function Card({ className, children }: { className?: string; children: React.ReactNode }) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
 export function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-neutral-500">

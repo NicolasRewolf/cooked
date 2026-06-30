@@ -2,7 +2,7 @@
 
 **Source de vérité :** `supabase/migrations/*.sql` (versionné, rejouable via Supabase CLI ou le dashboard).
 
-**Usage normal (prod)** : laisser les migrations s’appliquer automatiquement. Ne pas copier-coller les `APPLIQUER_*.sql` sauf urgence ou rattrapage d’une env qui n’a pas le CLI.
+**Usage normal (prod)** : laisser les migrations s’appliquer automatiquement (Supabase CLI / dashboard). En rattrapage d’une env sans CLI, rejouer le SQL des migrations concernées depuis `supabase/migrations/`.
 
 ## Ordre des migrations récentes (référence)
 
@@ -17,20 +17,6 @@
 | `20260530120000` | Drop index `query` inutilisés, `canonical_path` search_path, `ANALYZE` GSC |
 
 Liste complète : `supabase/migrations/`.
-
-## Fichiers `APPLIQUER_*.sql` (rattrapage manuel uniquement)
-
-Doublons historiques du SQL Editor — **dépréciés** dès qu’une migration équivalente existe :
-
-| Script | Remplacé par |
-|--------|----------------|
-| `APPLIQUER_periodes_dashboard.sql` | `20260526100000_cooked_period_bounds.sql` |
-| `APPLIQUER_exclure_candidatures.sql` | `20260527120000_form_submit_exclude_recruitment.sql` |
-| `APPLIQUER_20260528_macro_dry.sql` | `20260528120000_macro_dry_and_gsc_period.sql` |
-| `APPLIQUER_20260528_perf_dashboard.sql` | `20260528140000` + `20260528141000` |
-| `APPLIQUER_20260529_data_lens.sql` | `20260529120000` + `20260529120100` |
-
-En cas de doute, **toujours** préférer `migrations/`.
 
 ## Validation après migration périodes
 
