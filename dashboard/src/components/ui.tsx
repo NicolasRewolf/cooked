@@ -1,4 +1,23 @@
 import { cn } from "@/lib/cn";
+import type { Delta } from "@/lib/format";
+
+// Flèche de tendance par ligne (visiteurs/clics vs période précédente).
+// Vert = hausse (bien), rouge = baisse, gris = stable / pas de base de comparaison.
+export function Trend({ d }: { d: Delta }) {
+  if (d.dir === "na") return <span className="text-[11px] text-neutral-300 dark:text-neutral-600">—</span>;
+  const cls =
+    d.dir === "up"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : d.dir === "down"
+        ? "text-red-600 dark:text-red-400"
+        : "text-neutral-400";
+  const glyph = d.dir === "up" ? "▲" : d.dir === "down" ? "▼" : "▬";
+  return (
+    <span className={cn("text-[11px] font-medium tabular-nums", cls)} title="vs période précédente">
+      {glyph} {d.label}
+    </span>
+  );
+}
 
 export function SectionTitle({ children }: { children: React.ReactNode }) {
   return (

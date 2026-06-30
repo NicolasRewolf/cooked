@@ -26,6 +26,15 @@ export interface ResourceRow {
   first_tracker_day: string | null;
   days_live: number | null;
   confidence: "A" | "B" | "C";
+  // Facteurs de pilotage (migration dashboard_pilotage_factors, 30/06/2026)
+  unique_visitors_prev: number; // visiteurs fenêtre N-1 (tendance)
+  gsc_clicks_prev: number; // clics Google fenêtre N-1 (tendance)
+  cpi: number | null; // score CPI global (dominé par la conversion — info)
+  cpi_grade: "A" | "B" | "C" | null; // grade de confiance CPI (organique)
+  momentum: number | null; // momentum relatif au site (>1 = monte)
+  potentiel: number | null; // santé hors conversion (capture+rétention+lecture)
+  convertit: boolean | null; // a produit un contact sur la fenêtre CPI
+  ctr_expected: number | null; // CTR attendu à la position (courbe du site), en %
   cooked_start: string;
   cooked_end: string;
   gsc_start: string;
@@ -73,6 +82,11 @@ export interface SeoQueryRow {
   competition_level: string | null;
   capture_pct: number | null;
   is_quick_win: boolean;
+  // Facteurs de pilotage (migration dashboard_pilotage_factors, 30/06/2026)
+  clicks_prev: number; // clics fenêtre N-1 (tendance)
+  position_prev: number | null; // position fenêtre N-1 (tendance)
+  ctr_expected: number | null; // CTR attendu à la position (courbe du site), en %
+  opportunity_clicks: number | null; // clics/mois estimés si top 3 au CTR du site
   gsc_start: string;
   gsc_end: string;
 }
