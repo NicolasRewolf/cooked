@@ -1,4 +1,6 @@
-// COOKED — form-webhook Edge Function (v10 — Sprint 37, 09/06/2026)\n// Sprint 37: lit les champs cachés cooked_aid/cooked_sid déposés par le\n// tracker → attribution conversion → parcours (~95 % vs 75 % temporal).
+// COOKED — form-webhook Edge Function (v10 — Sprint 37, 09/06/2026)
+// Sprint 37: lit les champs cachés cooked_aid/cooked_sid déposés par le
+// tracker → attribution conversion → parcours (~95 % vs 75 % temporal).
 // POST /functions/v1/form-webhook?token=<WEBHOOK_SECRET>
 //
 // Receives Wix Automations webhooks fired when a Wix Form is successfully

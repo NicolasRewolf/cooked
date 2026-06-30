@@ -2078,7 +2078,6 @@ create unique index if not exists events_form_submit_submission_id_uniq
 --   → supabase/migrations/20260522120000_gsc_tables.sql
 --
 -- Ingestion : scripts/gsc_common.py, CLI scripts/gsc_ingest.py
---   (wrappers rétro-compat gsc_ingest_path_and_query.py / query_page.py)
 --
 -- Jointure Cooked × GSC :
 --   canonical_path(events.path) = gsc_path_daily.path

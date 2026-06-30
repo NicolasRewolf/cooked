@@ -1,0 +1,45 @@
+name: Tracker Test
+
+# Garde de régression du tracker (suite ajoutée au Sprint 38, jamais câblée en
+# CI jusqu'au ménage du 30/06/2026). Le tracker wix/tracker.html est le cœur de
+# la collecte : un bug silencieux (double-embed, mauvaise classification de
+# clic, batching cassé, ids non exposés) corromprait toutes les analyses. Ce
+# job rejoue tests/tracker.test.js sur la SOURCE et le MINIFIÉ à chaque
+# changement du tracker, du test ou du minifieur.
+#
+# wix/tracker.min.html est gitignoré (artefact régénéré à chaque déploiement
+# Wix) → on le régénère ici avec jsmin avant de lancer la suite jsdom.
+# tests/tracker.test.js sort en code 1 sur échec (process.exit).
+
+on:
+  push:
+    paths:
+      - 'wix/tracker.html'
+      - 'tests/tracker.test.js'
+      - 'scripts/minify-tracker.py'
+      - '.github/workflows/tracker-test.yml'
+  pull_request:
+    paths:
+      - 'wix/tracker.html'
+      - 'tests/tracker.test.js'
+      - 'scripts/minify-tracker.py'
+
+jobs:
+  tracker-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Installer jsmin
+        run: pip install jsmin
+      - name: Régénérer le minifié (gitignoré)
+        run: python3 scripts/minify-tracker.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Installer jsdom
+        run: npm install jsdom --no-save
+      - name: Suite tracker (source + minifié)
+        run: node tests/tracker.test.js

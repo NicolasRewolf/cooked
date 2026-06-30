@@ -130,7 +130,6 @@ cooked/
 │   ├── minify-tracker.py              — Minify tracker.html before Wix paste
 │   ├── gsc_common.py                  — Lib partagée ingestion GSC
 │   ├── gsc_ingest.py                  — CLI : path-query | query-page
-│   ├── gsc_ingest_path_and_query.py   — Wrapper rétro-compat
 │   ├── dfs_common.py                  — Lib ingestion DataForSEO (search_volume FR)
 │   ├── dfs_sync.py                    — CLI sync hebdo top 500 keywords GSC → DFS
 │   ├── deploy_track.py                — Déploi Edge Function track (MCP / CLI)
@@ -280,9 +279,6 @@ export SUPABASE_SECRET_KEY='sb_secret_...'
 
 python3 scripts/gsc_ingest.py path-query
 python3 scripts/gsc_ingest.py query-page
-
-# Wrapper rétro-compat (même comportement) :
-# python3 scripts/gsc_ingest_path_and_query.py
 ```
 
 DDL : `supabase/migrations/20260522120000_gsc_tables.sql` (à rejouer sur fresh DB).
