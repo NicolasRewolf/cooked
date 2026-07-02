@@ -8,9 +8,13 @@ name: GSC Daily Ingest
 #   Console, puis upserte vers Supabase. Idempotent grâce aux clés
 #   primaires composites (day, path) / (day, query) / (day, path, query).
 #
-# Fenêtre : --months 1 (≈30 jours). GSC peut refiner les données les
-# premiers jours après publication, donc rerunner le dernier mois en
-# upsert capture les corrections. Plus longue = perte de temps inutile.
+# Fenêtre : --months 2 (mois courant + mois précédent COMPLET). Google
+# refine les données jusqu'à J-3 ; avec --months 1 les derniers jours d'un
+# mois (ex. 30/06) n'étaient jamais ré-ingérés, car list_months() ancre la
+# fenêtre au 1er du mois : le run du 1er juillet ne couvrait que juillet →
+# trou de fin de mois. --months 2 couvre le mois précédent en entier et
+# ferme ce trou (run ~2-3 min, quota GSC négligeable). Upsert idempotent
+# (PK composites) : re-couvrir un mois déjà ingéré est sans effet.
 #
 # Secrets à configurer dans GitHub
 # (Settings → Secrets and variables → Actions → New repository secret) :
@@ -60,17 +64,17 @@ jobs:
           # Sanity check (sans logger le contenu)
           test -s "$RUNNER_TEMP/gsc/credentials.json" || { echo "credentials.json vide ou base64 invalide" >&2; exit 1; }
 
-      - name: Run path-query ingest (last 30 days)
+      - name: Run path-query ingest (mois courant + précédent)
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GSC_CREDENTIALS_PATH: ${{ runner.temp }}/gsc/credentials.json
-        run: python3 scripts/gsc_ingest.py path-query --months 1
+        run: python3 scripts/gsc_ingest.py path-query --months 2
 
-      - name: Run query-page ingest (last 30 days)
+      - name: Run query-page ingest (mois courant + précédent)
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GSC_CREDENTIALS_PATH: ${{ runner.temp }}/gsc/credentials.json
-        run: python3 scripts/gsc_ingest.py query-page --months 1
+        run: python3 scripts/gsc_ingest.py query-page --months 2
 
       - name: Cleanup credentials
         if: always()
