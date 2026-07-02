@@ -1,6 +1,14 @@
 import "server-only";
 import { admin } from "@/lib/supabase-admin";
-import type { Period, ResourceRow, ResourceKpis, SeoQueryRow, SeoKpis } from "@/lib/types";
+import type {
+  Period,
+  ResourceRow,
+  ResourceKpis,
+  ExpertiseRow,
+  ExpertiseKpis,
+  SeoQueryRow,
+  SeoKpis,
+} from "@/lib/types";
 
 class RpcError extends Error {
   constructor(rpc: string, cause: unknown) {
@@ -22,6 +30,21 @@ export async function getResourcesKpis(period: Period): Promise<ResourceKpis | n
   const { data, error } = await admin.rpc("dashboard_resources_kpis", { period_kind: period });
   if (error) throw new RpcError("dashboard_resources_kpis", error);
   return ((data ?? [])[0] as ResourceKpis) ?? null;
+}
+
+export async function getExpertisesOverview(period: Period): Promise<ExpertiseRow[]> {
+  const { data, error } = await admin.rpc("dashboard_expertises_overview", {
+    period_kind: period,
+    max_rows: 100,
+  });
+  if (error) throw new RpcError("dashboard_expertises_overview", error);
+  return (data ?? []) as ExpertiseRow[];
+}
+
+export async function getExpertisesKpis(period: Period): Promise<ExpertiseKpis | null> {
+  const { data, error } = await admin.rpc("dashboard_expertises_kpis", { period_kind: period });
+  if (error) throw new RpcError("dashboard_expertises_kpis", error);
+  return ((data ?? [])[0] as ExpertiseKpis) ?? null;
 }
 
 export async function getSeoByQuery(

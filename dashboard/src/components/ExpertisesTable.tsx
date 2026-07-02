@@ -1,15 +1,14 @@
 "use client";
 
-import { useState } from "react";
 import { SortableTable, type Column } from "./SortableTable";
-import { Badge, ConfidenceBadge, Trend } from "./ui";
+import { ConfidenceBadge } from "./ui";
 import { cn } from "@/lib/cn";
-import type { ResourceRow } from "@/lib/types";
+import type { ExpertiseRow } from "@/lib/types";
 import { num, seconds, dec, pct, delta, prettyPath } from "@/lib/format";
+import { Trend } from "./ui";
 
 // ── Verdict de santé : momentum (relatif au site) + grade de confiance ───────
-// Pour ces articles éducatifs, le potentiel hors-conversion est le bon repère.
-function HealthCell({ r }: { r: ResourceRow }) {
+function HealthCell({ r }: { r: ExpertiseRow }) {
   if (r.cpi_grade == null || r.cpi_grade === "C" || r.momentum == null) {
     return (
       <span className="font-mono text-[11px] text-dim" title="Trop peu de trafic organique pour un verdict fiable">
@@ -40,8 +39,7 @@ function HealthCell({ r }: { r: ResourceRow }) {
 }
 
 // ── CTR réel vs CTR attendu à la position (courbe du site) ────────────────────
-// Démasque un bon classement qui ne ramène pas de clics (titre / méta à revoir).
-function CtrCell({ r }: { r: ResourceRow }) {
+function CtrCell({ r }: { r: ExpertiseRow }) {
   if (r.gsc_ctr_pct == null) return <span className="text-dim">—</span>;
   const exp = r.ctr_expected;
   let cls = "text-[#45423c]";
@@ -62,36 +60,30 @@ function CtrCell({ r }: { r: ResourceRow }) {
   );
 }
 
-// ── Source : part du trafic venant de Google (clics GSC vs visiteurs Cooked) ──
-// Faible = l'article vit sur réseaux / IA / direct (plus volatil que la recherche).
-function MixBadge({ r }: { r: ResourceRow }) {
-  if (r.unique_visitors === 0) return <span className="text-dim">—</span>;
-  const ratio = r.gsc_clicks / r.unique_visitors;
-  const [tone, label] =
-    ratio >= 0.8
-      ? (["info", "Google"] as const)
-      : ratio >= 0.35
-        ? (["neutral", "Mixte"] as const)
-        : (["warn", "Hors-Google"] as const);
+// ── Part payante de la page (canal d'acquisition Adwords) ─────────────────────
+// Fort = la page vit sur Adwords → la lecture organique repose sur peu de visiteurs.
+function PaidCell({ r }: { r: ExpertiseRow }) {
+  if (r.paid_share_pct == null) return <span className="text-dim">—</span>;
+  const p = r.paid_share_pct;
+  const cls = p >= 70 ? "text-warn" : p <= 30 ? "text-up" : "text-[#45423c]";
   return (
     <span
-      title={`${num(r.gsc_clicks)} clics Google pour ${num(r.unique_visitors)} visiteurs (${Math.round(
-        ratio * 100,
-      )} %). Faible = trafic réseaux / IA / direct, plus volatil.`}
+      className={cn("font-mono text-[11.5px] font-medium", cls)}
+      title={`${pct(p, 0)} des sessions voyant cette page sont arrivées via Google Ads (canal d'acquisition). Fort = trafic Adwords ; la colonne « lecture » ne porte alors que sur les rares entrées organiques.`}
     >
-      <Badge tone={tone}>{label}</Badge>
+      {pct(p, 0)}
     </span>
   );
 }
 
-const columns: Column<ResourceRow>[] = [
+const columns: Column<ExpertiseRow>[] = [
   {
-    key: "article",
-    header: "article",
+    key: "page",
+    header: "page expertise",
     align: "left",
     sortValue: (r) => prettyPath(r.path),
     render: (r) => (
-      <div className="max-w-[230px]">
+      <div className="max-w-[240px]">
         <a
           href={`https://www.jplouton-avocat.fr${r.path}`}
           target="_blank"
@@ -109,15 +101,11 @@ const columns: Column<ResourceRow>[] = [
   },
   { key: "sante", header: "santé", align: "left", sortValue: (r) => r.momentum, render: (r) => <HealthCell r={r} /> },
   {
-    key: "days_live",
-    header: "âge",
+    key: "paid",
+    header: "part paid",
     align: "right",
-    sortValue: (r) => r.days_live,
-    render: (r) => (
-      <span className="font-mono text-[11.5px] text-faint">
-        {r.days_live != null ? `${r.days_live} j` : "—"}
-      </span>
-    ),
+    sortValue: (r) => r.paid_share_pct,
+    render: (r) => <PaidCell r={r} />,
   },
   {
     key: "visitors",
@@ -136,7 +124,14 @@ const columns: Column<ResourceRow>[] = [
     header: "lecture",
     align: "right",
     sortValue: (r) => r.dwell_median_s,
-    render: (r) => <span className="font-mono text-[11.5px] text-[#45423c]">{seconds(r.dwell_median_s)}</span>,
+    render: (r) => (
+      <span
+        className="font-mono text-[11.5px] text-[#45423c]"
+        title="Médiane du temps de lecture — entrées ORGANIQUES directes uniquement (comme le CPI ; les visites Adwords sont exclues pour ne pas fausser la lecture)."
+      >
+        {seconds(r.dwell_median_s)}
+      </span>
+    ),
   },
   {
     key: "gsc_clicks",
@@ -173,13 +168,6 @@ const columns: Column<ResourceRow>[] = [
     ),
   },
   {
-    key: "mix",
-    header: "source",
-    align: "left",
-    sortValue: (r) => (r.unique_visitors > 0 ? r.gsc_clicks / r.unique_visitors : null),
-    render: (r) => <MixBadge r={r} />,
-  },
-  {
     key: "best_query",
     header: "meilleure requête",
     align: "left",
@@ -212,32 +200,19 @@ const columns: Column<ResourceRow>[] = [
   },
 ];
 
-export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
-  const [recentOnly, setRecentOnly] = useState(false);
-  const filtered = recentOnly ? rows.filter((r) => r.days_live != null && r.days_live <= 60) : rows;
+export function ExpertisesTable({ rows }: { rows: ExpertiseRow[] }) {
   return (
     <div>
-      <div className="mb-2.5 flex items-center justify-between gap-4">
-        <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
-          articles [{filtered.length}]
-        </h2>
-        <label className="flex w-fit cursor-pointer items-center gap-2 text-[11.5px] text-muted">
-          <input
-            type="checkbox"
-            checked={recentOnly}
-            onChange={(e) => setRecentOnly(e.target.checked)}
-            className="accent-accent"
-          />
-          récents seulement (≤ 60 j)
-        </label>
-      </div>
-      <SortableTable columns={columns} rows={filtered} initialSortKey="visitors" initialDir="desc" minWidth={1080} />
+      <h2 className="mb-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
+        expertises [{rows.length}]
+      </h2>
+      <SortableTable columns={columns} rows={rows} initialSortKey="visitors" initialDir="desc" minWidth={1040} />
       <p className="mt-[11px] max-w-[920px] font-mono text-[10.5px] leading-relaxed text-dim">
-        <strong className="font-semibold text-faint">santé</strong> = momentum vs site (● monte / ●
-        ralentit · ★ gisement : fort potentiel, pas encore de contact) ·{" "}
-        <strong className="font-semibold text-faint">ctr / att.</strong> en orange = bien classé mais
-        titre / méta à retravailler · <strong className="font-semibold text-faint">source</strong> =
-        part du trafic venant de Google vs réseaux / IA / direct · tendances ▲▼ vs période précédente.
+        <strong className="font-semibold text-faint">part paid</strong> = sessions arrivées via Google
+        Ads (fort = la « lecture » ne porte que sur les rares entrées organiques) ·{" "}
+        <strong className="font-semibold text-faint">lecture</strong> = médiane sur les entrées
+        organiques directes (comme le CPI) · <strong className="font-semibold text-faint">contacts</strong>{" "}
+        = actions faites sur la page (appel ou formulaire) · tendances ▲▼ vs période précédente.
       </p>
     </div>
   );

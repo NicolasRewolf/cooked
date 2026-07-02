@@ -35,3 +35,18 @@ export async function getResourcesTrend(period: Period): Promise<TrendResult> {
     return { data: null, error: true };
   }
 }
+
+export async function getExpertisesTrend(period: Period): Promise<TrendResult> {
+  try {
+    const { data, error } = await admin.rpc("dashboard_expertises_trend", { period_kind: period });
+    if (error) {
+      console.error(`RPC dashboard_expertises_trend a échoué:`, error.message);
+      return { data: null, error: true };
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    return { data: (row as ResourcesTrend) ?? null, error: false };
+  } catch (cause) {
+    console.error(`RPC dashboard_expertises_trend a levé:`, cause);
+    return { data: null, error: true };
+  }
+}

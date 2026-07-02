@@ -7,6 +7,8 @@ export interface KpiItem {
   value: string;
   delta?: Delta;
   hint?: string;
+  /** Infobulle explicative au survol de la carte (ex. définition des « contacts »). */
+  tooltip?: string;
   /** Série journalière optionnelle (sparkline). Absente ⇒ pas de sparkline.
    *  Voir HANDOFF.md : nécessite un RPC renvoyant la série par métrique. */
   series?: number[];
@@ -30,6 +32,7 @@ export function KpiHeader({ items }: { items: KpiItem[] }) {
       {items.map((it) => (
         <div
           key={it.label}
+          title={it.tooltip}
           className="min-w-[150px] flex-1 border-l border-[#efefed] px-[17px] pb-[13px] pt-[15px] first:border-l-0"
         >
           <div className="min-h-6 text-[10px] font-medium uppercase tracking-[0.07em] text-faint">

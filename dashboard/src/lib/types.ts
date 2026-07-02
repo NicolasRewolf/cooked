@@ -67,6 +67,18 @@ export interface ResourceKpis {
   no_prev_baseline: boolean;
 }
 
+// Onglet Expertises : mêmes colonnes que les ressources + le canal (les pages
+// expertise sont ~59 % Adwords, cf. migration dashboard_expertises_*).
+export interface ExpertiseRow extends ResourceRow {
+  paid_share_pct: number | null; // part des sessions VOYANT la page arrivées via Google Ads (canal global)
+}
+
+export interface ExpertiseKpis extends ResourceKpis {
+  paid_entries_n: number; // sessions expertise acquises en paid (canal global, fenêtre)
+  organic_entries_n: number; // idem organique
+  total_entries_n: number; // total sessions expertise sur la fenêtre
+}
+
 export interface SeoQueryRow {
   query: string;
   clicks: number;

@@ -1,14 +1,14 @@
 import { Suspense } from "react";
 import { parsePeriod } from "@/lib/periods";
-import { getResourcesKpis, getResourcesOverview } from "@/data/dashboard";
-import { getResourcesTrend } from "@/data/trend";
+import { getExpertisesKpis, getExpertisesOverview } from "@/data/dashboard";
+import { getExpertisesTrend } from "@/data/trend";
 import { requireUser } from "@/lib/auth";
 import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
 import { PeriodSelector } from "@/components/PeriodSelector";
-import { ResourcesTable } from "@/components/ResourcesTable";
+import { ExpertisesTable } from "@/components/ExpertisesTable";
 import { TrendChart } from "@/components/TrendChart";
-import { num, delta } from "@/lib/format";
+import { num, pct, delta } from "@/lib/format";
 import type { Period } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -25,9 +25,9 @@ export default async function Page({
       <div className="mb-[18px] flex items-end justify-between gap-5">
         <div>
           <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-faint">
-            Ressources &amp; notions juridiques
+            Pages expertise · fort trafic Adwords
           </div>
-          <h1 className="mt-2 text-[25px] font-semibold tracking-[-0.02em]">Articles Ressources</h1>
+          <h1 className="mt-2 text-[25px] font-semibold tracking-[-0.02em]">Expertises</h1>
         </div>
         <PeriodSelector value={period} />
       </div>
@@ -40,16 +40,27 @@ export default async function Page({
 
 async function Content({ period }: { period: Period }) {
   const [kpis, rows, trendResult] = await Promise.all([
-    getResourcesKpis(period),
-    getResourcesOverview(period),
-    getResourcesTrend(period),
+    getExpertisesKpis(period),
+    getExpertisesOverview(period),
+    getExpertisesTrend(period),
   ]);
   const trend = trendResult.data;
+
+  const paidShare =
+    kpis && kpis.total_entries_n > 0 ? (100 * kpis.paid_entries_n) / kpis.total_entries_n : null;
+  const orgShare =
+    kpis && kpis.total_entries_n > 0 ? (100 * kpis.organic_entries_n) / kpis.total_entries_n : null;
 
   const items: KpiItem[] = kpis
     ? [
         { label: "Visiteurs uniques", value: num(kpis.visitors_n), delta: delta(kpis.visitors_n, kpis.visitors_prev), series: trend?.visitors_daily },
-        { label: "Pages vues", value: num(kpis.pageviews_n), delta: delta(kpis.pageviews_n, kpis.pageviews_prev), series: trend?.pageviews_daily },
+        {
+          label: "Part payante",
+          value: pct(paidShare, 0),
+          hint: orgShare != null ? `${pct(orgShare, 0)} organique` : undefined,
+          tooltip:
+            "Canal d'acquisition des sessions expertise (1er pageview de la session). Le reste = referral / direct / réseaux. Spam Baidu exclu.",
+        },
         {
           label: "Contacts",
           value: num(kpis.contacts_n),
@@ -88,7 +99,7 @@ async function Content({ period }: { period: Period }) {
         />
       ) : null}
       <section>
-        <ResourcesTable rows={rows} />
+        <ExpertisesTable rows={rows} />
       </section>
     </div>
   );
