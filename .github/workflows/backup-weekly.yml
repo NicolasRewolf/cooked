@@ -1,0 +1,127 @@
+name: Backup Weekly
+
+# T-10 (02/07/2026) — backup hebdomadaire des tables clés Cooked → artifact GitHub
+#
+# ⚠️ PIS-ALLER ASSUMÉ. Ce workflow dumpe les tables critiques en CSV gzippé et
+# les pousse comme ARTIFACT GitHub (rétention 90 jours MAX — voir
+# retention-days ci-dessous). Ce n'est PAS un backup durable :
+#   - au-delà de 90 jours GitHub purge l'artifact automatiquement ;
+#   - un artifact n'est pas versionné/immuable comme un bucket objet.
+# La cible durable est un bucket objet (Backblaze B2 / Cloudflare R2 / S3),
+# que Nicolas créera plus tard. Quand le bucket existe, remplacer le step
+# "Upload artifact" par un `aws s3 cp` / `rclone copy` vers le bucket et
+# porter la rétention côté bucket (lifecycle policy). En attendant, l'artifact
+# hebdo couvre le risque « perte totale du projet Supabase » sur une fenêtre
+# glissante de 90 jours.
+#
+# Secrets à configurer une fois dans GitHub
+# (Settings → Secrets and variables → Actions → New repository secret) :
+#   SUPABASE_DB_URL : connection string Postgres du projet Cooked
+#                     (ex. postgresql://postgres:<pwd>@db.<ref>.supabase.co:5432/postgres
+#                      ou l'URL du pooler Supavisor — IPv4, à privilégier). À créer par Nicolas.
+#   NTFY_TOPIC      : topic ntfy.sh pour la notification d'échec (T-11) — optionnel,
+#                     le step notify-failure est inerte tant qu'il est absent.
+#
+# Note volumétrie : la table `events` fait ~1M lignes → son \copy est
+# volumineux (plusieurs dizaines de Mo une fois gzippé). Acceptable pour un
+# artifact hebdomadaire.
+
+on:
+  schedule:
+    # Dimanche 05:00 UTC (= 06:00 ou 07:00 Paris selon DST). Heure creuse,
+    # aucune contrainte de tomber pile à la minute.
+    - cron: "0 5 * * 0"
+  workflow_dispatch: # bouton "Run workflow" manuel
+
+# Empêche 2 backups simultanés (dump lourd sur `events`)
+concurrency:
+  group: backup-weekly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client (psql)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          psql --version
+
+      - name: Dump des tables clés (CSV gzippé)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          # NB : PAS de `pipefail` ici, VOLONTAIREMENT. Avec `pipefail`, un
+          # échec de psql dans `psql | gzip` ferait avorter le script (set -e)
+          # AVANT la ligne PIPESTATUS ci-dessous — la garde deviendrait du code
+          # mort et le message nommant la table fautive ne s'imprimerait jamais.
+          # Sans pipefail, le pipeline renvoie le code de gzip (0) : on inspecte
+          # explicitement PIPESTATUS[0] (code de psql) pour décider d'échouer.
+          set -eu
+
+          # Garde-fou : ne pas partir avec une URL vide (secret non configuré)
+          test -n "${SUPABASE_DB_URL:-}" || { echo "SUPABASE_DB_URL vide ou absent" >&2; exit 1; }
+
+          mkdir -p backup
+
+          # Liste EXACTE des tables à sauvegarder (T-10)
+          tables=(
+            events
+            gsc_path_daily
+            gsc_query_daily
+            gsc_query_page_daily
+            cpi_daily
+            page_taxonomy
+            annotations
+            alerts
+          )
+
+          for t in "${tables[@]}"; do
+            echo "→ dump $t"
+            # \copy = côté client psql (pas besoin de droits fichier serveur).
+            # ON_ERROR_STOP=1 fait échouer psql sur toute erreur SQL.
+            # gzip est en aval du pipe → sans pipefail on inspecte PIPESTATUS[0]
+            # (code psql) pour ne PAS uploader un CSV tronqué/vide en cas d'échec.
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
+              -c "\copy (select * from public.$t) to stdout csv header" \
+              | gzip > "backup/$t.csv.gz"
+            psql_rc="${PIPESTATUS[0]}"
+            if [ "$psql_rc" -ne 0 ]; then
+              echo "Échec du dump de $t (psql exit $psql_rc)" >&2
+              exit "$psql_rc"
+            fi
+          done
+
+          echo "----- artefacts produits -----"
+          ls -lh backup/
+
+      - name: Upload backup as artifact (rétention 90j — PIS-ALLER)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cooked-backup-weekly
+          path: backup/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: notify-failure
+        if: failure()
+        run: |
+          if [ -n "${{ secrets.NTFY_TOPIC }}" ]; then
+            curl -s \
+              -H "Title: Cooked CI en échec" \
+              -H "Priority: high" \
+              -H "Tags: warning" \
+              -d "Workflow « ${{ github.workflow }} » en échec (run #${{ github.run_number }}) — voir Actions : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}" || true
+          else
+            echo "NTFY_TOPIC non configuré — notification push ignorée (inerte)."
+          fi
