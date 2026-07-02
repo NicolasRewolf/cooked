@@ -57,3 +57,19 @@ jobs:
           DFS_USERNAME: ${{ secrets.DFS_USERNAME }}
           DFS_PASSWORD: ${{ secrets.DFS_PASSWORD }}
         run: python3 scripts/dfs_sync.py --limit 500
+
+      # T-11 (audit 02/07/2026) — notification push d'échec via ntfy. Inerte
+      # tant que le secret NTFY_TOPIC n'est pas posé.
+      - name: notify-failure
+        if: failure()
+        run: |
+          if [ -n "${{ secrets.NTFY_TOPIC }}" ]; then
+            curl -s \
+              -H "Title: Cooked CI en échec" \
+              -H "Priority: high" \
+              -H "Tags: warning" \
+              -d "Workflow « ${{ github.workflow }} » en échec (run #${{ github.run_number }}) — voir Actions : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}" || true
+          else
+            echo "NTFY_TOPIC non configuré — notification push ignorée (inerte)."
+          fi
