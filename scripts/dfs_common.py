@@ -232,6 +232,13 @@ def upsert_batch(sb, rows: list[dict]) -> None:
           .execute()
 
 
+def dfs_run_failed(total_failed: int, total_requested: int) -> bool:
+    """True si le run doit être considéré en échec : > 50 % des keywords
+    demandés en erreur DFS. Extrait pour être testable unitairement
+    (T-12, audit 02/07/2026)."""
+    return bool(total_requested) and total_failed >= total_requested * 0.5
+
+
 def run_sync(limit_n: int) -> None:
     sb, dfs_auth = clients()
     t0 = time.time()
@@ -313,6 +320,15 @@ def run_sync(limit_n: int) -> None:
         print(f"  collisions sanitize : {total_collisions:,}")
     if total_failed:
         print(f"  failed (DFS error)  : {total_failed:,}")
+
+    # T-12 (audit 02/07/2026) : échec dur si > 50 % des keywords demandés ont
+    # échoué → le workflow passe rouge (sinon une panne DFS totale laisse le
+    # cron vert et trompeur). Complète l'alerte dfs_stale de cooked_alerts_refresh().
+    if dfs_run_failed(total_failed, total_requested):
+        sys.exit(
+            f"ÉCHEC DFS : {total_failed}/{total_requested} keywords en erreur "
+            f"(> 50 %) — voir logs ci-dessus"
+        )
 
 
 def main(argv: list[str] | None = None) -> None:

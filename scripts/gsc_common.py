@@ -99,7 +99,7 @@ def fetch_gsc(
                     "startRow": start_row,
                 },
             )
-            .execute()
+            .execute(num_retries=3)  # T-12 : backoff intégré googleapiclient
         )
         batch = resp.get("rows", [])
         rows.extend(batch)
