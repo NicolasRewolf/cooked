@@ -56,7 +56,7 @@
   // version label never appears after a Wix republish, the paste
   // failed or was truncated. Bump this string on every meaningful
   // tracker change.
-  var COOKED_VERSION       = 'sprint38';
+  var COOKED_VERSION       = 'sprint40';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -933,6 +933,13 @@
   window.addEventListener('beforeunload', flushExit);
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) flushExit();
+    // T-14 (sprint40) — ré-arme page_exit au retour d'onglet : sinon un visiteur
+    // qui masque puis revient lire n'émet JAMAIS de page_exit final (dwell/scroll
+    // figés au 1er masquage, ~10-13 % des pages engagées sous-comptées). totAMs
+    // continue → le page_exit final portera le dwell TOTAL. Corollaire SQL :
+    // max(duration) par session×path côté lecture (une session peut émettre
+    // plusieurs page_exit à durées croissantes).
+    else exitSent = false;
   });
 
   // ==============================================================

@@ -3,12 +3,19 @@ import { num } from "@/lib/format";
 // Graphe principal « oscilloscope » : grille fine + tracé accent + point final.
 // `series` = une valeur / jour sur la période. Vide ⇒ le composant ne rend rien
 // (la page masque alors le bloc). Voir HANDOFF.md pour le RPC à ajouter.
+//
+// La série est ancrée sur J-1 (dernier jour réellement couvert) : le point final
+// n'est PAS « aujourd'hui » mais le dernier jour clos. `lastDay` (ISO du dernier
+// jour couvert) permet d'afficher « au JJ/MM » sous le point final au lieu d'un
+// « auj. » trompeur.
 export function TrendChart({
   series,
   label,
+  lastDay,
 }: {
   series?: number[] | null;
   label: string;
+  lastDay?: string | null;
 }) {
   if (!series || series.length < 2) return null;
   const w = 820;
@@ -28,6 +35,17 @@ export function TrendChart({
   const area = `${line} L${X(n - 1).toFixed(1)} ${h - pb} L${X(0).toFixed(1)} ${h - pb} Z`;
   const lastX = X(n - 1);
   const lastY = Y(series[n - 1]);
+
+  // Libellés d'axe X dérivés de la longueur réelle de la série (positions
+  // proportionnelles), jamais codés en dur : 3 jalons « −Nj » régulièrement
+  // espacés du plus ancien au 1er tiers/2e tiers, puis le dernier jour couvert.
+  // Ex. n=90 ⇒ −90j / −60j / −30j ; n=28 ⇒ −28j / −19j / −9j.
+  const xLabels = [
+    `−${n}j`,
+    `−${Math.round((n * 2) / 3)}j`,
+    `−${Math.round(n / 3)}j`,
+    lastDayLabel(lastDay),
+  ];
 
   return (
     <div className="mt-[18px] border border-line bg-panel">
@@ -62,11 +80,19 @@ export function TrendChart({
         </div>
       </div>
       <div className="flex justify-between px-4 pb-2.5 pl-[50px] font-mono text-[9.5px] text-dim">
-        <span>−90j</span>
-        <span>−60j</span>
-        <span>−30j</span>
-        <span>auj.</span>
+        {xLabels.map((t, i) => (
+          <span key={i}>{t}</span>
+        ))}
       </div>
     </div>
   );
+}
+
+// Dernier point = dernier jour réellement couvert (J-1), pas « aujourd'hui ».
+// « au JJ/MM » quand la date est connue, sinon repli neutre.
+function lastDayLabel(lastDay?: string | null): string {
+  if (!lastDay) return "dern.";
+  const [, m, d] = lastDay.slice(0, 10).split("-");
+  if (!m || !d) return "dern.";
+  return `au ${d}/${m}`;
 }

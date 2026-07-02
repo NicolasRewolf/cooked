@@ -1,11 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { safeNext } from "@/lib/redirect";
 
 // Échange le code du magic-link contre une session (PKCE), pose les cookies, puis redirige.
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
-  const next = request.nextUrl.searchParams.get("next") ?? "/";
+  // Anti open-redirect : seul un chemin interne est accepté, sinon "/".
+  const next = safeNext(request.nextUrl.searchParams.get("next"));
 
   if (code) {
     const cookieStore = await cookies();
@@ -28,5 +30,5 @@ export async function GET(request: NextRequest) {
     await supabase.auth.exchangeCodeForSession(code);
   }
 
-  return NextResponse.redirect(new URL(next.startsWith("/") ? next : "/", request.url));
+  return NextResponse.redirect(new URL(next, request.url));
 }

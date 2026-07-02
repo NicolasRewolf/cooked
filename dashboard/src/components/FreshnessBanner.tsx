@@ -1,9 +1,14 @@
 import { cn } from "@/lib/cn";
 import { dateFr } from "@/lib/format";
 
+// Lag GSC structurel : Google publie avec ~J-3 de retard (pas J-2). En deçà ou égal,
+// c'est le retard NORMAL de la source, pas une alerte. On n'allume l'ambre que si le
+// retard DÉPASSE ce seuil.
+const GSC_LAG_MAX_DAYS = 3;
+
 // Dit toujours à quel point la donnée est à jour, et SÉPARE l'alerte (problème réel)
 // du simple caveat (jour en cours partiel, comparaison incomplète) — qui sont normaux.
-// Ambre = vrai souci : retard Google anormal (>2j) ou snapshot périmé (>36h).
+// Ambre = vrai souci : retard Google anormal (>3j) ou snapshot périmé (>36h).
 // Style « instrument » : bande mono, pastille d'état (vert normal · accent live · ambre alerte).
 export function FreshnessBanner({
   gscLastDay,
@@ -27,7 +32,7 @@ export function FreshnessBanner({
     ? Math.floor((Date.now() - new Date(refreshedAt).getTime()) / 3_600_000)
     : null;
   const staleSnapshot = ageHours != null && ageHours > 36;
-  const realLag = (lagDays ?? 0) > 2;
+  const realLag = (lagDays ?? 0) > GSC_LAG_MAX_DAYS;
   const amber = staleSnapshot || realLag;
 
   const caveats: string[] = [];

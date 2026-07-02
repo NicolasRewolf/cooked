@@ -39,11 +39,12 @@ export default async function Page({
 }
 
 async function Content({ period }: { period: Period }) {
-  const [kpis, rows, trend] = await Promise.all([
+  const [kpis, rows, trendResult] = await Promise.all([
     getResourcesKpis(period),
     getResourcesOverview(period),
     getResourcesTrend(period),
   ]);
+  const trend = trendResult.data;
 
   const items: KpiItem[] = kpis
     ? [
@@ -68,8 +69,17 @@ async function Content({ period }: { period: Period }) {
         />
       )}
       <KpiHeader items={items} />
+      {trendResult.error ? (
+        <div className="border border-warn/40 bg-warn/5 px-3 py-2 font-mono text-[11px] leading-snug text-muted">
+          ⚠ Séries journalières indisponibles — le RPC des tendances a échoué (sparklines et graphe masqués).
+        </div>
+      ) : null}
       {trend?.visitors_daily?.length ? (
-        <TrendChart series={trend.visitors_daily} label="Visiteurs uniques / jour" />
+        <TrendChart
+          series={trend.visitors_daily}
+          label="Visiteurs uniques / jour"
+          lastDay={kpis?.cooked_end}
+        />
       ) : null}
       <section>
         <ResourcesTable rows={rows} />
