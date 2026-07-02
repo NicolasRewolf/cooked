@@ -60,6 +60,18 @@
 --   PRIORISATION, non comme prédicteur d'outcome à 28 j ». Toujours reporter le
 --   chiffre §3 (médiane |écart|) dans le verdict.
 --
+-- GRILLE DE LECTURE §1 ↔ §4 (FIGÉE pour le rapport 08/07 — ne rien claim au-delà) :
+--   Le ratio §1 (score COMPLET) est porté par le terme CONVERSION : §4 montre
+--   sans_conversion → ratio ~0 (0,00 en smoke). Or zv encode les contacts PASSÉS
+--   des mêmes pages → le ratio complet mesure d'abord la PERSISTANCE de conversion,
+--   PAS le pouvoir prédictif du score entier. Reporter DONC les DEUX ratios :
+--     X = complet (§1) ;  Y = sans_conversion (§4) = « potentiel » comportemental.
+--   CONCLUSION MAXIMALE AUTORISÉE (aucun claim au-delà) :
+--   « Le CPI concentre les contacts futurs via sa mémoire de conversion (ratio X) ;
+--    les composantes comportementales seules ne prédisent pas la conversion à 28 j
+--    (ratio Y) — cohérent avec la philosophie gisement : le potentiel ne convertit
+--    pas sans action. »
+--
 -- §3 — STATUT HONNÊTE (ne PAS marquer « PASSE » sans nuance) :
 --   R² = 0,930 ≥ 0,85 → critère liant PASSE. MAIS la médiane |obs−préd|/préd =
 --   20,1% aujourd'hui (24% au 10/06) dépasse le sous-seuil « < 20% » de la spec
@@ -415,6 +427,9 @@ ORDER BY (nom <> 'complet'), nom;
 -- Lecture : ratio(ablation) nettement > ratio(complet) ⇒ la composante retirée
 -- NUIT à la séparation → baisser son poids (jamais supprimer d'office : elle
 -- peut porter du diagnostic sans prédire). Pas de grid search sauvage.
+-- NB : la ligne sans_conversion = ratio Y de la GRILLE DE LECTURE §1↔§4 (header)
+-- = « potentiel » comportemental du gisement. sans_conversion → 0 (smoke)
+-- confirme que la séparation de §1 vient de la mémoire de conversion (persistance).
 
 
 -- ============================================================================
