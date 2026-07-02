@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createBrowserClient } from "@supabase/ssr";
+import { safeNext } from "@/lib/redirect";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -16,7 +17,8 @@ export default function LoginPage() {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
-    const next = new URLSearchParams(window.location.search).get("next") ?? "/";
+    // Anti open-redirect : on ne propage qu'un chemin interne dans le lien de retour.
+    const next = safeNext(new URLSearchParams(window.location.search).get("next"));
     const redirect = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
