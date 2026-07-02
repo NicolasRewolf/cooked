@@ -1,4 +1,4 @@
-// COOKED — track Edge Function
+// COOKED — track Edge Function (v23 — audit 02/07/2026 : clamp horloge + cap tick)
 // POST /functions/v1/track
 // Auth: this function does NOT verify a JWT. Authorization is via the Velo proxy
 // which holds the Supabase secret key server-side and forwards it as `apikey`.
@@ -46,46 +46,11 @@ const ALLOWED_EVENTS = new Set([
   "web_vitals",
   "click_outbound",
   "page_exit",
-  // Phase 1 conversion tracking (added Sprint 10):
-  "cta_phone_click",   // tap on <a href="tel:...">
-  "cta_email_click",   // tap on <a href="mailto:..."> — kept allowed for
-                       // defensive reasons but the tracker no longer
-                       // emits this event since Plouton doesn't expose
-                       // any mailto: link on the site.
-  // Phase 1.5 — internal booking-page CTA (Sprint 10):
-  "cta_booking_click", // click on any internal link pointing to
-                       // /honoraires-rendez-vous (i.e. "Je prends RDV",
-                       // "Contactez-nous", "Honoraires & RDV", …)
-  // Phase 2 — form submission (Sprint 18):
-  // ⚠️ form_submit is intentionally NOT listed here (Sprint 29 hardening).
-  // It is inserted server-to-server via the dedicated `form-webhook` Edge
-  // Function (POST from Wix Automations, secret-gated). Allowing the
-  // browser-facing `/track` endpoint to accept it would let anyone forge
-  // conversions by curl'ing the public endpoint — confirmed exploit path
-  // identified during the 2026-05-21 audit. Reject silently below.
-  // Phase 3 — Wix anchor-menu tracking (Sprint 19):
-  "cta_anchor_click",  // click on an in-page anchor (sticky index, FAQ
-                       // jump, "back to top"). Captures three shapes:
-                       //   1. href="#section"        (classic)
-                       //   2. href=current-path with `data-anchor`
-                       //      attribute set by Wix Studio's anchor-
-                       //      menu widget (no URL hash, scrolls via JS)
-                       //   3. sticky-container fallback (clicks on any
-                       //      interactive element inside a position:
-                       //      sticky / fixed container that wasn't
-                       //      classified by handlers 1/2)
-                       // Props: target_section (slugified label or
-                       // hash), anchor (aria-label or text), placement
-                       // (header / footer / sticky / body), source
-                       // (click | hashchange | sticky-fallback),
-                       // data_anchor (Wix-internal ID, optional).
-  // Phase 4 — internal navigation attribution (Sprint 36):
-  "click_internal",    // click on an internal <a> to ANOTHER page (not the
-                       // booking page → that stays cta_booking_click). Props:
-                       // target_path, href, anchor (label), placement
-                       // (header / footer / sticky / body). Adds the "which
-                       // UI element drove this hop" attribution that the
-                       // pageview sequence alone can't give.
+  "cta_phone_click",
+  "cta_email_click",
+  "cta_booking_click",
+  "cta_anchor_click",
+  "click_internal",
 ]);
 
 function dailySalt(): string {
@@ -153,20 +118,14 @@ function n(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-// Sprint 30 — strict ISO-8601 timestamp validation. Without this, any
-// 35-char string was accepted (e.g. "hello") and Postgres later rejected
-// the entire batch of 50 events with a single cryptic error. Now we
-// quietly fall back to server `now()` when occurred_at is malformed.
+// Sprint 30 — strict ISO-8601 timestamp validation.
 function iso(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const t = Date.parse(v);
   return Number.isFinite(t) ? new Date(t).toISOString() : null;
 }
 
-// Sprint 30 — `typeof [] === "object"` was letting arrays slip into the
-// `props` jsonb column. Downstream RPCs that do `props->>'foo'` would
-// then silently return NULL with no trace. Coerce arrays + non-objects
-// to an empty object.
+// Sprint 30 — coerce arrays + non-objects to an empty object for props jsonb.
 function plainObject(v: unknown): Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>)
@@ -174,9 +133,10 @@ function plainObject(v: unknown): Record<string, unknown> {
 }
 
 // Sprint 13 + GSC contract — canonical path for Cooked × GSC joins.
-// Matches scripts/gsc_common.canonical_path() and SQL canonical_path(text):
-// decode → Unicode NFC → strip trailing slash (except root).
-// Only `path` is normalized; `url` stays as sent for debugging.
+// This Edge helper does: decode → NFC → strip trailing slash (except root).
+// ⚠️ T-13 : le SQL canonical_path(text) NE décode PAS (NFC + strip seulement) —
+// le decode y est un url_decode() séparé (cf. backfill Sprint 39).
+// scripts/gsc_common.canonical_path() DÉCODE (aligné sur ce helper).
 function canonicalPath(p: string | null): string | null {
   if (p == null) return null;
   let path: string;
@@ -212,8 +172,6 @@ Deno.serve(async (req) => {
       : ALLOWED_ORIGIN;
   const cors = corsHeaders(allowOrigin);
 
-  // Helper for JSON error responses — keeps the contract identical to
-  // form-webhook so downstream log analysis can grep `ok:false` uniformly.
   const jsonError = (status: number, error: string) =>
     new Response(JSON.stringify({ ok: false, error }), {
       status,
@@ -246,14 +204,6 @@ Deno.serve(async (req) => {
 
   const ip = clientIp(req);
   const ua = req.headers.get("user-agent") ?? "";
-  // Sprint 22 — prefer browser-supplied anonymous_id (stable localStorage UUID)
-  // over the server-side IP hash. The IP hash was unreliable because Wix Velo
-  // routes each request through a different serverless worker (different outbound
-  // IP per request → different hash per engagement_tick → 6+ anonymous_ids per
-  // session for 93 % of sessions).
-  // Validation: accept any alphanumeric string 8–128 chars (covers our rid()
-  // format and standard UUIDs). If absent or invalid, fall back to the hash so
-  // old events already stored remain consistent.
   const serverHash = await hashAnonymous(ip, ua);
   const { device_type, os, browser } = parseUserAgent(ua);
 
@@ -271,9 +221,6 @@ Deno.serve(async (req) => {
 
   const now = new Date().toISOString();
   const rows = [];
-  // Sprint 30 — track silently-dropped events for ops visibility. Without
-  // these counters, a tracker regression that emits e.g. `pageView` (camelCase)
-  // would silently drop 100 % of events with zero log signal.
   let droppedMissingFields = 0;
   let droppedDisallowedName = 0;
 
@@ -283,15 +230,26 @@ Deno.serve(async (req) => {
     if (!name || !session_id) { droppedMissingFields++; continue; }
     if (!ALLOWED_EVENTS.has(name)) { droppedDisallowedName++; continue; }
 
-    // 16/06/2026 — click_internal.target_path arrivait URL-encodé : contrairement
-    // au champ `path`, les `props` ne passaient pas par canonicalPath(), donc
-    // 26,8 % des target_path (sur 28j) n'étaient pas joignables avec `path`. On
-    // applique la même canonicalisation (decode → NFC → strip slash) à ce seul
-    // champ, pour ce seul event. Ne corrige que le futur (lignes déjà encodées
-    // restent à décoder à la lecture, cf. backfill optionnel).
+    // 16/06/2026 — click_internal.target_path : même canonicalisation que `path`.
     const props = plainObject(e.props);
     if (name === "click_internal" && typeof props.target_path === "string") {
       props.target_path = canonicalPath(props.target_path) ?? props.target_path;
+    }
+
+    // T-13 (audit 02/07/2026) — clamp horloge client. iso() valide le parsing
+    // mais pas la plausibilité : 102 events > 24h dans le passé en juin →
+    // mauvais jour calendaire Paris. Si l'écart au serveur dépasse 48h, on
+    // remplace par now() et on trace props.clock_clamped pour l'audit.
+    let occurred_at = iso(e.occurred_at) ?? now;
+    if (occurred_at !== now &&
+        Math.abs(Date.parse(occurred_at) - Date.parse(now)) > 48 * 3600 * 1000) {
+      occurred_at = now;
+      props.clock_clamped = true;
+    }
+    // T-13 — cap engagement_tick.active_ms à 60 000 ms (onglet en veille = dwell gonflé).
+    if (name === "engagement_tick" && typeof props.active_ms === "number" &&
+        props.active_ms > 60000) {
+      props.active_ms = 60000;
     }
 
     rows.push({
@@ -315,13 +273,12 @@ Deno.serve(async (req) => {
       browser,
       viewport_width: n(e.viewport_width),
       viewport_height: n(e.viewport_height),
-      props,                                        // Sprint 30 — arrays rejected ; target_path décodé ci-dessus (16/06)
-      occurred_at: iso(e.occurred_at) ?? now,       // Sprint 30 — strict ISO
+      props,
+      occurred_at,
       received_at: now,
     });
   }
 
-  // Sprint 30 — emit a single warn per batch if drops happened. Cheap, grepable.
   if (droppedMissingFields > 0 || droppedDisallowedName > 0) {
     console.warn(
       `[track] dropped events in batch (size=${events.length}): ` +
