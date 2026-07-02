@@ -9,7 +9,11 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from dfs_common import prepare_keywords_for_dfs, sanitize_for_dfs  # noqa: E402
+from dfs_common import (  # noqa: E402
+    dfs_run_failed,
+    prepare_keywords_for_dfs,
+    sanitize_for_dfs,
+)
 
 
 @pytest.mark.parametrize(
@@ -73,3 +77,17 @@ def test_prepare_no_collision_different_sanitized() -> None:
     assert skipped == []
     assert collisions == []
     assert len(clean) == 2
+
+
+@pytest.mark.parametrize(
+    "failed,requested,expected",
+    [
+        (0, 500, False),    # aucun échec
+        (249, 500, False),  # < 50 %
+        (250, 500, True),   # exactement 50 %
+        (500, 500, True),   # tout échoué
+        (0, 0, False),      # aucun keyword demandé (garde 0-cas)
+    ],
+)
+def test_dfs_run_failed(failed: int, requested: int, expected: bool) -> None:
+    assert dfs_run_failed(failed, requested) is expected
