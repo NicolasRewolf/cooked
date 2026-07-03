@@ -72,7 +72,7 @@ export async function getSeoKpis(period: Period): Promise<SeoKpis | null> {
 }
 
 // ── Vague A : contacts assistés + fiche article ──────────────────────────────
-import type { AssistedRow, ArticleDetail, Annotation } from "@/lib/types";
+import type { AssistedRow, ArticleDetail, Annotation, InterventionEffect } from "@/lib/types";
 
 export async function getResourcesAssisted(period: Period): Promise<AssistedRow[]> {
   const { data, error } = await admin.rpc("dashboard_resources_assisted", { period_kind: period });
@@ -94,4 +94,11 @@ export async function getAnnotations(period: Period): Promise<Annotation[]> {
   const { data, error } = await admin.rpc("dashboard_annotations", { period_kind: period });
   if (error) throw new RpcError("dashboard_annotations", error);
   return (data ?? []) as Annotation[];
+}
+
+// ── B2 : lecture avant/après d'une intervention site_change (RPC live, 1 page) ─
+export async function getInterventionEffect(path: string, day: string): Promise<InterventionEffect> {
+  const { data, error } = await admin.rpc("dashboard_intervention_effect", { p_path: path, p_day: day });
+  if (error) throw new RpcError("dashboard_intervention_effect", error);
+  return data as InterventionEffect;
 }
