@@ -19,6 +19,26 @@ export interface TrendMarker {
   kind: string;
 }
 
+// B2 — lecture avant/après d'une intervention (RPC dashboard_intervention_effect).
+export interface InterventionEffect {
+  path: string;
+  day: string;
+  gsc_last: string;
+  days_post: number;
+  confidence: "trop_tot" | "indicatif" | "fiable" | "verdict";
+  base_trop_faible: boolean;
+  article_jeune: boolean;
+  age_gsc_jours: number | null;
+  pre_total_clics: number;
+  page_clics_jour_pre: number;
+  page_clics_jour_post: number | null;
+  pos_pre: number | null;
+  pos_post: number | null;
+  clics_pct: number | null; // (ratio page − 1) × 100
+  maree_pct: number | null; // (ratio site − 1) × 100
+  effet_net_pct: number | null; // (ratio page ÷ ratio site − 1) × 100
+}
+
 export interface ResourceRow {
   window_kind?: string;
   path: string;

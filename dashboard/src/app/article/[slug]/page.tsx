@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { parsePeriod } from "@/lib/periods";
-import { getArticleDetail, getAnnotations } from "@/data/dashboard";
+import { getArticleDetail, getAnnotations, getInterventionEffect } from "@/data/dashboard";
 import { requireUser } from "@/lib/auth";
 import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
 import { PeriodSelector } from "@/components/PeriodSelector";
@@ -12,6 +12,7 @@ import { AskClaude } from "@/components/AskClaude";
 import { ArticleQueriesTable } from "@/components/ArticleQueriesTable";
 import { SectionTitle } from "@/components/ui";
 import { InterventionsTimeline } from "@/components/InterventionsTimeline";
+import { InterventionEffects } from "@/components/InterventionEffects";
 import { buildMarkers, annotationsForPath } from "@/lib/annotations";
 import { num, dec, pct, delta, dateFr, prettyPath } from "@/lib/format";
 import type { ArticleDetail, Period } from "@/lib/types";
@@ -55,6 +56,15 @@ async function Content({ path, period }: { path: string; period: Period }) {
   const interventions = annotationsForPath(annotations, detail.path);
   const visMarkers = buildMarkers(interventions, detail.bounds.cooked_start, visitors.length);
   const gscMarkers = buildMarkers(interventions, detail.bounds.gsc_start, clicks.length);
+  // B2 — effet mesuré des interventions site_change (RPC live, 1 appel par intervention).
+  const siteChanges = interventions.filter((a) => a.kind === "site_change");
+  const effects = await Promise.all(
+    siteChanges.map(async (a) => ({
+      label: a.label,
+      day: a.day,
+      effect: await getInterventionEffect(detail.path, a.day),
+    })),
+  );
   const visitorsTotal = visitors.reduce((a, b) => a + b, 0);
   const g = detail.gsc;
 
@@ -131,6 +141,8 @@ async function Content({ path, period }: { path: string; period: Period }) {
       </div>
 
       <InterventionsTimeline items={interventions} />
+
+      <InterventionEffects items={effects} />
 
       <CpiHealthPanel detail={detail} />
 
