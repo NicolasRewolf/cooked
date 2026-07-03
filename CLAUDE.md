@@ -164,7 +164,9 @@ recalibrée sur les sessions réellement dupliquées, seuil 30).
   (fenêtre zv étendue, attribution non conservée, MAD saturée, score 2-volets…).
   Verdict — **l'outil est suffisant, on ne le complexifie pas** : le benchmark
   a montré que « réparer » zv en continu est une impasse vu la rareté des
-  contacts (~10/mois). Le levier est l'**action sur le gisement**, pas une
+  contacts (~10/mois **attribuables par page en organique** — le site fait
+  ~170 contacts macro/28 j toutes sources). Le levier est l'**action sur le
+  gisement**, pas une
   v2.3. **On passe en prod opérationnelle : focus site (conversion), plus
   l'outil.**
 - Croisement export Wix ↔ `form_submit` Cooked validé : Cooked ne rate aucun
@@ -173,10 +175,34 @@ recalibrée sur les sessions réellement dupliquées, seuil 30).
   « Domaines d'expertises »/« Nos affaires » pointent vers `/` au lieu d'une
   ancre → rechargent la page si le JS Wix n'est pas prêt (≈ plusieurs clics
   nécessaires). À corriger côté Wix Studio.
-  Sert de remplaçant GA4 pour fournir
-des données comportementales fiables à Nicolas et à Me Plouton, et
-permet les analyses Cooked × GSC (intent matching, funnel SEO
-complet, pogo-stick × ranking) consommées en mode question/réponse.
+
+**Audit 01-03/07/2026 (Fable 5 × Opus 4.8)** — audit complet puis plan
+T-01→T-19 exécuté à 100 % (détail : docs/audit-fable5-2026-07-02.md +
+docs/plan-correction-audit-2026-07-02.md, chronologie : HISTORY-sprints).
+À retenir pour les sessions futures :
+- **Tracker `sprint40`** (02/07 ~20:00, page_exit ré-armé) ; **Edge `track`
+  v23** (clamp horloge ±48 h, `props.clock_clamped`) ; **webhook v11**
+  (submissionTime validé, drop → alerte `form_submit_dropped`).
+- **Restatement CPI du 02/07** (grain lectures session×path) : ±7 pts max,
+  4 pages A/B (sarvi 52→45…), 8 pages C sorties du scoring (159 vs 167).
+  Un « avant/après 02/07 » dans cpi_daily n'est PAS un decay.
+- **`classify_channel` v2** : IA détectée aussi par utm_source (restatement
+  canaux, ~35 % du canal organic_ai récupéré).
+- **GSC : fenêtre `--months 2`** (la fenêtre mois-calendaire perdait les
+  fins de mois — 31/05 et 30/06 backfillés) + alerte `gsc_gap`.
+- **Purge hebdo du bruit > 28 j** (`purge_cooked_noise`) + filtres bruit
+  incrémentaux : supprimer du bruit ne change aucun résultat.
+- **Alertes critical poussées sur ntfy** (topic dans `cooked_config`).
+- **Dashboard 3 onglets** (Articles Ressources / Expertises / SEO) +
+  fiches `/article/[slug]` + colonne « contacts assistés » (attribution
+  page d'entrée). Les 14 pages expertise = liste business explicite dans
+  `refresh_dashboard_expertises_snapshots` (PAS d'énumération heuristique).
+- **Backup externe : décliné par Nicolas le 02/07** (risque assumé) — ne
+  plus le proposer avant ~juin 2027 (purge 400 j des events réels).
+
+Cooked sert de remplaçant GA4 : des données comportementales fiables pour
+Nicolas et Me Plouton, et les analyses Cooked × GSC (intent matching,
+funnel SEO complet, pogo-stick × ranking) consommées en question/réponse.
 
 ---
 
@@ -187,7 +213,7 @@ Avant toute analyse, dans cet ordre (30 secondes) :
 ```sql
 SELECT * FROM alerts WHERE NOT acked;          -- 1. rien d'anormal ?
 SELECT * FROM refresh_pipeline_health();       -- 2. pipeline healthy ?
-SELECT gsc_last_data_day();                    -- 3. fraîcheur GSC (lag J-2 normal)
+SELECT gsc_last_data_day();                    -- 3. fraîcheur GSC (lag J-2/J-3 normal)
 ```
 
 Si une alerte est active : la traiter ou l'expliquer AVANT de produire des
@@ -427,9 +453,10 @@ Source SQL unique : `macro_contacts_by_path(days_back)` — utilisée par
 Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
 
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
-Paris (première ingestion réelle). Le tracker navigateur est en **sprint38**
-depuis le 11/06/2026 ~08:45 Paris (sprint37 : nuit du 10/06). L'Edge Function
-`track` est en **v22** (Sprint 39 : décodage `target_path` des `click_internal`).
+Paris (première ingestion réelle). Le tracker navigateur est en **sprint40**
+depuis le 02/07/2026 ~20:00 Paris (page_exit ré-armé ; sprint38 : 11/06).
+L'Edge Function `track` est en **v23** (clamp horloge ±48 h ; v22 S39 :
+décodage `target_path`), `form-webhook` en **v11**.
 
 ---
 
@@ -792,8 +819,9 @@ d'un article à partir de son slug : l'API Wix est la seule référence
 - **GMB : non branché (décision agent 11/06/2026)** — angle mort assumé
   (appels directs fiche invisibles). À revisiter si on attaque
   l'attribution téléphone ou si la part GMB des formulaires monte.
-- **Google Ads : MCP non connecté** à l'environnement à date — à ajouter
-  par Nicolas dans les connecteurs pour obtenir campagnes/coûts/CPA.
+- **Google Ads : MCP CONNECTÉ** (vérifié le 01/07/2026 — 5 customer IDs
+  accessibles). Premier usage à cadrer : coûts/CPA par campagne croisés
+  avec les macro-contacts Cooked (« boucle 3 »).
 - **Paid** : utm_source seul (pas de utm_campaign), ~1 800 entrées/28j,
   atterrit surtout home + pages expertise. Le CPI n'est PAS pollué (toutes
   ses composantes filtrent `organic%`), mais toute analyse de conversion
@@ -809,28 +837,16 @@ d'un article à partir de son slug : l'API Wix est la seule référence
 
 ---
 
-## Git — routine de push (MCP GitHub souvent HS)
+## Git — routine de push
 
-Le MCP `github:push_files` est en panne récurrente depuis le 09/06/2026
-(toute opération, même lecture). Le canal fiable est le **bundle** :
-
-```bash
-# Côté agent (container) :
-git bundle create /mnt/user-data/outputs/cooked-<sujet>.bundle <base>..main
-
-# Côté Nicolas (one-liner, base = dernier commit connu de GitHub) :
-cd ~/Desktop/cooked && git fetch ~/Downloads/cooked-<sujet>.bundle main:tmp \
-  && git merge tmp && git push origin main && git branch -d tmp
-```
-
-Règles : (1) toujours `git bundle verify` avant de livrer ; (2) base du
-bundle = dernier commit CONFIRMÉ poussé (un bundle cumulatif est sûr, le
-fetch déduplique) ; (3) si on retente le MCP, JAMAIS avec un contenu
-placeholder — uniquement le vrai contenu final ; (4) les migrations
-appliquées en prod via MCP Supabase doivent TOUJOURS avoir leur miroir
-exact dans `supabase/migrations/` (timestamp réel via `list_migrations`).
-
----
+Le push direct GitHub fonctionne (PRs #11→#30, juin-juillet 2026). Routine :
+branche `claude/<sujet>` → commit(s) → `git push -u origin` → PR via `gh pr
+create` → merge si vert (`gh pr merge --merge --delete-branch`). Règles :
+(1) toute migration appliquée en prod via MCP a son miroir EXACT dans
+`supabase/migrations/` (timestamp réel via `schema_migrations`) dans la
+même PR ; (2) jamais de contenu placeholder ; (3) `latest_rpc_health()` +
+advisors vérifiés après chaque migration. (L'ancienne routine « bundle »
+de l'époque container est obsolète — historique dans git si besoin.)
 
 ## Agent skills
 

@@ -344,7 +344,7 @@ python3 -m pytest tests/test_dfs_common.py -q
 Cooked detects and excludes crawler traffic at the analytics layer, without touching raw events.
 
 ```
-events (raw, unchanged — all hits kept for audit)
+events (raw — le bruit > 28 j est purgé chaque dimanche, cf. purge_cooked_noise)
    ↓
 bot_fingerprints  (anonymous_ids flagged as bots, refreshed nightly)
    ↓
@@ -355,19 +355,77 @@ ALL RPCs + snapshot read from events_human
 
 **Detection rule** : `anonymous_id` with > 20 pageviews/day AND 0 scroll events = crawler. Catches the nightly Ahrefs audit crawler and similar bots.
 
-**8 pg_cron jobs + 2 GitHub Actions** (état 30/06/2026) :
+**11 pg_cron jobs + 3 GitHub Actions** (état 03/07/2026, vérifié en prod) :
 
 | Job | Schedule | What |
 |---|---|---|
-| `refresh_seo_url_snapshot` | `0 3 * * *` (05:00 Paris) | Nightly rebuild of `seo_url_snapshot` (calls `refresh_bot_fingerprints()` first) · `SET statement_timeout='1500s'` (stopgap 30/06 ; rebuild ≈ 671 s, optimisation `events_human` en temp table tracée) |
-| `refresh_noise_filters_hourly` | `5 * * * *` | Re-scan bot fingerprints + noise sessions every hour (Sprint 28) |
-| `run_rpc_contract_tests` | `30 3 * * *` (05:30 Paris) | Nightly contract-test of the published RPCs → logs to `rpc_health` (Sprint 27) |
-| `purge_old_events_monthly` | `0 4 1 * *` (06:00 Paris, 1st of month) | Retention policy : deletes events > 400 days (Sprint 27) |
-| `cooked-alerts-hourly` | `15 * * * *` | Recompute `alerts` table — pipeline death, double-embed recurrence (recalibré S39 : sessions dupliquées, seuil 30), S37 RPC health, degraded attribution, GSC lag, CPI drop (recalibré S39 : vrai decay uniquement) (Sprints 37-39) |
-| `cooked-cpi-daily-snapshot` | `30 7 * * *` (90 min after GSC ingest) | `cooked_cpi_snapshot()` → daily CPI per page into `cpi_daily` (Sprint 38) · `SET statement_timeout='600s'` (fix 30/06 — plantait en silence depuis le 21/06) |
-| `refresh-dashboard-snapshots` | `0 8 * * *` (10:00 Paris) | Snapshots du dashboard (`dashboard_*_snapshot`) · `SET statement_timeout='600s'` (29/06) |
-| `dashboard-stale-check` | `30 * * * *` | Alerte `dashboard_stale` si le snapshot dashboard > 36 h (cron raté) (29/06) |
-| `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | Voir sections GSC / DataForSEO ci-dessus |
+| `refresh_seo_url_snapshot` | `0 3 * * *` (05:00 Paris) | Rebuild nocturne de `seo_url_snapshot` · `SET statement_timeout='600s'` — rebuild ≈ 230 s depuis la matérialisation d'`events_human` en temp table (30/06) |
+| `refresh_noise_filters_hourly` | `5 * * * *` | Bot fingerprints + noise sessions, **incrémental 48 h depuis T-08 (02/07)** : ~4 s/run (155 s avant ; fingerprints historiques conservés, noise = delete-récent + réinsertion) |
+| `run_rpc_contract_tests` | `30 3 * * *` (05:30 Paris) | Contract-tests nocturnes des RPCs publiées → `rpc_health` (Sprint 27) |
+| `purge_old_events_monthly` | `0 4 1 * *` (1er du mois) | Rétention : supprime les events > 400 j (⚠️ destruction d'historique RÉEL — re-poser la question du backup à Nicolas ~juin 2027 avant le 1er run utile) |
+| `cooked-purge-noise-weekly` | `30 4 * * 0` (dimanche) | **T-09 (03/07)** : `purge_cooked_noise(28)` — supprime le bruit bot/noise > 28 j + TTL 90 j sur `noise_sessions`. Ne change AUCUN résultat (lignes déjà hors `events_human` à toute fenêtre). 1er run : 41 589 lignes |
+| `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — pipeline, double-embed, RPCs, attribution, `gsc_lag` + **`gsc_gap`** (jours manquants), `cpi_drop` (garde `ecart_jours ≤ 8`), `dfs_stale`, `tracker_drift` (grâce 48 h) — les `critical` **poussent sur ntfy** (T-11, topic dans `cooked_config`) |
+| `cooked-cpi-daily-snapshot` | `30 7 * * *` (09:30 Paris) | `cooked_cpi_snapshot()` → `cpi_daily` · `SET statement_timeout='600s'` · run à froid ≈ 322 s au 03/07 (croît avec `events` ; la purge hebdo le contient) |
+| `refresh-dashboard-snapshots` | `15 8 * * *` | Snapshots dashboard articles (fenêtres ancrées J-1 Paris, T-16) · `SET statement_timeout='600s'` |
+| `refresh-dashboard-expertises` | `20 8 * * *` | Snapshots onglet Expertises (T-20) — scope = liste business des 14 pages, canal = 1er pageview GLOBAL |
+| `refresh-dashboard-assisted` | `25 8 * * *` | Snapshot « contacts assistés » par article (Vague A — attribution page d'entrée) |
+| `dashboard-stale-check` | `30 * * * *` | Alerte `dashboard_stale` si snapshot dashboard > 36 h (29/06) |
+| `gsc-daily-ingest` / `dfs-weekly-sync` / `backup-weekly` | GitHub Actions | GSC quotidien 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) ; DFS hebdo (échec = run rouge) ; backup **inerte** (décision Nicolas 02/07 : pas de backup externe — ne pas re-proposer). Les 2 actifs notifient ntfy en échec |
+
+---
+
+## Recettes & garde-fous (audit 01-03/07/2026)
+
+### One-shot pg_cron (exécuter du SQL lourd côté serveur, > 60 s MCP)
+
+Le connecteur MCP coupe à ~60 s (et rollback). Pour toute requête lourde
+(capture CPI, gros refresh) : job pg_cron temporaire — **JAMAIS de
+self-unschedule dans la commande** (pg_cron tue le run en cours, gotcha
+re-payé le 02/07) :
+
+```sql
+SELECT cron.schedule('oneshot-<sujet>', '* * * * *',
+  $$SET statement_timeout='540s';
+    CREATE TABLE IF NOT EXISTS _oneshot_result AS SELECT ...;$$);
+-- attendre le top de minute + la durée du run, vérifier la table,
+-- PUIS déschéduler DE L'EXTÉRIEUR :
+SELECT cron.unschedule('oneshot-<sujet>');
+```
+`CREATE TABLE IF NOT EXISTS` rend les re-tirs par minute inoffensifs.
+Nettoyer : table + `SELECT * FROM cron.job` vide de one-shots.
+
+### Swarm de bots (depuis ~20/06/2026) — état & trigger de réouverture
+
+Signature : ~12 k `anonymous_id`/j, UA Chrome Windows desktop, uniquement
+web_vitals/engagement_tick/page_exit **sans pageview**. `events_human`
+reste propre (~10-11 k events/j) ; le brut a culminé à ~69 k/j. Contenu
+par : filtres incrémentaux (T-08) + purge hebdo > 28 j (T-09). Le **guard
+d'ingestion** (rejet à l'Edge) a été volontairement SKIPPÉ (02/07) — le
+ré-instruire si : bruts > 120 k/j soutenus 7 j, OU purge insuffisante pour
+tenir `events` < ~2 Go, OU pollution d'`events_human`. Mesure « ce qui
+serait rejeté » (shadow, sans toucher l'Edge) :
+
+```sql
+-- batches non-pageview de visiteurs sans pageview sur 24 h (candidats au rejet)
+SELECT count(*) FROM events e
+WHERE e.occurred_at > now() - interval '24 hours'
+  AND e.name IN ('web_vitals','engagement_tick','page_exit')
+  AND NOT EXISTS (SELECT 1 FROM events p WHERE p.anonymous_id = e.anonymous_id
+    AND p.name='pageview' AND p.occurred_at > now() - interval '24 hours');
+```
+
+### Redémarrage après sinistre — briques ajoutées
+
+- **`dashboard/`** : sous-app Next 16 (Vercel, rootDir=`dashboard`,
+  data.rewolf.studio). Env requis : `NEXT_PUBLIC_SUPABASE_URL`,
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable), `SUPABASE_SECRET_KEY`
+  (service, server-only), allowlist e-mail. Local : `.claude/launch.json`
+  + `dashboard/.env.local` (gitignored).
+- **`wix/masterpage-cooked.js`** : à coller dans masterPage.js (Wix Studio)
+  — c'est le rail de l'attribution formulaires (lit `cooked_aid`/`cooked_sid`
+  des query params → `setFieldValues()`). Sans lui, l'attribution
+  `hidden_field` meurt. Chaque Wix Form doit porter les 3 champs cachés
+  `page_source`, `cooked_aid`, `cooked_sid` (clé exacte, onglet Avancé).
 
 ---
 

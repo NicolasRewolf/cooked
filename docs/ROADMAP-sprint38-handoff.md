@@ -64,6 +64,35 @@ trafic qui ne convertissent pas).
 - Chantiers de fond §2 (loader tracker, CI, source de vérité SQL unique) —
   valables, mais hors du cap conversion immédiat.
 
+## ⭐ MISE À JOUR 03/07/2026 — Audit Fable 5 : plan T-01→T-19 exécuté à 100 %
+
+> Audit complet (docs/audit-fable5-2026-07-02.md) puis plan de correction
+> (docs/plan-correction-audit-2026-07-02.md) livré en 48 h — 18 PRs.
+> Chronologie : HISTORY-sprints. Ce qui change pour ce document :
+
+**Résolus depuis le 30/06 :**
+- ✅ Clamp horloge client (P2 §1) → Edge `track` v23 (T-13).
+- ✅ `events` bloat / TTL `noise_sessions` (P1/P2 §1) → purge hebdo
+  `purge_cooked_noise(28)` + TTL 90 j (T-09) ; filtres bruit incrémentaux
+  48 h (T-08, 155 s → 4 s).
+- ✅ Trou de monitoring (P1 §incident) → alertes `gsc_gap`, `dfs_stale`,
+  `tracker_drift`, `form_submit_dropped` + push ntfy des critical (T-11/12).
+- ✅ Fenêtre GSC mois-calendaire (perte fins de mois) → `--months 2` +
+  backfill 31/05 & 30/06 (T-01/02/03).
+- ✅ Restatement CPI grain lectures (tracker sprint40 + session×path) ;
+  protocole J+28 corrigé et figé AVANT le 08/07 (cible niveau + tiers).
+- ✅ Taxonomie seedée depuis le sitemap + purge poubelle + garde-fous (T-19).
+
+**Toujours ouverts (inchangés) :** P0 anti-forge `cta_phone_click`
+(dépriorisé assumé) ; loader tracker (§2.1) ; 2 overloads ambigus ;
+`gsc_path_metrics_28d` ; catégorie Wix sans refresh auto ; colonne
+`country` — précision : PAS « toujours NULL », capture MORTE depuis le
+02/06/2026 (régression à dater/décider) ; INP gate (instruit GO-si-relatif,
+jamais implémenté) ; issue GitHub #19 (biais de taille CPI, clics_fut −0,40).
+
+**Décision actée :** pas de backup externe (Nicolas, 02/07 — re-poser
+UNIQUEMENT à l'approche de la purge 400 j, ~juin 2027).
+
 **Nouveau cap : agir sur le site.** Voir la vue `cpi_gisement` et le PLAYBOOK
 (§4) — les pages indemnisation à fort trafic / 0 contact sont les premières
 cibles (ponts vers le contact dans le corps des articles).
