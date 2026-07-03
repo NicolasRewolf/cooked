@@ -72,7 +72,14 @@ export async function getSeoKpis(period: Period): Promise<SeoKpis | null> {
 }
 
 // ── Vague A : contacts assistés + fiche article ──────────────────────────────
-import type { AssistedRow, ArticleDetail, Annotation, InterventionEffect } from "@/lib/types";
+import type {
+  AssistedRow,
+  ArticleDetail,
+  Annotation,
+  InterventionEffect,
+  CohortsResult,
+  AssistedQuarter,
+} from "@/lib/types";
 
 export async function getResourcesAssisted(period: Period): Promise<AssistedRow[]> {
   const { data, error } = await admin.rpc("dashboard_resources_assisted", { period_kind: period });
@@ -101,4 +108,17 @@ export async function getInterventionEffect(path: string, day: string): Promise<
   const { data, error } = await admin.rpc("dashboard_intervention_effect", { p_path: path, p_day: day });
   if (error) throw new RpcError("dashboard_intervention_effect", error);
   return data as InterventionEffect;
+}
+
+// ── B3 : cohortes du contrat + objectif trimestre (RPCs live, service_role) ────
+export async function getResourcesCohorts(): Promise<CohortsResult> {
+  const { data, error } = await admin.rpc("dashboard_resources_cohorts");
+  if (error) throw new RpcError("dashboard_resources_cohorts", error);
+  return data as CohortsResult;
+}
+
+export async function getAssistedQuarter(): Promise<AssistedQuarter> {
+  const { data, error } = await admin.rpc("dashboard_assisted_quarter");
+  if (error) throw new RpcError("dashboard_assisted_quarter", error);
+  return data as AssistedQuarter;
 }

@@ -5,9 +5,13 @@ import {
   getResourcesKpis,
   getResourcesOverview,
   getAnnotations,
+  getResourcesCohorts,
+  getAssistedQuarter,
 } from "@/data/dashboard";
 import { getResourcesTrend } from "@/data/trend";
 import { buildMarkers } from "@/lib/annotations";
+import { CohortChart } from "@/components/CohortChart";
+import { ObjectiveLine } from "@/components/ObjectiveLine";
 import { requireUser } from "@/lib/auth";
 import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
@@ -45,12 +49,14 @@ export default async function Page({
 }
 
 async function Content({ period }: { period: Period }) {
-  const [kpis, rawRows, trendResult, assisted, annotations] = await Promise.all([
+  const [kpis, rawRows, trendResult, assisted, annotations, cohorts, quarter] = await Promise.all([
     getResourcesKpis(period),
     getResourcesOverview(period),
     getResourcesTrend(period),
     getResourcesAssisted(period),
     getAnnotations(period),
+    getResourcesCohorts(),
+    getAssistedQuarter(),
   ]);
   const trend = trendResult.data;
   // B1 — toutes les annotations de la fenêtre sur le graphe visiteurs (pas de filtre path ici).
@@ -80,6 +86,7 @@ async function Content({ period }: { period: Period }) {
 
   return (
     <div className="space-y-[18px]">
+      <ObjectiveLine q={quarter} />
       {kpis && (
         <FreshnessBanner
           cookedEnd={kpis.cooked_end}
@@ -107,6 +114,7 @@ async function Content({ period }: { period: Period }) {
       <section>
         <ResourcesTable rows={rows} />
       </section>
+      <CohortChart cohorts={cohorts.cohorts} />
     </div>
   );
 }
