@@ -1,4 +1,5 @@
 import { num } from "@/lib/format";
+import type { TrendMarker } from "@/lib/types";
 
 // Graphe principal « oscilloscope » : grille fine + tracé accent + point final.
 // `series` = une valeur / jour sur la période. Vide ⇒ le composant ne rend rien
@@ -12,10 +13,13 @@ export function TrendChart({
   series,
   label,
   lastDay,
+  markers,
 }: {
   series?: number[] | null;
   label: string;
   lastDay?: string | null;
+  // B1 — marqueurs d'interventions : données PLATES uniquement (jamais de fonction).
+  markers?: TrendMarker[];
 }) {
   if (!series || series.length < 2) return null;
   const w = 820;
@@ -76,6 +80,19 @@ export function TrendChart({
             <path d={area} fill="var(--color-accent)" fillOpacity="0.06" />
             <path d={line} fill="none" stroke="var(--color-accent)" strokeWidth="1.4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
             <circle cx={lastX} cy={lastY} r="2.6" fill="var(--color-accent)" />
+            {markers?.map((m, i) => {
+              const mx = X(Math.max(0, Math.min(m.index, n - 1)));
+              const fill = m.kind === "site_change" ? "var(--color-accent)" : "var(--color-info)";
+              return (
+                <polygon
+                  key={i}
+                  points={`${mx.toFixed(1)},158 ${(mx - 4).toFixed(1)},165 ${(mx + 4).toFixed(1)},165`}
+                  fill={fill}
+                >
+                  <title>{m.label}</title>
+                </polygon>
+              );
+            })}
           </svg>
         </div>
       </div>

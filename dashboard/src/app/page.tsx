@@ -1,7 +1,13 @@
 import { Suspense } from "react";
 import { parsePeriod } from "@/lib/periods";
-import { getResourcesAssisted, getResourcesKpis, getResourcesOverview } from "@/data/dashboard";
+import {
+  getResourcesAssisted,
+  getResourcesKpis,
+  getResourcesOverview,
+  getAnnotations,
+} from "@/data/dashboard";
 import { getResourcesTrend } from "@/data/trend";
+import { buildMarkers } from "@/lib/annotations";
 import { requireUser } from "@/lib/auth";
 import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
@@ -39,13 +45,16 @@ export default async function Page({
 }
 
 async function Content({ period }: { period: Period }) {
-  const [kpis, rawRows, trendResult, assisted] = await Promise.all([
+  const [kpis, rawRows, trendResult, assisted, annotations] = await Promise.all([
     getResourcesKpis(period),
     getResourcesOverview(period),
     getResourcesTrend(period),
     getResourcesAssisted(period),
+    getAnnotations(period),
   ]);
   const trend = trendResult.data;
+  // B1 — toutes les annotations de la fenêtre sur le graphe visiteurs (pas de filtre path ici).
+  const markers = buildMarkers(annotations, kpis?.cooked_start, trend?.visitors_daily?.length ?? 0);
   // Fusion des « contacts assistés » (attribution page d'entrée) dans les lignes.
   const byPath = new Map(assisted.map((a) => [a.path, a]));
   const rows = rawRows.map((r) => {
@@ -92,6 +101,7 @@ async function Content({ period }: { period: Period }) {
           series={trend.visitors_daily}
           label="Visiteurs uniques / jour"
           lastDay={kpis?.cooked_end}
+          markers={markers}
         />
       ) : null}
       <section>

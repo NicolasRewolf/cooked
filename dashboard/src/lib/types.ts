@@ -4,6 +4,21 @@
 
 export type Period = "rolling_28" | "rolling_90";
 
+// B1 — journal d'interventions (table annotations, lue en live par dashboard_annotations).
+export interface Annotation {
+  day: string; // ISO date (YYYY-MM-DD)
+  kind: string; // site_change | media | presse | campagne | autre
+  label: string;
+  paths: string[] | null; // ciblage ; NULL/vide = événement global (ex. passage TV)
+}
+
+// Marqueur PLAT pour TrendChart — JAMAIS de fonction dans les props (frontière RSC serveur→client).
+export interface TrendMarker {
+  index: number; // position du jour dans la série
+  label: string; // « JJ/MM — label » déjà formaté
+  kind: string;
+}
+
 export interface ResourceRow {
   window_kind?: string;
   path: string;

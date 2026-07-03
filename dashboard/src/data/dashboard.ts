@@ -72,7 +72,7 @@ export async function getSeoKpis(period: Period): Promise<SeoKpis | null> {
 }
 
 // ── Vague A : contacts assistés + fiche article ──────────────────────────────
-import type { AssistedRow, ArticleDetail } from "@/lib/types";
+import type { AssistedRow, ArticleDetail, Annotation } from "@/lib/types";
 
 export async function getResourcesAssisted(period: Period): Promise<AssistedRow[]> {
   const { data, error } = await admin.rpc("dashboard_resources_assisted", { period_kind: period });
@@ -87,4 +87,11 @@ export async function getArticleDetail(path: string, period: Period): Promise<Ar
   });
   if (error) throw new RpcError("dashboard_article_detail", error);
   return (data as ArticleDetail) ?? null;
+}
+
+// ── B1 : journal d'interventions (annotations dans la fenêtre, lu en live) ────
+export async function getAnnotations(period: Period): Promise<Annotation[]> {
+  const { data, error } = await admin.rpc("dashboard_annotations", { period_kind: period });
+  if (error) throw new RpcError("dashboard_annotations", error);
+  return (data ?? []) as Annotation[];
 }
