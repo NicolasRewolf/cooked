@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { parsePeriod } from "@/lib/periods";
-import { getResourcesKpis, getResourcesOverview } from "@/data/dashboard";
+import { getResourcesAssisted, getResourcesKpis, getResourcesOverview } from "@/data/dashboard";
 import { getResourcesTrend } from "@/data/trend";
 import { requireUser } from "@/lib/auth";
 import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
@@ -39,12 +39,19 @@ export default async function Page({
 }
 
 async function Content({ period }: { period: Period }) {
-  const [kpis, rows, trendResult] = await Promise.all([
+  const [kpis, rawRows, trendResult, assisted] = await Promise.all([
     getResourcesKpis(period),
     getResourcesOverview(period),
     getResourcesTrend(period),
+    getResourcesAssisted(period),
   ]);
   const trend = trendResult.data;
+  // Fusion des « contacts assistés » (attribution page d'entrée) dans les lignes.
+  const byPath = new Map(assisted.map((a) => [a.path, a]));
+  const rows = rawRows.map((r) => {
+    const a = byPath.get(r.path);
+    return a ? { ...r, assisted_contacts: a.assisted_contacts, assisted_prev: a.assisted_prev } : r;
+  });
 
   const items: KpiItem[] = kpis
     ? [

@@ -70,3 +70,21 @@ export async function getSeoKpis(period: Period): Promise<SeoKpis | null> {
   if (error) throw new RpcError("dashboard_seo_kpis", error);
   return ((data ?? [])[0] as SeoKpis) ?? null;
 }
+
+// ── Vague A : contacts assistés + fiche article ──────────────────────────────
+import type { AssistedRow, ArticleDetail } from "@/lib/types";
+
+export async function getResourcesAssisted(period: Period): Promise<AssistedRow[]> {
+  const { data, error } = await admin.rpc("dashboard_resources_assisted", { period_kind: period });
+  if (error) throw new RpcError("dashboard_resources_assisted", error);
+  return (data ?? []) as AssistedRow[];
+}
+
+export async function getArticleDetail(path: string, period: Period): Promise<ArticleDetail | null> {
+  const { data, error } = await admin.rpc("dashboard_article_detail", {
+    p_path: path,
+    period_kind: period,
+  });
+  if (error) throw new RpcError("dashboard_article_detail", error);
+  return (data as ArticleDetail) ?? null;
+}

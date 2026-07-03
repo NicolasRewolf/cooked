@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { SortableTable, type Column } from "./SortableTable";
 import { Badge, ConfidenceBadge, Trend } from "./ui";
 import { cn } from "@/lib/cn";
@@ -92,17 +93,25 @@ const columns: Column<ResourceRow>[] = [
     sortValue: (r) => prettyPath(r.path),
     render: (r) => (
       <div className="max-w-[230px]">
-        <a
-          href={`https://www.jplouton-avocat.fr${r.path}`}
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          href={`/article/${encodeURIComponent(r.path.replace(/^\/post\//, ""))}`}
           className="block truncate text-[12.5px] font-medium text-ink transition-colors hover:text-accent"
+          title="Ouvrir la fiche de l'article (trajectoire, requêtes, santé, assistés)"
         >
           {prettyPath(r.path)}
-        </a>
+        </Link>
         <div className="mt-[3px] flex items-center gap-[7px]">
           {r.theme && <span className="font-mono text-[10.5px] text-dim">{r.theme}</span>}
           <ConfidenceBadge grade={r.confidence} />
+          <a
+            href={`https://www.jplouton-avocat.fr${r.path}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-[10px] text-dim transition-colors hover:text-accent"
+            title="Voir la page publiée"
+          >
+            ↗
+          </a>
         </div>
       </div>
     ),
@@ -210,34 +219,120 @@ const columns: Column<ResourceRow>[] = [
       </span>
     ),
   },
+  {
+    key: "assisted",
+    header: "assistés",
+    align: "right",
+    sortValue: (r) => r.assisted_contacts ?? null,
+    render: (r) => (
+      <span
+        className={cn(
+          "font-mono text-[11.5px] font-semibold",
+          (r.assisted_contacts ?? 0) > 0 ? "text-accent" : "text-dim",
+        )}
+        title="Contacts (appel ou formulaire) de visiteurs ENTRÉS par cet article — même visite. Attribution page d'entrée : le contenu qui a gagné le prospect reçoit le crédit."
+      >
+        {r.assisted_contacts != null ? num(r.assisted_contacts) : "—"}
+      </span>
+    ),
+  },
 ];
+
+type SanteFilter = "tous" | "monte" | "stable" | "ralentit" | "gisement" | "nonscore";
+
+function santeOf(r: ResourceRow): Exclude<SanteFilter, "tous"> {
+  if (r.cpi_grade == null || r.cpi_grade === "C" || r.momentum == null) return "nonscore";
+  if ((r.cpi_grade === "A" || r.cpi_grade === "B") && r.convertit === false) return "gisement";
+  if (r.momentum >= 1.05) return "monte";
+  if (r.momentum <= 0.95) return "ralentit";
+  return "stable";
+}
 
 export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
   const [recentOnly, setRecentOnly] = useState(false);
-  const filtered = recentOnly ? rows.filter((r) => r.days_live != null && r.days_live <= 60) : rows;
+  const [search, setSearch] = useState("");
+  const [theme, setTheme] = useState<string>("tous");
+  const [sante, setSante] = useState<SanteFilter>("tous");
+
+  const themes = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.theme).filter((t): t is string => !!t))).sort((a, b) => a.localeCompare(b, "fr")),
+    [rows],
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (recentOnly && !(r.days_live != null && r.days_live <= 60)) return false;
+      if (theme !== "tous" && r.theme !== theme) return false;
+      if (sante !== "tous" && santeOf(r) !== sante) return false;
+      if (q) {
+        const hay = `${prettyPath(r.path)} ${r.path} ${r.best_query ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [rows, recentOnly, search, theme, sante]);
+
+  const selectCls =
+    "border border-line bg-panel px-2 py-1 font-mono text-[11px] text-muted focus:border-accent focus:outline-none";
+
   return (
     <div>
-      <div className="mb-2.5 flex items-center justify-between gap-4">
+      <div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
-          articles [{filtered.length}]
+          articles [{filtered.length}
+          {filtered.length !== rows.length ? `/${rows.length}` : ""}]
         </h2>
-        <label className="flex w-fit cursor-pointer items-center gap-2 text-[11.5px] text-muted">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <input
-            type="checkbox"
-            checked={recentOnly}
-            onChange={(e) => setRecentOnly(e.target.checked)}
-            className="accent-accent"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="rechercher (titre, requête)…"
+            className={cn(selectCls, "w-[190px]")}
+            aria-label="Rechercher un article"
           />
-          récents seulement (≤ 60 j)
-        </label>
+          <select value={theme} onChange={(e) => setTheme(e.target.value)} className={selectCls} aria-label="Filtrer par thème">
+            <option value="tous">thème : tous</option>
+            {themes.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <select
+            value={sante}
+            onChange={(e) => setSante(e.target.value as SanteFilter)}
+            className={selectCls}
+            aria-label="Filtrer par santé"
+          >
+            <option value="tous">santé : toutes</option>
+            <option value="monte">● monte</option>
+            <option value="stable">● stable</option>
+            <option value="ralentit">● ralentit</option>
+            <option value="gisement">★ gisement</option>
+            <option value="nonscore">— non scoré</option>
+          </select>
+          <label className="flex w-fit cursor-pointer items-center gap-2 text-[11.5px] text-muted">
+            <input
+              type="checkbox"
+              checked={recentOnly}
+              onChange={(e) => setRecentOnly(e.target.checked)}
+              className="accent-accent"
+            />
+            récents (≤ 60 j)
+          </label>
+        </div>
       </div>
-      <SortableTable columns={columns} rows={filtered} initialSortKey="visitors" initialDir="desc" minWidth={1080} />
+      <SortableTable columns={columns} rows={filtered} initialSortKey="visitors" initialDir="desc" minWidth={1160} />
       <p className="mt-[11px] max-w-[920px] font-mono text-[10.5px] leading-relaxed text-dim">
         <strong className="font-semibold text-faint">santé</strong> = momentum vs site (● monte / ●
         ralentit · ★ gisement : fort potentiel, pas encore de contact) ·{" "}
         <strong className="font-semibold text-faint">ctr / att.</strong> en orange = bien classé mais
-        titre / méta à retravailler · <strong className="font-semibold text-faint">source</strong> =
-        part du trafic venant de Google vs réseaux / IA / direct · tendances ▲▼ vs période précédente.
+        titre / méta à retravailler · <strong className="font-semibold text-faint">contacts</strong> =
+        actions sur la page · <strong className="font-semibold text-faint">assistés</strong> = contacts
+        de visiteurs entrés par l&apos;article (page d&apos;entrée) · cliquer un titre ouvre sa fiche ·
+        tendances ▲▼ vs période précédente.
       </p>
     </div>
   );
