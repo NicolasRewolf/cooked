@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { parsePeriod } from "@/lib/periods";
-import { getArticleDetail } from "@/data/dashboard";
+import { getArticleDetail, getAnnotations } from "@/data/dashboard";
 import { requireUser } from "@/lib/auth";
 import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
 import { PeriodSelector } from "@/components/PeriodSelector";
@@ -11,6 +11,8 @@ import { CpiHealthPanel } from "@/components/CpiHealthPanel";
 import { AskClaude } from "@/components/AskClaude";
 import { ArticleQueriesTable } from "@/components/ArticleQueriesTable";
 import { SectionTitle } from "@/components/ui";
+import { InterventionsTimeline } from "@/components/InterventionsTimeline";
+import { buildMarkers, annotationsForPath } from "@/lib/annotations";
 import { num, dec, pct, delta, dateFr, prettyPath } from "@/lib/format";
 import type { ArticleDetail, Period } from "@/lib/types";
 
@@ -40,11 +42,19 @@ export default async function Page({
 }
 
 async function Content({ path, period }: { path: string; period: Period }) {
-  const detail = await getArticleDetail(path, period);
+  const [detail, annotations] = await Promise.all([
+    getArticleDetail(path, period),
+    getAnnotations(period),
+  ]);
   if (!detail || !detail.meta) notFound();
 
   const visitors = detail.visitors_daily.map((p) => p.v);
   const clicks = detail.gsc_daily.map((p) => p.clicks);
+  // B1 — interventions ciblant cet article OU globales (paths NULL/vide), sur les
+  // deux graphes (index par fenêtre propre) + la mini-timeline.
+  const interventions = annotationsForPath(annotations, detail.path);
+  const visMarkers = buildMarkers(interventions, detail.bounds.cooked_start, visitors.length);
+  const gscMarkers = buildMarkers(interventions, detail.bounds.gsc_start, clicks.length);
   const visitorsTotal = visitors.reduce((a, b) => a + b, 0);
   const g = detail.gsc;
 
@@ -116,9 +126,11 @@ async function Content({ path, period }: { path: string; period: Period }) {
       <KpiHeader items={items} />
 
       <div className="grid gap-[18px] lg:grid-cols-2">
-        <TrendChart series={visitors} label="Visiteurs uniques / jour" lastDay={detail.bounds.cooked_end} />
-        <TrendChart series={clicks} label="Clics Google / jour" lastDay={detail.bounds.gsc_end} />
+        <TrendChart series={visitors} label="Visiteurs uniques / jour" lastDay={detail.bounds.cooked_end} markers={visMarkers} />
+        <TrendChart series={clicks} label="Clics Google / jour" lastDay={detail.bounds.gsc_end} markers={gscMarkers} />
       </div>
+
+      <InterventionsTimeline items={interventions} />
 
       <CpiHealthPanel detail={detail} />
 
