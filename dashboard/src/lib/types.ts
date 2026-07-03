@@ -35,6 +35,9 @@ export interface ResourceRow {
   potentiel: number | null; // santé hors conversion (capture+rétention+lecture)
   convertit: boolean | null; // a produit un contact sur la fenêtre CPI
   ctr_expected: number | null; // CTR attendu à la position (courbe du site), en %
+  // Vague A (03/07/2026) — fusionnés côté data layer depuis dashboard_resources_assisted
+  assisted_contacts?: number; // contacts de sessions ENTRÉES par l'article (attribution page d'entrée)
+  assisted_prev?: number;
   cooked_start: string;
   cooked_end: string;
   gsc_start: string;
@@ -112,4 +115,60 @@ export interface SeoKpis {
   impressions_path_total: number;
   gsc_start: string;
   gsc_end: string;
+}
+
+// ── Vague A (03/07/2026) : drill-down article + contacts assistés ────────────
+
+// Contacts « assistés » = contact macro (appel n'importe où dans la session,
+// ou formulaire relié par cooked_sid) dont la session est ENTRÉE par l'article.
+// Attribution page d'entrée — complémentaire de `contacts` (actions SUR la page).
+export interface AssistedRow {
+  path: string;
+  assisted_contacts: number;
+  assisted_prev: number;
+}
+
+export interface ArticleDetail {
+  path: string;
+  meta: {
+    theme: string | null;
+    category: string | null;
+    naissance_google: string | null;
+    first_tracker_day: string | null;
+    age_jours: number | null;
+  } | null;
+  gsc: {
+    clicks: number;
+    impressions: number;
+    position: number | null;
+    ctr_pct: number | null;
+    ctr_expected: number | null;
+    clicks_prev: number;
+  } | null;
+  gsc_daily: { d: string; clicks: number; impressions: number }[];
+  visitors_daily: { d: string; v: number }[];
+  top_queries: {
+    query: string;
+    clicks: number;
+    impressions: number;
+    position: number;
+    volume_fr: number | null;
+    cpc: number | null;
+  }[];
+  cpi: {
+    day: string;
+    grade: "A" | "B" | "C";
+    cpi: number;
+    momentum: number | null;
+    zc: number | null;
+    zr: number | null;
+    zl: number | null;
+    zv: number | null;
+    clics_perdus: number | null;
+    n_org: number | null;
+    couv_gsc_pct: number | null;
+  } | null;
+  cpi_series: { d: string; cpi: number }[];
+  assisted: { n: number; prev: number } | null;
+  bounds: { cooked_start: string; cooked_end: string; gsc_start: string; gsc_end: string };
 }
