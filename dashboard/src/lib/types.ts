@@ -39,6 +39,26 @@ export interface InterventionEffect {
   effet_net_pct: number | null; // (ratio page ÷ ratio site − 1) × 100
 }
 
+// B3 — cohortes mensuelles (clics GSC cumulés moyens par article, alignés sur l'âge).
+export interface Cohort {
+  month: string; // "2026-03"
+  n_articles: number;
+  benjamin_age: number; // âge du plus jeune article de la cohorte (fin de la ligne)
+  series: number[]; // clics cumulés MOYENS par article, index = âge en jours depuis J0
+}
+export interface CohortsResult {
+  gsc_last: string;
+  cohorts: Cohort[];
+}
+
+// B3 — objectif : contacts assistés trimestre-à-date + cible (cooked_config, ou null).
+export interface AssistedQuarter {
+  quarter: string; // "T3 2026"
+  quarter_start: string;
+  value: number;
+  target: number | null; // null = « objectif à fixer »
+}
+
 export interface ResourceRow {
   window_kind?: string;
   path: string;
