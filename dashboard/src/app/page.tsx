@@ -56,7 +56,12 @@ async function Content({ period }: { period: Period }) {
     getResourcesAssisted(period),
     getAnnotations(period),
     getResourcesCohorts(),
-    getAssistedQuarter(),
+    // Résilience (incident 03/07 22:57 : 2 timeouts RPC → la home plantait) :
+    // la ligne d'objectif est décorative, elle se masque au lieu de tout casser.
+    getAssistedQuarter().catch((e) => {
+      console.error("dashboard_assisted_quarter KO — ligne objectif masquée:", e);
+      return null;
+    }),
   ]);
   const trend = trendResult.data;
   // B1 — toutes les annotations de la fenêtre sur le graphe visiteurs (pas de filtre path ici).
@@ -86,7 +91,7 @@ async function Content({ period }: { period: Period }) {
 
   return (
     <div className="space-y-[18px]">
-      <ObjectiveLine q={quarter} />
+      {quarter && <ObjectiveLine q={quarter} />}
       {kpis && (
         <FreshnessBanner
           cookedEnd={kpis.cooked_end}
