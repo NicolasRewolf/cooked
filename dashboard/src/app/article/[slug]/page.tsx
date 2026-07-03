@@ -9,7 +9,7 @@ import { PeriodSelector } from "@/components/PeriodSelector";
 import { TrendChart } from "@/components/TrendChart";
 import { CpiHealthPanel } from "@/components/CpiHealthPanel";
 import { AskClaude } from "@/components/AskClaude";
-import { SortableTable, type Column } from "@/components/SortableTable";
+import { ArticleQueriesTable } from "@/components/ArticleQueriesTable";
 import { SectionTitle } from "@/components/ui";
 import { num, dec, pct, delta, dateFr, prettyPath } from "@/lib/format";
 import type { ArticleDetail, Period } from "@/lib/types";
@@ -127,14 +127,7 @@ async function Content({ path, period }: { path: string; period: Period }) {
           requêtes google [{detail.top_queries.length}] · hors marque · {dateFr(detail.bounds.gsc_start)} →{" "}
           {dateFr(detail.bounds.gsc_end)}
         </SectionTitle>
-        <SortableTable
-          columns={queryColumns}
-          rows={detail.top_queries}
-          initialSortKey="impressions"
-          initialDir="desc"
-          minWidth={720}
-          emptyLabel="Aucune requête révélée par Google sur la fenêtre (anonymisation)."
-        />
+        <ArticleQueriesTable rows={detail.top_queries} />
         <p className="mt-[11px] font-mono text-[10.5px] leading-relaxed text-dim">
           Google ne révèle qu&apos;une partie des requêtes (le reste est anonymisé) — les totaux de la
           fiche viennent du niveau page, ce tableau sert au diagnostic requête par requête.
@@ -143,52 +136,6 @@ async function Content({ path, period }: { path: string; period: Period }) {
     </div>
   );
 }
-
-type QueryRow = ArticleDetail["top_queries"][number];
-
-const queryColumns: Column<QueryRow>[] = [
-  {
-    key: "query",
-    header: "requête",
-    align: "left",
-    sortValue: (r) => r.query,
-    render: (r) => <span className="text-[12px] text-ink">{r.query}</span>,
-  },
-  {
-    key: "impressions",
-    header: "affichages",
-    align: "right",
-    sortValue: (r) => r.impressions,
-    render: (r) => <span className="font-mono text-[11.5px] text-[#45423c]">{num(r.impressions)}</span>,
-  },
-  {
-    key: "clicks",
-    header: "clics",
-    align: "right",
-    sortValue: (r) => r.clicks,
-    render: (r) => (
-      <span className="font-mono text-[12px] font-medium text-ink">{num(r.clicks)}</span>
-    ),
-  },
-  {
-    key: "position",
-    header: "pos.",
-    align: "right",
-    sortValue: (r) => r.position,
-    render: (r) => <span className="font-mono text-[11.5px] text-[#45423c]">{dec(r.position)}</span>,
-  },
-  {
-    key: "volume",
-    header: "vol. / mois",
-    align: "right",
-    sortValue: (r) => r.volume_fr,
-    render: (r) => (
-      <span className="font-mono text-[11px] text-faint" title="Volume de recherche France (DataForSEO)">
-        {r.volume_fr != null ? num(r.volume_fr) : "n.d."}
-      </span>
-    ),
-  },
-];
 
 function Loading() {
   return (
