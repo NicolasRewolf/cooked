@@ -133,7 +133,10 @@ pas sur la volatilité de la conversion (recalibrée 17/06).
    gisement réel ~650 imp. (b) Croiser clics GSC × visites Cooked
    (`organic_google`, fenêtre alignée sur `gsc_last_data_day()`) : GSC
    sous-compte ~2,4× sur les pages à enjeu local (clics pack local/fiche
-   GMB invisibles dans Search Console). Les visites Cooked font foi pour
+   GMB invisibles dans Search Console). ⚠️ Réf. re-mesurée le 02/07/2026 :
+   le ratio SITE-WIDE organic_google/clics GSC ≈ **1,19×** (fenêtre alignée
+   16-29/06) — le 2,4× ne vaut que page par page sur les pages à enjeu
+   local, ne pas l'appliquer globalement. Les visites Cooked font foi pour
    le trafic réel ; GSC fait foi pour impressions/positions.
 8. **Date de publication Wix trompeuse (antidatable)** (retex 22/06/2026) :
    `firstPublishedDate` (API Wix) et le `<lastmod>` du sitemap peuvent être
@@ -145,6 +148,11 @@ pas sur la volatilité de la conversion (recalibrée 17/06).
    → âge réel **5 jours**, pas 6 semaines (conclu « n'a pas pris » à tort). Un
    fort écart date Wix ↔ 1ère vue/impression = mise en ligne tardive : recompter
    l'âge depuis la découverte Google.
+9. **`click_internal.target_path` : variantes accentuées** (retex 02/07/2026) :
+   certains href du site portent des slugs accentués qui n'existent pas en
+   pageview (é vs e). 8 paires univoques backfillées (migration
+   `20260702132222`) ; pour toute jointure target_path ↔ paths, passer par
+   `unaccent()` en lecture (les variantes sans jumeau pageview restent).
 
 ## 6. Livraison à Nicolas
 

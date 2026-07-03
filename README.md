@@ -67,7 +67,8 @@ bandeau, on mesure **tout le monde**, pas seulement ceux qui cliquent
 
 **2. Nettoyer — la donnée brute ment.** Les bots, les crawlers SEO,
 les sessions de préchargement, les clics dupliqués par un bug
-d'intégration : tout cela gonfle les chiffres de 15 à 20 %. Cooked
+d'intégration : tout cela gonfle les chiffres de 15 à 20 % en temps normal — et
+jusqu'à ~80 % pendant le swarm de bots de fin juin 2026. Cooked
 filtre ce bruit dans une couche dédiée (`events_human`) et **toutes**
 les analyses lisent cette couche. Quand un chiffre a été corrigé
 rétroactivement (ça arrive — exemple : les contacts téléphone 28j sont
@@ -182,11 +183,12 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ---
 
-## Où en est le système (30/06/2026)
+## Où en est le système (03/07/2026)
 
-**En production depuis le 06/05/2026.** Tracker navigateur `sprint38`
+**En production depuis le 06/05/2026.** Tracker navigateur `sprint40`
 (batching, garde anti-double-embed, attribution des formulaires par champs
-cachés Wix) ; Edge Function `track` en **v22**. ~390 000+ événements bruts,
+cachés Wix, page_exit ré-armé) ; Edge Function `track` en **v23** (clamp
+horloge). ~1,05 M d'événements bruts (bruit > 28 j purgé chaque semaine),
 ~2 millions de lignes Search Console (16 mois), ~190 pages scorées par le CPI
 chaque matin.
 
@@ -215,6 +217,15 @@ chaque matin.
   durcis (`TRUNCATE`→`DELETE`, fin des deadlocks), et le rebuild du snapshot SEO
   **optimisé de 671 s à 210 s** (matérialisation d'`events_human` en table
   temporaire). La fonction d'auto-diagnostic ne crashe plus pendant un incident.
+
+**L'audit Fable 5 (01-03/07)** — audit complet code + données + méthodo,
+puis plan de correction T-01→T-19 exécuté à 100 % en 48 h : jours GSC de
+fin de mois récupérés, canal IA fiabilisé (restatement), temps de lecture
+corrigés (tracker sprint40 + grain SQL → restatement CPI ±7 pts), crons
+bruit 37× plus rapides, purge hebdo, alertes poussées sur téléphone
+(ntfy), protocole de validation CPI corrigé avant l'échéance, dashboard
+enrichi (onglet Expertises, fiches article, contacts assistés). Détail :
+[docs/audit-fable5-2026-07-02.md](docs/audit-fable5-2026-07-02.md).
 
 **Repère 10/06/2026** (premier snapshot CPI) : CPI moyen pondéré trafic
 **32/100**, ~446 clics Google « perdus »/mois — marge chiffrée page par page.
