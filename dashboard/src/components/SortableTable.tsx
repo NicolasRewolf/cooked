@@ -25,6 +25,7 @@ export function SortableTable<T>({
   initialDir = "desc",
   minWidth = 1080,
   emptyLabel = "Aucune donnée.",
+  onSortChange,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -32,6 +33,10 @@ export function SortableTable<T>({
   initialDir?: "asc" | "desc";
   minWidth?: number;
   emptyLabel?: string;
+  /** M2 — notifie le parent (client) du tri courant pour le refléter dans l'URL.
+   *  Callback entre DEUX composants client : autorisé (la règle RSC ne vaut que
+   *  pour la frontière serveur→client). */
+  onSortChange?: (key: string, dir: "asc" | "desc") => void;
 }) {
   const [sortKey, setSortKey] = useState<string | undefined>(initialSortKey);
   const [dir, setDir] = useState<"asc" | "desc">(initialDir);
@@ -52,11 +57,10 @@ export function SortableTable<T>({
   }, [columns, rows, sortKey, dir]);
 
   function toggle(key: string) {
-    if (sortKey === key) setDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortKey(key);
-      setDir("desc");
-    }
+    const nextDir: "asc" | "desc" = sortKey === key ? (dir === "asc" ? "desc" : "asc") : "desc";
+    setSortKey(key);
+    setDir(nextDir);
+    onSortChange?.(key, nextDir);
   }
 
   if (rows.length === 0) return <p className="py-6 text-sm text-muted">{emptyLabel}</p>;

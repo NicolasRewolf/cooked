@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { replaceUrlParams } from "@/lib/url";
 import { SortableTable, type Column } from "./SortableTable";
 import { ConfidenceBadge } from "./ui";
 import { cn } from "@/lib/cn";
@@ -193,12 +196,40 @@ const columns: Column<ExpertiseRow>[] = [
 ];
 
 export function ExpertisesTable({ rows }: { rows: ExpertiseRow[] }) {
+  const searchParams = useSearchParams();
+  // Tri dans l'URL (mêmes conventions que les articles ; pas de filtres ici).
+  const [sortKey, setSortKey] = useState(() => searchParams.get("sort") ?? "visitors");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() =>
+    searchParams.get("dir") === "asc" ? "asc" : "desc",
+  );
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    replaceUrlParams({
+      sort: sortKey === "visitors" ? null : sortKey,
+      dir: sortDir === "desc" ? null : sortDir,
+    });
+  }, [sortKey, sortDir]);
+
   return (
     <div>
       <h2 className="mb-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">
         expertises [{rows.length}]
       </h2>
-      <SortableTable columns={columns} rows={rows} initialSortKey="visitors" initialDir="desc" minWidth={1040} />
+      <SortableTable
+        columns={columns}
+        rows={rows}
+        initialSortKey={sortKey}
+        initialDir={sortDir}
+        minWidth={1040}
+        onSortChange={(k, d) => {
+          setSortKey(k);
+          setSortDir(d);
+        }}
+      />
       <p className="mt-[11px] font-mono text-[10.5px] leading-relaxed text-dim">
         ▲▼ tendances vs période précédente
       </p>
