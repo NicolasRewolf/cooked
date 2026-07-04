@@ -11,9 +11,7 @@ import { Trend } from "./ui";
 function HealthCell({ r }: { r: ExpertiseRow }) {
   if (r.cpi_grade == null || r.cpi_grade === "C" || r.momentum == null) {
     return (
-      <span className="font-mono text-[11px] text-dim" title="Trop peu de trafic organique pour un verdict fiable">
-        —
-      </span>
+      <span className="font-mono text-[11px] text-dim">—</span>
     );
   }
   const m = r.momentum;
@@ -21,12 +19,8 @@ function HealthCell({ r }: { r: ExpertiseRow }) {
   const dot = dir === "up" ? "bg-up" : dir === "down" ? "bg-warn" : "bg-faint";
   const word = dir === "up" ? "monte" : dir === "down" ? "ralentit" : "stable";
   const gisement = (r.cpi_grade === "A" || r.cpi_grade === "B") && r.convertit === false;
-  const tip =
-    `Santé relative au site · potentiel SEO ${r.potentiel ?? "—"} (capture + rétention + lecture, hors conversion) · ` +
-    `momentum ${m.toFixed(2)} (${word}) · score CPI global ${r.cpi ?? "—"}` +
-    (gisement ? " · ★ gisement : fort potentiel mais pas encore de contact → poser un pont" : "");
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={tip}>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", dot)} />
       <span className="text-[11.5px] text-[#45423c]">{word}</span>
       {gisement && (
@@ -48,12 +42,7 @@ function CtrCell({ r }: { r: ExpertiseRow }) {
     else if (r.gsc_ctr_pct < exp * 0.7) cls = "text-alert";
   }
   return (
-    <span
-      className="whitespace-nowrap"
-      title={`CTR réel ${pct(r.gsc_ctr_pct)} vs attendu ${pct(exp)} à la position ${dec(
-        r.gsc_position_avg,
-      )} (courbe du site). En-dessous = titre / méta à retravailler.`}
-    >
+    <span className="whitespace-nowrap">
       <span className={cn("font-mono text-[11.5px] font-medium", cls)}>{pct(r.gsc_ctr_pct)}</span>
       {exp != null && <span className="font-mono text-[9.5px] text-dim"> / {pct(exp, 0)}</span>}
     </span>
@@ -67,12 +56,7 @@ function PaidCell({ r }: { r: ExpertiseRow }) {
   const p = r.paid_share_pct;
   const cls = p >= 70 ? "text-warn" : p <= 30 ? "text-up" : "text-[#45423c]";
   return (
-    <span
-      className={cn("font-mono text-[11.5px] font-medium", cls)}
-      title={`${pct(p, 0)} des sessions voyant cette page sont arrivées via Google Ads (canal d'acquisition). Fort = trafic Adwords ; la colonne « lecture » ne porte alors que sur les rares entrées organiques.`}
-    >
-      {pct(p, 0)}
-    </span>
+    <span className={cn("font-mono text-[11.5px] font-medium", cls)}>{pct(p, 0)}</span>
   );
 }
 
@@ -99,11 +83,21 @@ const columns: Column<ExpertiseRow>[] = [
       </div>
     ),
   },
-  { key: "sante", header: "santé", align: "left", sortValue: (r) => r.momentum, render: (r) => <HealthCell r={r} /> },
+  {
+    key: "sante",
+    header: "santé",
+    align: "left",
+    headerInfo:
+      "Momentum des clics Google relatif au site : ● monte / ● stable / ● ralentit. ★ gisement = fort potentiel (capture + lecture) mais pas encore de contact → poser un pont. — = trop peu de trafic organique pour un verdict.",
+    sortValue: (r) => r.momentum,
+    render: (r) => <HealthCell r={r} />,
+  },
   {
     key: "paid",
     header: "part paid",
     align: "right",
+    headerInfo:
+      "Part des sessions voyant cette page arrivées par Google Ads (canal d'entrée de session). Élevé = la page vit de la pub, pas du SEO.",
     sortValue: (r) => r.paid_share_pct,
     render: (r) => <PaidCell r={r} />,
   },
@@ -123,14 +117,11 @@ const columns: Column<ExpertiseRow>[] = [
     key: "dwell",
     header: "lecture",
     align: "right",
+    headerInfo:
+      "Temps de lecture médian des entrées organiques uniquement — le trafic Ads a un autre comportement.",
     sortValue: (r) => r.dwell_median_s,
     render: (r) => (
-      <span
-        className="font-mono text-[11.5px] text-[#45423c]"
-        title="Médiane du temps de lecture — entrées ORGANIQUES directes uniquement (comme le CPI ; les visites Adwords sont exclues pour ne pas fausser la lecture)."
-      >
-        {seconds(r.dwell_median_s)}
-      </span>
+      <span className="font-mono text-[11.5px] text-[#45423c]">{seconds(r.dwell_median_s)}</span>
     ),
   },
   {
@@ -149,6 +140,9 @@ const columns: Column<ExpertiseRow>[] = [
     key: "ctr",
     header: "ctr / att.",
     align: "right",
+    subHeader: "réel / attendu",
+    headerInfo:
+      "CTR réel vs CTR attendu à cette position (courbe de clics du site). En orange : bien classé mais peu cliqué → titre et méta-description à retravailler.",
     sortValue: (r) =>
       r.gsc_ctr_pct != null && r.ctr_expected != null ? r.gsc_ctr_pct - r.ctr_expected : null,
     render: (r) => <CtrCell r={r} />,
@@ -157,14 +151,10 @@ const columns: Column<ExpertiseRow>[] = [
     key: "position",
     header: "pos.",
     align: "right",
+    headerInfo: "Position moyenne Google, pondérée par impressions, toutes requêtes confondues.",
     sortValue: (r) => r.gsc_position_avg,
     render: (r) => (
-      <span
-        className="font-mono text-[11.5px] text-[#45423c]"
-        title="Moyenne pondérée par impressions, toutes requêtes confondues."
-      >
-        {dec(r.gsc_position_avg)}
-      </span>
+      <span className="font-mono text-[11.5px] text-[#45423c]">{dec(r.gsc_position_avg)}</span>
     ),
   },
   {
@@ -188,11 +178,13 @@ const columns: Column<ExpertiseRow>[] = [
     key: "contacts",
     header: "contacts",
     align: "right",
+    subHeader: "sur la page",
+    headerInfo:
+      "Appels ou formulaires effectués PENDANT la visite de cette page. C'est l'endroit du geste qui reçoit le crédit.",
     sortValue: (r) => r.contacts,
     render: (r) => (
       <span
         className={cn("font-mono text-[11.5px] font-semibold", r.contacts > 0 ? "text-ink" : "text-dim")}
-        title="Actions faites sur la page (appel ou formulaire)."
       >
         {num(r.contacts)}
       </span>
@@ -207,12 +199,8 @@ export function ExpertisesTable({ rows }: { rows: ExpertiseRow[] }) {
         expertises [{rows.length}]
       </h2>
       <SortableTable columns={columns} rows={rows} initialSortKey="visitors" initialDir="desc" minWidth={1040} />
-      <p className="mt-[11px] max-w-[920px] font-mono text-[10.5px] leading-relaxed text-dim">
-        <strong className="font-semibold text-faint">part paid</strong> = sessions arrivées via Google
-        Ads (fort = la « lecture » ne porte que sur les rares entrées organiques) ·{" "}
-        <strong className="font-semibold text-faint">lecture</strong> = médiane sur les entrées
-        organiques directes (comme le CPI) · <strong className="font-semibold text-faint">contacts</strong>{" "}
-        = actions faites sur la page (appel ou formulaire) · tendances ▲▼ vs période précédente.
+      <p className="mt-[11px] font-mono text-[10.5px] leading-relaxed text-dim">
+        ▲▼ tendances vs période précédente
       </p>
     </div>
   );
