@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { replaceUrlParams } from "@/lib/url";
 import { SortableTable, type Column } from "./SortableTable";
 import { Badge, ConfidenceBadge, Trend } from "./ui";
 import { cn } from "@/lib/cn";
@@ -66,7 +68,9 @@ function MixBadge({ r }: { r: ResourceRow }) {
   return <Badge tone={tone}>{label}</Badge>;
 }
 
-const columns: Column<ResourceRow>[] = [
+// periodQ = « ?period=… » à propager aux liens de fiche (vide si période par défaut).
+function buildColumns(periodQ: string): Column<ResourceRow>[] {
+  return [
   {
     key: "article",
     header: "article",
@@ -75,7 +79,7 @@ const columns: Column<ResourceRow>[] = [
     render: (r) => (
       <div className="max-w-[230px]">
         <Link
-          href={`/article/${encodeURIComponent(r.path.replace(/^\/post\//, ""))}`}
+          href={`/article/${encodeURIComponent(r.path.replace(/^\/post\//, ""))}${periodQ}`}
           className="block truncate text-[12.5px] font-medium text-ink transition-colors hover:text-accent"
           title="Ouvrir la fiche de l'article (trajectoire, requêtes, santé, assistés)"
         >
@@ -234,7 +238,8 @@ const columns: Column<ResourceRow>[] = [
       </span>
     ),
   },
-];
+  ];
+}
 
 type SanteFilter = "tous" | "monte" | "stable" | "ralentit" | "gisement" | "nonscore";
 
@@ -247,10 +252,49 @@ function santeOf(r: ResourceRow): Exclude<SanteFilter, "tous"> {
 }
 
 export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
-  const [recentOnly, setRecentOnly] = useState(false);
-  const [search, setSearch] = useState("");
-  const [theme, setTheme] = useState<string>("tous");
-  const [sante, setSante] = useState<SanteFilter>("tous");
+  const searchParams = useSearchParams();
+  // Période courante → propagée aux liens de fiche (sauf défaut rolling_90).
+  const periodQ = searchParams.get("period") === "rolling_28" ? "?period=rolling_28" : "";
+
+  // État de vue initialisé DEPUIS l'URL (reload = état restauré). Init lazy : lu une
+  // seule fois ; le remount sur changement de route/période le relit. Le bouton Retour
+  // du navigateur restaure les filtres car on revient sur une entrée d'historique
+  // porteuse de ces params (la fiche est une AUTRE route → remount → ré-init).
+  const [recentOnly, setRecentOnly] = useState(() => searchParams.get("recents") === "1");
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const [theme, setTheme] = useState<string>(() => searchParams.get("theme") ?? "tous");
+  const [sante, setSante] = useState<SanteFilter>(() => {
+    const s = searchParams.get("sante");
+    const valid = ["monte", "stable", "ralentit", "gisement", "nonscore"];
+    return s && valid.includes(s) ? (s as SanteFilter) : "tous";
+  });
+  const [sortKey, setSortKey] = useState(() => searchParams.get("sort") ?? "visitors");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() =>
+    searchParams.get("dir") === "asc" ? "asc" : "desc",
+  );
+
+  // État de vue → URL via replaceState (AUCUN refetch serveur), débounce 300 ms.
+  // On saute le 1er run (l'URL reflète déjà l'init) ; les valeurs par défaut sont omises.
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    const t = setTimeout(() => {
+      replaceUrlParams({
+        q: search.trim() || null,
+        theme: theme === "tous" ? null : theme,
+        sante: sante === "tous" ? null : sante,
+        recents: recentOnly ? "1" : null,
+        sort: sortKey === "visitors" ? null : sortKey,
+        dir: sortDir === "desc" ? null : sortDir,
+      });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search, theme, sante, recentOnly, sortKey, sortDir]);
+
+  const columns = useMemo(() => buildColumns(periodQ), [periodQ]);
 
   const themes = useMemo(
     () => Array.from(new Set(rows.map((r) => r.theme).filter((t): t is string => !!t))).sort((a, b) => a.localeCompare(b, "fr")),
@@ -322,7 +366,17 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
           </label>
         </div>
       </div>
-      <SortableTable columns={columns} rows={filtered} initialSortKey="visitors" initialDir="desc" minWidth={1160} />
+      <SortableTable
+        columns={columns}
+        rows={filtered}
+        initialSortKey={sortKey}
+        initialDir={sortDir}
+        minWidth={1160}
+        onSortChange={(k, d) => {
+          setSortKey(k);
+          setSortDir(d);
+        }}
+      />
       <p className="mt-[11px] font-mono text-[10.5px] leading-relaxed text-dim">
         ▲▼ tendances vs période précédente · cliquer un titre ouvre la fiche de l&apos;article
       </p>

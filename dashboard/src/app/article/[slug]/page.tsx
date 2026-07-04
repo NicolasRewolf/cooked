@@ -105,7 +105,13 @@ async function Content({ path, period }: { path: string; period: Period }) {
       <div className="flex items-end justify-between gap-5">
         <div className="min-w-0">
           <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-faint">
-            <Link href="/" className="transition-colors hover:text-accent">
+            {/* M2 — le breadcrumb conserve la période ; les FILTRES, eux, sont
+                restaurés par le bouton Retour du navigateur (l'entrée d'historique
+                de la liste porte ces params) — comportement attendu. */}
+            <Link
+              href={period === "rolling_28" ? "/?period=rolling_28" : "/"}
+              className="transition-colors hover:text-accent"
+            >
               ← articles ressources
             </Link>
           </div>

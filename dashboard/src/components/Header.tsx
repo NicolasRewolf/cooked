@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { Nav } from "./Nav";
 
@@ -23,7 +24,10 @@ export function Header() {
           <span className="font-mono text-[11px] text-faint">jplouton-avocat.fr</span>
         </div>
 
-        <Nav />
+        {/* Nav lit useSearchParams (period) → Suspense requis (build prod). */}
+        <Suspense fallback={<nav className="flex h-14 items-stretch gap-1" aria-hidden />}>
+          <Nav />
+        </Suspense>
 
         <form action="/auth/signout" method="post">
           <button type="submit" className="text-xs text-faint transition-colors hover:text-ink">
