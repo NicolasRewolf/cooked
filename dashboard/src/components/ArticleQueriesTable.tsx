@@ -42,9 +42,11 @@ const columns: Column<QueryRow>[] = [
     key: "volume",
     header: "vol. / mois",
     align: "right",
+    headerInfo:
+      "Volume de recherche mensuel France (DataForSEO). n.d. = requête trop rare pour être répertoriée.",
     sortValue: (r) => r.volume_fr,
     render: (r) => (
-      <span className="font-mono text-[11px] text-faint" title="Volume de recherche France (DataForSEO)">
+      <span className="font-mono text-[11px] text-faint">
         {r.volume_fr != null ? num(r.volume_fr) : "n.d."}
       </span>
     ),

@@ -13,9 +13,7 @@ import { num, seconds, dec, pct, delta, prettyPath } from "@/lib/format";
 function HealthCell({ r }: { r: ResourceRow }) {
   if (r.cpi_grade == null || r.cpi_grade === "C" || r.momentum == null) {
     return (
-      <span className="font-mono text-[11px] text-dim" title="Trop peu de trafic organique pour un verdict fiable">
-        —
-      </span>
+      <span className="font-mono text-[11px] text-dim">—</span>
     );
   }
   const m = r.momentum;
@@ -23,12 +21,8 @@ function HealthCell({ r }: { r: ResourceRow }) {
   const dot = dir === "up" ? "bg-up" : dir === "down" ? "bg-warn" : "bg-faint";
   const word = dir === "up" ? "monte" : dir === "down" ? "ralentit" : "stable";
   const gisement = (r.cpi_grade === "A" || r.cpi_grade === "B") && r.convertit === false;
-  const tip =
-    `Santé relative au site · potentiel SEO ${r.potentiel ?? "—"} (capture + rétention + lecture, hors conversion) · ` +
-    `momentum ${m.toFixed(2)} (${word}) · score CPI global ${r.cpi ?? "—"}` +
-    (gisement ? " · ★ gisement : fort potentiel mais pas encore de contact → poser un pont" : "");
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={tip}>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", dot)} />
       <span className="text-[11.5px] text-[#45423c]">{word}</span>
       {gisement && (
@@ -51,12 +45,7 @@ function CtrCell({ r }: { r: ResourceRow }) {
     else if (r.gsc_ctr_pct < exp * 0.7) cls = "text-alert";
   }
   return (
-    <span
-      className="whitespace-nowrap"
-      title={`CTR réel ${pct(r.gsc_ctr_pct)} vs attendu ${pct(exp)} à la position ${dec(
-        r.gsc_position_avg,
-      )} (courbe du site). En-dessous = titre / méta à retravailler.`}
-    >
+    <span className="whitespace-nowrap">
       <span className={cn("font-mono text-[11.5px] font-medium", cls)}>{pct(r.gsc_ctr_pct)}</span>
       {exp != null && <span className="font-mono text-[9.5px] text-dim"> / {pct(exp, 0)}</span>}
     </span>
@@ -74,15 +63,7 @@ function MixBadge({ r }: { r: ResourceRow }) {
       : ratio >= 0.35
         ? (["neutral", "Mixte"] as const)
         : (["warn", "Hors-Google"] as const);
-  return (
-    <span
-      title={`${num(r.gsc_clicks)} clics Google pour ${num(r.unique_visitors)} visiteurs (${Math.round(
-        ratio * 100,
-      )} %). Faible = trafic réseaux / IA / direct, plus volatil.`}
-    >
-      <Badge tone={tone}>{label}</Badge>
-    </span>
-  );
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 const columns: Column<ResourceRow>[] = [
@@ -116,11 +97,21 @@ const columns: Column<ResourceRow>[] = [
       </div>
     ),
   },
-  { key: "sante", header: "santé", align: "left", sortValue: (r) => r.momentum, render: (r) => <HealthCell r={r} /> },
+  {
+    key: "sante",
+    header: "santé",
+    align: "left",
+    headerInfo:
+      "Momentum des clics Google relatif au site : ● monte / ● stable / ● ralentit. ★ gisement = fort potentiel (capture + lecture) mais pas encore de contact → poser un pont. — = trop peu de trafic organique pour un verdict.",
+    sortValue: (r) => r.momentum,
+    render: (r) => <HealthCell r={r} />,
+  },
   {
     key: "days_live",
     header: "âge",
     align: "right",
+    headerInfo:
+      "Âge SEO réel : jours depuis la première impression Google (pas la date de publication Wix, qui peut être antidatée).",
     sortValue: (r) => r.days_live,
     render: (r) => (
       <span className="font-mono text-[11.5px] text-faint">
@@ -144,6 +135,8 @@ const columns: Column<ResourceRow>[] = [
     key: "dwell",
     header: "lecture",
     align: "right",
+    headerInfo:
+      "Temps de lecture médian (réseaux sociaux exclus — leurs passages d'1 s faussent la médiane).",
     sortValue: (r) => r.dwell_median_s,
     render: (r) => <span className="font-mono text-[11.5px] text-[#45423c]">{seconds(r.dwell_median_s)}</span>,
   },
@@ -163,6 +156,9 @@ const columns: Column<ResourceRow>[] = [
     key: "ctr",
     header: "ctr / att.",
     align: "right",
+    subHeader: "réel / attendu",
+    headerInfo:
+      "CTR réel vs CTR attendu à cette position (courbe de clics du site). En orange : bien classé mais peu cliqué → titre et méta-description à retravailler.",
     sortValue: (r) =>
       r.gsc_ctr_pct != null && r.ctr_expected != null ? r.gsc_ctr_pct - r.ctr_expected : null,
     render: (r) => <CtrCell r={r} />,
@@ -171,20 +167,18 @@ const columns: Column<ResourceRow>[] = [
     key: "position",
     header: "pos.",
     align: "right",
+    headerInfo: "Position moyenne Google, pondérée par impressions, toutes requêtes confondues.",
     sortValue: (r) => r.gsc_position_avg,
     render: (r) => (
-      <span
-        className="font-mono text-[11.5px] text-[#45423c]"
-        title="Moyenne pondérée par impressions, toutes requêtes confondues."
-      >
-        {dec(r.gsc_position_avg)}
-      </span>
+      <span className="font-mono text-[11.5px] text-[#45423c]">{dec(r.gsc_position_avg)}</span>
     ),
   },
   {
     key: "mix",
     header: "source",
     align: "left",
+    headerInfo:
+      "Part du trafic venant de Google (clics Google / visiteurs). Faible = l'article vit sur réseaux / IA / direct, plus volatil que la recherche.",
     sortValue: (r) => (r.unique_visitors > 0 ? r.gsc_clicks / r.unique_visitors : null),
     render: (r) => <MixBadge r={r} />,
   },
@@ -209,11 +203,13 @@ const columns: Column<ResourceRow>[] = [
     key: "contacts",
     header: "contacts",
     align: "right",
+    subHeader: "sur la page",
+    headerInfo:
+      "Appels ou formulaires effectués PENDANT la visite de cette page. C'est l'endroit du geste qui reçoit le crédit.",
     sortValue: (r) => r.contacts,
     render: (r) => (
       <span
         className={cn("font-mono text-[11.5px] font-semibold", r.contacts > 0 ? "text-ink" : "text-dim")}
-        title="Actions faites sur la page (appel ou formulaire)."
       >
         {num(r.contacts)}
       </span>
@@ -223,6 +219,9 @@ const columns: Column<ResourceRow>[] = [
     key: "assisted",
     header: "assistés",
     align: "right",
+    subHeader: "entrés par l'article",
+    headerInfo:
+      "Contacts (appel ou formulaire) de visiteurs dont la session a COMMENCÉ par cet article — même visite. Le contenu qui a gagné le prospect reçoit le crédit.",
     sortValue: (r) => r.assisted_contacts ?? null,
     render: (r) => (
       <span
@@ -230,7 +229,6 @@ const columns: Column<ResourceRow>[] = [
           "font-mono text-[11.5px] font-semibold",
           (r.assisted_contacts ?? 0) > 0 ? "text-accent" : "text-dim",
         )}
-        title="Contacts (appel ou formulaire) de visiteurs ENTRÉS par cet article — même visite. Attribution page d'entrée : le contenu qui a gagné le prospect reçoit le crédit."
       >
         {r.assisted_contacts != null ? num(r.assisted_contacts) : "—"}
       </span>
@@ -293,7 +291,7 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
             aria-label="Rechercher un article"
           />
           <select value={theme} onChange={(e) => setTheme(e.target.value)} className={selectCls} aria-label="Filtrer par thème">
-            <option value="tous">thème : tous</option>
+            <option value="tous">Tous les thèmes</option>
             {themes.map((t) => (
               <option key={t} value={t}>
                 {t}
@@ -306,7 +304,7 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
             className={selectCls}
             aria-label="Filtrer par santé"
           >
-            <option value="tous">santé : toutes</option>
+            <option value="tous">Toutes les santés</option>
             <option value="monte">● monte</option>
             <option value="stable">● stable</option>
             <option value="ralentit">● ralentit</option>
@@ -320,19 +318,13 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
               onChange={(e) => setRecentOnly(e.target.checked)}
               className="accent-accent"
             />
-            récents (≤ 60 j)
+            récents (≤ 60 j d&apos;âge SEO)
           </label>
         </div>
       </div>
       <SortableTable columns={columns} rows={filtered} initialSortKey="visitors" initialDir="desc" minWidth={1160} />
-      <p className="mt-[11px] max-w-[920px] font-mono text-[10.5px] leading-relaxed text-dim">
-        <strong className="font-semibold text-faint">santé</strong> = momentum vs site (● monte / ●
-        ralentit · ★ gisement : fort potentiel, pas encore de contact) ·{" "}
-        <strong className="font-semibold text-faint">ctr / att.</strong> en orange = bien classé mais
-        titre / méta à retravailler · <strong className="font-semibold text-faint">contacts</strong> =
-        actions sur la page · <strong className="font-semibold text-faint">assistés</strong> = contacts
-        de visiteurs entrés par l&apos;article (page d&apos;entrée) · cliquer un titre ouvre sa fiche ·
-        tendances ▲▼ vs période précédente.
+      <p className="mt-[11px] font-mono text-[10.5px] leading-relaxed text-dim">
+        ▲▼ tendances vs période précédente · cliquer un titre ouvre la fiche de l&apos;article
       </p>
     </div>
   );

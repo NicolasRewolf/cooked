@@ -1,6 +1,7 @@
 import { cn } from "@/lib/cn";
 import type { Delta } from "@/lib/format";
 import { Sparkline } from "./Sparkline";
+import { Info } from "./Info";
 
 export interface KpiItem {
   label: string;
@@ -35,8 +36,9 @@ export function KpiHeader({ items }: { items: KpiItem[] }) {
           title={it.tooltip}
           className="min-w-[150px] flex-1 border-l border-[#efefed] px-[17px] pb-[13px] pt-[15px] first:border-l-0"
         >
-          <div className="min-h-6 text-[10px] font-medium uppercase tracking-[0.07em] text-faint">
-            {it.label}
+          <div className="flex min-h-6 items-center gap-1 text-[10px] font-medium uppercase tracking-[0.07em] text-faint">
+            <span>{it.label}</span>
+            {it.tooltip ? <Info>{it.tooltip}</Info> : null}
           </div>
           <div className="mt-2.5 font-mono text-[25px] font-semibold tracking-[-0.02em] text-ink">
             {it.value}

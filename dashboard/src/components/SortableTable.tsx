@@ -2,10 +2,15 @@
 
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/cn";
+import { Info } from "./Info";
 
 export interface Column<T> {
   key: string;
   header: string;
+  /** Sous-libellé discret sous l'en-tête (données plates, non-uppercase). */
+  subHeader?: string;
+  /** Texte de l'explication ⓘ rendue à côté de l'en-tête (données plates). */
+  headerInfo?: string;
   align?: "left" | "right";
   render: (row: T) => React.ReactNode;
   sortValue?: (row: T) => number | string | null;
@@ -69,23 +74,41 @@ export function SortableTable<T>({
                   key={c.key}
                   aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
                   className={cn(
-                    "whitespace-nowrap px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.02em]",
+                    "whitespace-nowrap px-3 py-2.5 align-top font-mono text-[10px] uppercase tracking-[0.02em]",
                     c.align === "right" ? "text-right" : "text-left",
                     active ? "text-ink" : "text-faint",
                   )}
                 >
-                  {sortable ? (
-                    <button
-                      type="button"
-                      onClick={() => toggle(c.key)}
-                      className="select-none uppercase transition-colors hover:text-accent"
+                  <div
+                    className={cn(
+                      "flex items-center gap-1",
+                      c.align === "right" ? "justify-end" : "justify-start",
+                    )}
+                  >
+                    {sortable ? (
+                      <button
+                        type="button"
+                        onClick={() => toggle(c.key)}
+                        className="select-none uppercase transition-colors hover:text-accent"
+                      >
+                        {c.header}
+                        {active ? (dir === "asc" ? " ↑" : " ↓") : ""}
+                      </button>
+                    ) : (
+                      c.header
+                    )}
+                    {c.headerInfo ? <Info>{c.headerInfo}</Info> : null}
+                  </div>
+                  {c.subHeader ? (
+                    <div
+                      className={cn(
+                        "mt-0.5 font-normal normal-case tracking-normal text-[9.5px] text-dim",
+                        c.align === "right" ? "text-right" : "text-left",
+                      )}
                     >
-                      {c.header}
-                      {active ? (dir === "asc" ? " ↑" : " ↓") : ""}
-                    </button>
-                  ) : (
-                    c.header
-                  )}
+                      {c.subHeader}
+                    </div>
+                  ) : null}
                 </th>
               );
             })}
