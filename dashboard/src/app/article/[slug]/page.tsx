@@ -9,6 +9,7 @@ import { PeriodSelector } from "@/components/PeriodSelector";
 import { TrendChart } from "@/components/TrendChart";
 import { CpiHealthPanel } from "@/components/CpiHealthPanel";
 import { AskClaude } from "@/components/AskClaude";
+import { Info } from "@/components/Info";
 import { ArticleQueriesTable } from "@/components/ArticleQueriesTable";
 import { SectionTitle } from "@/components/ui";
 import { InterventionsTimeline } from "@/components/InterventionsTimeline";
@@ -132,8 +133,9 @@ async function Content({ path, period }: { path: string; period: Period }) {
           </h1>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10.5px] text-dim">
             {detail.meta.theme && <span>{detail.meta.theme}</span>}
-            <span title="Première impression Google = âge SEO réel (la date Wix peut être antidatée)">
+            <span className="inline-flex items-center gap-1">
               né le {dateFr(detail.meta.naissance_google)} · {detail.meta.age_jours ?? "—"} j d&apos;âge SEO
+              <Info>Première impression Google = âge SEO réel (la date Wix peut être antidatée).</Info>
             </span>
             <a
               href={`https://www.jplouton-avocat.fr${detail.path}`}

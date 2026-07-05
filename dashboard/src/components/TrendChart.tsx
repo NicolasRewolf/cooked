@@ -101,8 +101,17 @@ export function TrendChart({
           <svg
             viewBox={`0 0 ${w} ${h}`}
             preserveAspectRatio="none"
-            style={{ width: "100%", height: 168, display: "block", overflow: "visible", cursor: "crosshair" }}
+            style={{ width: "100%", height: 168, display: "block", overflow: "visible", cursor: "crosshair", touchAction: "pan-y" }}
+            onPointerDown={(e) => {
+              // Tactile : capturer le pointeur permet de scruber au doigt ; touchAction
+              // pan-y laisse le scroll vertical de la page passer. Lecture dès le toucher.
+              e.currentTarget.setPointerCapture(e.pointerId);
+              onMove(e);
+            }}
             onPointerMove={onMove}
+            onPointerUp={(e) => {
+              if (e.pointerType !== "mouse") setHover(null);
+            }}
             onPointerLeave={() => setHover(null)}
           >
             <line x1="0" x2={w} y1="12" y2="12" stroke="#efefed" strokeWidth="1" vectorEffect="non-scaling-stroke" />
