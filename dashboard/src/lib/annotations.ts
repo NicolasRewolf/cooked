@@ -42,3 +42,26 @@ export function buildMarkers(
 export function annotationsForPath(annotations: Annotation[], path: string): Annotation[] {
   return annotations.filter((a) => !a.paths || a.paths.length === 0 || a.paths.includes(path));
 }
+
+// M4 — interventions VISIBLES sur le graphe visiteurs mais PAS ENCORE couvertes
+// par les données Google : day > gsc_end (droppée du graphe clics par buildMarkers)
+// tout en restant dans la fenêtre visiteurs [cooked_start, cooked_end]. Sert la
+// note ⚑ posée sous le graphe « Clics Google » pour expliquer l'asymétrie avec le
+// graphe visiteurs. Retour PLAT ({ day, label } déjà prêts à afficher), aucune
+// fonction — même si ici on rend côté serveur, on garde la discipline.
+export function uncoveredByGsc(
+  interventions: Annotation[],
+  gscEnd: string | null | undefined,
+  visStart: string | null | undefined,
+  visEnd: string | null | undefined,
+): { day: string; label: string }[] {
+  if (!gscEnd) return [];
+  const out: { day: string; label: string }[] = [];
+  for (const a of interventions) {
+    if (dayDiff(gscEnd, a.day) <= 0) continue; // day <= gsc_end → déjà couvert par Google
+    if (visStart && dayDiff(visStart, a.day) < 0) continue; // avant la fenêtre visiteurs
+    if (visEnd && dayDiff(a.day, visEnd) < 0) continue; // après la fenêtre visiteurs (hors des 2 graphes)
+    out.push({ day: a.day, label: a.label });
+  }
+  return out;
+}

@@ -1,7 +1,16 @@
 import { cn } from "@/lib/cn";
-import type { Delta } from "@/lib/format";
+import { num, type Delta } from "@/lib/format";
 import { Sparkline } from "./Sparkline";
 import { Info } from "./Info";
+
+// M4 — bornes discrètes de la sparkline en title natif (DONNÉE, pas définition →
+// la règle « pas d'ⓘ pour de la donnée » de M1 ne s'applique pas). Posé ICI, sur
+// le conteneur rendu par KpiHeader — surtout PAS dans Sparkline, pour laisser
+// intactes les sparklines de tableau (CpiHealthPanel).
+function sparkTitle(series?: number[]): string | undefined {
+  if (!series || series.length < 2) return undefined;
+  return `min ${num(Math.min(...series))} · max ${num(Math.max(...series))} · ${series.length} j`;
+}
 
 export interface KpiItem {
   label: string;
@@ -45,7 +54,13 @@ export function KpiHeader({ items }: { items: KpiItem[] }) {
           </div>
           {it.delta && <div className="mt-[7px]">{<DeltaTag delta={it.delta} />}</div>}
           {it.hint && <div className="mt-2 font-mono text-[10px] text-dim">{it.hint}</div>}
-          <Sparkline series={it.series} />
+          {it.series && it.series.length >= 2 ? (
+            <div title={sparkTitle(it.series)}>
+              <Sparkline series={it.series} />
+            </div>
+          ) : (
+            <Sparkline series={it.series} />
+          )}
         </div>
       ))}
     </div>
