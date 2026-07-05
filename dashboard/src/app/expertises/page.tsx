@@ -81,7 +81,6 @@ async function Content({ period }: { period: Period }) {
           gscLastDay={kpis.gsc_last_day}
           lagDays={kpis.lag_days}
           refreshedAt={kpis.refreshed_at}
-          currentDayPartial={kpis.current_day_partial}
           noPrevBaseline={kpis.no_prev_baseline}
         />
       )}
