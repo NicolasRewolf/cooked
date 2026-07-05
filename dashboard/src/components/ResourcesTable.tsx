@@ -92,7 +92,8 @@ function buildColumns(periodQ: string): Column<ResourceRow>[] {
             href={`https://www.jplouton-avocat.fr${r.path}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-mono text-[10px] text-dim transition-colors hover:text-accent"
+            aria-label="Voir la page publiée (nouvel onglet)"
+            className="-m-1 inline-flex items-center p-1 font-mono text-[10px] leading-none text-dim transition-colors hover:text-accent"
             title="Voir la page publiée"
           >
             ↗

@@ -72,6 +72,8 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
       key: "position",
       header: "position",
       align: "right",
+      headerInfo:
+        "Position moyenne Google, pondérée par impressions. ▲▼ = places gagnées/perdues vs période précédente (survol : CTR attendu à cette position).",
       sortValue: (r) => r.position_avg,
       render: (r) => (
         <div className="flex flex-col items-end leading-tight">
@@ -89,6 +91,8 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
       key: "volume",
       header: "vol. dfs",
       align: "right",
+      headerInfo:
+        "Volume de recherche mensuel France (DataForSEO). n.d. = requête trop rare pour être répertoriée.",
       sortValue: (r) => r.volume_fr,
       render: (r) =>
         r.volume_fr != null ? (
@@ -101,6 +105,8 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
       key: "capture",
       header: "captation",
       align: "right",
+      headerInfo:
+        "Part des clics de la requête captée par le site (clics / clics théoriques à cette position). La barre situe la requête vs la meilleure capture du tableau.",
       sortValue: (r) => r.capture_pct,
       render: (r) => (
         <div className="flex flex-col items-end gap-1">
@@ -118,6 +124,8 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
       key: "opportunity",
       header: "gain pot.",
       align: "right",
+      headerInfo:
+        "Clics/mois estimés si la requête atteignait le top 3 au CTR moyen du site (combine gain de classement et gain de CTR). — = déjà bien placée ou sans gisement.",
       sortValue: (r) => r.opportunity_clicks,
       render: (r) =>
         r.opportunity_clicks == null || r.opportunity_clicks <= 0 ? (
@@ -128,7 +136,6 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
               "font-mono text-[12.5px] font-semibold",
               r.is_quick_win ? "text-up" : "text-[#45423c]",
             )}
-            title="Clics/mois estimés si la requête atteignait le top 3 au CTR moyen du site. Combine gain de classement et gain de CTR."
           >
             +{num(r.opportunity_clicks)}
           </span>
@@ -154,10 +161,8 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
       </div>
       <SortableTable columns={columns} rows={filtered} initialSortKey="clicks" initialDir="desc" minWidth={900} />
       <p className="mt-[11px] max-w-[920px] font-mono text-[10.5px] leading-relaxed text-dim">
-        tendances ▲▼ vs période précédente (clics · places gagnées en position) ·{" "}
-        <strong className="font-semibold text-faint">gain pot.</strong> = clics/mois estimés si la
-        requête passait en top 3 au CTR du site — trie les quick wins par enjeu réel, pas par volume
-        brut · ⚠ Google n&apos;expose qu&apos;une fraction des requêtes (reste anonymisé).
+        ▲▼ tendances vs période précédente (clics · places en position) · ⚠ Google n&apos;expose
+        qu&apos;une fraction des requêtes (le reste est anonymisé).
       </p>
     </div>
   );

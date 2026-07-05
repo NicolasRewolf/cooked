@@ -42,7 +42,6 @@ export function KpiHeader({ items }: { items: KpiItem[] }) {
       {items.map((it) => (
         <div
           key={it.label}
-          title={it.tooltip}
           className="min-w-[150px] flex-1 border-l border-[#efefed] px-[17px] pb-[13px] pt-[15px] first:border-l-0"
         >
           <div className="flex min-h-6 items-center gap-1 text-[10px] font-medium uppercase tracking-[0.07em] text-faint">
