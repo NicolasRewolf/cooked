@@ -13,7 +13,7 @@ import { ArticleQueriesTable } from "@/components/ArticleQueriesTable";
 import { SectionTitle } from "@/components/ui";
 import { InterventionsTimeline } from "@/components/InterventionsTimeline";
 import { InterventionEffects } from "@/components/InterventionEffects";
-import { buildMarkers, annotationsForPath } from "@/lib/annotations";
+import { buildMarkers, annotationsForPath, uncoveredByGsc, dayShort } from "@/lib/annotations";
 import { num, dec, pct, delta, dateFr, prettyPath } from "@/lib/format";
 import type { ArticleDetail, Period } from "@/lib/types";
 
@@ -56,6 +56,14 @@ async function Content({ path, period }: { path: string; period: Period }) {
   const interventions = annotationsForPath(annotations, detail.path);
   const visMarkers = buildMarkers(interventions, detail.bounds.cooked_start, visitors.length);
   const gscMarkers = buildMarkers(interventions, detail.bounds.gsc_start, clicks.length);
+  // M4 — interventions visibles côté visiteurs mais pas encore couvertes par Google
+  // (day > gsc_end) : on l'annonce sous le graphe clics pour lever l'asymétrie.
+  const uncovered = uncoveredByGsc(
+    interventions,
+    detail.bounds.gsc_end,
+    detail.bounds.cooked_start,
+    detail.bounds.cooked_end,
+  );
   // B2 — effet mesuré des interventions site_change (RPC live, 1 appel par intervention).
   const siteChanges = interventions.filter((a) => a.kind === "site_change");
   const effects = await Promise.all(
@@ -143,7 +151,19 @@ async function Content({ path, period }: { path: string; period: Period }) {
 
       <div className="grid gap-[18px] lg:grid-cols-2">
         <TrendChart series={visitors} label="Visiteurs uniques / jour" lastDay={detail.bounds.cooked_end} markers={visMarkers} />
-        <TrendChart series={clicks} label="Clics Google / jour" lastDay={detail.bounds.gsc_end} markers={gscMarkers} />
+        <div>
+          <TrendChart series={clicks} label="Clics Google / jour" lastDay={detail.bounds.gsc_end} markers={gscMarkers} />
+          {uncovered.length > 0 && (
+            <div className="mt-1.5 space-y-0.5 font-mono text-[10.5px] leading-snug text-dim">
+              {uncovered.map((u, i) => (
+                <p key={i}>
+                  ⚑ {u.label} ({dayShort(u.day)}) — pas encore couvert par les données Google (jusqu&apos;au{" "}
+                  {dayShort(detail.bounds.gsc_end)}).
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <InterventionsTimeline items={interventions} />

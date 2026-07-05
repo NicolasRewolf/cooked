@@ -20,6 +20,18 @@ function jjmmHeure(iso?: string | null): string {
   const heure = d.toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" });
   return `${date} à ${heure}`;
 }
+// Jour calendaire courant en Europe/Paris (Vercel tourne en UTC → JAMAIS new Date()
+// nu pour la date du jour : on passe par Intl). Renvoie "YYYY-MM-DD".
+function parisTodayISO(): string {
+  // eslint-disable-next-line react-hooks/purity -- Server Component rendu à la requête : jour lu une fois
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
+}
+// Écart en jours entiers entre deux dates ISO (parse à minuit UTC → pas de DST).
+function dayGap(fromISO: string, toISO: string): number {
+  const a = Date.parse(`${fromISO.slice(0, 10)}T00:00:00Z`);
+  const b = Date.parse(`${toISO.slice(0, 10)}T00:00:00Z`);
+  return Math.round((b - a) / 86_400_000);
+}
 
 const GLOW: Record<string, string> = {
   "bg-up": "rgba(47,122,82,.14)",
@@ -74,9 +86,19 @@ export function FreshnessBanner({
   } else {
     dot = "bg-up";
     boxClass = "border-line bg-panel";
+    // « hier » dynamique : écart cooked_end ↔ aujourd'hui (Europe/Paris). Écart 1 →
+    // « à jour d'hier » ; écart ≥ 2 → phrase neutre « jusqu'au X (il y a N j) » (un
+    // écart de 2 avant le refresh de 10:15 est normal chaque matin ; les vraies
+    // pannes sont couvertes par l'état « périmé > 36 h »).
+    const cookedGap = cookedEnd ? dayGap(cookedEnd, parisTodayISO()) : null;
     sentence = live ? (
       <>
         Données Google à J-{lag} ({jjmm(gscLastDay)}, délai normal).
+      </>
+    ) : cookedGap != null && cookedGap >= 2 ? (
+      <>
+        Données site jusqu&apos;au {jjmm(cookedEnd)} (il y a {cookedGap} j) · Google à J-{lag} (
+        {jjmm(gscLastDay)}, délai normal).
       </>
     ) : (
       <>

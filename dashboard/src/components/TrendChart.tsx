@@ -1,14 +1,22 @@
+"use client";
+
+import { useState } from "react";
 import { num } from "@/lib/format";
 import type { TrendMarker } from "@/lib/types";
 
 // Graphe principal « oscilloscope » : grille fine + tracé accent + point final.
 // `series` = une valeur / jour sur la période. Vide ⇒ le composant ne rend rien
-// (la page masque alors le bloc). Voir HANDOFF.md pour le RPC à ajouter.
+// (la page masque alors le bloc).
 //
 // La série est ancrée sur J-1 (dernier jour réellement couvert) : le point final
 // n'est PAS « aujourd'hui » mais le dernier jour clos. `lastDay` (ISO du dernier
-// jour couvert) permet d'afficher « au JJ/MM » sous le point final au lieu d'un
-// « auj. » trompeur.
+// jour couvert) sert à dater l'axe (« du JJ/MM » … « au JJ/MM ») et le readout.
+//
+// M4 — survol = lecture. Composant CLIENT (props 100 % plates, conforme RSC) :
+// au pointermove sur le SVG, ligne verticale + point sur la courbe + readout
+// {JJ/MM · valeur} dans la barre de titre (pas de tooltip flottant → esthétique
+// instrument). preserveAspectRatio="none" déforme les coordonnées → on mappe le
+// pointeur via le bounding rect, jamais via les coordonnées SVG natives.
 export function TrendChart({
   series,
   label,
@@ -21,6 +29,10 @@ export function TrendChart({
   // B1 — marqueurs d'interventions : données PLATES uniquement (jamais de fonction).
   markers?: TrendMarker[];
 }) {
+  const [hover, setHover] = useState<{ x: number; y: number; jjmm: string | null; value: number } | null>(
+    null,
+  );
+
   if (!series || series.length < 2) return null;
   const w = 820;
   const h = 170;
@@ -40,12 +52,23 @@ export function TrendChart({
   const lastX = X(n - 1);
   const lastY = Y(series[n - 1]);
 
-  // Libellés d'axe X dérivés de la longueur réelle de la série (positions
-  // proportionnelles), jamais codés en dur : 3 jalons « −Nj » régulièrement
-  // espacés du plus ancien au 1er tiers/2e tiers, puis le dernier jour couvert.
-  // Ex. n=90 ⇒ −90j / −60j / −30j ; n=28 ⇒ −28j / −19j / −9j.
+  // Mapping pointeur → index. Piège (a) : preserveAspectRatio="none" étire la
+  // viewBox sur le rect rendu → on projette via rect.width, puis on inverse X(i).
+  function onMove(e: React.PointerEvent<SVGSVGElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const xSvg = ((e.clientX - rect.left) / rect.width) * w;
+    let i = Math.round(((xSvg - pl) * (n - 1)) / (w - pl - pr));
+    i = Math.max(0, Math.min(n - 1, i));
+    setHover({ x: X(i), y: Y(series![i]), jjmm: jjmmForIndex(lastDay, i, n), value: series![i] });
+  }
+
+  // Libellés d'axe X : le 1er jalon devient une VRAIE date (« du JJ/MM » = lastDay
+  // − (n−1) j) au lieu de « −Nj » ; les deux jalons intermédiaires restent relatifs ;
+  // « au JJ/MM » final inchangé.
+  const startLabel = jjmmForIndex(lastDay, 0, n);
   const xLabels = [
-    `−${n}j`,
+    startLabel ? `du ${startLabel}` : `−${n}j`,
     `−${Math.round((n * 2) / 3)}j`,
     `−${Math.round(n / 3)}j`,
     lastDayLabel(lastDay),
@@ -55,8 +78,17 @@ export function TrendChart({
     <div className="mt-[18px] border border-line bg-panel">
       <div className="flex items-center justify-between gap-4 border-b border-[#efefed] px-4 py-3">
         <h2 className="text-[12px] font-semibold text-ink">{label}</h2>
-        <span className="font-mono text-[10.5px] text-faint">
-          max {num(max)} · min {num(min)} · n={n} j
+        <span className="font-mono text-[10.5px] tabular-nums">
+          {hover ? (
+            <span className="text-ink">
+              {hover.jjmm ? `${hover.jjmm} · ` : ""}
+              {num(hover.value)}
+            </span>
+          ) : (
+            <span className="text-faint">
+              max {num(max)} · min {num(min)} · n={n} j
+            </span>
+          )}
         </span>
       </div>
       <div className="flex">
@@ -69,7 +101,9 @@ export function TrendChart({
           <svg
             viewBox={`0 0 ${w} ${h}`}
             preserveAspectRatio="none"
-            style={{ width: "100%", height: 168, display: "block", overflow: "visible" }}
+            style={{ width: "100%", height: 168, display: "block", overflow: "visible", cursor: "crosshair" }}
+            onPointerMove={onMove}
+            onPointerLeave={() => setHover(null)}
           >
             <line x1="0" x2={w} y1="12" y2="12" stroke="#efefed" strokeWidth="1" vectorEffect="non-scaling-stroke" />
             <line x1="0" x2={w} y1="84" y2="84" stroke="#efefed" strokeWidth="1" vectorEffect="non-scaling-stroke" />
@@ -93,6 +127,20 @@ export function TrendChart({
                 </polygon>
               );
             })}
+            {hover && (
+              <>
+                <line
+                  x1={hover.x}
+                  x2={hover.x}
+                  y1="4"
+                  y2="156"
+                  stroke="#e2e2e0"
+                  strokeWidth="1"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <circle cx={hover.x} cy={hover.y} r="3" fill="var(--color-accent)" stroke="#fff" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+              </>
+            )}
           </svg>
         </div>
       </div>
@@ -103,6 +151,19 @@ export function TrendChart({
       </div>
     </div>
   );
+}
+
+// Date JJ/MM du point d'index i : lastDay − (n−1−i) jours. Arithmétique UTC pure
+// (Date.UTC via Date.parse d'un ISO à minuit Z), aucun now() → déterministe, pas
+// de dérive de fuseau. Piège (b) de la spec M4.
+function jjmmForIndex(lastDay: string | null | undefined, i: number, n: number): string | null {
+  if (!lastDay) return null;
+  const base = Date.parse(`${lastDay.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(base)) return null;
+  const d = new Date(base - (n - 1 - i) * 86_400_000);
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}`;
 }
 
 // Dernier point = dernier jour réellement couvert (J-1), pas « aujourd'hui ».
