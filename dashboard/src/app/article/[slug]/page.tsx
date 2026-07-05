@@ -149,7 +149,9 @@ async function Content({ path, period }: { path: string; period: Period }) {
 
       <KpiHeader items={items} />
 
-      <div className="grid gap-[18px] lg:grid-cols-2">
+      {/* items-start : sans ça, le graphe visiteurs (enfant direct, stretch) s'étire
+          à la hauteur de la rangée dès que la note ⚑ grandit la colonne de droite. */}
+      <div className="grid items-start gap-[18px] lg:grid-cols-2">
         <TrendChart series={visitors} label="Visiteurs uniques / jour" lastDay={detail.bounds.cooked_end} markers={visMarkers} />
         <div>
           <TrendChart series={clicks} label="Clics Google / jour" lastDay={detail.bounds.gsc_end} markers={gscMarkers} />

@@ -113,7 +113,10 @@ export function TrendChart({
             ))}
             <path d={area} fill="var(--color-accent)" fillOpacity="0.06" />
             <path d={line} fill="none" stroke="var(--color-accent)" strokeWidth="1.4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-            <circle cx={lastX} cy={lastY} r="2.6" fill="var(--color-accent)" />
+            {/* Point = path à cap rond de largeur en pixels-écran (vectorEffect) →
+                disque parfait malgré preserveAspectRatio="none" ; un <circle> serait
+                étiré en œuf par la déformation de la viewBox. */}
+            <path d={`M${lastX.toFixed(1)} ${lastY.toFixed(1)} l0 0`} stroke="var(--color-accent)" strokeWidth="5.2" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
             {markers?.map((m, i) => {
               const mx = X(Math.max(0, Math.min(m.index, n - 1)));
               const fill = m.kind === "site_change" ? "var(--color-accent)" : "var(--color-info)";
@@ -138,7 +141,8 @@ export function TrendChart({
                   strokeWidth="1"
                   vectorEffect="non-scaling-stroke"
                 />
-                <circle cx={hover.x} cy={hover.y} r="3" fill="var(--color-accent)" stroke="#fff" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                <path d={`M${hover.x.toFixed(1)} ${hover.y.toFixed(1)} l0 0`} stroke="#fff" strokeWidth="8" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <path d={`M${hover.x.toFixed(1)} ${hover.y.toFixed(1)} l0 0`} stroke="var(--color-accent)" strokeWidth="6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
               </>
             )}
           </svg>
