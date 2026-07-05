@@ -1,6 +1,7 @@
 import { cn } from "@/lib/cn";
 import { Badge, ConfidenceBadge, SectionTitle } from "./ui";
 import { Sparkline } from "./Sparkline";
+import { Info } from "./Info";
 import { num } from "@/lib/format";
 import type { ArticleDetail } from "@/lib/types";
 
@@ -49,7 +50,20 @@ const AXES: {
 ];
 
 function AxisRow({ label, z, good, mid, bad, lever }: { label: string; z: number | null } & Omit<(typeof AXES)[number], "key">) {
-  if (z == null) return null;
+  // Axe non mesurable (trop peu d'organique) : on l'affiche en grisé plutôt que
+  // de le faire DISPARAÎTRE — sinon le panneau montre 3 axes une fois, 4 une autre,
+  // et on ne sait pas que le signal existe mais manque de données.
+  if (z == null) {
+    return (
+      <div className="flex items-center gap-3 py-1.5">
+        <span className="w-[86px] shrink-0 font-mono text-[10.5px] uppercase tracking-[0.04em] text-faint">
+          {label}
+        </span>
+        <div className="h-[5px] w-[110px] shrink-0 bg-[#f4f4f2]" />
+        <span className="text-[12px] text-dim">signal indisponible — trop peu de trafic organique pour le mesurer</span>
+      </div>
+    );
+  }
   const tone = z >= 0.5 ? "good" : z <= -0.5 ? "bad" : "mid";
   const text = tone === "good" ? good : tone === "bad" ? bad : mid;
   const dot = tone === "good" ? "bg-up" : tone === "bad" ? "bg-alert" : "bg-faint";
@@ -84,6 +98,10 @@ export function CpiHealthPanel({ detail }: { detail: ArticleDetail }) {
               {c.cpi}
             </span>
             <ConfidenceBadge grade={c.grade} />
+            <Info>
+              Grade de confiance selon le volume d&apos;entrées organiques : A = solide, B =
+              indicatif, C = hypothèse (petit volume, à confirmer).
+            </Info>
             {c.momentum != null && (
               <Badge tone={c.momentum >= 1.05 ? "good" : c.momentum <= 0.95 ? "warn" : "neutral"}>
                 {c.momentum >= 1.15 ? "↗ monte" : c.momentum <= 0.87 ? "↘ ralentit" : "→ stable"}
@@ -128,7 +146,7 @@ export function CpiHealthPanel({ detail }: { detail: ArticleDetail }) {
           </div>
           <p className="mt-2 font-mono text-[10px] leading-relaxed text-dim">
             Chaque axe compare l&apos;article aux pages du même type (● au centre = dans la
-            moyenne). Grade C = hypothèse, pas verdict.
+            moyenne).
           </p>
         </>
       )}

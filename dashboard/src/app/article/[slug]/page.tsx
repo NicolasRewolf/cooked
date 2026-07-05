@@ -78,7 +78,7 @@ async function Content({ path, period }: { path: string; period: Period }) {
 
   const items: KpiItem[] = [
     {
-      label: "Entrées (visiteurs/j cumulés)",
+      label: "Visiteurs (cumul quotidien)",
       value: num(visitorsTotal),
       series: visitors,
       tooltip: "Somme des visiteurs uniques quotidiens sur la fenêtre (tous canaux).",
@@ -88,6 +88,7 @@ async function Content({ path, period }: { path: string; period: Period }) {
       value: num(g?.clicks ?? 0),
       delta: g ? delta(g.clicks, g.clicks_prev) : undefined,
       series: clicks,
+      tooltip: "Clics organiques venus de la recherche Google vers cet article sur la fenêtre.",
     },
     {
       label: "Position moyenne",
@@ -123,7 +124,10 @@ async function Content({ path, period }: { path: string; period: Period }) {
               ← articles ressources
             </Link>
           </div>
-          <h1 className="mt-2 truncate text-[22px] font-semibold tracking-[-0.02em]">
+          {/* Pas de truncate : un titre coupé n'est pas un titre lisible. Le vrai
+              titre éditorial (accents/casse) demanderait la synchro des titres Wix
+              — ici c'est un dé-sluggage au mieux (prettyPath). */}
+          <h1 className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.02em]">
             {prettyPath(detail.path)}
           </h1>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10.5px] text-dim">
