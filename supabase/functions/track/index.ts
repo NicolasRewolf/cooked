@@ -1,4 +1,4 @@
-// COOKED — track Edge Function (v23 — audit 02/07/2026 : clamp horloge + cap tick)
+// COOKED — track Edge Function (v24 — 08/07/2026 : tag cooked_site outremer)
 // POST /functions/v1/track
 // Auth: this function does NOT verify a JWT. Authorization is via the Velo proxy
 // which holds the Supabase secret key server-side and forwards it as `apikey`.
@@ -252,13 +252,19 @@ Deno.serve(async (req) => {
       props.active_ms = 60000;
     }
 
+    const eventUrl = s(e.url, 2048);
+    const eventHost = hostnameOf(eventUrl);
+    if (eventHost === "outremer.jplouton-avocat.fr") {
+      props.cooked_site = "outremer";
+    }
+
     rows.push({
       anonymous_id: resolveAnonId(e?.anonymous_id),
       session_id,
       name,
-      url: s(e.url, 2048),
+      url: eventUrl,
       path: canonicalPath(s(e.path, 2048)),
-      hostname: hostnameOf(s(e.url, 2048)),
+      hostname: eventHost,
       title: s(e.title, 500),
       referrer: s(e.referrer, 2048),
       referrer_hostname: hostnameOf(s(e.referrer, 2048)),
