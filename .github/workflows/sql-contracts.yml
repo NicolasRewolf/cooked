@@ -1,0 +1,27 @@
+name: SQL contracts
+
+# C6 — bloque les casts Paris bruts dans les nouvelles migrations.
+# C1 — contrat cooked_events_window (optionnel en local si projet linké).
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/check_migration_paris_date.py'
+      - 'scripts/cooked_events_window_contract.sql'
+      - '.github/workflows/sql-contracts.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/check_migration_paris_date.py'
+
+jobs:
+  paris-date-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: C6 — pas de cast Paris brut dans les migrations modifiées
+        run: python3 scripts/check_migration_paris_date.py
