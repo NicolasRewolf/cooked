@@ -21,5 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: C6 — pas de cast Paris brut dans les migrations
+        with:
+          fetch-depth: 0
+      - name: C6 — pas de cast Paris brut dans les migrations modifiées
         run: python3 scripts/check_migration_paris_date.py
