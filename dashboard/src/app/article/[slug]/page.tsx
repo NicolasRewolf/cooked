@@ -158,9 +158,9 @@ async function Content({ path, period }: { path: string; period: Period }) {
       {/* items-start : sans ça, le graphe visiteurs (enfant direct, stretch) s'étire
           à la hauteur de la rangée dès que la note ⚑ grandit la colonne de droite. */}
       <div className="grid items-start gap-[18px] lg:grid-cols-2">
-        <TrendChart series={visitors} label="Visiteurs uniques / jour" lastDay={detail.bounds.cooked_end} markers={visMarkers} />
+        <TrendChart series={visitors} label="Visiteurs uniques / jour" lastDay={detail.bounds.cooked_end} markers={visMarkers} trend />
         <div>
-          <TrendChart series={clicks} label="Clics Google / jour" lastDay={detail.bounds.gsc_end} markers={gscMarkers} />
+          <TrendChart series={clicks} label="Clics Google / jour" lastDay={detail.bounds.gsc_end} markers={gscMarkers} trend />
           {uncovered.length > 0 && (
             <div className="mt-1.5 space-y-0.5 font-mono text-[10.5px] leading-snug text-dim">
               {uncovered.map((u, i) => (

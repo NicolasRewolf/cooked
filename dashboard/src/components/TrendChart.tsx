@@ -22,12 +22,18 @@ export function TrendChart({
   label,
   lastDay,
   markers,
+  trend = false,
 }: {
   series?: number[] | null;
   label: string;
   lastDay?: string | null;
   // B1 — marqueurs d'interventions : données PLATES uniquement (jamais de fonction).
   markers?: TrendMarker[];
+  // Droite de tendance (régression linéaire). Opt-in : activée sur les fiches
+  // article uniquement. Fit calculé À PARTIR du 1er jour non nul pour ignorer les
+  // zéros STRUCTURELS de début de fenêtre (tracker/Google pas encore couvrants) —
+  // sinon la pente est faussée à la hausse (piège d'amorçage, cf. CLAUDE.md).
+  trend?: boolean;
 }) {
   const [hover, setHover] = useState<{ x: number; y: number; jjmm: string | null; value: number } | null>(
     null,
@@ -51,6 +57,15 @@ export function TrendChart({
   const area = `${line} L${X(n - 1).toFixed(1)} ${h - pb} L${X(0).toFixed(1)} ${h - pb} Z`;
   const lastX = X(n - 1);
   const lastY = Y(series[n - 1]);
+
+  // Tendance linéaire sur la région mesurée (dès le 1er jour non nul). `dir` sert
+  // au libellé « en hausse / stable / en baisse » ; la droite est bornée à la zone
+  // de tracé pour ne jamais déborder du cadre.
+  const tr = trend ? linearTrend(series) : null;
+  const clampY = (v: number) => Math.max(pt, Math.min(h - pb, Y(v)));
+  const trPath = tr
+    ? `M${X(tr.i0).toFixed(1)} ${clampY(tr.yStart).toFixed(1)} L${lastX.toFixed(1)} ${clampY(tr.yEnd).toFixed(1)}`
+    : null;
 
   // Mapping pointeur → index. Piège (a) : preserveAspectRatio="none" étire la
   // viewBox sur le rect rendu → on projette via rect.width, puis on inverse X(i).
@@ -121,6 +136,11 @@ export function TrendChart({
               <line key={x} x1={x} x2={x} y1="4" y2="156" stroke="#f1f1ef" strokeWidth="1" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
             ))}
             <path d={area} fill="var(--color-accent)" fillOpacity="0.06" />
+            {/* Droite de tendance sous le tracé accent : pointillé gris discret pour
+                donner la direction sans voler la vedette à la série brute. */}
+            {trPath && (
+              <path d={trPath} fill="none" stroke="#b4b3ae" strokeWidth="1.2" strokeDasharray="5 4" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+            )}
             <path d={line} fill="none" stroke="var(--color-accent)" strokeWidth="1.4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
             {/* Point = path à cap rond de largeur en pixels-écran (vectorEffect) →
                 disque parfait malgré preserveAspectRatio="none" ; un <circle> serait
@@ -162,8 +182,49 @@ export function TrendChart({
           <span key={i}>{t}</span>
         ))}
       </div>
+      {tr && (
+        <div className="border-t border-[#f2f2f0] px-4 py-1.5 pl-[50px] font-mono text-[9.5px] leading-snug text-dim">
+          <span className="text-[#b4b3ae]">‑ ‑</span> tendance {tr.dir === "up" ? "↗ en hausse" : tr.dir === "down" ? "↘ en baisse" : "→ stable"} sur la région mesurée
+          {max < 5 ? " · petit volume, à lire avec prudence" : ""}
+        </div>
+      )}
     </div>
   );
+}
+
+// Régression linéaire (moindres carrés) sur la série, en démarrant au 1er jour
+// non nul : les zéros de début de fenêtre sont STRUCTURELS (le tracker Cooked / la
+// couverture Google ne commencent pas forcément au début de la fenêtre) et non des
+// « vrais » zéros. Les inclure fausse la pente à la hausse. Renvoie null si trop peu
+// de points mesurés (< 5) pour une droite honnête. `dir` applique une bande morte
+// (10 % de l'amplitude) pour ne pas crier « hausse » sur du bruit.
+function linearTrend(
+  series: number[],
+): { i0: number; yStart: number; yEnd: number; dir: "up" | "down" | "flat" } | null {
+  const n = series.length;
+  let i0 = 0;
+  while (i0 < n && series[i0] === 0) i0++;
+  const m = n - i0;
+  if (m < 5) return null;
+  let sx = 0;
+  let sy = 0;
+  let sxx = 0;
+  let sxy = 0;
+  for (let i = i0; i < n; i++) {
+    sx += i;
+    sy += series[i];
+    sxx += i * i;
+    sxy += i * series[i];
+  }
+  const denom = m * sxx - sx * sx;
+  if (denom === 0) return null;
+  const slope = (m * sxy - sx * sy) / denom;
+  const intercept = (sy - slope * sx) / m;
+  const yStart = intercept + slope * i0;
+  const yEnd = intercept + slope * (n - 1);
+  const deadband = 0.1 * ((Math.max(...series) - Math.min(...series)) || 1);
+  const dir = yEnd - yStart > deadband ? "up" : yEnd - yStart < -deadband ? "down" : "flat";
+  return { i0, yStart, yEnd, dir };
 }
 
 // Date JJ/MM du point d'index i : lastDay − (n−1−i) jours. Arithmétique UTC pure
