@@ -5,6 +5,7 @@
 // The Edge Function itself uses the auto-injected service-role key to insert.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { canonicalPath } from "../_shared/canonical_path.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 // New-format keys (sb_secret_*) populate SUPABASE_SECRET_KEY;
@@ -130,26 +131,6 @@ function plainObject(v: unknown): Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>)
     : {};
-}
-
-// Sprint 13 + GSC contract — canonical path for Cooked × GSC joins.
-// This Edge helper does: decode → NFC → strip trailing slash (except root).
-// ⚠️ T-13 : le SQL canonical_path(text) NE décode PAS (NFC + strip seulement) —
-// le decode y est un url_decode() séparé (cf. backfill Sprint 39).
-// scripts/gsc_common.canonical_path() DÉCODE (aligné sur ce helper).
-function canonicalPath(p: string | null): string | null {
-  if (p == null) return null;
-  let path: string;
-  try {
-    path = decodeURIComponent(p);
-  } catch {
-    path = p;
-  }
-  path = path.normalize("NFC");
-  if (path.length > 1 && path.endsWith("/")) {
-    path = path.slice(0, -1);
-  }
-  return path || "/";
 }
 
 function corsHeaders(origin: string): Record<string, string> {

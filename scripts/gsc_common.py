@@ -1,8 +1,10 @@
 """
 Shared GSC → Supabase ingest (backfill + future cron).
 
-Contract path (symétrique avec supabase/functions/track canonicalPath) :
+Contract path (C3 — contrat partagé contracts/canonical_path_vectors.json) :
   decode → Unicode NFC → strip trailing slash (sauf /)
+  Edge : supabase/functions/_shared/canonical_path.ts
+  SQL  : public.canonical_path(text) (migration 20260709091028)
 """
 from __future__ import annotations
 
