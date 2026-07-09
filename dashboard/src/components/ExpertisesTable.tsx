@@ -8,6 +8,7 @@ import { ConfidenceBadge } from "./ui";
 import { cn } from "@/lib/cn";
 import type { ExpertiseRow } from "@/lib/types";
 import { num, seconds, dec, pct, delta, prettyPath } from "@/lib/format";
+import { momentumDir, momentumLabelFr } from "@/lib/momentum";
 import { Trend } from "./ui";
 
 // ── Verdict de santé : momentum (relatif au site) + grade de confiance ───────
@@ -18,9 +19,9 @@ function HealthCell({ r }: { r: ExpertiseRow }) {
     );
   }
   const m = r.momentum;
-  const dir = m >= 1.05 ? "up" : m <= 0.95 ? "down" : "flat";
+  const dir = momentumDir(m);
   const dot = dir === "up" ? "bg-up" : dir === "down" ? "bg-warn" : "bg-faint";
-  const word = dir === "up" ? "monte" : dir === "down" ? "ralentit" : "stable";
+  const word = momentumLabelFr(dir);
   const gisement = (r.cpi_grade === "A" || r.cpi_grade === "B") && r.convertit === false;
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">

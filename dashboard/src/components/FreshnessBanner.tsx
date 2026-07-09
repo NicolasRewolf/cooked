@@ -1,37 +1,8 @@
 import { cn } from "@/lib/cn";
+import { dayGap, jjmm, jjmmHeure, parisTodayISO } from "@/lib/dates";
 import { Info } from "./Info";
 
-// M3 — bandeau de fraîcheur : UNE phrase calme + un point d'état + un ⓘ pour le détail
-// technique brut. Priorité des états : instantané périmé (>36 h) > Google en retard
-// (>3 j) > tout va bien. Le `live` (page /seo) ne parle que de Google (pas de snapshot).
 const GSC_LAG_MAX_DAYS = 3;
-
-// "2026-07-02" → "02/07"
-function jjmm(iso?: string | null): string {
-  if (!iso) return "—";
-  const [, m, d] = iso.slice(0, 10).split("-");
-  return m && d ? `${d}/${m}` : iso;
-}
-// timestamptz ISO → "02/07 à 14:30" (heure de Paris)
-function jjmmHeure(iso?: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  const date = d.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit" });
-  const heure = d.toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" });
-  return `${date} à ${heure}`;
-}
-// Jour calendaire courant en Europe/Paris (Vercel tourne en UTC → JAMAIS new Date()
-// nu pour la date du jour : on passe par Intl). Renvoie "YYYY-MM-DD".
-function parisTodayISO(): string {
-  // eslint-disable-next-line react-hooks/purity -- Server Component rendu à la requête : jour lu une fois
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
-}
-// Écart en jours entiers entre deux dates ISO (parse à minuit UTC → pas de DST).
-function dayGap(fromISO: string, toISO: string): number {
-  const a = Date.parse(`${fromISO.slice(0, 10)}T00:00:00Z`);
-  const b = Date.parse(`${toISO.slice(0, 10)}T00:00:00Z`);
-  return Math.round((b - a) / 86_400_000);
-}
 
 const GLOW: Record<string, string> = {
   "bg-up": "rgba(47,122,82,.14)",
@@ -56,7 +27,7 @@ export function FreshnessBanner({
 }) {
   const lag = lagDays ?? 0;
   const ageHours = refreshedAt
-    // eslint-disable-next-line react-hooks/purity -- Server Component rendu à la requête : heure courante lue une fois
+    // eslint-disable-next-line react-hooks/purity -- Server Component : heure courante lue une fois
     ? Math.floor((Date.now() - new Date(refreshedAt).getTime()) / 3_600_000)
     : null;
   const staleSnapshot = !live && ageHours != null && ageHours > 36;
@@ -86,15 +57,10 @@ export function FreshnessBanner({
   } else {
     dot = "bg-up";
     boxClass = "border-line bg-panel";
-    // « hier » dynamique : écart cooked_end ↔ aujourd'hui (Europe/Paris). Écart 1 →
-    // « à jour d'hier » ; écart ≥ 2 → phrase neutre « jusqu'au X (il y a N j) » (un
-    // écart de 2 avant le refresh de 10:15 est normal chaque matin ; les vraies
-    // pannes sont couvertes par l'état « périmé > 36 h »).
+  // eslint-disable-next-line react-hooks/purity -- Server Component : jour Paris lu une fois
     const cookedGap = cookedEnd ? dayGap(cookedEnd, parisTodayISO()) : null;
     sentence = live ? (
-      <>
-        Données Google à J-{lag} ({jjmm(gscLastDay)}, délai normal).
-      </>
+      <>Données Google à J-{lag} ({jjmm(gscLastDay)}, délai normal).</>
     ) : cookedGap != null && cookedGap >= 2 ? (
       <>
         Données site jusqu&apos;au {jjmm(cookedEnd)} (il y a {cookedGap} j) · Google à J-{lag} (
@@ -108,9 +74,6 @@ export function FreshnessBanner({
     );
   }
 
-  // Suffixe conditionnel (état non-périmé). current_day_partial RETIRÉ : depuis l'ancrage
-  // J-1 (T-16) les fenêtres finissent à hier, la journée en cours n'est jamais comptée →
-  // le flag est structurellement toujours faux (confirmé sur le snapshot du jour).
   const suffix = !staleSnapshot && !live && noPrevBaseline
     ? " · comparaisons N-1 indisponibles (historique trop court)"
     : "";

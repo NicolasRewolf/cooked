@@ -9,6 +9,7 @@ import { Badge, ConfidenceBadge, Trend } from "./ui";
 import { cn } from "@/lib/cn";
 import type { ResourceRow } from "@/lib/types";
 import { num, seconds, dec, pct, delta, prettyPath } from "@/lib/format";
+import { momentumDir, momentumLabelFr, santeFromMomentum } from "@/lib/momentum";
 
 // ── Verdict de santé : momentum (relatif au site) + grade de confiance ───────
 // Pour ces articles éducatifs, le potentiel hors-conversion est le bon repère.
@@ -19,9 +20,9 @@ function HealthCell({ r }: { r: ResourceRow }) {
     );
   }
   const m = r.momentum;
-  const dir = m >= 1.05 ? "up" : m <= 0.95 ? "down" : "flat";
+  const dir = momentumDir(m);
   const dot = dir === "up" ? "bg-up" : dir === "down" ? "bg-warn" : "bg-faint";
-  const word = dir === "up" ? "monte" : dir === "down" ? "ralentit" : "stable";
+  const word = momentumLabelFr(dir);
   const gisement = (r.cpi_grade === "A" || r.cpi_grade === "B") && r.convertit === false;
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -245,11 +246,7 @@ function buildColumns(periodQ: string): Column<ResourceRow>[] {
 type SanteFilter = "tous" | "monte" | "stable" | "ralentit" | "gisement" | "nonscore";
 
 function santeOf(r: ResourceRow): Exclude<SanteFilter, "tous"> {
-  if (r.cpi_grade == null || r.cpi_grade === "C" || r.momentum == null) return "nonscore";
-  if ((r.cpi_grade === "A" || r.cpi_grade === "B") && r.convertit === false) return "gisement";
-  if (r.momentum >= 1.05) return "monte";
-  if (r.momentum <= 0.95) return "ralentit";
-  return "stable";
+  return santeFromMomentum(r.momentum, r.cpi_grade, r.convertit);
 }
 
 export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {

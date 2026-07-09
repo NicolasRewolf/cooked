@@ -1,19 +1,6 @@
 import { Info } from "./Info";
 import type { AssistedQuarter } from "@/lib/types";
-
-// M3 — un seul cap, sobre, au-dessus des KPI. Deux cas :
-//  • cible absente → « objectif à fixer » (dim) + un ⓘ qui dit comment la poser
-//    (plus un cul-de-sac culpabilisant : jamais de valeur inventée).
-//  • cible posée → « value / target » + barre filaire maison (3px, remplissage
-//    bg-accent, sans animation) + pourcentage en dim.
-// La date de début de trimestre vient de la RPC (quarter_start), aucun calcul en dur.
-
-// "2026-07-01" → "01/07"
-function jjmm(iso?: string | null): string {
-  if (!iso) return "—";
-  const [, m, d] = iso.slice(0, 10).split("-");
-  return m && d ? `${d}/${m}` : iso;
-}
+import { jjmm } from "@/lib/dates";
 
 const TOOLTIP =
   "Contacts (appel ou formulaire) de visiteurs entrés par un article ressource — " +
