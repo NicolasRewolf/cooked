@@ -12,13 +12,12 @@ import argparse
 import os
 import sys
 import time
-import unicodedata
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
-from urllib.parse import unquote, urlparse
 
+from cooked_path import canonical_path
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from supabase import create_client
@@ -29,19 +28,6 @@ DEFAULT_SITE = "https://www.jplouton-avocat.fr/"
 SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
 BATCH_SIZE = 1000
 MONTHS_BACK = 16
-
-
-def canonical_path(raw: str) -> str:
-    """Path canonique partagé Cooked × GSC (pathname ou URL GSC complète)."""
-    if raw.startswith("http://") or raw.startswith("https://"):
-        path = urlparse(raw).path
-    else:
-        path = raw
-    path = unquote(path)
-    path = unicodedata.normalize("NFC", path)
-    if len(path) > 1 and path.endswith("/"):
-        path = path[:-1]
-    return path or "/"
 
 
 def default_end_date() -> date:

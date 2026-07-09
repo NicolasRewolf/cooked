@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from gsc_common import canonical_path  # noqa: E402
+from cooked_path import canonical_path  # noqa: E402
 
 VECTORS = json.loads((ROOT / "contracts" / "canonical_path_vectors.json").read_text(encoding="utf-8"))
 

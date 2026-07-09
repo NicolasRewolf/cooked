@@ -7,7 +7,7 @@ on:
   pull_request:
     paths:
       - 'contracts/canonical_path_vectors.json'
-      - 'scripts/gsc_common.py'
+      - 'scripts/cooked_path.py'
       - 'supabase/functions/_shared/canonical_path.ts'
       - 'supabase/functions/_shared/canonical_path_test.ts'
       - 'tests/test_canonical_path_contract.py'
@@ -17,7 +17,7 @@ on:
     branches: [main]
     paths:
       - 'contracts/canonical_path_vectors.json'
-      - 'scripts/gsc_common.py'
+      - 'scripts/cooked_path.py'
       - 'supabase/functions/_shared/canonical_path.ts'
       - 'supabase/migrations/*canonical_path*'
 
@@ -31,7 +31,7 @@ jobs:
           python-version: '3.12'
       - name: Installer pytest
         run: pip install pytest
-      - name: Python adapter (gsc_common)
+      - name: Python adapter (cooked_path)
         run: python3 -m pytest tests/test_canonical_path_contract.py -q
       - uses: denoland/setup-deno@v2
         with:
