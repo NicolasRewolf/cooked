@@ -144,7 +144,7 @@ CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 -- behavior_pages_for_period(date_from timestamp with time zone, date_to timestamp with time zone) -> TABLE(path text, sessions bigint, pages_per_session numeric, avg_session_duration_s numeric, bounce_rate numeric, scroll_depth_avg numeric, scroll_complete_pct numeric, lcp_p75_ms numeric, inp_p75_ms numeric, cls_p75 numeric, ttfb_p75_ms numeric, outbound_clicks bigint)
--- canonical_path(p text) -> text
+-- canonical_path(p text) -> text  (C3: decode → NFC → strip slash)
 -- classify_channel(ref text, utm_source text, utm_medium text, self_host text) -> text
 -- content_performance(days_back integer) -> TABLE(page_type text, theme text, pages integer, sessions bigint, dwell_median numeric, scroll_median numeric, booking_intents bigint, contacts_assisted bigint, contact_rate_pct numeric)
 -- conversion_journeys(days_back integer) -> TABLE(contact_kind text, occurred_at timestamp with time zone, contact_path text, objet text, anonymous_id text, attribution_method text, entry_path text, entry_channel text, pages_count integer, journey text[], device_type text)

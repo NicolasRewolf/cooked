@@ -20,7 +20,9 @@ from pathlib import Path
 PROJECT_REF = "mxycmjkeotrycyneacje"
 FUNCTION_SLUG = "track"
 ROOT = Path(__file__).resolve().parent.parent
-INDEX = ROOT / "supabase" / "functions" / "track" / "index.ts"
+FUNCTION_DIR = ROOT / "supabase" / "functions" / "track"
+INDEX = FUNCTION_DIR / "index.ts"
+SHARED_CANONICAL = ROOT / "supabase" / "functions" / "_shared" / "canonical_path.ts"
 
 
 def main() -> None:
@@ -33,6 +35,7 @@ def main() -> None:
         )
 
     content = INDEX.read_text(encoding="utf-8")
+    shared = SHARED_CANONICAL.read_text(encoding="utf-8")
     if "canonicalPath" not in content:
         sys.exit("ERROR: index.ts ne contient pas canonicalPath — mauvais fichier ?")
     if "PLACEHOLDER" in content or "FROM_FILE" in content:
@@ -45,7 +48,10 @@ def main() -> None:
             "verify_jwt": False,
             "entrypoint_path": "index.ts",
             "import_map_path": None,
-            "files": [{"name": "index.ts", "content": content}],
+            "files": [
+                {"name": "index.ts", "content": content},
+                {"name": "../_shared/canonical_path.ts", "content": shared},
+            ],
         }
     ).encode("utf-8")
 

@@ -1,0 +1,40 @@
+name: Canonical path contract
+
+# C3 — vecteur partagé contracts/canonical_path_vectors.json
+# joué en Python (gsc_common) + Deno (Edge _shared).
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/canonical_path_vectors.json'
+      - 'scripts/cooked_path.py'
+      - 'supabase/functions/_shared/canonical_path.ts'
+      - 'supabase/functions/_shared/canonical_path_test.ts'
+      - 'tests/test_canonical_path_contract.py'
+      - 'supabase/migrations/*canonical_path*'
+      - '.github/workflows/canonical-path-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/canonical_path_vectors.json'
+      - 'scripts/cooked_path.py'
+      - 'supabase/functions/_shared/canonical_path.ts'
+      - 'supabase/migrations/*canonical_path*'
+
+jobs:
+  canonical-path-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Installer pytest
+        run: pip install pytest
+      - name: Python adapter (cooked_path)
+        run: python3 -m pytest tests/test_canonical_path_contract.py -q
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Edge adapter (_shared/canonical_path.ts)
+        run: deno test supabase/functions/_shared/canonical_path_test.ts

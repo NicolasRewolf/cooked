@@ -1,0 +1,28 @@
+{
+  "description": "C3 — contrat canonical_path : decode → NFC → strip trailing slash (sauf /).",
+  "path_cases": [
+    { "id": "root", "input": "/", "expected": "/" },
+    { "id": "empty", "input": "", "expected": "/" },
+    { "id": "trailing_slash", "input": "/post/foo/", "expected": "/post/foo" },
+    { "id": "no_slash", "input": "/post/foo", "expected": "/post/foo" },
+    { "id": "percent_utf8_eacute", "input": "/post/caf%C3%A9", "expected": "/post/café" },
+    { "id": "percent_space", "input": "/post/hello%20world", "expected": "/post/hello world" },
+    { "id": "already_decoded", "input": "/indemnisation-des-victimes", "expected": "/indemnisation-des-victimes" },
+    { "id": "invalid_percent", "input": "/post/foo%ZZbar", "expected": "/post/foo%ZZbar" },
+    { "id": "nfc_compose", "input": "/post/cafe\u0301", "expected": "/post/café" },
+    { "id": "home_trailing", "input": "/honoraires-rendez-vous/", "expected": "/honoraires-rendez-vous" }
+  ],
+  "python_url_cases": [
+    {
+      "id": "full_url_trailing",
+      "input": "https://www.jplouton-avocat.fr/post/foo/",
+      "expected": "/post/foo"
+    },
+    {
+      "id": "full_url_encoded",
+      "input": "https://www.jplouton-avocat.fr/post/caf%C3%A9",
+      "expected": "/post/café"
+    }
+  ],
+  "edge_null_case": { "id": "null_input", "input": null, "expected": null }
+}
