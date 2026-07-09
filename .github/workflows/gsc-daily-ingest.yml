@@ -8,13 +8,11 @@ name: GSC Daily Ingest
 #   Console, puis upserte vers Supabase. Idempotent grâce aux clés
 #   primaires composites (day, path) / (day, query) / (day, path, query).
 #
-# Fenêtre : --months 2 (mois courant + mois précédent COMPLET). Google
-# refine les données jusqu'à J-3 ; avec --months 1 les derniers jours d'un
-# mois (ex. 30/06) n'étaient jamais ré-ingérés, car list_months() ancre la
-# fenêtre au 1er du mois : le run du 1er juillet ne couvrait que juillet →
-# trou de fin de mois. --months 2 couvre le mois précédent en entier et
-# ferme ce trou (run ~2-3 min, quota GSC négligeable). Upsert idempotent
-# (PK composites) : re-couvrir un mois déjà ingéré est sans effet.
+# Fenêtre : --daily (= GSC_DAILY_MONTHS_BACK dans scripts/gsc_common.py).
+# Google refine les données jusqu'à J-3 ; avec un seul mois les derniers jours
+# d'un mois (ex. 30/06) n'étaient jamais ré-ingérés quand le run tombe le 1er
+# du mois suivant — trou fermé par 2 mois couverts (testé en CI :
+# tests/test_gsc_common.py). Upsert idempotent (PK composites).
 #
 # Secrets à configurer dans GitHub
 # (Settings → Secrets and variables → Actions → New repository secret) :
@@ -68,13 +66,13 @@ jobs:
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GSC_CREDENTIALS_PATH: ${{ runner.temp }}/gsc/credentials.json
-        run: python3 scripts/gsc_ingest.py path-query --months 2
+        run: python3 scripts/gsc_ingest.py path-query --daily
 
       - name: Run query-page ingest (mois courant + précédent)
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GSC_CREDENTIALS_PATH: ${{ runner.temp }}/gsc/credentials.json
-        run: python3 scripts/gsc_ingest.py query-page --months 2
+        run: python3 scripts/gsc_ingest.py query-page --daily
 
       - name: Cleanup credentials
         if: always()

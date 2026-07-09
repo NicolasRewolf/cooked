@@ -3,6 +3,7 @@
 Ingestion GSC → Supabase Cooked.
 
   python3 scripts/gsc_ingest.py path-query
+  python3 scripts/gsc_ingest.py path-query --daily   # fenêtre cron (2 mois)
   python3 scripts/gsc_ingest.py query-page
 
 Env : SUPABASE_SECRET_KEY (requis), SUPABASE_URL, GSC_CREDENTIALS_PATH,

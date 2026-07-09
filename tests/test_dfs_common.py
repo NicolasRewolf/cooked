@@ -13,6 +13,7 @@ from dfs_common import (  # noqa: E402
     dfs_run_failed,
     prepare_keywords_for_dfs,
     sanitize_for_dfs,
+    transform_dfs_result,
 )
 
 
@@ -77,6 +78,44 @@ def test_prepare_no_collision_different_sanitized() -> None:
     assert skipped == []
     assert collisions == []
     assert len(clean) == 2
+
+
+def test_transform_dfs_result_competition_mapping() -> None:
+    rows = transform_dfs_result(
+        [
+            {
+                "keyword": "garde à vue",
+                "competition_index": 75,
+                "competition": "HIGH",
+                "search_volume": 1200,
+                "cpc": 1.5,
+            }
+        ]
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["keyword"] == "garde à vue"
+    assert row["competition"] == 0.75
+    assert row["competition_level"] == "HIGH"
+    assert row["search_volume"] == 1200
+    assert row["location_code"] == 2250
+
+
+def test_transform_dfs_result_recovers_original_keyword() -> None:
+    rows = transform_dfs_result(
+        [{"keyword": "garde a vue", "competition_index": 10, "competition": "LOW"}],
+        original_by_sanitized={"garde a vue": "garde à vue"},
+    )
+    assert rows[0]["keyword"] == "garde à vue"
+
+
+def test_transform_dfs_result_skips_empty_keyword() -> None:
+    assert transform_dfs_result([{"keyword": "", "competition_index": 1}]) == []
+
+
+def test_transform_dfs_result_null_competition_index() -> None:
+    rows = transform_dfs_result([{"keyword": "foo", "competition": "LOW"}])
+    assert rows[0]["competition"] is None
 
 
 @pytest.mark.parametrize(

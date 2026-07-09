@@ -23,10 +23,9 @@ from datetime import datetime, timezone
 from typing import Sequence
 
 import requests
-from supabase import create_client
+from cooked_store import CookedStore, SupabaseStore
 
 
-DEFAULT_SUPABASE_URL = "https://mxycmjkeotrycyneacje.supabase.co"
 DFS_API_BASE         = "https://api.dataforseo.com/v3"
 DFS_ENDPOINT         = "/keywords_data/google_ads/search_volume/live"
 LOCATION_CODE_FR     = 2250  # France entière
@@ -124,25 +123,21 @@ def prepare_keywords_for_dfs(
     return list(original_by_sanitized.keys()), original_by_sanitized, skipped_keywords, collisions
 
 
-def clients() -> tuple:
-    supabase_url = os.environ.get("SUPABASE_URL", DEFAULT_SUPABASE_URL)
-    supabase_key = os.environ.get("SUPABASE_SECRET_KEY")
-    if not supabase_key:
-        sys.exit("ERROR: SUPABASE_SECRET_KEY env var manquante")
-
+def dfs_auth_from_env() -> str:
     dfs_username = os.environ.get("DFS_USERNAME")
     dfs_password = os.environ.get("DFS_PASSWORD")
     if not dfs_username or not dfs_password:
         sys.exit("ERROR: DFS_USERNAME et DFS_PASSWORD env vars manquantes")
-
-    sb = create_client(supabase_url, supabase_key)
-    dfs_auth = base64.b64encode(f"{dfs_username}:{dfs_password}".encode()).decode()
-    return sb, dfs_auth
+    return base64.b64encode(f"{dfs_username}:{dfs_password}".encode()).decode()
 
 
-def fetch_keywords_to_sync(sb, limit_n: int) -> list[str]:
+def clients() -> tuple[CookedStore, str]:
+    return SupabaseStore.from_env(), dfs_auth_from_env()
+
+
+def fetch_keywords_to_sync(store: CookedStore, limit_n: int) -> list[str]:
     """Lit les top N keywords (union GSC 28j ∪ 90j) via RPC dfs_keywords_to_sync."""
-    resp = sb.rpc("dfs_keywords_to_sync", {"limit_n": limit_n}).execute()
+    resp = store.rpc("dfs_keywords_to_sync", {"limit_n": limit_n})
     rows = resp.data or []
     return [r["keyword"] for r in rows]
 
@@ -220,16 +215,15 @@ def transform_dfs_result(
     return rows
 
 
-def upsert_batch(sb, rows: list[dict]) -> None:
+def upsert_batch(store: CookedStore, rows: list[dict]) -> None:
     """Upsert en batch dans dfs_keyword_volume. last_synced_at est inclus
     en ISO timestamp côté Python → le ON CONFLICT UPDATE le rafraîchit."""
-    if not rows:
-        return
-    for i in range(0, len(rows), BATCH_SIZE_UPSERT):
-        chunk = rows[i:i + BATCH_SIZE_UPSERT]
-        sb.table("dfs_keyword_volume") \
-          .upsert(chunk, on_conflict="keyword,location_code") \
-          .execute()
+    store.upsert_batches(
+        "dfs_keyword_volume",
+        rows,
+        "keyword,location_code",
+        BATCH_SIZE_UPSERT,
+    )
 
 
 def dfs_run_failed(total_failed: int, total_requested: int) -> bool:
@@ -239,13 +233,14 @@ def dfs_run_failed(total_failed: int, total_requested: int) -> bool:
     return bool(total_requested) and total_failed >= total_requested * 0.5
 
 
-def run_sync(limit_n: int) -> None:
-    sb, dfs_auth = clients()
+def run_sync(limit_n: int, store: CookedStore | None = None) -> None:
+    store = store or SupabaseStore.from_env()
+    dfs_auth = dfs_auth_from_env()
     t0 = time.time()
 
     print(f"=== DFS sync — top {limit_n} keywords GSC (28j∪90j) → France ===", flush=True)
 
-    keywords = fetch_keywords_to_sync(sb, limit_n)
+    keywords = fetch_keywords_to_sync(store, limit_n)
     if not keywords:
         sys.exit("Aucun keyword à syncer (gsc_query_daily vide ?)")
 
@@ -291,7 +286,7 @@ def run_sync(limit_n: int) -> None:
             continue
 
         rows = transform_dfs_result(items, original_by_sanitized)
-        upsert_batch(sb, rows)
+        upsert_batch(store, rows)
 
         elapsed = time.time() - t_start
         with_vol = sum(1 for r in rows if r.get("search_volume") is not None)
