@@ -29,6 +29,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Installer pytest
+        run: pip install pytest
       - name: Python adapter (gsc_common)
         run: python3 -m pytest tests/test_canonical_path_contract.py -q
       - uses: denoland/setup-deno@v2
