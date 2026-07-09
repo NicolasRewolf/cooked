@@ -18,16 +18,18 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 from cooked_path import canonical_path
+from cooked_store import CookedStore, SupabaseStore
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from supabase import create_client
 
-DEFAULT_SUPABASE_URL = "https://mxycmjkeotrycyneacje.supabase.co"
 DEFAULT_GSC_CREDS = Path.home() / ".claude" / "gsc-credentials.json"
 DEFAULT_SITE = "https://www.jplouton-avocat.fr/"
 SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
 BATCH_SIZE = 1000
 MONTHS_BACK = 16
+# Fenêtre cron quotidien (GitHub Actions) — 2 mois pour couvrir le mois précédent
+# en entier (régression 01/07/2026 : n=1 sur fin de mois → trou gsc_gap).
+GSC_DAILY_MONTHS_BACK = 2
 
 
 def default_end_date() -> date:
@@ -43,25 +45,26 @@ def parse_end_date(value: str | None) -> date:
     return default_end_date()
 
 
-def clients() -> tuple:
-    supabase_url = os.environ.get("SUPABASE_URL", DEFAULT_SUPABASE_URL)
-    supabase_key = os.environ.get("SUPABASE_SECRET_KEY")
-    if not supabase_key:
-        sys.exit("ERROR: SUPABASE_SECRET_KEY env var manquante")
-
+def gsc_api_clients() -> tuple:
     creds_path = Path(
         os.environ.get("GSC_CREDENTIALS_PATH", str(DEFAULT_GSC_CREDS))
     ).expanduser()
     if not creds_path.is_file():
         sys.exit(f"ERROR: GSC credentials introuvables: {creds_path}")
 
-    sb = create_client(supabase_url, supabase_key)
     gsc_creds = service_account.Credentials.from_service_account_file(
         str(creds_path), scopes=SCOPES
     )
     gsc = build("searchconsole", "v1", credentials=gsc_creds)
     site = os.environ.get("GSC_SITE_URL", DEFAULT_SITE)
-    return sb, gsc, site
+    return gsc, site
+
+
+def clients() -> tuple:
+    """Rétrocompat : (client Supabase brut, gsc, site). Préférer store + gsc_api_clients."""
+    store = SupabaseStore.from_env()
+    gsc, site = gsc_api_clients()
+    return store.client, gsc, site
 
 
 def fetch_gsc(
@@ -157,13 +160,13 @@ def aggregate_daily(
     return out
 
 
-def upsert_batches(sb, table: str, rows: list[dict], on_conflict: str) -> None:
-    for i in range(0, len(rows), BATCH_SIZE):
-        sb.table(table).upsert(rows[i : i + BATCH_SIZE], on_conflict=on_conflict).execute()
-
-
-def run_path_query(end_date: date, months_back: int = MONTHS_BACK) -> None:
-    sb, gsc, site = clients()
+def run_path_query(
+    end_date: date,
+    months_back: int = MONTHS_BACK,
+    store: CookedStore | None = None,
+) -> None:
+    store = store or SupabaseStore.from_env()
+    gsc, site = gsc_api_clients()
     months = list_months(end_date, months_back)
     total_p = total_q = 0
     t0 = time.time()
@@ -177,12 +180,12 @@ def run_path_query(end_date: date, months_back: int = MONTHS_BACK) -> None:
         p_rows = aggregate_daily(
             p_raw, ("path",), (canonical_path,)
         )
-        upsert_batches(sb, "gsc_path_daily", p_rows, "day,path")
+        store.upsert_batches("gsc_path_daily", p_rows, "day,path", BATCH_SIZE)
         total_p += len(p_rows)
 
         q_raw = fetch_gsc(gsc, site, ["date", "query"], ms, me)
         q_rows = aggregate_daily(q_raw, ("query",), (lambda x: x,))
-        upsert_batches(sb, "gsc_query_daily", q_rows, "day,query")
+        store.upsert_batches("gsc_query_daily", q_rows, "day,query", BATCH_SIZE)
         total_q += len(q_rows)
 
         elapsed = time.time() - t_start
@@ -196,8 +199,13 @@ def run_path_query(end_date: date, months_back: int = MONTHS_BACK) -> None:
     print(f"  gsc_query_daily : {total_q:,} rows upserted")
 
 
-def run_query_page(end_date: date, months_back: int = MONTHS_BACK) -> None:
-    sb, gsc, site = clients()
+def run_query_page(
+    end_date: date,
+    months_back: int = MONTHS_BACK,
+    store: CookedStore | None = None,
+) -> None:
+    store = store or SupabaseStore.from_env()
+    gsc, site = gsc_api_clients()
     months = list_months(end_date, months_back)
     total = 0
     t0 = time.time()
@@ -210,7 +218,7 @@ def run_query_page(end_date: date, months_back: int = MONTHS_BACK) -> None:
         rows = aggregate_daily(
             raw, ("path", "query"), (canonical_path, lambda x: x)
         )
-        upsert_batches(sb, "gsc_query_page_daily", rows, "day,path,query")
+        store.upsert_batches("gsc_query_page_daily", rows, "day,path,query", BATCH_SIZE)
         total += len(rows)
 
         elapsed = time.time() - t_start
@@ -230,10 +238,15 @@ def _add_run_flags(p: argparse.ArgumentParser) -> None:
         help="Dernier jour inclus (défaut: hier, ou GSC_END_DATE)",
     )
     p.add_argument(
+        "--daily",
+        action="store_true",
+        help=f"Fenêtre cron quotidien ({GSC_DAILY_MONTHS_BACK} mois — couvre le mois précédent en entier)",
+    )
+    p.add_argument(
         "--months",
         type=int,
         default=MONTHS_BACK,
-        help=f"Mois d'historique (défaut: {MONTHS_BACK})",
+        help=f"Mois d'historique (défaut: {MONTHS_BACK} ; ignoré si --daily)",
     )
 
 
@@ -248,8 +261,9 @@ def main(argv: list[str] | None = None) -> None:
 
     args = parser.parse_args(argv)
     end = parse_end_date(args.end_date)
+    months_back = GSC_DAILY_MONTHS_BACK if args.daily else args.months
 
     if args.mode == "path-query":
-        run_path_query(end, args.months)
+        run_path_query(end, months_back)
     else:
-        run_query_page(end, args.months)
+        run_query_page(end, months_back)

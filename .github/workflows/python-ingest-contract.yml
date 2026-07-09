@@ -1,0 +1,43 @@
+name: Python ingest contracts
+
+# C7 — pures GSC/DFS + cooked_store (sans credentials prod).
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/gsc_common.py'
+      - 'scripts/dfs_common.py'
+      - 'scripts/cooked_store.py'
+      - 'scripts/cooked_path.py'
+      - 'tests/test_gsc_common.py'
+      - 'tests/test_dfs_common.py'
+      - 'tests/test_cooked_store.py'
+      - '.github/workflows/python-ingest-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/gsc_common.py'
+      - 'scripts/dfs_common.py'
+      - 'scripts/cooked_store.py'
+      - 'tests/test_*_common.py'
+      - 'tests/test_cooked_store.py'
+
+jobs:
+  python-ingest-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/requirements-gsc.txt
+      - name: Install test deps
+        run: pip install pytest -r scripts/requirements-gsc.txt
+      - name: GSC + DFS + store unit tests
+        run: |
+          python3 -m pytest \
+            tests/test_gsc_common.py \
+            tests/test_dfs_common.py \
+            tests/test_cooked_store.py \
+            -q
