@@ -3,6 +3,7 @@ import { Badge, ConfidenceBadge, SectionTitle } from "./ui";
 import { Sparkline } from "./Sparkline";
 import { Info } from "./Info";
 import { num } from "@/lib/format";
+import { momentumDir, momentumBadgeFr } from "@/lib/momentum";
 import type { ArticleDetail } from "@/lib/types";
 
 // Les 4 composantes du CPI traduites en français d'action — « le CPI trie,
@@ -102,11 +103,14 @@ export function CpiHealthPanel({ detail }: { detail: ArticleDetail }) {
               Grade de confiance selon le volume d&apos;entrées organiques : A = solide, B =
               indicatif, C = hypothèse (petit volume, à confirmer).
             </Info>
-            {c.momentum != null && (
-              <Badge tone={c.momentum >= 1.05 ? "good" : c.momentum <= 0.95 ? "warn" : "neutral"}>
-                {c.momentum >= 1.15 ? "↗ monte" : c.momentum <= 0.87 ? "↘ ralentit" : "→ stable"}
-              </Badge>
-            )}
+            {c.momentum != null && (() => {
+              const dir = momentumDir(c.momentum);
+              return (
+                <Badge tone={dir === "up" ? "good" : dir === "down" ? "warn" : "neutral"}>
+                  {momentumBadgeFr(dir)}
+                </Badge>
+              );
+            })()}
           </div>
         )}
       </div>

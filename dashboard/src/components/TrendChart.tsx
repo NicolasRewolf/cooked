@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { num } from "@/lib/format";
+import { jjmmForIndex, lastDayLabel } from "@/lib/dates";
+import { linearTrend } from "@/lib/trend-math";
 import type { TrendMarker } from "@/lib/types";
 
 // Graphe principal « oscilloscope » : grille fine + tracé accent + point final.
@@ -190,61 +192,4 @@ export function TrendChart({
       )}
     </div>
   );
-}
-
-// Régression linéaire (moindres carrés) sur la série, en démarrant au 1er jour
-// non nul : les zéros de début de fenêtre sont STRUCTURELS (le tracker Cooked / la
-// couverture Google ne commencent pas forcément au début de la fenêtre) et non des
-// « vrais » zéros. Les inclure fausse la pente à la hausse. Renvoie null si trop peu
-// de points mesurés (< 5) pour une droite honnête. `dir` applique une bande morte
-// (10 % de l'amplitude) pour ne pas crier « hausse » sur du bruit.
-function linearTrend(
-  series: number[],
-): { i0: number; yStart: number; yEnd: number; dir: "up" | "down" | "flat" } | null {
-  const n = series.length;
-  let i0 = 0;
-  while (i0 < n && series[i0] === 0) i0++;
-  const m = n - i0;
-  if (m < 5) return null;
-  let sx = 0;
-  let sy = 0;
-  let sxx = 0;
-  let sxy = 0;
-  for (let i = i0; i < n; i++) {
-    sx += i;
-    sy += series[i];
-    sxx += i * i;
-    sxy += i * series[i];
-  }
-  const denom = m * sxx - sx * sx;
-  if (denom === 0) return null;
-  const slope = (m * sxy - sx * sy) / denom;
-  const intercept = (sy - slope * sx) / m;
-  const yStart = intercept + slope * i0;
-  const yEnd = intercept + slope * (n - 1);
-  const deadband = 0.1 * ((Math.max(...series) - Math.min(...series)) || 1);
-  const dir = yEnd - yStart > deadband ? "up" : yEnd - yStart < -deadband ? "down" : "flat";
-  return { i0, yStart, yEnd, dir };
-}
-
-// Date JJ/MM du point d'index i : lastDay − (n−1−i) jours. Arithmétique UTC pure
-// (Date.UTC via Date.parse d'un ISO à minuit Z), aucun now() → déterministe, pas
-// de dérive de fuseau. Piège (b) de la spec M4.
-function jjmmForIndex(lastDay: string | null | undefined, i: number, n: number): string | null {
-  if (!lastDay) return null;
-  const base = Date.parse(`${lastDay.slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(base)) return null;
-  const d = new Date(base - (n - 1 - i) * 86_400_000);
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  return `${dd}/${mm}`;
-}
-
-// Dernier point = dernier jour réellement couvert (J-1), pas « aujourd'hui ».
-// « au JJ/MM » quand la date est connue, sinon repli neutre.
-function lastDayLabel(lastDay?: string | null): string {
-  if (!lastDay) return "dern.";
-  const [, m, d] = lastDay.slice(0, 10).split("-");
-  if (!m || !d) return "dern.";
-  return `au ${d}/${m}`;
 }
