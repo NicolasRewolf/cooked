@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { parsePeriod } from "@/lib/periods";
-import { getArticleDetail, getAnnotations, getInterventionEffect } from "@/data/dashboard";
+import { getArticleDetail, getAnnotations, getInterventionEffects } from "@/data/dashboard";
 import { requireUser } from "@/lib/auth";
 import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
 import { PeriodSelector } from "@/components/PeriodSelector";
@@ -67,12 +67,9 @@ async function Content({ path, period }: { path: string; period: Period }) {
   );
   // B2 — effet mesuré des interventions site_change (RPC live, 1 appel par intervention).
   const siteChanges = interventions.filter((a) => a.kind === "site_change");
-  const effects = await Promise.all(
-    siteChanges.map(async (a) => ({
-      label: a.label,
-      day: a.day,
-      effect: await getInterventionEffect(detail.path, a.day),
-    })),
+  const effects = await getInterventionEffects(
+    detail.path,
+    siteChanges.map((a) => ({ day: a.day, label: a.label })),
   );
   const visitorsTotal = visitors.reduce((a, b) => a + b, 0);
   const g = detail.gsc;

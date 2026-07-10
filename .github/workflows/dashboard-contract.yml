@@ -1,6 +1,6 @@
 name: Dashboard contracts
 
-# C9 — vitest sur lib/ (dates, momentum, trend, redirect, annotations).
+# C9 + C4 — vitest lib/ + schémas Zod data/.
 
 on:
   pull_request:
@@ -10,6 +10,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'dashboard/src/data/**'
       - 'dashboard/src/lib/**'
       - 'dashboard/src/components/**'
       - '.github/workflows/dashboard-contract.yml'
