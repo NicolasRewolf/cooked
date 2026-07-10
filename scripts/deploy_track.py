@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FUNCTION_DIR = ROOT / "supabase" / "functions" / "track"
 INDEX = FUNCTION_DIR / "index.ts"
 SHARED_CANONICAL = ROOT / "supabase" / "functions" / "_shared" / "canonical_path.ts"
+SHARED_EVENTS_ROW = ROOT / "supabase" / "functions" / "_shared" / "events_row.ts"
 
 
 def main() -> None:
@@ -35,7 +36,8 @@ def main() -> None:
         )
 
     content = INDEX.read_text(encoding="utf-8")
-    shared = SHARED_CANONICAL.read_text(encoding="utf-8")
+    shared_canonical = SHARED_CANONICAL.read_text(encoding="utf-8")
+    shared_events_row = SHARED_EVENTS_ROW.read_text(encoding="utf-8")
     if "canonicalPath" not in content:
         sys.exit("ERROR: index.ts ne contient pas canonicalPath — mauvais fichier ?")
     if "PLACEHOLDER" in content or "FROM_FILE" in content:
@@ -50,7 +52,8 @@ def main() -> None:
             "import_map_path": None,
             "files": [
                 {"name": "index.ts", "content": content},
-                {"name": "../_shared/canonical_path.ts", "content": shared},
+                {"name": "../_shared/canonical_path.ts", "content": shared_canonical},
+                {"name": "../_shared/events_row.ts", "content": shared_events_row},
             ],
         }
     ).encode("utf-8")

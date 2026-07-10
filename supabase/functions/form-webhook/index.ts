@@ -1,9 +1,10 @@
-// COOKED — form-webhook Edge Function (v11 — audit 02/07/2026 : submissionTime ISO + alerte dropped)
+// COOKED — form-webhook Edge Function (v12 — 10/07/2026 : C5 _shared/events_row)
 // POST /functions/v1/form-webhook?token=<WEBHOOK_SECRET>
 // Reçoit les webhooks Wix Automations (Form Submitted) → insère form_submit.
 // verify_jwt=false (Wix ne peut pas envoyer de JWT) ; auth par ?token=.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { iso, s, validId } from "../_shared/events_row.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SECRET_KEY =
@@ -21,21 +22,6 @@ if (!WEBHOOK_SECRET) {
 const supabase = createClient(SUPABASE_URL, SECRET_KEY, {
   auth: { persistSession: false },
 });
-
-function s(v: unknown, max = 500): string | null {
-  if (v == null) return null;
-  const str = String(v);
-  return str.length > max ? str.slice(0, max) : str;
-}
-
-// T-13 (audit 02/07/2026) — validation ISO-8601 stricte (même logique que
-// track/index.ts). submissionTime malformé → fallback now() au lieu de stocker
-// une chaîne arbitraire (juste tronquée à 35 char) dans occurred_at.
-function iso(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const t = Date.parse(v);
-  return Number.isFinite(t) ? new Date(t).toISOString() : null;
-}
 
 /** Champ Wix typologie — pas de PII, whitelisté dans props. */
 function extractObjetDeMaDemande(d: Record<string, unknown>): string | null {
@@ -130,16 +116,7 @@ Deno.serve(async (req) => {
     iso(body?.submittedAt) ??
     new Date().toISOString();
 
-  // Sprint 37 — attribution : champs cachés cooked_aid/cooked_sid, même
-  // validation que l'Edge track. Stockés dans props uniquement (colonnes
-  // identité restent webhook-… — invariants Sprint 24/29).
-  function validId(v: unknown): string | null {
-    return typeof v === "string" &&
-      v.length >= 8 && v.length <= 128 &&
-      /^[a-zA-Z0-9_-]+$/.test(v)
-      ? v
-      : null;
-  }
+  // Sprint 37 — attribution : champs cachés cooked_aid/cooked_sid (C5 _shared).
   const cookedAid =
     validId(d?.["field:cooked_aid"]) ?? validId(d?.cooked_aid) ?? null;
   const cookedSid =
