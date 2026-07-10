@@ -1,0 +1,94 @@
+{
+  "description": "D4 \u2014 contrat de la r\u00e8gle \u00ab nous rejoindre \u00bb (form_submit candidature \u2260 contact macro). R\u00e8gle Edge (_shared/form_row.ts isRecruitmentObjet) : NFD \u2192 strip diacritiques \u2192 lower \u2192 trim \u2192 includes('nous rejoindre'). R\u00e8gle SQL (form_submit_counts_as_macro, migration 20260527120000) : lower(trim(objet)) LIKE '%nous rejoindre%' SANS strip des diacritiques. Les deux moteurs divergent sur les variantes accentu\u00e9es : ces cas portent sql_recruitment (attendu SQL) en plus de recruitment (attendu Edge). counts_as_macro = NOT recruitment (c\u00f4t\u00e9 Edge, \u00e9crit dans props.counts_as_macro \u00e0 l'insert).",
+  "cases": [
+    {
+      "id": "null",
+      "objet": null,
+      "recruitment": false,
+      "counts_as_macro": true
+    },
+    {
+      "id": "empty_string",
+      "objet": "",
+      "recruitment": false,
+      "counts_as_macro": true
+    },
+    {
+      "id": "exact_capitalized",
+      "objet": "Nous rejoindre",
+      "recruitment": true,
+      "counts_as_macro": false
+    },
+    {
+      "id": "exact_lower",
+      "objet": "nous rejoindre",
+      "recruitment": true,
+      "counts_as_macro": false
+    },
+    {
+      "id": "exact_upper",
+      "objet": "NOUS REJOINDRE",
+      "recruitment": true,
+      "counts_as_macro": false
+    },
+    {
+      "id": "wix_label_candidature",
+      "objet": "Nous rejoindre (candidature)",
+      "recruitment": true,
+      "counts_as_macro": false
+    },
+    {
+      "id": "surrounding_text",
+      "objet": "Objet : nous rejoindre svp",
+      "recruitment": true,
+      "counts_as_macro": false
+    },
+    {
+      "id": "leading_trailing_spaces",
+      "objet": "  Nous rejoindre  ",
+      "recruitment": true,
+      "counts_as_macro": false
+    },
+    {
+      "id": "accents_precomposed",
+      "objet": "no\u00fcs rejo\u00eendre",
+      "recruitment": true,
+      "counts_as_macro": false,
+      "sql_recruitment": false,
+      "note": "\u00e9/\u00fc pr\u00e9compos\u00e9s (NFC) \u2014 l'Edge strip les diacritiques, le LIKE SQL non"
+    },
+    {
+      "id": "accents_nfd_combining",
+      "objet": "nou\u0308s rejoi\u0302ndre",
+      "recruitment": true,
+      "counts_as_macro": false,
+      "sql_recruitment": false,
+      "note": "marques combinantes (NFD) \u2014 m\u00eame divergence Edge/SQL que accents_precomposed"
+    },
+    {
+      "id": "double_space_not_matched",
+      "objet": "nous  rejoindre",
+      "recruitment": false,
+      "counts_as_macro": true,
+      "note": "double espace : includes() ne matche pas \u2014 comportement actuel verrouill\u00e9 (idem LIKE SQL)"
+    },
+    {
+      "id": "vous_rejoindre",
+      "objet": "Je veux vous rejoindre",
+      "recruitment": false,
+      "counts_as_macro": true
+    },
+    {
+      "id": "business_divorce",
+      "objet": "Divorce",
+      "recruitment": false,
+      "counts_as_macro": true
+    },
+    {
+      "id": "business_indemnisation",
+      "objet": "Indemnisation des victimes d'accident",
+      "recruitment": false,
+      "counts_as_macro": true
+    }
+  ]
+}
