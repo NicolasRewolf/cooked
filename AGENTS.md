@@ -22,21 +22,39 @@ SELECT gsc_last_data_day();
 
 | Besoin | Fichier |
 |---|---|
-| Corps complets des RPC | [supabase/rpcs.sql](supabase/rpcs.sql) |
+| Corps complets des RPC (104) | [supabase/rpcs.sql](supabase/rpcs.sql) |
 | Signatures + vues | [supabase/views.sql](supabase/views.sql) |
 | DDL déploiement | [supabase/migrations/](supabase/migrations/) |
+| Edge row builders (D4) | `supabase/functions/_shared/track_row.ts`, `form_row.ts` |
+| Tracker navigateur | [wix/tracker.html](wix/tracker.html) |
 | Analyse SEO (pièges) | [docs/PLAYBOOK-analyse-seo.md](docs/PLAYBOOK-analyse-seo.md) |
 | Score CPI | [docs/cpi-cooked-page-index.md](docs/cpi-cooked-page-index.md) |
-| Dashboard UI | [dashboard/README.md](dashboard/README.md) + [dashboard/AGENTS.md](dashboard/AGENTS.md) |
+| Dashboard UI | [dashboard/README.md](dashboard/README.md) |
 | Historique | [docs/HISTORY-sprints.md](docs/HISTORY-sprints.md) |
 | Changements récents | [CHANGELOG.md](CHANGELOG.md) |
 | Index docs | [docs/README.md](docs/README.md) |
 
-## Contrats testables
+## Contrats testables (`contracts/`)
 
-- `contracts/canonical_path_vectors.json`
-- `contracts/branded_query_vectors.json`
-- `contracts/rpc_snapshot_meta.json`
+| Fichier | Vérifie |
+|---|---|
+| `canonical_path_vectors.json` | SQL / Edge / Python paths (C3) |
+| `branded_query_vectors.json` | `gsc_is_branded(query)` (Arch #3) |
+| `recruitment_objet_vectors.json` | Filtrage macro `form_submit` (D4) |
+| `rpc_snapshot_meta.json` | Hash + count de `supabase/rpcs.sql` (Arch #5) |
+
+## Versions canoniques (repo `main`)
+
+| Composant | Version repo | Déploiement prod |
+|---|---|---|
+| Tracker | `sprint40` (refactor D9) | Wix Custom Code (minify) |
+| Edge `track` | v25 (D4) | `supabase functions deploy track` |
+| Edge `form-webhook` | v12 (D4) | `supabase functions deploy form-webhook` |
+| RPC Postgres | 104 fonctions | migrations Supabase |
+
+**Repo et prod peuvent diverger** tant que Edge / tracker ne sont pas redéployés.
+Toujours vérifier : `props->>'_v'` sur events récents + version commentée en tête
+des fichiers Edge.
 
 ## Périmètre
 

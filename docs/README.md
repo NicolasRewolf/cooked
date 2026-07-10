@@ -21,7 +21,8 @@ Carte de la documentation. **Racine du repo** (standard mainteneur) :
 - [`audit-vitesse-avocat-divorce-bordeaux.md`](audit-vitesse-avocat-divorce-bordeaux.md) — audit perf d'une page expertise.
 
 ## Mémoire & historique
-- [`HISTORY-sprints.md`](HISTORY-sprints.md) — chronologie des sprints (à jour **10/07/2026**, arch #1–#5).
+- [`HISTORY-sprints.md`](HISTORY-sprints.md) — chronologie (à jour **10/07/2026**, arch complète).
+- [`../CHANGELOG.md`](../CHANGELOG.md) — jalons par date (Keep a Changelog).
 - [`ROADMAP-sprint38-handoff.md`](ROADMAP-sprint38-handoff.md) — backlog P0/P1/P2 (bannière Sprint 39 = **prod opérationnelle**, focus site).
 - [`BASELINE-demandes-historiques.md`](BASELINE-demandes-historiques.md) — demandes historiques de Nicolas.
 - [`JOURNAL-actions-contenu.md`](JOURNAL-actions-contenu.md) — journal des actions de contenu.

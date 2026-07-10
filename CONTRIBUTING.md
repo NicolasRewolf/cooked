@@ -53,9 +53,18 @@ Docs : synchro arch 10/07 + rpcs.sql
 | `wix/` | Tracker + proxy Velo (collé manuellement dans Wix) |
 | `scripts/` | Ingest GSC/DFS, contrats CI, outillage |
 | `dashboard/` | Sous-app Next.js isolée (Vercel) |
-| `contracts/` | Vecteurs de test partagés (canonical_path, branded, rpc meta) |
+| `contracts/` | Vecteurs de test partagés (voir tableau ci-dessous) |
 | `docs/` | Documentation approfondie |
 | `tests/` | Tests tracker (jsdom) + Python ingest |
+
+### Contrats (`contracts/`)
+
+| Fichier | Rôle |
+|---|---|
+| `canonical_path_vectors.json` | C3 — paths SQL / Edge / Python |
+| `branded_query_vectors.json` | Arch #3 — `gsc_is_branded` |
+| `recruitment_objet_vectors.json` | D4 — filtrage macro `form_submit` |
+| `rpc_snapshot_meta.json` | Arch #5 — hash de `supabase/rpcs.sql` |
 
 ## Contrats CI (ne pas casser)
 
@@ -64,9 +73,10 @@ Docs : synchro arch 10/07 + rpcs.sql
 | `sql-contracts` | C6 pas de cast Paris brut ; Arch #5 rpcs.sql à jour |
 | `canonical-path-contract` | SQL / Edge / Python alignés |
 | `python-ingest-contract` | Tests GSC/DFS |
-| `dashboard-contract` | Vitest dashboard |
+| `dashboard-contract` | Vitest dashboard (85 tests) |
 | `tracker-test` | Suite jsdom tracker |
-| `edge-shared-helpers` | Deno tests `_shared/` |
+| `edge-shared-helpers` | Deno tests `_shared/` (events_row, track_row, form_row) |
+| `gsc-daily-ingest` / `dfs-weekly-sync` | Crons ingestion (GitHub Actions) |
 
 ## Issues
 

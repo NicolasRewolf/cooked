@@ -3,23 +3,37 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
-## [Non publié]
+## [2026-07-10] — Revue architecture complète + repo standardisé
 
-### Ajouté
-- Fichiers standard repo : LICENSE, CONTRIBUTING, CHANGELOG, SECURITY,
-  `.env.example`, `.editorconfig`, templates GitHub, AGENTS.md.
-
-## [2026-07-10] — Revue architecture #2
-
-### Ajouté
+### Ajouté — SQL (Arch #1–#5, PRs #60–#61)
 - Lens **`live_j1`** dans `cooked_period_bounds` (ancrage J-1 Paris dashboard).
 - **`gsc_is_branded(query)`** + contrat `contracts/branded_query_vectors.json`.
 - Procédure **`cooked_snapshot_window`** (driver des 3 refreshers dashboard).
 - **`supabase/rpcs.sql`** — miroir lecture 104 RPC + gate CI `check_rpcs_sql_fresh.py`.
 
+### Ajouté — Dashboard (D6–D8, PRs #58–#59, #64)
+- **D7** `data/view-models.ts` — view-models purs (pages → props UI testables).
+- **D8** `lib/chart-geometry.ts` — géométrie SVG partagée (TrendChart, Sparkline, CohortChart).
+- **D6** `metric-columns.tsx` + `useTableViewState` — colonnes partagées Resources / Expertises / SEO.
+
+### Ajouté — Edge & tracker (D4, D9, PRs #57, #65)
+- **D4** `_shared/track_row.ts` + `_shared/form_row.ts` (builders testables Deno) ;
+  Edge **track v25**, **form-webhook v12** dans le repo.
+- **D9** refactor helpers tracker (`stripSlash`, `inStickyAncestor`, `labelOf`) —
+  iso-comportement, `COOKED_VERSION` inchangé (`sprint40`).
+
+### Ajouté — Maintenabilité repo (PR #63)
+- LICENSE, CONTRIBUTING, SECURITY, AGENTS.md, CHANGELOG, `.env.example`,
+  `.editorconfig`, templates GitHub Issues/PR.
+
 ### Modifié
 - Fin des blocs `v_shift` copiés dans 11 callers dashboard.
-- Documentation synchronisée (README, CLAUDE, OPERATIONS, HISTORY).
+- Documentation synchronisée sur l'ensemble du repo.
+- **`main` unique** — branches et worktrees Claude obsolètes purgés (PRs #57–#65 mergées).
+
+### Déploiement manuel (repo ≠ prod tant que non fait)
+- Edge : `supabase functions deploy track` + `form-webhook` (v25 / v12).
+- Tracker D9 : `python3 scripts/minify-tracker.py` → coller dans Wix Custom Code.
 
 ## [2026-07-04 — 2026-07-09] — Programme architecture C1–C9
 
@@ -30,7 +44,7 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
 - Contrat `canonical_path` unifié SQL / Edge / Python (C3).
 - Tests Python GSC/DFS + `cooked_store.py` (C7).
 - Dashboard : `lib/dates.ts`, Zod, vitest (C9).
-- Modules Edge `_shared/` (C5).
+- Modules Edge `_shared/events_row` (C5).
 
 ## [2026-07-01 — 2026-07-03] — Audit Fable 5 (T-01 → T-19)
 
