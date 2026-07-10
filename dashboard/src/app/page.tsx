@@ -9,16 +9,15 @@ import {
   getAssistedQuarter,
 } from "@/data/dashboard";
 import { getResourcesTrend } from "@/data/trend";
-import { buildMarkers } from "@/lib/annotations";
+import { buildResourcesView } from "@/data/view-models";
 import { CohortChart } from "@/components/CohortChart";
 import { ObjectiveLine } from "@/components/ObjectiveLine";
 import { requireUser } from "@/lib/auth";
-import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
+import { KpiHeader } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
 import { PeriodSelector } from "@/components/PeriodSelector";
 import { ResourcesTable } from "@/components/ResourcesTable";
 import { TrendChart } from "@/components/TrendChart";
-import { num, delta } from "@/lib/format";
 import type { Period } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -64,30 +63,13 @@ async function Content({ period }: { period: Period }) {
     }),
   ]);
   const trend = trendResult.data;
-  // B1 — toutes les annotations de la fenêtre sur le graphe visiteurs (pas de filtre path ici).
-  const markers = buildMarkers(annotations, kpis?.cooked_start, trend?.visitors_daily?.length ?? 0);
-  // Fusion des « contacts assistés » (attribution page d'entrée) dans les lignes.
-  const byPath = new Map(assisted.map((a) => [a.path, a]));
-  const rows = rawRows.map((r) => {
-    const a = byPath.get(r.path);
-    return a ? { ...r, assisted_contacts: a.assisted_contacts, assisted_prev: a.assisted_prev } : r;
+  const { rows, items, markers } = buildResourcesView({
+    kpis,
+    rows: rawRows,
+    trend,
+    assisted,
+    annotations,
   });
-
-  const items: KpiItem[] = kpis
-    ? [
-        { label: "Visiteurs uniques", value: num(kpis.visitors_n), delta: delta(kpis.visitors_n, kpis.visitors_prev), series: trend?.visitors_daily },
-        { label: "Pages vues", value: num(kpis.pageviews_n), delta: delta(kpis.pageviews_n, kpis.pageviews_prev), series: trend?.pageviews_daily },
-        {
-          label: "Contacts",
-          value: num(kpis.contacts_n),
-          delta: delta(kpis.contacts_n, kpis.contacts_prev),
-          series: trend?.contacts_daily,
-          tooltip: "Actions faites sur la page (appel ou formulaire).",
-        },
-        { label: "Clics Google", value: num(kpis.gsc_clicks_n), delta: delta(kpis.gsc_clicks_n, kpis.gsc_clicks_prev), series: trend?.gsc_clicks_daily },
-        { label: "Affichages Google", value: num(kpis.gsc_impressions_n), delta: delta(kpis.gsc_impressions_n, kpis.gsc_impressions_prev), series: trend?.gsc_impressions_daily },
-      ]
-    : [];
 
   return (
     <div className="space-y-[18px]">

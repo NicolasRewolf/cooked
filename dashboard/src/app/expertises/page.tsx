@@ -2,13 +2,13 @@ import { Suspense } from "react";
 import { parsePeriod } from "@/lib/periods";
 import { getExpertisesKpis, getExpertisesOverview } from "@/data/dashboard";
 import { getExpertisesTrend } from "@/data/trend";
+import { buildExpertisesView } from "@/data/view-models";
 import { requireUser } from "@/lib/auth";
-import { KpiHeader, type KpiItem } from "@/components/KpiHeader";
+import { KpiHeader } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
 import { PeriodSelector } from "@/components/PeriodSelector";
 import { ExpertisesTable } from "@/components/ExpertisesTable";
 import { TrendChart } from "@/components/TrendChart";
-import { num, pct, delta } from "@/lib/format";
 import type { Period } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -45,33 +45,7 @@ async function Content({ period }: { period: Period }) {
     getExpertisesTrend(period),
   ]);
   const trend = trendResult.data;
-
-  const paidShare =
-    kpis && kpis.total_entries_n > 0 ? (100 * kpis.paid_entries_n) / kpis.total_entries_n : null;
-  const orgShare =
-    kpis && kpis.total_entries_n > 0 ? (100 * kpis.organic_entries_n) / kpis.total_entries_n : null;
-
-  const items: KpiItem[] = kpis
-    ? [
-        { label: "Visiteurs uniques", value: num(kpis.visitors_n), delta: delta(kpis.visitors_n, kpis.visitors_prev), series: trend?.visitors_daily },
-        {
-          label: "Part payante",
-          value: pct(paidShare, 0),
-          hint: orgShare != null ? `${pct(orgShare, 0)} organique` : undefined,
-          tooltip:
-            "Canal d'acquisition des sessions expertise (1er pageview de la session). Le reste = referral / direct / réseaux. Spam Baidu exclu.",
-        },
-        {
-          label: "Contacts",
-          value: num(kpis.contacts_n),
-          delta: delta(kpis.contacts_n, kpis.contacts_prev),
-          series: trend?.contacts_daily,
-          tooltip: "Actions faites sur la page (appel ou formulaire).",
-        },
-        { label: "Clics Google", value: num(kpis.gsc_clicks_n), delta: delta(kpis.gsc_clicks_n, kpis.gsc_clicks_prev), series: trend?.gsc_clicks_daily },
-        { label: "Affichages Google", value: num(kpis.gsc_impressions_n), delta: delta(kpis.gsc_impressions_n, kpis.gsc_impressions_prev), series: trend?.gsc_impressions_daily },
-      ]
-    : [];
+  const { items } = buildExpertisesView({ kpis, trend });
 
   return (
     <div className="space-y-[18px]">
