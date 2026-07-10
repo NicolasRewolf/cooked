@@ -27,7 +27,7 @@ AS $$
 DECLARE
   v_kind      text;
   v_lens      text;
-  v_today     date := (now() AT TIME ZONE 'Europe/Paris')::date;
+  v_today     date := public.paris_today();
   v_gsc_last  date;
   v_anchor    date;
   v_n_start   date;
