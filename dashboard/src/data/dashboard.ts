@@ -1,124 +1,112 @@
 import "server-only";
-import { admin } from "@/lib/supabase-admin";
-import type {
-  Period,
-  ResourceRow,
-  ResourceKpis,
-  ExpertiseRow,
-  ExpertiseKpis,
-  SeoQueryRow,
-  SeoKpis,
-} from "@/lib/types";
 
-class RpcError extends Error {
-  constructor(rpc: string, cause: unknown) {
-    super(`RPC ${rpc} a échoué: ${(cause as { message?: string })?.message ?? String(cause)}`);
-    this.name = "RpcError";
-  }
-}
+import { callRpc } from "@/data/call-rpc";
+import {
+  annotationRowsSchema,
+  articleDetailSchema,
+  assistedQuarterSchema,
+  assistedRowsSchema,
+  cohortsResultSchema,
+  expertiseKpisSchema,
+  expertiseRowsSchema,
+  interventionEffectSchema,
+  resourceKpisSchema,
+  resourceRowsSchema,
+  seoKpisSchema,
+  seoQueryRowsSchema,
+  type Annotation,
+  type ArticleDetail,
+  type AssistedQuarter,
+  type AssistedRow,
+  type CohortsResult,
+  type ExpertiseKpis,
+  type ExpertiseRow,
+  type InterventionEffect,
+  type Period,
+  type ResourceKpis,
+  type ResourceRow,
+  type SeoKpis,
+  type SeoQueryRow,
+} from "@/data/rpc-schemas";
 
 export async function getResourcesOverview(period: Period): Promise<ResourceRow[]> {
-  const { data, error } = await admin.rpc("dashboard_resources_overview", {
-    period_kind: period,
-    max_rows: 100,
-  });
-  if (error) throw new RpcError("dashboard_resources_overview", error);
-  return (data ?? []) as ResourceRow[];
+  return callRpc("dashboard_resources_overview", { period_kind: period, max_rows: 100 }, resourceRowsSchema);
 }
 
 export async function getResourcesKpis(period: Period): Promise<ResourceKpis | null> {
-  const { data, error } = await admin.rpc("dashboard_resources_kpis", { period_kind: period });
-  if (error) throw new RpcError("dashboard_resources_kpis", error);
-  return ((data ?? [])[0] as ResourceKpis) ?? null;
+  return callRpc("dashboard_resources_kpis", { period_kind: period }, resourceKpisSchema);
 }
 
 export async function getExpertisesOverview(period: Period): Promise<ExpertiseRow[]> {
-  const { data, error } = await admin.rpc("dashboard_expertises_overview", {
-    period_kind: period,
-    max_rows: 100,
-  });
-  if (error) throw new RpcError("dashboard_expertises_overview", error);
-  return (data ?? []) as ExpertiseRow[];
+  return callRpc("dashboard_expertises_overview", { period_kind: period, max_rows: 100 }, expertiseRowsSchema);
 }
 
 export async function getExpertisesKpis(period: Period): Promise<ExpertiseKpis | null> {
-  const { data, error } = await admin.rpc("dashboard_expertises_kpis", { period_kind: period });
-  if (error) throw new RpcError("dashboard_expertises_kpis", error);
-  return ((data ?? [])[0] as ExpertiseKpis) ?? null;
+  return callRpc("dashboard_expertises_kpis", { period_kind: period }, expertiseKpisSchema);
 }
 
 export async function getSeoByQuery(
   period: Period,
   opts: { minVolume?: number; maxRows?: number } = {},
 ): Promise<SeoQueryRow[]> {
-  const { data, error } = await admin.rpc("dashboard_seo_by_query", {
-    period_kind: period,
-    scope: "ressource",
-    min_volume: opts.minVolume ?? 0,
-    max_rows: opts.maxRows ?? 200,
-  });
-  if (error) throw new RpcError("dashboard_seo_by_query", error);
-  return (data ?? []) as SeoQueryRow[];
+  return callRpc(
+    "dashboard_seo_by_query",
+    {
+      period_kind: period,
+      scope: "ressource",
+      min_volume: opts.minVolume ?? 0,
+      max_rows: opts.maxRows ?? 200,
+    },
+    seoQueryRowsSchema,
+  );
 }
 
-// KPI SEO agrégés côté SQL — total quick wins / requêtes / clics indépendants du cap du tableau.
 export async function getSeoKpis(period: Period): Promise<SeoKpis | null> {
-  const { data, error } = await admin.rpc("dashboard_seo_kpis", {
-    period_kind: period,
-    scope: "ressource",
-  });
-  if (error) throw new RpcError("dashboard_seo_kpis", error);
-  return ((data ?? [])[0] as SeoKpis) ?? null;
+  return callRpc(
+    "dashboard_seo_kpis",
+    { period_kind: period, scope: "ressource" },
+    seoKpisSchema,
+  );
 }
-
-// ── Vague A : contacts assistés + fiche article ──────────────────────────────
-import type {
-  AssistedRow,
-  ArticleDetail,
-  Annotation,
-  InterventionEffect,
-  CohortsResult,
-  AssistedQuarter,
-} from "@/lib/types";
 
 export async function getResourcesAssisted(period: Period): Promise<AssistedRow[]> {
-  const { data, error } = await admin.rpc("dashboard_resources_assisted", { period_kind: period });
-  if (error) throw new RpcError("dashboard_resources_assisted", error);
-  return (data ?? []) as AssistedRow[];
+  return callRpc("dashboard_resources_assisted", { period_kind: period }, assistedRowsSchema);
 }
 
 export async function getArticleDetail(path: string, period: Period): Promise<ArticleDetail | null> {
-  const { data, error } = await admin.rpc("dashboard_article_detail", {
-    p_path: path,
-    period_kind: period,
-  });
-  if (error) throw new RpcError("dashboard_article_detail", error);
-  return (data as ArticleDetail) ?? null;
+  const detail = await callRpc(
+    "dashboard_article_detail",
+    { p_path: path, period_kind: period },
+    articleDetailSchema.nullable(),
+  );
+  return detail;
 }
 
-// ── B1 : journal d'interventions (annotations dans la fenêtre, lu en live) ────
 export async function getAnnotations(period: Period): Promise<Annotation[]> {
-  const { data, error } = await admin.rpc("dashboard_annotations", { period_kind: period });
-  if (error) throw new RpcError("dashboard_annotations", error);
-  return (data ?? []) as Annotation[];
+  return callRpc("dashboard_annotations", { period_kind: period }, annotationRowsSchema);
 }
 
-// ── B2 : lecture avant/après d'une intervention site_change (RPC live, 1 page) ─
 export async function getInterventionEffect(path: string, day: string): Promise<InterventionEffect> {
-  const { data, error } = await admin.rpc("dashboard_intervention_effect", { p_path: path, p_day: day });
-  if (error) throw new RpcError("dashboard_intervention_effect", error);
-  return data as InterventionEffect;
+  return callRpc("dashboard_intervention_effect", { p_path: path, p_day: day }, interventionEffectSchema);
 }
 
-// ── B3 : cohortes du contrat + objectif trimestre (RPCs live, service_role) ────
+export async function getInterventionEffects(
+  path: string,
+  interventions: { day: string; label: string }[],
+): Promise<{ day: string; label: string; effect: InterventionEffect }[]> {
+  return Promise.all(
+    interventions.map(async (it) => ({
+      label: it.label,
+      day: it.day,
+      effect: await getInterventionEffect(path, it.day),
+    })),
+  );
+}
+
 export async function getResourcesCohorts(): Promise<CohortsResult> {
-  const { data, error } = await admin.rpc("dashboard_resources_cohorts");
-  if (error) throw new RpcError("dashboard_resources_cohorts", error);
-  return data as CohortsResult;
+  return callRpc("dashboard_resources_cohorts", undefined, cohortsResultSchema);
 }
 
 export async function getAssistedQuarter(): Promise<AssistedQuarter> {
-  const { data, error } = await admin.rpc("dashboard_assisted_quarter");
-  if (error) throw new RpcError("dashboard_assisted_quarter", error);
-  return data as AssistedQuarter;
+  return callRpc("dashboard_assisted_quarter", undefined, assistedQuarterSchema);
 }
