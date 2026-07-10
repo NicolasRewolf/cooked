@@ -280,7 +280,7 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
 - Les analyses, graphes, rapports produits depuis Cooked
 - Les scripts d'outillage (`scripts/minify-tracker.py`,
   `scripts/gsc_ingest.py`, `scripts/gsc_common.py`,
-  `scripts/deploy_track.py`, etc.)
+  `npx supabase functions deploy`, etc.)
 - Le workflow GitHub Actions GSC (`.github/workflows/gsc-daily-ingest.yml`)
 - L'ingestion DataForSEO (`scripts/dfs_common.py`, `dfs_sync.py`,
   table `dfs_keyword_volume`, cron `dfs-weekly-sync.yml`)

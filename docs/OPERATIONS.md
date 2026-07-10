@@ -140,7 +140,6 @@ cooked/
 │   ├── gsc_ingest.py                  — CLI : path-query | query-page
 │   ├── dfs_common.py                  — Lib ingestion DataForSEO (search_volume FR)
 │   ├── dfs_sync.py                    — CLI sync hebdo top 500 keywords GSC → DFS
-│   ├── deploy_track.py                — Déploi Edge Function track (MCP / CLI)
 │   ├── generate_rpcs_sql.py           — Régénère supabase/rpcs.sql (DATABASE_URL)
 │   ├── check_rpcs_sql_fresh.py        — Gate CI : RPC modifiée → miroir à jour
 │   ├── check_migration_paris_date.py  — Gate CI C6 (pas de cast Paris brut)
