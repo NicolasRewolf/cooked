@@ -9,7 +9,6 @@ on:
       - 'supabase/functions/_shared/events_row_test.ts'
       - 'supabase/functions/track/index.ts'
       - 'supabase/functions/form-webhook/index.ts'
-      - 'scripts/deploy_track.py'
       - '.github/workflows/edge-shared-helpers.yml'
   push:
     branches: [main]
