@@ -135,16 +135,32 @@ cooked/
 │   ├── dfs_common.py                  — Lib ingestion DataForSEO (search_volume FR)
 │   ├── dfs_sync.py                    — CLI sync hebdo top 500 keywords GSC → DFS
 │   ├── deploy_track.py                — Déploi Edge Function track (MCP / CLI)
+│   ├── generate_rpcs_sql.py           — Régénère supabase/rpcs.sql (DATABASE_URL)
+│   ├── check_rpcs_sql_fresh.py        — Gate CI : RPC modifiée → miroir à jour
+│   ├── check_migration_paris_date.py  — Gate CI C6 (pas de cast Paris brut)
+│   ├── validate_gsc_is_branded.sql    — Pilote Arch #3 branded
+│   ├── validate_period_bounds_live_j1.sql — Pilote Arch #1 live_j1
 │   ├── cpi_validation_j28.sql         — Harnais validation prédictive CPI (08/07/2026)
-│   ├── requirements-gsc.txt           — pip deps pour scripts GSC
+│   ├── requirements-gsc.txt             — pip deps pour scripts GSC
 │   └── requirements-dfs.txt           — pip deps pour scripts DataForSEO
+├── contracts/
+│   ├── canonical_path_vectors.json    — Contrat C3 canonical_path
+│   ├── branded_query_vectors.json     — Contrat Arch #3 gsc_is_branded
+│   └── rpc_snapshot_meta.json         — Hash + count du miroir rpcs.sql
 ├── .github/workflows/
 │   ├── gsc-daily-ingest.yml           — cron GSC quotidien (06:00 UTC)
-│   └── dfs-weekly-sync.yml            — cron DataForSEO hebdo (lundi 07:00 UTC)
+│   ├── dfs-weekly-sync.yml            — cron DataForSEO hebdo (lundi 07:00 UTC)
+│   ├── sql-contracts.yml              — C6 paris_date + Arch #5 rpcs.sql
+│   ├── canonical-path-contract.yml    — C3 SQL / Edge / Python
+│   ├── python-ingest-contract.yml     — C7 tests GSC/DFS
+│   ├── dashboard-contract.yml         — C9 vitest dashboard
+│   ├── tracker-test.yml               — Suite jsdom tracker
+│   └── edge-shared-helpers.yml        — Deno tests Edge _shared/
 ├── supabase/
-│   ├── schema.sql                     — events table + indexes + RLS
-│   ├── migrations/                    — DDL nommé (source de vérité)
-│   ├── views.sql                      — functions, views, snapshot, crons (legacy)
+│   ├── schema.sql                     — events table + indexes + RLS (référence)
+│   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
+│   ├── rpcs.sql                       — corps complets 104 RPC (généré, lecture seule)
+│   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
 │       └── form-webhook/index.ts      — Wix Automations webhook for forms
@@ -187,7 +203,9 @@ All RPCs are `granted to service_role only`. No `anon` / `authenticated` access.
 Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Claude. Toutes `service_role` only.
 
 **Périodes** : `period_kind` = `today` | `week` | `month` | `rolling_28` | `rolling_90`.
-**Lens** (`cooked_period_bounds`) : `live` (Cooked, calendrier Paris) | `gsc` | `cross` (fin alignée sur dernier jour GSC ingéré).
+**Lens** (`cooked_period_bounds`) : `live` (Cooked, calendrier Paris, KPIs « aujourd'hui »)
+| `live_j1` (dashboard : fin J-1 Paris) | `gsc` | `cross` (fin alignée sur dernier jour GSC ingéré).
+**Branded GSC** : `gsc_is_branded(query)` — ne pas réécrire `plouton` à la main.
 
 | RPC | Rôle |
 |---|---|
@@ -448,11 +466,17 @@ supabase functions deploy track --no-verify-jwt
 rejouer via `supabase migration up`. C'est la procédure de bootstrap
 canonique d'une base fraîche.
 
-`supabase/schema.sql` et `supabase/views.sql` sont des **dumps de référence
-en lecture seule** : pratiques pour lire le DDL d'un coup d'œil, mais
-**désynchronisés** (views.sql est figé au Sprint 37, ~40 migrations de
-retard — ne référence ni le CPI, ni l'attribution, ni le dashboard). **Ne
-pas les rejouer comme source d'un déploiement.**
+**Miroirs de lecture (ne pas rejouer en déploiement)** :
+
+| Fichier | Contenu | Régénération |
+|---|---|---|
+| `supabase/rpcs.sql` | **Corps complets** des 104 fonctions/procédures publiques | `python3 scripts/generate_rpcs_sql.py` (`DATABASE_URL`) ; gate CI si migration touche une RPC |
+| `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
+| `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
+
+Les migrations restent le journal ; `rpcs.sql` évite l'archéologie dans
+12+ redéfinitions de la même RPC. **Ne jamais éditer `rpcs.sql` à la main**
+— régénérer depuis la prod après merge d'une migration SQL.
 
 ### Updating the browser tracker
 

@@ -122,7 +122,8 @@ pas sur la volatilité de la conversion (recalibrée 17/06).
    positionnel et attribution seulement.
 4. **Marée vs ranking** (cf. §3.1) — la GAV a perdu 282 clics à position
    5,1 constante : c'était la SERP, pas la page.
-5. **Branded** : `query !~* 'plouton'` partout où on juge un CTR.
+5. **Branded** : `NOT public.gsc_is_branded(query)` partout où on juge un CTR
+   (équivalent historique : `query !~* 'plouton'`).
 6. **Petits volumes** : lissage empirical Bayes + grades A/B/C. Sous
    n_org 30, on émet des hypothèses, pas des verdicts.
 7. **Quick win GSC non vérifié** (retex 11/06/2026) : avant d'annoncer

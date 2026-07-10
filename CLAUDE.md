@@ -200,6 +200,18 @@ docs/plan-correction-audit-2026-07-02.md, chronologie : HISTORY-sprints).
 - **Backup externe : décliné par Nicolas le 02/07** (risque assumé) — ne
   plus le proposer avant ~juin 2027 (purge 400 j des events réels).
 
+**Revue architecture 10/07/2026 (Arch #1–#5, PRs #60–#61)** — 2e passe
+après C1–C9 ; tue les fuites SQL restantes :
+- **`live_j1`** dans `cooked_period_bounds` : fenêtre dashboard ancrée J-1
+  Paris (lens `live` inchangé pour `site_kpis_compare` « aujourd'hui ») ;
+  fin des 11 blocs `v_shift` copiés.
+- **`gsc_is_branded(query)`** : prédicat unique branded GSC (vecteur
+  `contracts/branded_query_vectors.json`).
+- **`cooked_snapshot_window(w, grain)`** : driver bornes `live_j1` + GSC +
+  `cooked_events_window` pour les 3 refreshers dashboard.
+- **`supabase/rpcs.sql`** : miroir lecture des 104 corps RPC (`pg_get_functiondef`) ;
+  gate CI `check_rpcs_sql_fresh.py` si migration redéfinit une RPC.
+
 Cooked sert de remplaçant GA4 : des données comportementales fiables pour
 Nicolas et Me Plouton, et les analyses Cooked × GSC (intent matching,
 funnel SEO complet, pogo-stick × ranking) consommées en question/réponse.
@@ -227,6 +239,7 @@ faux). Pour prioriser le travail SEO/contenu :
 |---|---|
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
+| Corps complets des RPC (lecture agent) | `supabase/rpcs.sql` |
 | Ce qui reste à faire (P0/P1/P2) | `docs/ROADMAP-sprint38-handoff.md` |
 | État de fiabilité des données (audits) | `docs/data-quality-audit-2026-06-10.md` |
 | Chronologie des sprints | `docs/HISTORY-sprints.md` |
@@ -248,7 +261,7 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
 - Les 3 tables Google Search Console (Sprint 31-32) :
   `gsc_path_daily`, `gsc_query_daily`, `gsc_query_page_daily`
 - Les migrations Supabase (`supabase/migrations/*.sql`,
-  `supabase/views.sql`)
+  `supabase/views.sql`, `supabase/rpcs.sql` miroir lecture)
 - Le pg_cron de rebuild nocturne `refresh_seo_url_snapshot()`
 - Le contrat des RPCs publiées (signatures, types de retour,
   comportement)
@@ -329,9 +342,9 @@ aplomb ; aucune vitesse de livraison ne vaut ce coût.
    poursuivre la backfill URL-decode globale avec un bug subtil.
 
 5. **Un fix = une migration nommée** — pas de UPDATE manuel non
-   tracé sur la DB. Tout fix Cooked passe par une migration commitée
-   dans `supabase/views.sql` ou `supabase/migrations/*.sql` pour
-   pouvoir rejouer / auditer plus tard.
+ tracé sur la DB. Tout fix Cooked passe par une migration commitée
+ dans `supabase/migrations/*.sql` ; si une **RPC** change, régénérer
+ `supabase/rpcs.sql` (`scripts/generate_rpcs_sql.py`) — gate CI Arch #5.
 
 ---
 
@@ -393,7 +406,11 @@ RPCs publiées — analyses historiques & snapshot :
 RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
 
 - `gsc_last_data_day()` — dernier jour `gsc_path_daily` (lag Google)
-- `cooked_period_bounds(period_kind, data_lens)` — `live` | `gsc` | `cross` (cross = fin alignée GSC)
+- `cooked_period_bounds(period_kind, data_lens)` — `live` | `live_j1`
+  (dashboard : fin J-1 Paris) | `gsc` | `cross` (cross = fin alignée GSC)
+- `gsc_is_branded(query)` — prédicat branded GSC unique (exclut « plouton »)
+- `cooked_snapshot_window(p_window, p_grain)` — driver refresh dashboard
+  (bornes + temp `_cooked_ev`, grain `clean`|`human`)
 - `site_kpis_compare(period_kind)` — KPIs Cooked (lens live)
 - `site_gsc_kpis_compare(period_kind)` — KPIs GSC (lens gsc)
 - `pages_overview_unified(max_rows)` — univers pages (~490 paths), contacts macro séparés de booking_intent
