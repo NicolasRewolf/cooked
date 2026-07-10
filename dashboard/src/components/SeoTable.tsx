@@ -2,23 +2,25 @@
 
 import { useState } from "react";
 import { SortableTable, type Column } from "./SortableTable";
-import { Badge, Trend } from "./ui";
+import { Badge, Trend, dirClass, dirGlyph } from "./ui";
 import { cn } from "@/lib/cn";
 import type { SeoQueryRow } from "@/lib/types";
 import { num, dec, pct, delta, prettyPath } from "@/lib/format";
 
-// Tendance de position : une baisse du chiffre = montée dans le classement (bien).
+// Tendance de position : sémantique INVERSÉE — une baisse du chiffre = montée
+// dans le classement (bien). gain = prev - now, puis vocabulaire delta partagé.
 function PosTrend({ now, prev }: { now: number | null; prev: number | null }) {
   if (now == null || prev == null) return null;
   const gain = prev - now; // > 0 = a gagné des places
-  if (Math.abs(gain) < 0.2) return <span className="font-mono text-[10px] text-faint">▬</span>;
-  const up = gain > 0;
+  if (Math.abs(gain) < 0.2)
+    return <span className={cn("font-mono text-[10px]", dirClass("flat"))}>{dirGlyph("flat")}</span>;
+  const dir = gain > 0 ? "up" : "down";
   return (
     <span
-      className={cn("font-mono text-[10px] font-medium", up ? "text-up" : "text-down")}
-      title={`${up ? "+" : "−"}${Math.abs(gain).toFixed(1)} place(s) vs période précédente`}
+      className={cn("font-mono text-[10px] font-medium", dirClass(dir))}
+      title={`${dir === "up" ? "+" : "−"}${Math.abs(gain).toFixed(1)} place(s) vs période précédente`}
     >
-      {up ? "▲" : "▼"} {Math.abs(gain).toFixed(1).replace(".", ",")}
+      {dirGlyph(dir)} {Math.abs(gain).toFixed(1).replace(".", ",")}
     </span>
   );
 }

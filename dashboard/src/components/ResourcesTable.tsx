@@ -1,59 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { replaceUrlParams } from "@/lib/url";
 import { SortableTable, type Column } from "./SortableTable";
-import { Badge, ConfidenceBadge, Trend } from "./ui";
+import { Badge, ConfidenceBadge } from "./ui";
+import {
+  bestQueryColumn,
+  contactsColumn,
+  ctrColumn,
+  dwellColumn,
+  gscClicksColumn,
+  positionColumn,
+  santeColumn,
+  visitorsColumn,
+} from "./metric-columns";
+import { useTableViewState, type UrlParamsReader } from "./useTableViewState";
 import { cn } from "@/lib/cn";
 import type { ResourceRow } from "@/lib/types";
-import { num, seconds, dec, pct, delta, prettyPath } from "@/lib/format";
-import { momentumDir, momentumLabelFr, santeFromMomentum } from "@/lib/momentum";
-
-// ── Verdict de santé : momentum (relatif au site) + grade de confiance ───────
-// Pour ces articles éducatifs, le potentiel hors-conversion est le bon repère.
-function HealthCell({ r }: { r: ResourceRow }) {
-  if (r.cpi_grade == null || r.cpi_grade === "C" || r.momentum == null) {
-    return (
-      <span className="font-mono text-[11px] text-dim">—</span>
-    );
-  }
-  const m = r.momentum;
-  const dir = momentumDir(m);
-  const dot = dir === "up" ? "bg-up" : dir === "down" ? "bg-warn" : "bg-faint";
-  const word = momentumLabelFr(dir);
-  const gisement = (r.cpi_grade === "A" || r.cpi_grade === "B") && r.convertit === false;
-  return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", dot)} />
-      <span className="text-[11.5px] text-[#45423c]">{word}</span>
-      {gisement && (
-        <span aria-label="gisement" className="text-[11px] text-accent">
-          ★
-        </span>
-      )}
-    </span>
-  );
-}
-
-// ── CTR réel vs CTR attendu à la position (courbe du site) ────────────────────
-// Démasque un bon classement qui ne ramène pas de clics (titre / méta à revoir).
-function CtrCell({ r }: { r: ResourceRow }) {
-  if (r.gsc_ctr_pct == null) return <span className="text-dim">—</span>;
-  const exp = r.ctr_expected;
-  let cls = "text-[#45423c]";
-  if (exp != null) {
-    if (r.gsc_ctr_pct >= exp) cls = "text-up";
-    else if (r.gsc_ctr_pct < exp * 0.7) cls = "text-alert";
-  }
-  return (
-    <span className="whitespace-nowrap">
-      <span className={cn("font-mono text-[11.5px] font-medium", cls)}>{pct(r.gsc_ctr_pct)}</span>
-      {exp != null && <span className="font-mono text-[9.5px] text-dim"> / {pct(exp, 0)}</span>}
-    </span>
-  );
-}
+import { num, prettyPath } from "@/lib/format";
+import { santeFromMomentum } from "@/lib/momentum";
 
 // ── Source : part du trafic venant de Google (clics GSC vs visiteurs Cooked) ──
 // Faible = l'article vit sur réseaux / IA / direct (plus volatil que la recherche).
@@ -69,6 +35,7 @@ function MixBadge({ r }: { r: ResourceRow }) {
   return <Badge tone={tone}>{label}</Badge>;
 }
 
+// Colonnes distinctives des articles (le reste vient de metric-columns).
 // periodQ = « ?period=… » à propager aux liens de fiche (vide si période par défaut).
 function buildColumns(periodQ: string): Column<ResourceRow>[] {
   return [
@@ -103,15 +70,7 @@ function buildColumns(periodQ: string): Column<ResourceRow>[] {
       </div>
     ),
   },
-  {
-    key: "sante",
-    header: "santé",
-    align: "left",
-    headerInfo:
-      "Momentum des clics Google relatif au site : ● monte / ● stable / ● ralentit. ★ gisement = fort potentiel (capture + lecture) mais pas encore de contact → poser un pont. — = trop peu de trafic organique pour un verdict.",
-    sortValue: (r) => r.momentum,
-    render: (r) => <HealthCell r={r} />,
-  },
+  santeColumn,
   {
     key: "days_live",
     header: "âge",
@@ -125,60 +84,13 @@ function buildColumns(periodQ: string): Column<ResourceRow>[] {
       </span>
     ),
   },
-  {
-    key: "visitors",
-    header: "visiteurs",
-    align: "right",
-    sortValue: (r) => r.unique_visitors,
-    render: (r) => (
-      <div className="flex flex-col items-end leading-tight">
-        <span className="font-mono text-[12.5px] font-medium text-ink">{num(r.unique_visitors)}</span>
-        <Trend d={delta(r.unique_visitors, r.unique_visitors_prev)} />
-      </div>
-    ),
-  },
-  {
-    key: "dwell",
-    header: "lecture",
-    align: "right",
-    headerInfo:
-      "Temps de lecture médian (réseaux sociaux exclus — leurs passages d'1 s faussent la médiane).",
-    sortValue: (r) => r.dwell_median_s,
-    render: (r) => <span className="font-mono text-[11.5px] text-[#45423c]">{seconds(r.dwell_median_s)}</span>,
-  },
-  {
-    key: "gsc_clicks",
-    header: "clics",
-    align: "right",
-    sortValue: (r) => r.gsc_clicks,
-    render: (r) => (
-      <div className="flex flex-col items-end leading-tight">
-        <span className="font-mono text-[12px] font-medium text-ink">{num(r.gsc_clicks)}</span>
-        <Trend d={delta(r.gsc_clicks, r.gsc_clicks_prev)} />
-      </div>
-    ),
-  },
-  {
-    key: "ctr",
-    header: "ctr / att.",
-    align: "right",
-    subHeader: "réel / attendu",
-    headerInfo:
-      "CTR réel vs CTR attendu à cette position (courbe de clics du site). En orange : bien classé mais peu cliqué → titre et méta-description à retravailler.",
-    sortValue: (r) =>
-      r.gsc_ctr_pct != null && r.ctr_expected != null ? r.gsc_ctr_pct - r.ctr_expected : null,
-    render: (r) => <CtrCell r={r} />,
-  },
-  {
-    key: "position",
-    header: "pos.",
-    align: "right",
-    headerInfo: "Position moyenne Google, pondérée par impressions, toutes requêtes confondues.",
-    sortValue: (r) => r.gsc_position_avg,
-    render: (r) => (
-      <span className="font-mono text-[11.5px] text-[#45423c]">{dec(r.gsc_position_avg)}</span>
-    ),
-  },
+  visitorsColumn,
+  dwellColumn(
+    "Temps de lecture médian (réseaux sociaux exclus — leurs passages d'1 s faussent la médiane).",
+  ),
+  gscClicksColumn,
+  ctrColumn,
+  positionColumn,
   {
     key: "mix",
     header: "source",
@@ -188,39 +100,8 @@ function buildColumns(periodQ: string): Column<ResourceRow>[] {
     sortValue: (r) => (r.unique_visitors > 0 ? r.gsc_clicks / r.unique_visitors : null),
     render: (r) => <MixBadge r={r} />,
   },
-  {
-    key: "best_query",
-    header: "meilleure requête",
-    align: "left",
-    sortValue: (r) => r.best_query_volume_fr,
-    render: (r) =>
-      r.best_query ? (
-        <div className="max-w-[180px]">
-          <div className="truncate text-[11.5px] text-[#45423c]">{r.best_query}</div>
-          <div className="font-mono text-[9.5px] text-dim">
-            {r.best_query_volume_fr != null ? `${num(r.best_query_volume_fr)} rech./mois` : "volume n.d."}
-          </div>
-        </div>
-      ) : (
-        <span className="text-dim">—</span>
-      ),
-  },
-  {
-    key: "contacts",
-    header: "contacts",
-    align: "right",
-    subHeader: "sur la page",
-    headerInfo:
-      "Appels ou formulaires effectués PENDANT la visite de cette page. C'est l'endroit du geste qui reçoit le crédit.",
-    sortValue: (r) => r.contacts,
-    render: (r) => (
-      <span
-        className={cn("font-mono text-[11.5px] font-semibold", r.contacts > 0 ? "text-ink" : "text-dim")}
-      >
-        {num(r.contacts)}
-      </span>
-    ),
-  },
+  bestQueryColumn,
+  contactsColumn,
   {
     key: "assisted",
     header: "assistés",
@@ -249,48 +130,48 @@ function santeOf(r: ResourceRow): Exclude<SanteFilter, "tous"> {
   return santeFromMomentum(r.momentum, r.cpi_grade, r.convertit);
 }
 
+// Filtres de vue ⇄ URL (fonctions de portée module : identité stable pour le hook).
+interface ResourcesFilters {
+  q: string;
+  theme: string;
+  sante: SanteFilter;
+  recents: boolean;
+}
+
+function filtersFromUrl(sp: UrlParamsReader): ResourcesFilters {
+  const s = sp.get("sante");
+  const valid = ["monte", "stable", "ralentit", "gisement", "nonscore"];
+  return {
+    q: sp.get("q") ?? "",
+    theme: sp.get("theme") ?? "tous",
+    sante: s && valid.includes(s) ? (s as SanteFilter) : "tous",
+    recents: sp.get("recents") === "1",
+  };
+}
+
+function filtersToUrl(f: ResourcesFilters): Record<string, string | null> {
+  return {
+    q: f.q.trim() || null,
+    theme: f.theme === "tous" ? null : f.theme,
+    sante: f.sante === "tous" ? null : f.sante,
+    recents: f.recents ? "1" : null,
+  };
+}
+
+const resourcesFiltersSpec = { init: filtersFromUrl, toUrl: filtersToUrl };
+
 export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
   const searchParams = useSearchParams();
   // Période courante → propagée aux liens de fiche (sauf défaut rolling_90).
   const periodQ = searchParams.get("period") === "rolling_28" ? "?period=rolling_28" : "";
 
-  // État de vue initialisé DEPUIS l'URL (reload = état restauré). Init lazy : lu une
-  // seule fois ; le remount sur changement de route/période le relit. Le bouton Retour
-  // du navigateur restaure les filtres car on revient sur une entrée d'historique
-  // porteuse de ces params (la fiche est une AUTRE route → remount → ré-init).
-  const [recentOnly, setRecentOnly] = useState(() => searchParams.get("recents") === "1");
-  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
-  const [theme, setTheme] = useState<string>(() => searchParams.get("theme") ?? "tous");
-  const [sante, setSante] = useState<SanteFilter>(() => {
-    const s = searchParams.get("sante");
-    const valid = ["monte", "stable", "ralentit", "gisement", "nonscore"];
-    return s && valid.includes(s) ? (s as SanteFilter) : "tous";
+  // État de vue (filtres + tri) ⇄ URL — machine partagée, débounce 300 ms.
+  const { sortKey, sortDir, onSortChange, filters, setFilter } = useTableViewState({
+    defaultSortKey: "visitors",
+    filters: resourcesFiltersSpec,
+    debounceMs: 300,
   });
-  const [sortKey, setSortKey] = useState(() => searchParams.get("sort") ?? "visitors");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">(() =>
-    searchParams.get("dir") === "asc" ? "asc" : "desc",
-  );
-
-  // État de vue → URL via replaceState (AUCUN refetch serveur), débounce 300 ms.
-  // On saute le 1er run (l'URL reflète déjà l'init) ; les valeurs par défaut sont omises.
-  const firstRun = useRef(true);
-  useEffect(() => {
-    if (firstRun.current) {
-      firstRun.current = false;
-      return;
-    }
-    const t = setTimeout(() => {
-      replaceUrlParams({
-        q: search.trim() || null,
-        theme: theme === "tous" ? null : theme,
-        sante: sante === "tous" ? null : sante,
-        recents: recentOnly ? "1" : null,
-        sort: sortKey === "visitors" ? null : sortKey,
-        dir: sortDir === "desc" ? null : sortDir,
-      });
-    }, 300);
-    return () => clearTimeout(t);
-  }, [search, theme, sante, recentOnly, sortKey, sortDir]);
+  const { q: search, theme, sante, recents: recentOnly } = filters;
 
   const columns = useMemo(() => buildColumns(periodQ), [periodQ]);
 
@@ -327,12 +208,12 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
           <input
             type="search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => setFilter("q", e.target.value)}
             placeholder="rechercher (titre, requête)…"
             className={cn(selectCls, "w-[190px]")}
             aria-label="Rechercher un article"
           />
-          <select value={theme} onChange={(e) => setTheme(e.target.value)} className={selectCls} aria-label="Filtrer par thème">
+          <select value={theme} onChange={(e) => setFilter("theme", e.target.value)} className={selectCls} aria-label="Filtrer par thème">
             <option value="tous">Tous les thèmes</option>
             {themes.map((t) => (
               <option key={t} value={t}>
@@ -342,7 +223,7 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
           </select>
           <select
             value={sante}
-            onChange={(e) => setSante(e.target.value as SanteFilter)}
+            onChange={(e) => setFilter("sante", e.target.value as SanteFilter)}
             className={selectCls}
             aria-label="Filtrer par santé"
           >
@@ -357,7 +238,7 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
             <input
               type="checkbox"
               checked={recentOnly}
-              onChange={(e) => setRecentOnly(e.target.checked)}
+              onChange={(e) => setFilter("recents", e.target.checked)}
               className="accent-accent"
             />
             récents (≤ 60 j d&apos;âge SEO)
@@ -370,10 +251,7 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
         initialSortKey={sortKey}
         initialDir={sortDir}
         minWidth={1160}
-        onSortChange={(k, d) => {
-          setSortKey(k);
-          setSortDir(d);
-        }}
+        onSortChange={onSortChange}
       />
       <p className="mt-[11px] font-mono text-[10.5px] leading-relaxed text-dim">
         ▲▼ tendances vs période précédente · cliquer un titre ouvre la fiche de l&apos;article
