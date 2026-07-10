@@ -30,7 +30,7 @@ CREATE OR REPLACE VIEW public.cpi_gisement AS
     grade,
     n_org,
     cpi,
-    round(100::numeric * (1::numeric / (1::numeric + exp((- (0.46 * zc + 0.23 * zr + 0.20 / 0.65 * zl)) / 0.8))) * momentum * gate)::integer AS potentiel,
+    round(public.cpi_compose(zc, zr, zl, 0::numeric, momentum, gate, true))::integer AS potentiel,
     zv > 0::numeric AS convertit,
     zc,
     zr,
@@ -150,6 +150,7 @@ CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
 -- conversion_journeys(days_back integer) -> TABLE(contact_kind text, occurred_at timestamp with time zone, contact_path text, objet text, anonymous_id text, attribution_method text, entry_path text, entry_channel text, pages_count integer, journey text[], device_type text)
 -- cooked_alerts_refresh() -> integer
 -- cooked_cpi_snapshot() -> void
+-- cpi_compose(zc numeric, zr numeric, zl numeric, zv numeric, mm numeric, gg numeric, exclude_conversion boolean) -> numeric
 -- cooked_is_chrome_anchor(props jsonb) -> boolean
 -- cooked_page_daily_series(target_path text, days_back integer, end_date date) -> TABLE(day date, sessions bigint)
 -- cooked_page_index(p_days integer) -> TABLE(path text, ptype text, grade text, cpi integer, cpi_raw integer, momentum numeric, momentum_badge text, gate numeric, zc numeric, zr numeric, zl numeric, zv numeric, clics_perdus integer, n_org bigint, couv_gsc_pct integer)

@@ -1,4 +1,4 @@
-// COOKED — track Edge Function (v24 — 08/07/2026 : tag cooked_site outremer)
+// COOKED — track Edge Function (v25 — 10/07/2026 : C5 _shared/events_row)
 // POST /functions/v1/track
 // Auth: this function does NOT verify a JWT. Authorization is via the Velo proxy
 // which holds the Supabase secret key server-side and forwards it as `apikey`.
@@ -6,6 +6,14 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { canonicalPath } from "../_shared/canonical_path.ts";
+import {
+  hostnameOf,
+  iso,
+  n,
+  plainObject,
+  resolveAnonId,
+  s,
+} from "../_shared/events_row.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 // New-format keys (sb_secret_*) populate SUPABASE_SECRET_KEY;
@@ -90,15 +98,6 @@ function parseUserAgent(ua: string) {
   return { device_type, os, browser };
 }
 
-function hostnameOf(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    return new URL(url).hostname || null;
-  } catch {
-    return null;
-  }
-}
-
 function clientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0].trim();
@@ -107,30 +106,6 @@ function clientIp(req: Request): string {
     req.headers.get("x-real-ip") ??
     "0.0.0.0"
   );
-}
-
-function s(v: unknown, max = 500): string | null {
-  if (v == null) return null;
-  const str = String(v);
-  return str.length > max ? str.slice(0, max) : str;
-}
-
-function n(v: unknown): number | null {
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
-}
-
-// Sprint 30 — strict ISO-8601 timestamp validation.
-function iso(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const t = Date.parse(v);
-  return Number.isFinite(t) ? new Date(t).toISOString() : null;
-}
-
-// Sprint 30 — coerce arrays + non-objects to an empty object for props jsonb.
-function plainObject(v: unknown): Record<string, unknown> {
-  return v != null && typeof v === "object" && !Array.isArray(v)
-    ? (v as Record<string, unknown>)
-    : {};
 }
 
 function corsHeaders(origin: string): Record<string, string> {
@@ -188,18 +163,6 @@ Deno.serve(async (req) => {
   const serverHash = await hashAnonymous(ip, ua);
   const { device_type, os, browser } = parseUserAgent(ua);
 
-  function resolveAnonId(browserAid: unknown): string {
-    if (
-      typeof browserAid === "string" &&
-      browserAid.length >= 8 &&
-      browserAid.length <= 128 &&
-      /^[a-zA-Z0-9_-]+$/.test(browserAid)
-    ) {
-      return browserAid;
-    }
-    return serverHash;
-  }
-
   const now = new Date().toISOString();
   const rows = [];
   let droppedMissingFields = 0;
@@ -240,7 +203,7 @@ Deno.serve(async (req) => {
     }
 
     rows.push({
-      anonymous_id: resolveAnonId(e?.anonymous_id),
+      anonymous_id: resolveAnonId(e?.anonymous_id, serverHash),
       session_id,
       name,
       url: eventUrl,
