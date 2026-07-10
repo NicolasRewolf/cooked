@@ -21,11 +21,13 @@ l'authentification (magic-link), qui ne lit aucune donnée métier.
 src/
   env.ts                 validation zod (serveur)
   proxy.ts               gate auth (ex-middleware Next 16) : session + allowlist d'emails
-  lib/                   supabase-admin (clé service), types (contrat RPC), format fr-FR, periods, cn
-  data/dashboard.ts      appels typés aux 4 RPC
-  components/            KpiHeader, SortableTable, ResourcesTable, SeoTable, FreshnessBanner, …
-  app/                   / (synthèse)  ·  /seo (requêtes)  ·  /login  ·  /auth/{callback,signout}
+  lib/                   supabase-admin, types RPC, format fr-FR, dates, chart-geometry (D8), momentum, trend-math
+  data/                  dashboard.ts (appels RPC), view-models.ts (D7 — pages → props UI)
+  components/            KpiHeader, ResourcesTable, ExpertisesTable, SeoTable, metric-columns (D6), …
+  app/                   / · /expertises · /seo · /article/[slug] · /login · /auth/{callback,signout}
 ```
+
+**Tests** : `npm test` — 85 tests vitest (view-models, chart-geometry, metric-columns, RPC schemas…).
 
 ## Données (couche serveur, source de vérité)
 RPC `service_role` (migrations `20260629112816` v1 + `20260629135836` v2 + `20260630133301`

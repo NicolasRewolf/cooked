@@ -7,10 +7,8 @@
 -- reste l'arbitre — le dossier migrations local n'est pas un miroir complet).
 --
 -- Ce fichier est un INSTANTANÉ LISIBLE de l'état prod (projet
--- mxycmjkeotrycyneacje) au 30/06/2026 :
---   • définition COMPLÈTE des 5 vues publiques ;
---   • SIGNATURES des fonctions / RPC publiques (corps complets → supabase/rpcs.sql,
---     généré depuis la prod, gate CI Arch #5 — ne pas éditer à la main).
+-- mxycmjkeotrycyneacje) — signatures/vues ; **corps RPC → supabase/rpcs.sql**
+-- (généré 10/07/2026, 104 fonctions, gate CI Arch #5).
 --
 -- Régénérer (MCP Supabase execute_sql, ou psql) : voir les 2 requêtes en bas.
 -- ============================================================================
@@ -137,9 +135,8 @@ CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
 
 
 -- ╔══════════════════════════════════════════════════════════════════════════╗
--- ║ FONCTIONS / RPC publiques (70) — SIGNATURES                               ║
--- ║ Corps complet : voir supabase/migrations/ (source de vérité).             ║
--- ║ Format : nom(args) -> type de retour                                      ║
+-- ║ FONCTIONS / RPC publiques — SIGNATURES (corps → supabase/rpcs.sql)       ║
+-- ║ Format : nom(args) -> type de retour                                     ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 -- behavior_pages_for_period(date_from timestamp with time zone, date_to timestamp with time zone) -> TABLE(path text, sessions bigint, pages_per_session numeric, avg_session_duration_s numeric, bounce_rate numeric, scroll_depth_avg numeric, scroll_complete_pct numeric, lcp_p75_ms numeric, inp_p75_ms numeric, cls_p75 numeric, ttfb_p75_ms numeric, outbound_clicks bigint)
@@ -234,5 +231,5 @@ CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
 --
 -- Pour le CORPS d'une fonction : supabase/rpcs.sql (généré, Arch #5)
 -- ou : SELECT pg_get_functiondef('public.<nom>(<args>)'::regprocedure);
--- Généré le 30/06/2026 — projet mxycmjkeotrycyneacje.
+-- Généré le 10/07/2026 — corps RPC : supabase/rpcs.sql (104 fonctions).
 -- ============================================================================

@@ -60,9 +60,11 @@ trafic qui ne convertissent pas).
 - P0 anti-forge `cta_phone_click` (égalité origin Velo + rate-limit Edge) —
   à faire si un burst suspect apparaît.
 - Dette `events` bloat (~405 MB), 2 overloads ambigus, colonne `country` morte,
-  `conversion_journeys` 5 sous-requêtes, API sprawl (~55 RPCs).
-- Chantiers de fond §2 (loader tracker, CI, source de vérité SQL unique) —
-  valables, mais hors du cap conversion immédiat.
+  `conversion_journeys` 5 sous-requêtes — **rpcs.sql** (104 RPC) améliore la
+  lisibilité ; consolidation API toujours ouverte.
+- Chantiers de fond §2 (loader tracker) — valables, mais hors du cap conversion immédiat.
+- ~~Revue arch #6–#9 dashboard/tracker~~ **FAIT (10/07/2026)** : D6 metric-columns,
+  D7 view-models, D8 chart-geometry, D9 tracker helpers, D4 Edge row builders.
 
 ## ⭐ MISE À JOUR 03/07/2026 — Audit Fable 5 : plan T-01→T-19 exécuté à 100 %
 
@@ -311,11 +313,9 @@ C'est la partie « ressenti » demandée par Nico. Sans langue de bois.
    `paris-date-contract`, `canonical-path-contract`, `python-ingest-contract`,
    `dashboard-contract`, `sql-contracts` (C6 + rpcs.sql). Reste : `tsc` Edge Functions,
    lint SQL migrations au-delà des contrats ciblés.
-3. ~~Deux sources de vérité SQL, c'est une de trop.~~ **PARTIEL (10/07/2026)** :
-   migrations = seule vérité **déploiement** ; **`supabase/rpcs.sql`**
-   (104 corps, gate CI Arch #5) = miroir **lecture** régénéré quand une RPC
-   change. `views.sql` reste signatures + vues (à resync ponctuellement).
-   Plus d'édition manuelle du « état du monde » sans gate.
+3. ~~Deux sources de vérité SQL, c'est une de trop.~~ **FAIT (10/07/2026)** :
+   migrations = vérité déploiement ; **`supabase/rpcs.sql`** (104 corps, gate CI
+   Arch #5) = miroir lecture. `views.sql` = vues + signatures (resync ponctuel).
 4. **53 fonctions RPC, c'est un API sprawl.** Chaque sprint a ajouté ses
    RPCs sans déprécier les anciennes. Faire un inventaire d'usage réel
    (les sessions Claude Code sont le seul consommateur : grep), tagger

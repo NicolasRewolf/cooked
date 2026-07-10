@@ -455,14 +455,19 @@ WHERE e.occurred_at > now() - interval '24 hours'
 
 ## Déploiement
 
-### Re-deploying the Edge Function
+### Re-deploying Edge Functions
 
 ```bash
 brew install supabase/tap/supabase
 supabase login
 supabase link --project-ref mxycmjkeotrycyneacje
 supabase functions deploy track --no-verify-jwt
+supabase functions deploy form-webhook --no-verify-jwt
 ```
+
+Versions repo (10/07/2026) : **track v25** (D4 `track_row`), **form-webhook v12**
+(D4 `form_row`). Modules testables dans `supabase/functions/_shared/` :
+`events_row`, `track_row`, `form_row` (+ tests Deno, CI `edge-shared-helpers`).
 
 `--no-verify-jwt` is required: requests come from the Velo proxy without a Supabase user JWT (auth is via service-role key injected by the proxy).
 

@@ -212,6 +212,14 @@ après C1–C9 ; tue les fuites SQL restantes :
 - **`supabase/rpcs.sql`** : miroir lecture des 104 corps RPC (`pg_get_functiondef`) ;
   gate CI `check_rpcs_sql_fresh.py` si migration redéfinit une RPC.
 
+**Revue architecture D4–D9 (10/07 soir, PRs #57–#65)** — chantiers opportunistes
+mergés sur `main` :
+- **D4** `_shared/track_row.ts` + `form_row.ts` — Edge track **v25**, webhook **v12**.
+- **D7** `dashboard/src/data/view-models.ts` — pages → props UI testables.
+- **D8** `lib/chart-geometry.ts` — géométrie SVG partagée.
+- **D6** `metric-columns.tsx` — colonnes Resources / Expertises dédupliquées.
+- **D9** helpers tracker (`labelOf`, `inStickyAncestor`…) — iso-comportement.
+
 Cooked sert de remplaçant GA4 : des données comportementales fiables pour
 Nicolas et Me Plouton, et les analyses Cooked × GSC (intent matching,
 funnel SEO complet, pogo-stick × ranking) consommées en question/réponse.
@@ -242,7 +250,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (lecture agent) | `supabase/rpcs.sql` |
+| Corps complets des RPC (104, lecture agent) | `supabase/rpcs.sql` |
 | Ce qui reste à faire (P0/P1/P2) | `docs/ROADMAP-sprint38-handoff.md` |
 | État de fiabilité des données (audits) | `docs/data-quality-audit-2026-06-10.md` |
 | Chronologie des sprints | `docs/HISTORY-sprints.md` |
@@ -473,10 +481,15 @@ Source SQL unique : `macro_contacts_by_path(days_back)` — utilisée par
 Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
 
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
-Paris (première ingestion réelle). Le tracker navigateur est en **sprint40**
-depuis le 02/07/2026 ~20:00 Paris (page_exit ré-armé ; sprint38 : 11/06).
-L'Edge Function `track` est en **v23** (clamp horloge ±48 h ; v22 S39 :
-décodage `target_path`), `form-webhook` en **v11**.
+Paris (première ingestion réelle).
+
+**Versions canoniques (repo `main`, 10/07/2026)** :
+- Tracker : **`sprint40`** (refactor D9, `COOKED_VERSION` inchangé — déployer via
+  minify + Wix Custom Code).
+- Edge `track` : **v25** (D4 `track_row` + C5 `events_row` ; clamp horloge v23).
+- Edge `form-webhook` : **v12** (D4 `form_row` ; v11 = submissionTime + drop alert).
+
+Prod peut lagger : vérifier la version déployée avant d'annoncer un changement Edge.
 
 ---
 

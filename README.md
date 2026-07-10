@@ -188,12 +188,13 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Où en est le système (10/07/2026)
 
-**En production depuis le 06/05/2026.** Tracker navigateur `sprint40`
-(batching, garde anti-double-embed, attribution des formulaires par champs
-cachés Wix, page_exit ré-armé) ; Edge Function `track` en **v23** (clamp
-horloge). ~1,05 M d'événements bruts (bruit > 28 j purgé chaque semaine),
-~2 millions de lignes Search Console (16 mois), ~190 pages scorées par le CPI
-chaque matin.
+**En production depuis le 06/05/2026.** Tracker navigateur **`sprint40`**
+(refactor D9 mergé 10/07 — même version stamp ; déployer via minify + Wix).
+Edge Functions dans le repo : **`track` v25**, **`form-webhook` v12** (D4) ;
+prod peut encore tourner v23/v11 tant que non redéployé. ~1,05 M d'événements
+bruts (bruit > 28 j purgé chaque semaine), ~2 millions de lignes Search Console
+(16 mois), ~190 pages scorées par le CPI chaque matin, **104 RPC** documentées
+dans `supabase/rpcs.sql`.
 
 **Sprint 39 (15-18/06) — l'outil passe en prod opérationnelle.**
 - **CPI v2.2** : momentum à transition continue + lissage empirical Bayes
@@ -230,25 +231,27 @@ bruit 37× plus rapides, purge hebdo, alertes poussées sur téléphone
 enrichi (onglet Expertises, fiches article, contacts assistés). Détail :
 [docs/audit-fable5-2026-07-02.md](docs/audit-fable5-2026-07-02.md).
 
-**Revue architecture (04-10/07)** — deux passes pour tuer les copier-coller
-dangereux côté SQL (détail : PRs #46–#61) :
-- **C1–C9** (juillet) : `paris_date()`, `cooked_events_window`, alertes
-  modulaires, `canonical_path` unifié SQL/Edge/Python, tests Python GSC,
-  helpers dashboard (`dates.ts`, Zod), modules Edge partagés.
-- **Arch #1–#5** (10/07, PRs #60–#61) : lens **`live_j1`** dans
-  `cooked_period_bounds` (ancrage J-1 Paris — fin des 11 blocs `v_shift`) ;
-  **`gsc_is_branded(query)`** (filtre branded unique + vecteur CI) ;
-  procédure **`cooked_snapshot_window`** (driver commun des 3 refreshers
-  dashboard) ; **`supabase/rpcs.sql`** (corps complets des 104 RPC, gate CI
-  : toute PR qui touche une RPC doit régénérer le miroir).
+**Revue architecture (04-10/07)** — deux passes, **100 % mergé sur `main`** (PRs #46–#65) :
+- **C1–C9** : `paris_date()`, `cooked_events_window`, alertes modulaires, `canonical_path`
+  unifié, tests Python GSC, dashboard `dates.ts`/Zod, modules Edge `_shared/events_row`.
+- **Arch #1–#5** : `live_j1`, `gsc_is_branded`, `cooked_snapshot_window`, `supabase/rpcs.sql`.
+- **D4–D9** : builders Edge `track_row`/`form_row` ; view-models, chart-geometry,
+  colonnes métriques dashboard ; helpers tracker (iso-comportement).
+- **Repo** : LICENSE, CONTRIBUTING, AGENTS, CHANGELOG, `.env.example`, templates GitHub.
+
+**Déploiement à faire pour aligner prod sur le repo** (code mergé, pas encore live partout) :
+- Edge **track v25** + **form-webhook v12** → `supabase functions deploy`
+- Tracker refactor D9 → `python3 scripts/minify-tracker.py` → Wix Custom Code
+  (`COOKED_VERSION` reste `sprint40` jusqu'au prochain bump volontaire)
 
 **Repère 10/06/2026** (premier snapshot CPI) : CPI moyen pondéré trafic
 **32/100**, ~446 clics Google « perdus »/mois — marge chiffrée page par page.
 
-**Prochaine échéance — validation prédictive le 08/07/2026** : le CPI prédit-il
-les contacts des 28 jours suivants ? Protocole prêt
-([scripts/cpi_validation_j28.sql](scripts/cpi_validation_j28.sql)). S'il échoue,
-on recalibre les poids — on ne masque pas le résultat.
+**Validation CPI J+28 (08/07/2026)** : harnais
+[scripts/cpi_validation_j28.sql](scripts/cpi_validation_j28.sql) — dry-run audit
+juillet : stabilité poids τ-b ≥ 0,952 ; le verdict prédictif complet vit dans
+[docs/cpi-cooked-page-index.md](docs/cpi-cooked-page-index.md). L'outil CPI
+reste en prod opérationnelle sans complexification v2.3.
 
 ---
 
