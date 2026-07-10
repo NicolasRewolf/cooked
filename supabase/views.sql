@@ -9,9 +9,8 @@
 -- Ce fichier est un INSTANTANÉ LISIBLE de l'état prod (projet
 -- mxycmjkeotrycyneacje) au 30/06/2026 :
 --   • définition COMPLÈTE des 5 vues publiques ;
---   • SIGNATURES des 70 fonctions / RPC publiques (le corps vit dans les
---     migrations — on ne le duplique plus ici : c'était la cause du drift,
---     l'ancien views.sql était figé au Sprint 37, ~40 migrations de retard).
+--   • SIGNATURES des fonctions / RPC publiques (corps complets → supabase/rpcs.sql,
+--     généré depuis la prod, gate CI Arch #5 — ne pas éditer à la main).
 --
 -- Régénérer (MCP Supabase execute_sql, ou psql) : voir les 2 requêtes en bas.
 -- ============================================================================
@@ -233,6 +232,7 @@ CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
 --    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
 --    WHERE n.nspname='public' AND p.prokind='f';
 --
--- Pour le CORPS d'une fonction : SELECT pg_get_functiondef('public.<nom>(<args>)'::regprocedure);
+-- Pour le CORPS d'une fonction : supabase/rpcs.sql (généré, Arch #5)
+-- ou : SELECT pg_get_functiondef('public.<nom>(<args>)'::regprocedure);
 -- Généré le 30/06/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
