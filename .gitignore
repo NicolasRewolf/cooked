@@ -1,8 +1,19 @@
 .DS_Store
 **/.DS_Store
+
+# IDE / agents locaux
+.cursor/
+.claude/
+.agents/
+skills-lock.json
+supabase/.temp/
+
 .claude/settings.local.json
 .env
 .env.local
+.env.*.local
+!.env.example
+!**/.env*.example
 scripts/.env.dfs
 node_modules/
 *.log

@@ -237,6 +237,9 @@ faux). Pour prioriser le travail SEO/contenu :
 
 | Besoin | Fichier |
 |---|---|
+| Point d'entrée agents (humain ou IA) | `AGENTS.md` |
+| Workflow Git, CI, migrations | `CONTRIBUTING.md` |
+| Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
 | Corps complets des RPC (lecture agent) | `supabase/rpcs.sql` |

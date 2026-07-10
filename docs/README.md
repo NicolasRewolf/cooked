@@ -1,8 +1,8 @@
 # Documentation Cooked — index du dossier `docs/`
 
-Carte de la documentation. Points d'entrée à la racine du repo :
-[`../README.md`](../README.md) (ambition & vue d'ensemble) et
-[`../CLAUDE.md`](../CLAUDE.md) (règles de l'agent, lu à chaque session).
+Carte de la documentation. **Racine du repo** (standard mainteneur) :
+[README.md](../README.md) · [AGENTS.md](../AGENTS.md) · [CONTRIBUTING.md](../CONTRIBUTING.md) ·
+[CHANGELOG.md](../CHANGELOG.md) · [CLAUDE.md](../CLAUDE.md) (règles agent, lu à chaque session).
 
 ## Opérer & analyser
 - [`OPERATIONS.md`](OPERATIONS.md) — architecture, events captés, RPCs publiées, crons, déploiement, dépannage.

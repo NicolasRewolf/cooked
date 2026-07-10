@@ -125,6 +125,12 @@ This makes per-emplacement analytics a 1-line query (`split_part(anchor, ' — '
 
 ```
 cooked/
+├── AGENTS.md                          — point d'entrée agents IA / mainteneurs
+├── CONTRIBUTING.md                    — workflow Git, migrations, CI
+├── CHANGELOG.md                       — historique des jalons
+├── SECURITY.md                      — secrets, signalement failles
+├── LICENSE                            — propriétaire (tous droits réservés)
+├── .env.example                       — modèle variables d'environnement
 ├── CLAUDE.md                          — Claude Code agent instructions
 │                                        + site taxonomy + rules of thumb
 ├── README.md                          — ambition & vue d'ensemble du système
