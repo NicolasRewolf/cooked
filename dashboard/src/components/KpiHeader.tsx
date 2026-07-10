@@ -2,6 +2,7 @@ import { cn } from "@/lib/cn";
 import { num, type Delta } from "@/lib/format";
 import { Sparkline } from "./Sparkline";
 import { Info } from "./Info";
+import { dirClass, dirGlyph } from "./ui";
 
 // M4 — bornes discrètes de la sparkline en title natif (DONNÉE, pas définition →
 // la règle « pas d'ⓘ pour de la donnée » de M1 ne s'applique pas). Posé ICI, sur
@@ -26,11 +27,9 @@ export interface KpiItem {
 
 function DeltaTag({ delta }: { delta: Delta }) {
   if (delta.dir === "na") return <span className="font-mono text-[11.5px] text-faint">—</span>;
-  const cls = delta.dir === "up" ? "text-up" : delta.dir === "down" ? "text-down" : "text-faint";
-  const glyph = delta.dir === "up" ? "▲" : delta.dir === "down" ? "▼" : "▬";
   return (
-    <span className={cn("font-mono text-[11.5px] font-medium", cls)}>
-      {glyph} {delta.label} <span className="text-dim">N-1</span>
+    <span className={cn("font-mono text-[11.5px] font-medium", dirClass(delta.dir))}>
+      {dirGlyph(delta.dir)} {delta.label} <span className="text-dim">N-1</span>
     </span>
   );
 }

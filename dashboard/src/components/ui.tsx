@@ -1,16 +1,33 @@
 import { cn } from "@/lib/cn";
 import type { Delta } from "@/lib/format";
 
+// ── Vocabulaire delta unifié (▲ / ▼ / ▬) ──────────────────────────────────────
+// Un seul foyer pour le glyphe et la couleur d'une direction — consommé par
+// Trend (lignes de tableau), DeltaTag (KPI), PosTrend (position SEO) et les
+// points momentum des cellules santé.
+export type TrendDir = "up" | "down" | "flat";
+
+export function dirGlyph(dir: TrendDir): string {
+  return dir === "up" ? "▲" : dir === "down" ? "▼" : "▬";
+}
+
+export function dirClass(dir: TrendDir): string {
+  return dir === "up" ? "text-up" : dir === "down" ? "text-down" : "text-faint";
+}
+
+// Point momentum (cellule santé) : la baisse est un avertissement (orange),
+// pas une alerte rouge — palette bg-* distincte du texte des deltas.
+export function dirDotClass(dir: TrendDir): string {
+  return dir === "up" ? "bg-up" : dir === "down" ? "bg-warn" : "bg-faint";
+}
+
 // Flèche de tendance par ligne (visiteurs / clics vs période précédente).
 // Vert = hausse · rouge = baisse · gris = stable / pas de base. Chiffres en mono.
 export function Trend({ d }: { d: Delta }) {
   if (d.dir === "na") return <span className="font-mono text-[10px] text-dim">—</span>;
-  const cls =
-    d.dir === "up" ? "text-up" : d.dir === "down" ? "text-down" : "text-faint";
-  const glyph = d.dir === "up" ? "▲" : d.dir === "down" ? "▼" : "▬";
   return (
-    <span className={cn("font-mono text-[10px] font-medium", cls)} title="vs période précédente">
-      {glyph} {d.label}
+    <span className={cn("font-mono text-[10px] font-medium", dirClass(d.dir))} title="vs période précédente">
+      {dirGlyph(d.dir)} {d.label}
     </span>
   );
 }
