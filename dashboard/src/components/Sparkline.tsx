@@ -1,3 +1,12 @@
+import {
+  buildLinePath,
+  lastPoint,
+  seriesExtent,
+  xScaleIndex,
+  yScale,
+  type ChartBox,
+} from "@/lib/chart-geometry";
+
 // Sparkline « instrument » : tracé fin accent + point final, sur une ligne de base.
 // Rendu vide si la série n'a pas (encore) de données — voir HANDOFF.md (RPC séries).
 export function Sparkline({
@@ -8,18 +17,13 @@ export function Sparkline({
   height?: number;
 }) {
   if (!series || series.length < 2) return null;
-  const w = 120;
-  const h = 28;
-  const pad = 3;
-  const min = Math.min(...series);
-  const max = Math.max(...series);
-  const span = max - min || 1;
-  const X = (i: number) => pad + (i * (w - 2 * pad)) / (series.length - 1);
-  const Y = (v: number) => h - pad - ((v - min) / span) * (h - 2 * pad);
-  const line =
-    "M" + series.map((v, i) => `${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(" L");
-  const lastX = X(series.length - 1);
-  const lastY = Y(series[series.length - 1]);
+  const box: ChartBox = { w: 120, h: 28, pl: 3, pr: 3, pt: 3, pb: 3 };
+  const { w, h } = box;
+  const { min, span } = seriesExtent(series);
+  const X = xScaleIndex(box, series.length);
+  const Y = yScale(box, min, span);
+  const line = buildLinePath(series, X, Y);
+  const { x: lastX, y: lastY } = lastPoint(series, X, Y);
 
   return (
     <div className="relative mt-3">

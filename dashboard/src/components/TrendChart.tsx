@@ -4,6 +4,19 @@ import { useState } from "react";
 import { num } from "@/lib/format";
 import { jjmmForIndex, lastDayLabel } from "@/lib/dates";
 import { linearTrend } from "@/lib/trend-math";
+import {
+  buildAreaPath,
+  buildLinePath,
+  clampYToPlot,
+  dotPath,
+  indexFromPointerX,
+  lastPoint,
+  relativeDayTicks,
+  seriesExtent,
+  xScaleIndex,
+  yScale,
+  type ChartBox,
+} from "@/lib/chart-geometry";
 import type { TrendMarker } from "@/lib/types";
 
 // Graphe principal « oscilloscope » : grille fine + tracé accent + point final.
@@ -42,41 +55,31 @@ export function TrendChart({
   );
 
   if (!series || series.length < 2) return null;
-  const w = 820;
-  const h = 170;
-  const pl = 4;
-  const pr = 4;
-  const pt = 10;
-  const pb = 14;
+  const box: ChartBox = { w: 820, h: 170, pl: 4, pr: 4, pt: 10, pb: 14 };
+  const { w, h, pb } = box;
   const n = series.length;
-  const min = Math.min(...series);
-  const max = Math.max(...series);
-  const span = max - min || 1;
-  const X = (i: number) => pl + (i * (w - pl - pr)) / (n - 1);
-  const Y = (v: number) => h - pb - ((v - min) / span) * (h - pt - pb);
-  const pts = series.map((v, i) => `${X(i).toFixed(1)} ${Y(v).toFixed(1)}`);
-  const line = "M" + pts.join(" L");
-  const area = `${line} L${X(n - 1).toFixed(1)} ${h - pb} L${X(0).toFixed(1)} ${h - pb} Z`;
-  const lastX = X(n - 1);
-  const lastY = Y(series[n - 1]);
+  const { min, max, span } = seriesExtent(series);
+  const X = xScaleIndex(box, n);
+  const Y = yScale(box, min, span);
+  const line = buildLinePath(series, X, Y);
+  const area = buildAreaPath(line, X, n, h - pb);
+  const { x: lastX, y: lastY } = lastPoint(series, X, Y);
 
   // Tendance linéaire sur la région mesurée (dès le 1er jour non nul). `dir` sert
   // au libellé « en hausse / stable / en baisse » ; la droite est bornée à la zone
   // de tracé pour ne jamais déborder du cadre.
   const tr = trend ? linearTrend(series) : null;
-  const clampY = (v: number) => Math.max(pt, Math.min(h - pb, Y(v)));
   const trPath = tr
-    ? `M${X(tr.i0).toFixed(1)} ${clampY(tr.yStart).toFixed(1)} L${lastX.toFixed(1)} ${clampY(tr.yEnd).toFixed(1)}`
+    ? `M${X(tr.i0).toFixed(1)} ${clampYToPlot(box, Y(tr.yStart)).toFixed(1)} L${lastX.toFixed(1)} ${clampYToPlot(box, Y(tr.yEnd)).toFixed(1)}`
     : null;
 
   // Mapping pointeur → index. Piège (a) : preserveAspectRatio="none" étire la
-  // viewBox sur le rect rendu → on projette via rect.width, puis on inverse X(i).
+  // viewBox sur le rect rendu → indexFromPointerX projette via rect.width puis
+  // inverse X(i) (null si le SVG n'est pas encore layouté).
   function onMove(e: React.PointerEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
-    if (rect.width === 0) return;
-    const xSvg = ((e.clientX - rect.left) / rect.width) * w;
-    let i = Math.round(((xSvg - pl) * (n - 1)) / (w - pl - pr));
-    i = Math.max(0, Math.min(n - 1, i));
+    const i = indexFromPointerX(e.clientX - rect.left, rect.width, box, n);
+    if (i === null) return;
     setHover({ x: X(i), y: Y(series![i]), jjmm: jjmmForIndex(lastDay, i, n), value: series![i] });
   }
 
@@ -84,10 +87,11 @@ export function TrendChart({
   // − (n−1) j) au lieu de « −Nj » ; les deux jalons intermédiaires restent relatifs ;
   // « au JJ/MM » final inchangé.
   const startLabel = jjmmForIndex(lastDay, 0, n);
+  const [tick0, tick1, tick2] = relativeDayTicks(n);
   const xLabels = [
-    startLabel ? `du ${startLabel}` : `−${n}j`,
-    `−${Math.round((n * 2) / 3)}j`,
-    `−${Math.round(n / 3)}j`,
+    startLabel ? `du ${startLabel}` : `−${tick0}j`,
+    `−${tick1}j`,
+    `−${tick2}j`,
     lastDayLabel(lastDay),
   ];
 
@@ -147,7 +151,7 @@ export function TrendChart({
             {/* Point = path à cap rond de largeur en pixels-écran (vectorEffect) →
                 disque parfait malgré preserveAspectRatio="none" ; un <circle> serait
                 étiré en œuf par la déformation de la viewBox. */}
-            <path d={`M${lastX.toFixed(1)} ${lastY.toFixed(1)} l0 0`} stroke="var(--color-accent)" strokeWidth="5.2" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+            <path d={dotPath(lastX, lastY)} stroke="var(--color-accent)" strokeWidth="5.2" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
             {markers?.map((m, i) => {
               const mx = X(Math.max(0, Math.min(m.index, n - 1)));
               const fill = m.kind === "site_change" ? "var(--color-accent)" : "var(--color-info)";
@@ -172,8 +176,8 @@ export function TrendChart({
                   strokeWidth="1"
                   vectorEffect="non-scaling-stroke"
                 />
-                <path d={`M${hover.x.toFixed(1)} ${hover.y.toFixed(1)} l0 0`} stroke="#fff" strokeWidth="8" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-                <path d={`M${hover.x.toFixed(1)} ${hover.y.toFixed(1)} l0 0`} stroke="var(--color-accent)" strokeWidth="6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <path d={dotPath(hover.x, hover.y)} stroke="#fff" strokeWidth="8" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <path d={dotPath(hover.x, hover.y)} stroke="var(--color-accent)" strokeWidth="6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
               </>
             )}
           </svg>

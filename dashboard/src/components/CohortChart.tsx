@@ -1,3 +1,4 @@
+import { buildLinePath, xScaleDomain, yScale, type ChartBox } from "@/lib/chart-geometry";
 import type { Cohort } from "@/lib/types";
 
 // B3 — cohortes du contrat : clics GSC cumulés moyens PAR ARTICLE, alignés sur l'âge.
@@ -23,11 +24,12 @@ export function CohortChart({ cohorts }: { cohorts: Cohort[] }) {
   const shown = cohorts.filter((c) => c.series && c.series.length >= 1);
   if (shown.length === 0) return null;
 
-  const w = 820, h = 190, pl = 4, pr = 4, pt = 12, pb = 16;
+  const box: ChartBox = { w: 820, h: 190, pl: 4, pr: 4, pt: 12, pb: 16 };
+  const { w, h, pt, pb } = box;
   const maxAge = 60;
   const maxY = Math.max(1, ...shown.map((c) => (c.series.length ? Math.max(...c.series) : 0)));
-  const X = (age: number) => pl + (age / maxAge) * (w - pl - pr);
-  const Y = (v: number) => h - pb - (v / maxY) * (h - pt - pb);
+  const X = xScaleDomain(box, maxAge);
+  const Y = yScale(box, 0, maxY);
   const n = shown.length;
   const midY = (pt + (h - pb)) / 2;
 
@@ -63,7 +65,8 @@ export function CohortChart({ cohorts }: { cohorts: Cohort[] }) {
               if (c.series.length < 2) {
                 return <circle key={c.month} cx={X(0)} cy={Y(c.series[0] ?? 0)} r="2.2" fill={color} />;
               }
-              const d = "M" + c.series.map((v, age) => `${X(age).toFixed(1)} ${Y(v).toFixed(1)}`).join(" L");
+              // L'âge (jours depuis J0) EST l'index dans la série cumulée → buildLinePath convient.
+              const d = buildLinePath(c.series, X, Y);
               return (
                 <path
                   key={c.month}
