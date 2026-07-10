@@ -1,0 +1,24 @@
+---
+name: Bug / incident données
+description: Chiffre faux, pipeline cassé, tracker, cron
+title: "[bug] "
+labels: ["needs-triage"]
+body:
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Symptôme
+      description: Quoi est faux ? Fenêtre temporelle (dates Paris JJ/MM/AAAA).
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Déjà vérifié
+      description: alerts, refresh_pipeline_health(), recoupement GSC/Cooked…
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportement attendu
+    validations:
+      required: true

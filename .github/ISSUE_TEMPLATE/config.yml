@@ -1,0 +1,9 @@
+blank_issues: false
+
+contact_links:
+  - name: Documentation Cooked
+    url: https://github.com/NicolasRewolf/cooked/blob/main/docs/README.md
+    about: Index de la doc (OPERATIONS, playbook SEO, CPI…)
+  - name: Sécurité
+    url: https://github.com/NicolasRewolf/cooked/blob/main/SECURITY.md
+    about: Signaler une faille (contact privé, pas via issue publique)

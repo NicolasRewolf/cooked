@@ -10,6 +10,9 @@ pas de gros tableau de bord BI. Une base de données qu'on possède, un traceur 
 sur mesure, Google Search Console ingéré dans la même base, un score de
 santé par page, et une IA qui interroge le tout en langage naturel.
 
+> **Mainteneurs & agents IA** — [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) ·
+> [CHANGELOG.md](CHANGELOG.md) · [.env.example](.env.example) · [SECURITY.md](SECURITY.md)
+
 ---
 
 ## Pourquoi Cooked existe
@@ -270,6 +273,11 @@ on recalibre les poids — on ne masque pas le résultat.
 
 | Besoin | Fichier |
 |---|---|
+| **Point d'entrée agents IA** | [AGENTS.md](AGENTS.md) |
+| Contribuer / workflow Git / CI | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Historique des versions | [CHANGELOG.md](CHANGELOG.md) |
+| Variables d'environnement (modèle) | [.env.example](.env.example) |
+| Sécurité & secrets | [SECURITY.md](SECURITY.md) |
 | Comprendre l'ambition et le système | ce fichier |
 | Opérer : déploiement, events, crons, dépannage | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
 | Lire le corps d'une RPC sans fouiller les migrations | [supabase/rpcs.sql](supabase/rpcs.sql) (généré, lecture seule) |
