@@ -1,0 +1,12 @@
+{
+  "description": "Arch #3 — contrat gsc_is_branded(query) : requêtes navigationnelles cabinet Plouton.",
+  "cases": [
+    { "id": "navigational", "input": "plouton avocat bordeaux", "expected": true },
+    { "id": "accent", "input": "Maître Plouton", "expected": true },
+    { "id": "slug_fragment", "input": "cabinet plouton avocat", "expected": true },
+    { "id": "generic_penal", "input": "avocat accident route bordeaux", "expected": false },
+    { "id": "generic_gav", "input": "durée garde à vue", "expected": false },
+    { "id": "empty", "input": "", "expected": false },
+    { "id": "null", "input": null, "expected": false }
+  ]
+}
