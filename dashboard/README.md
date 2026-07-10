@@ -4,8 +4,8 @@ Tableau de bord (lecture seule) qui synthétise le **comportement** (Cooked) et 
 (volume DataForSEO en référence) des articles « Ressources et notions juridiques » de
 jplouton-avocat.fr.
 
-Sous-app **isolée** du repo : aucun import du pipeline (`/scripts`, `/wix`, `/supabase`). Le seul
-contrat avec la base est l'ensemble des **RPC Postgres** (migration `20260629112816_dashboard_v1_rpcs`).
+Sous-app **isolée** du pipeline (`/scripts`, `/wix`, `/supabase/migrations`). Le contrat
+avec la base = RPC Postgres `dashboard_*` (corps lisibles dans `../supabase/rpcs.sql`).
 
 ## Stack
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · `@supabase/supabase-js`
@@ -36,7 +36,8 @@ facteurs de pilotage) qui figent les leçons de mesure :
 - `dashboard_seo_kpis(period_kind, scope)` — totaux SEO calculés SQL (quick wins, 2 niveaux de clics) indépendants du cap du tableau.
 
 Les RPC lisent des **snapshots quotidiens** (tables `dashboard_*_snapshot`, refresh
-`refresh_dashboard_snapshots(p_window)` en cron) — l'agrégation live des events était trop lente
+`refresh_dashboard_snapshots(p_window)` en cron — driver `cooked_snapshot_window`, lens
+`live_j1` = fin J-1 Paris) — l'agrégation live des events était trop lente
 (~106 s). Garanties intégrées : visiteurs **uniques** (pas sessions), spam **Baidu exclu** (filtrage
 inline dans les RPC `dashboard_*` ; la vue `events_human_clean` d'origine a été dropée), lecture sur
 **vrais lecteurs** (hors ré-ouvertures réseaux sociaux), totaux Google depuis `gsc_path_daily`,

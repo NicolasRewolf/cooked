@@ -307,21 +307,15 @@ C'est la partie « ressenti » demandée par Nico. Sans langue de bois.
    et le double-embed devient inoffensif par construction. Trade-off
    honnête : une requête de plus au chargement, et le risque cache-busting
    à gérer. **À trancher avec Nico, mais j'y serais allé au Sprint 38.**
-2. **Il n'y a pas de CI, et ça s'est vu.** Le double-embed a vécu en prod
-   des semaines ; `views.sql` mentait (4 vues fantômes) ; le webhook
-   déployé (v9) avait dérivé du repo. Une GitHub Action de 30 lignes
-   suffit : (a) minifie et asserte < 15 000, (b) rejoue la suite jsdom —
-   **j'ai écrit les harnais dans la session du 09/06, ils sont dans le
-   transcript : les committer dans `tests/tracker.test.js` est un
-   quick-win**, (c) `tsc --noEmit` sur les Edge Functions, (d) lint SQL
-   des migrations. Une heure de travail, des sprints de sérénité.
-3. **Deux sources de vérité SQL, c'est une de trop.** Le drift
-   migrations/views.sql est structurel : tout le monde oublie de
-   synchroniser. Recommandation ferme : **les migrations deviennent la
-   seule vérité**, et `views.sql` est remplacé par un snapshot généré
-   (dump schema-only automatisé, nightly ou en CI) qui sert de
-   documentation en lecture seule. Plus jamais d'édition manuelle d'un
-   fichier « état du monde ».
+2. ~~Il n'y a pas de CI, et ça s'est vu.~~ **PARTIEL (07-10/2026)** : tracker jsdom,
+   `paris-date-contract`, `canonical-path-contract`, `python-ingest-contract`,
+   `dashboard-contract`, `sql-contracts` (C6 + rpcs.sql). Reste : `tsc` Edge Functions,
+   lint SQL migrations au-delà des contrats ciblés.
+3. ~~Deux sources de vérité SQL, c'est une de trop.~~ **PARTIEL (10/07/2026)** :
+   migrations = seule vérité **déploiement** ; **`supabase/rpcs.sql`**
+   (104 corps, gate CI Arch #5) = miroir **lecture** régénéré quand une RPC
+   change. `views.sql` reste signatures + vues (à resync ponctuellement).
+   Plus d'édition manuelle du « état du monde » sans gate.
 4. **53 fonctions RPC, c'est un API sprawl.** Chaque sprint a ajouté ses
    RPCs sans déprécier les anciennes. Faire un inventaire d'usage réel
    (les sessions Claude Code sont le seul consommateur : grep), tagger
