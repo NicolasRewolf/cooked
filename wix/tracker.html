@@ -1,18 +1,27 @@
 <!--
   COOKED — first-party SEO tracker (cookieless, RGPD-exempt)
-  Version: Sprint 38 (2026-06-11) — form attribution via query params.
-    FORM ATTRIBUTION v2 — Wix Forms V2 ne rend PAS les champs cachés dans
-    le DOM de la page publiée (vérifié en prod le 11/06/2026 : payloads
-    sans field:cooked_aid, 0 input cooked_* dans le DOM). Le seeding DOM
-    du Sprint 37 (fillCkd/setNV) était donc mort-né : remplacé par
-    exposeIds() — les ids sont exposés en query params (?cooked_aid=…&
+  Version: sprint40 (02/07/2026, audit T-14) — page_exit ré-armé au retour
+    d'onglet (visibilitychange) : avant, un visiteur qui masquait l'onglet
+    puis revenait lire n'émettait JAMAIS de page_exit final (dwell/scroll
+    figés au premier masquage). Corollaire SQL : max(duration) par
+    session×path — une session peut émettre plusieurs page_exit à durées
+    croissantes.
+  Refactor D9 (10/07/2026) — helpers internes hissés en tête d'IIFE
+    (stripSlash, base commune de normPC/normalizePath ; inStickyAncestor ;
+    labelOf). Strictement iso-comportement : aucun event, payload, seuil
+    ni cap modifié ; COOKED_VERSION inchangé (bump décidé au déploiement).
+  (Sprint 38: form attribution v2 — Wix Forms V2 ne rend PAS les champs
+    cachés dans le DOM de la page publiée (vérifié en prod le 11/06/2026 :
+    payloads sans field:cooked_aid, 0 input cooked_* dans le DOM). Le
+    seeding DOM du Sprint 37 (fillCkd/setNV) était donc mort-né : remplacé
+    par exposeIds() — les ids sont exposés en query params (?cooked_aid=…&
     cooked_sid=…) via history.replaceState ; le masterPage.js Velo les lit
     (wixLocation.query) et les pose dans les forms via setFieldValues(),
     même rail que le page_source de public/faq-system.js (Rewolf).
     replaceState ne crée pas d'URL crawlable (jamais liée → pas d'impact
     SEO) ; les paths Cooked sont canonicalisés sans query (pas d'impact
     data). URL partagée portant l'aid d'autrui : le tracker écrase avec
-    SES valeurs au premier pageview.
+    SES valeurs au premier pageview.)
   (Sprint 37: execution guard window.__cookedLoaded — snippet embarqué 2×
     → clics dupliqués même-seconde ; batching {events:[…]} flush 30 s /
     10 events / pagehide, critiques immédiats, −60/70 % de requêtes ;
@@ -30,8 +39,9 @@
 
   `form_submit` is server-side only and never flows through this tracker;
   it's inserted by the `form-webhook` Edge Function on every Wix Forms
-  submission via Wix Automations. Sprint 37: the tracker now seeds the
-  hidden fields the webhook reads for attribution.
+  submission via Wix Automations. Sprint 38: the tracker exposes the ids
+  (query params) that masterPage.js seeds into the hidden form fields the
+  webhook reads for attribution.
 -->
 <script>
 (function () {
@@ -59,6 +69,49 @@
   var COOKED_VERSION       = 'sprint40';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+
+  // ==============================================================
+  // D9 (10/07/2026) — helpers internes partagés, hissés en tête d'IIFE.
+  // Refactor strictement iso-comportement : ces fonctions factorisent du
+  // code qui existait en 2-3 copies quasi identiques plus bas. Les
+  // divergences historiques sont CONSERVÉES telles quelles :
+  //   - normPC (dédup pageview, §1) : falsy → '/', pas de lowercase ;
+  //     normalizePath (classification de liens, §4) : falsy → '',
+  //     String() + lowercase. Base commune : stripSlash (retire UN slash
+  //     final, jamais le '/' racine).
+  //   - inStickyAncestor : les caps d'origine restent aux appels (12 dans
+  //     placementOf, 15 dans le fallback §4c — unifier la VALEUR serait
+  //     une décision produit, pas un refactor). Le point de départ diffère
+  //     aussi : placementOf part du parent, §4c de l'élément lui-même.
+  //   - labelOf : aria-label > textContent, trim + cap 100 chars — la
+  //     même extraction que faisaient les 3 handlers de clic (§4/§4b/§4c).
+  // ==============================================================
+  function stripSlash(p) {
+    if (p.length > 1 && p.charAt(p.length - 1) === '/') return p.slice(0, -1);
+    return p;
+  }
+
+  // Marche des ancêtres sticky/fixed. `p` est le PREMIER nœud inspecté
+  // (inclus) ; s'arrête à <body> (exclu) ou après maxHops nœuds.
+  function inStickyAncestor(p, maxHops) {
+    try {
+      var hops = 0;
+      while (p && p !== document.body && hops < maxHops) {
+        var pos = window.getComputedStyle(p).position;
+        if (pos === 'sticky' || pos === 'fixed') return true;
+        p = p.parentElement;
+        hops++;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // Label lisible d'un élément cliqué : aria-label (nom accessible —
+  // meilleur que textContent pour les boutons-icônes) sinon textContent.
+  function labelOf(el) {
+    return ((el.getAttribute && el.getAttribute('aria-label')) ||
+            el.textContent || '').trim().slice(0, 100);
+  }
 
   // ==============================================================
   // Sprint 22 — stable anonymous_id stored in localStorage
@@ -289,10 +342,11 @@
   // pathname (trailing slash stripped, no hash) — if it hasn't really
   // changed, we don't re-emit anything.
   // ==============================================================
+  // D9 — wrapper mince sur stripSlash. Conserve la sémantique historique :
+  // falsy → '/', PAS de lowercase (contrairement à normalizePath, §4).
   function normPC(p) {
     if (!p) return '/';
-    if (p.length > 1 && p.charAt(p.length - 1) === '/') return p.slice(0, -1);
-    return p;
+    return stripSlash(p);
   }
   var currentPath = normPC(location.pathname);
   function emitPageview() { send('pageview', {}); }
@@ -441,11 +495,11 @@
   // ==============================================================
   var BKG_P = ['/honoraires-rendez-vous'];
 
+  // D9 — wrapper mince sur stripSlash. Conserve la sémantique historique :
+  // falsy → '', String() + lowercase (contrairement à normPC, §1).
   function normalizePath(p) {
     if (!p) return '';
-    var s = String(p).toLowerCase();
-    if (s.length > 1 && s.charAt(s.length - 1) === '/') s = s.slice(0, -1);
-    return s;
+    return stripSlash(String(p).toLowerCase());
   }
 
   function isBkg(pathname) {
@@ -470,19 +524,11 @@
     }
     // Sticky / fixed container detection (Wix sticky bars, sticky indices,
     // "back to top" buttons, etc.). Walks up the DOM and inspects the
-    // computed `position` of each ancestor. This widens the placement
+    // computed `position` of each ancestor (D9 : inStickyAncestor — départ
+    // au parent, cap historique 12 hops). This widens the placement
     // taxonomy to {header, footer, sticky, body} — additive change, the
     // existing values are unaffected for non-sticky CTAs.
-    try {
-      var p = el.parentElement;
-      var hops = 0;
-      while (p && p !== document.body && hops < 12) {
-        var pos = window.getComputedStyle(p).position;
-        if (pos === 'sticky' || pos === 'fixed') return 'sticky';
-        p = p.parentElement;
-        hops++;
-      }
-    } catch (e) {}
+    if (inStickyAncestor(el.parentElement, 12)) return 'sticky';
     return 'body';
   }
 
@@ -553,10 +599,10 @@
     if (!el || !el.href) return;
 
     var rawHref = el.getAttribute('href') || '';
-    // Prefer aria-label when present — accessible name reflects the
-    // semantic intent better than textContent for icon-only buttons
-    // (e.g. Wix sticky bars where the visible label is "Read More").
-    var anchor = (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 100);
+    // aria-label > textContent : accessible name reflects the semantic
+    // intent better for icon-only buttons (e.g. Wix sticky bars where the
+    // visible label is "Read More"). D9 : labelOf, partagé avec §4b/§4c.
+    var anchor = labelOf(el);
 
     if (rawHref.indexOf('tel:') === 0) {
       send('cta_phone_click', {
@@ -706,17 +752,9 @@
       }
     } catch (e3) {}
 
-    // Must be inside a sticky/fixed container.
-    var inSticky = false;
-    try {
-      var p = el, hops = 0;
-      while (p && p !== document.body && hops < 15) {
-        var pos = window.getComputedStyle(p).position;
-        if (pos === 'sticky' || pos === 'fixed') { inSticky = true; break; }
-        p = p.parentElement; hops++;
-      }
-    } catch (e4) {}
-    if (!inSticky) return;
+    // Must be inside a sticky/fixed container (D9 : inStickyAncestor —
+    // départ à l'élément LUI-MÊME, cap historique 15 hops).
+    if (!inStickyAncestor(el, 15)) return;
 
     // Find the closest interactive-like element to extract a label.
     var interactive = el;
@@ -728,11 +766,7 @@
     }
     if (!interactive || interactive.nodeType !== 1) interactive = el;
 
-    var label = (
-      (interactive.getAttribute && interactive.getAttribute('aria-label')) ||
-      interactive.textContent ||
-      ''
-    ).trim().slice(0, 100);
+    var label = labelOf(interactive); // D9 : partagé avec §4/§4b
     if (!label) return;
     // Sprint 35 — a label ≥ 80 chars is not a button/section name; it's the
     // textContent of a container the click bubbled to (inline <script>,
@@ -784,10 +818,10 @@
         var src = lcEl;
         // Walk up a couple of hops to find an element with an
         // accessible label (the actual click target is often a deep
-        // inner <span> or <svg>).
+        // inner <span> or <svg>). D9 : labelOf, partagé avec §4/§4c.
         for (var i = 0; i < 4 && src && src.nodeType === 1; i++) {
-          var lbl = src.getAttribute && (src.getAttribute('aria-label') || src.textContent);
-          if (lbl && lbl.trim()) { anchor = lbl.trim().slice(0, 100); break; }
+          var lbl = labelOf(src);
+          if (lbl) { anchor = lbl; break; }
           src = src.parentElement;
         }
         placement = placementOf(lcEl);
