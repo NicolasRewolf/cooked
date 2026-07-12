@@ -499,36 +499,66 @@ AS $function$
     from public.form_submits_attributed(days_back) f
     where f.counts_as_macro
   ),
-  sess as (
-    select c.kind, c.occurred_at, c.contact_path, c.objet, c.anonymous_id,
-      c.method, c.session_id,
-      (select array_agg(p.path order by p.first_seen)
-       from (select e2.path, min(e2.occurred_at) as first_seen
-             from public.events_human e2
-             where e2.session_id = c.session_id and e2.name = 'pageview'
-               and e2.occurred_at <= c.occurred_at + interval '3 min'
-             group by e2.path) p) as journey,
-      (select e3.referrer_hostname from public.events_human e3
-       where e3.session_id = c.session_id and e3.name='pageview'
-       order by e3.occurred_at limit 1) as first_ref,
-      (select e4.utm_source from public.events_human e4
-       where e4.session_id = c.session_id and e4.name='pageview'
-       order by e4.occurred_at limit 1) as first_utm_source,
-      (select e5.utm_medium from public.events_human e5
-       where e5.session_id = c.session_id and e5.name='pageview'
-       order by e5.occurred_at limit 1) as first_utm_medium,
-      (select e6.device_type from public.events_human e6
-       where e6.session_id = c.session_id and e6.device_type is distinct from 'server'
-       limit 1) as dev
+  ck as (
+    select c.*,
+      coalesce(ss.visitor_key, sa.visitor_key,
+               'sid:' || coalesce(c.session_id, c.anonymous_id, 'inconnu')) as vk
     from contacts c
+    left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = c.session_id
+    left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = c.anonymous_id
+  ),
+  -- sessions couvertes par chaque visiteur porteur de contact
+  -- (fallback : la session brute du contact si la couture ne la connaît
+  -- pas encore — sessions plus récentes que le dernier refresh du stitch)
+  vsess as (
+    select k.vk, st.key as sid
+    from (select distinct vk from ck) k
+    join public.identity_stitch st on st.kind = 'sid' and st.visitor_key = k.vk
+    union
+    select c.vk, c.session_id from ck c where c.session_id is not null
   )
   select s.kind, s.occurred_at, s.contact_path, s.objet, s.anonymous_id, s.method,
     s.journey[1],
     public.classify_channel(s.first_ref, s.first_utm_source, s.first_utm_medium, 'www.jplouton-avocat.fr'),
-    coalesce(array_length(s.journey,1),0),
+    coalesce(array_length(s.journey, 1), 0),
     s.journey,
     s.dev
-  from sess s
+  from (
+    select c.kind, c.occurred_at, c.contact_path, c.objet, c.anonymous_id, c.method,
+      j.journey, j.first_ref, j.first_utm_source, j.first_utm_medium,
+      (select e6.device_type from public.events_human e6
+        where e6.session_id in (select v2.sid from vsess v2 where v2.vk = c.vk)
+          and e6.device_type is distinct from 'server'
+        limit 1) as dev
+    from ck c
+    left join lateral (
+      with pv as (
+        select e2.path, e2.occurred_at as t,
+               e2.referrer_hostname, e2.utm_source, e2.utm_medium
+        from public.events_human e2
+        where e2.name = 'pageview'
+          and e2.session_id in (select v.sid from vsess v where v.vk = c.vk)
+          and e2.occurred_at <= c.occurred_at + interval '3 min'
+          and e2.occurred_at >= c.occurred_at - interval '6 hours'
+      ),
+      seg as (
+        select pv.*,
+          case when pv.t - lag(pv.t) over (order by pv.t) > interval '30 minutes'
+               then pv.t end as brk
+        from pv
+      ),
+      chain as (
+        select * from seg
+        where seg.t >= coalesce((select max(s2.brk) from seg s2), '-infinity'::timestamptz)
+      )
+      select
+        (select array_agg(q.path order by q.first_seen)
+           from (select ch.path, min(ch.t) as first_seen from chain ch group by ch.path) q) as journey,
+        (select ch.referrer_hostname from chain ch order by ch.t limit 1) as first_ref,
+        (select ch.utm_source from chain ch order by ch.t limit 1) as first_utm_source,
+        (select ch.utm_medium from chain ch order by ch.t limit 1) as first_utm_medium
+    ) j on true
+  ) s
   order by s.occurred_at desc;
 $function$
 

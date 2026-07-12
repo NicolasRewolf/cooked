@@ -32,12 +32,37 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
   11/07 18:52 attribué à son article d'entrée réel.
 - Cron `refresh-dashboard-assisted` : timeout 300 s → 590 s (v2 plus lourde).
 
+### Ajouté — soirée du 12/07 : conversion_journeys v2 + restatement CPI
+- **`conversion_journeys` v2** (migration `20260712203935`) : parcours sur le
+  visiteur recousu (visitor_key via `identity_stitch`, sid > aid > fallback
+  session brute), journey = pageviews de la **visite** ([t-6h, t+3min], chaîne
+  sans trou > 30 min). Contrat de sortie inchangé, ~1 s sur 28 j. Répare par
+  héritage `seo_to_contact_funnel` (le contact du 11/07 apparaît enfin sur sa
+  landing organique) et `content_performance` (crédit posts au lieu de cabinet).
+  Sur 28 j : 210 contacts, 3 seuls sans canal (vs des dizaines), 53 avec une
+  entrée ≠ page du contact.
+- **Restatement CPI du 12/07 au soir** (via `cooked_cpi_snapshot()`, one-off
+  22:48–22:55 Paris, upsert sur `cpi_daily` du jour) : la composante conversion
+  (zv, jx = conversion_journeys organic) voit enfin les contacts recousus.
+  Contrôles : zc/zr/zl/momentum/gate strictement inchangés page par page ;
+  delta CPI moyen −0,1 pt (aucune inflation) ; **0 changement de grade** ;
+  7 movers ≥ 15 pts, tous expliqués — 6 articles récupèrent leurs conversions
+  (arnaque-en-ligne 41→100 [2 contacts contre-vérifiés event par event],
+  sarvi-ou-civi 39→85, ordonnance-protection 40→77 [C], panneaux-solaires
+  60→92 [C], faute-lourde 23→38, ddse 12→27) et `/nos-affaires` 67→12 rend le
+  crédit usurpé (première page des sessions coupées). Annotation posée dans
+  `annotations` (12/07) : un saut de CPI au 12/07 n'est PAS un mouvement de
+  page. Sauvegarde d'audit `cpi_pre_restatement_20260712` (157 lignes, à
+  supprimer ~J+7). Dashboard entièrement resnapshotté le 12/07 à 23:04–23:09
+  Paris (KPIs, resources, assisted, expertises).
+
 ### Connu — reste à faire (session du 12/07)
-- `conversion_journeys` / `seo_to_contact_funnel` / `content_performance`
-  joignent encore par session brute (journey tronqué, `entry_channel` NULL
-  possible) — à brancher sur `identity_stitch`.
 - Dashboard UI : harmoniser les deux compteurs (« contacts sur la page » du
   tableau vs « contacts assistés » de la fiche) — afficher les deux, étiquetés.
+- Vérif J+1 (13/07) : taux de sessions coupées sous tracker `sprint41` (attendu
+  ≈ 0 vs ~22 %) ; premiers `cpi_movers` post-restatement ~19/07 (fenêtre 7 j).
+- `cooked_page_index` : sensibilité conversion inchangée (~65 % de la variance,
+  point ouvert S39) — le restatement corrige l'INPUT, pas la pondération.
 
 ## [2026-07-10] — Revue architecture complète + repo standardisé
 
