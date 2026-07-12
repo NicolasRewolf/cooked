@@ -3,6 +3,42 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-07-12] — Couture d'identité : sessions coupées recollées, attribution réparée
+
+### Corrigé — Bug d'identité tracker (cause racine)
+- **Tracker `sprint41`** : ids auto-réparants. Un wipe/transition de storage en
+  cours de page (typ. décision du bandeau de consentement ~10 s après l'arrivée)
+  faisait tourner le `sid` (relu à chaque event, re-minté sur miss) puis l'`aid`
+  (caché en closure, jamais ré-écrit → tournait à la navigation suivante).
+  Mesuré : ~22 % des sessions coupées en deux, ~95 % des `cta_phone_click` sans
+  amont visible, stable ≥6 semaines (antérieur à sprint40). Quatre gestes,
+  iso-comportement si le storage est sain : cache mémoire `_cachedSid` ré-écrit
+  au lieu de re-minter ; `healAid()` opportuniste (adossé au debounce 5 s) ;
+  lecture sessionStorage sur MISS (plus seulement sur exception) avec
+  rapatriement ; `exposeIds()` rejoué au flush si la paire (aid,sid) a tourné.
+  **À déployer via minify + Wix Custom Code.**
+
+### Ajouté — SQL (migrations `20260712*`, appliquées en prod le 12/07)
+- Table **`identity_stitch`** + `refresh_identity_stitch(90)` : composantes
+  connexes du graphe biparti aid↔sid (label propagation, convergence 2 iter.,
+  aids 32-hex fallback serveur exclus comme clé). Recolle rétroactivement les
+  visites coupées. Cron nocturne `40 3 * * *` (avant les refreshers dashboard).
+- **`refresh_dashboard_resources_assisted` v2** : entrée d'un contact = première
+  pageview de la **visite recousue** (segmentation à trous >30 min, rattachement
+  à la dernière pageview ≤6 h avant le contact), fallback session brute.
+  Contrat de sortie inchangé. Validation prod 12/07 : contacts assistés
+  « ressource » 28 j **16 → 37**, entrée connue des phone clicks 54 % → 99 %,
+  0 composante multi-device (garde-fou faux recollages), cas d'école du
+  11/07 18:52 attribué à son article d'entrée réel.
+- Cron `refresh-dashboard-assisted` : timeout 300 s → 590 s (v2 plus lourde).
+
+### Connu — reste à faire (session du 12/07)
+- `conversion_journeys` / `seo_to_contact_funnel` / `content_performance`
+  joignent encore par session brute (journey tronqué, `entry_channel` NULL
+  possible) — à brancher sur `identity_stitch`.
+- Dashboard UI : harmoniser les deux compteurs (« contacts sur la page » du
+  tableau vs « contacts assistés » de la fiche) — afficher les deux, étiquetés.
+
 ## [2026-07-10] — Revue architecture complète + repo standardisé
 
 ### Ajouté — SQL (Arch #1–#5, PRs #60–#61)
