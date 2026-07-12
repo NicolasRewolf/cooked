@@ -483,13 +483,23 @@ Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
 Paris (première ingestion réelle).
 
-**Versions canoniques (repo `main`, 10/07/2026)** :
-- Tracker : **`sprint40`** (refactor D9, `COOKED_VERSION` inchangé — déployer via
-  minify + Wix Custom Code).
+**Versions canoniques (repo `main`, 12/07/2026)** :
+- Tracker : **`sprint41`** (ids auto-réparants — fin de la rotation aid/sid sur
+  wipe de storage qui coupait ~22 % des sessions ; déployer via minify + Wix
+  Custom Code. Tant que la prod est en `sprint40`, la couture SQL compense).
 - Edge `track` : **v25** (D4 `track_row` + C5 `events_row` ; clamp horloge v23).
 - Edge `form-webhook` : **v12** (D4 `form_row` ; v11 = submissionTime + drop alert).
 
 Prod peut lagger : vérifier la version déployée avant d'annoncer un changement Edge.
+
+**Couture d'identité (12/07/2026)** : table `identity_stitch` (sid|aid →
+`visitor_key`, composantes connexes du graphe aid↔sid, cron nocturne 03:40 UTC,
+90 j glissants). Répare rétroactivement les sessions coupées par le bug de
+rotation d'ids (~22 % des sessions, ~95 % des phone clicks sans amont). Consommée
+par `refresh_dashboard_resources_assisted` v2 (entrée = première pageview de la
+**visite recousue**, segmentation 30 min). ⚠️ Ne JAMAIS coudre via un aid 32-hex
+(fallback serveur hash IP|UA, partageable entre visiteurs). Reste à brancher :
+`conversion_journeys`, `seo_to_contact_funnel`, `content_performance`.
 
 ---
 

@@ -49,7 +49,7 @@ def changed_migration_files() -> list[Path]:
 def changed_files_in_pr() -> set[str]:
     event = os.environ.get("GITHUB_EVENT_NAME", "")
     spec = "HEAD~1 HEAD" if event == "push" else f"origin/{os.environ.get('GITHUB_BASE_REF', 'main')}...HEAD"
-    return {p.as_posix() for p in git_diff_paths(spec)}
+    return {p.relative_to(ROOT).as_posix() for p in git_diff_paths(spec)}
 
 
 def rpc_names_in_file(path: Path) -> set[str]:

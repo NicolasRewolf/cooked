@@ -7,7 +7,7 @@
 -- Ce fichier = instantané lisible pour humains et agents (Arch #5, 10/07/2026).
 --
 -- Régénérer : python3 scripts/generate_rpcs_sql.py  (DATABASE_URL requis)
--- Généré le 10/07/2026 — projet mxycmjkeotrycyneacje.
+-- Généré le 12/07/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
 -- ═══ public.alert_rule_cpi_drop() ═══
@@ -3087,46 +3087,86 @@ BEGIN
   FOREACH w IN ARRAY windows LOOP
     CALL public.cooked_snapshot_window(w, 'human', lbl, lns, lne, lps, lpe, lpt, ld, gns, gne, gps, gpe, glast, glag);
 
-    DROP TABLE IF EXISTS _fpv;
-    CREATE TEMP TABLE _fpv ON COMMIT DROP AS
-      SELECT DISTINCT ON (e.session_id) e.session_id, e.path AS entry_path, e.d AS entry_d
+    -- Pageviews avec identité recousue (fallback : session brute).
+    DROP TABLE IF EXISTS _pvk;
+    CREATE TEMP TABLE _pvk ON COMMIT DROP AS
+      SELECT COALESCE(st.visitor_key, 'sid:' || e.session_id) AS vk,
+             e.occurred_at AS t, e.path
       FROM _cooked_ev e
-      WHERE e.name='pageview'
+      LEFT JOIN identity_stitch st ON st.kind = 'sid' AND st.key = e.session_id
+      WHERE e.name = 'pageview'
         AND e.referrer_hostname IS DISTINCT FROM 'm.baidu.com'
-        AND e.referrer_hostname IS DISTINCT FROM 'baidu.com'
-      ORDER BY e.session_id, e.occurred_at;
-    CREATE INDEX ON _fpv(session_id);
-    ANALYZE _fpv;
+        AND e.referrer_hostname IS DISTINCT FROM 'baidu.com';
 
+    -- Segmentation en visites : nouveau segment si trou > 30 min entre
+    -- deux pageviews du même visiteur (sémantique fenêtre de session).
+    DROP TABLE IF EXISTS _pvseg;
+    CREATE TEMP TABLE _pvseg ON COMMIT DROP AS
+      SELECT vk, t, path,
+             sum(brk) OVER (PARTITION BY vk ORDER BY t) AS visit_n
+      FROM (
+        SELECT vk, t, path,
+               CASE WHEN lag(t) OVER (PARTITION BY vk ORDER BY t) IS NULL
+                      OR t - lag(t) OVER (PARTITION BY vk ORDER BY t) > interval '30 minutes'
+                    THEN 1 ELSE 0 END AS brk
+        FROM _pvk
+      ) x;
+    CREATE INDEX ON _pvseg (vk, t);
+    ANALYZE _pvseg;
+
+    DROP TABLE IF EXISTS _ventry;
+    CREATE TEMP TABLE _ventry ON COMMIT DROP AS
+      SELECT vk, visit_n, (array_agg(path ORDER BY t))[1] AS entry_path
+      FROM _pvseg GROUP BY vk, visit_n;
+    ANALYZE _ventry;
+
+    -- Contacts macro avec leur visitor_key : phone (session de l'event),
+    -- form (cooked_sid, puis cooked_aid si le sid manque — champs cachés).
     DROP TABLE IF EXISTS _ct;
     CREATE TEMP TABLE _ct ON COMMIT DROP AS
-      SELECT e.session_id AS sid, e.d
+      SELECT e.occurred_at AS t, e.d,
+             COALESCE(st.visitor_key, 'sid:' || e.session_id) AS vk
       FROM _cooked_ev e
-      WHERE e.name='cta_phone_click'
+      LEFT JOIN identity_stitch st ON st.kind = 'sid' AND st.key = e.session_id
+      WHERE e.name = 'cta_phone_click'
       UNION ALL
-      SELECT e.props->>'cooked_sid', e.d
+      SELECT e.occurred_at, e.d,
+             COALESCE(sts.visitor_key, sta.visitor_key,
+                      'sid:' || (e.props->>'cooked_sid'))
       FROM _cooked_ev e
-      WHERE e.name='form_submit' AND form_submit_counts_as_macro(e.props)
-        AND e.props->>'cooked_sid' IS NOT NULL;
+      LEFT JOIN identity_stitch sts ON sts.kind = 'sid' AND sts.key = e.props->>'cooked_sid'
+      LEFT JOIN identity_stitch sta ON sta.kind = 'aid' AND sta.key = e.props->>'cooked_aid'
+      WHERE e.name = 'form_submit' AND form_submit_counts_as_macro(e.props)
+        AND COALESCE(e.props->>'cooked_sid', e.props->>'cooked_aid') IS NOT NULL;
     ANALYZE _ct;
 
-    INSERT INTO public.dashboard_resources_assisted_snapshot (window_kind, path, assisted_contacts, assisted_prev, refreshed_at)
-    SELECT w, pt.path,
-      COALESCE(cur.n,0), COALESCE(prv.n,0), now()
+    -- Entrée de visite de chaque contact : visite de la dernière pageview
+    -- qui précède le contact (≤ 6 h), première pageview de cette visite.
+    DROP TABLE IF EXISTS _ce;
+    CREATE TEMP TABLE _ce ON COMMIT DROP AS
+      SELECT c.d, v.entry_path
+      FROM _ct c
+      JOIN LATERAL (
+        SELECT s.vk, s.visit_n
+        FROM _pvseg s
+        WHERE s.vk = c.vk AND s.t <= c.t AND c.t - s.t <= interval '6 hours'
+        ORDER BY s.t DESC LIMIT 1
+      ) lp ON true
+      JOIN _ventry v ON v.vk = lp.vk AND v.visit_n = lp.visit_n;
+
+    INSERT INTO public.dashboard_resources_assisted_snapshot
+      (window_kind, path, assisted_contacts, assisted_prev, refreshed_at)
+    SELECT w, pt.path, COALESCE(cur.n, 0), COALESCE(prv.n, 0), now()
     FROM page_taxonomy pt
     LEFT JOIN (
-      SELECT f.entry_path, count(*) AS n
-      FROM _ct c JOIN _fpv f ON f.session_id=c.sid
-      WHERE c.d BETWEEN lns AND lne
-      GROUP BY f.entry_path
-    ) cur ON cur.entry_path=pt.path
+      SELECT entry_path, count(*) AS n FROM _ce
+      WHERE d BETWEEN lns AND lne GROUP BY entry_path
+    ) cur ON cur.entry_path = pt.path
     LEFT JOIN (
-      SELECT f.entry_path, count(*) AS n
-      FROM _ct c JOIN _fpv f ON f.session_id=c.sid
-      WHERE c.d BETWEEN lps AND lpe
-      GROUP BY f.entry_path
-    ) prv ON prv.entry_path=pt.path
-    WHERE pt.category='ressource';
+      SELECT entry_path, count(*) AS n FROM _ce
+      WHERE d BETWEEN lps AND lpe GROUP BY entry_path
+    ) prv ON prv.entry_path = pt.path
+    WHERE pt.category = 'ressource';
   END LOOP;
 END $function$
 
@@ -3278,6 +3318,63 @@ BEGIN
                     WHERE day BETWEEN gns AND gne AND path IN (SELECT path FROM page_taxonomy WHERE category='ressource') GROUP BY day) gd ON gd.day = ds.d),
       now();
   END LOOP;
+END $function$
+
+
+-- ═══ public.refresh_identity_stitch(p_days integer) ═══
+CREATE OR REPLACE FUNCTION public.refresh_identity_stitch(p_days integer DEFAULT 90)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '420s'
+AS $function$
+DECLARE
+  t0 timestamptz := now() - make_interval(days => p_days);
+BEGIN
+  -- Paires (aid, sid) observées. Lecture d'events BRUT, assumée et
+  -- volontaire : (a) c'est de la topologie d'identité, pas un chiffre
+  -- business — les ids étant aléatoires par navigateur, les sessions
+  -- bots forment leurs propres composantes sans polluer celles des
+  -- humains ; (b) scanner events_human (anti-joins bots/bruit) coûte
+  -- >100 s sur 28 j — prohibitif ici, les consommateurs business
+  -- continuent de lire events_human et joignent la couture ensuite.
+  DROP TABLE IF EXISTS _st_pairs;
+  CREATE TEMP TABLE _st_pairs ON COMMIT DROP AS
+    SELECT DISTINCT anonymous_id AS a, session_id AS s
+    FROM events
+    WHERE occurred_at >= t0
+      AND anonymous_id NOT LIKE 'webhook-%'
+      AND session_id  NOT LIKE 'webhook-%'
+      AND anonymous_id !~ '^[0-9a-f]{32}$';
+  ANALYZE _st_pairs;
+
+  -- Label propagation alternée sid→aid→sid. Convergence mesurée à
+  -- 2 itérations sur 28 j de prod (12/07/2026) ; 3 par marge.
+  DROP TABLE IF EXISTS _st_l0; DROP TABLE IF EXISTS _st_a1;
+  DROP TABLE IF EXISTS _st_l1; DROP TABLE IF EXISTS _st_a2;
+  DROP TABLE IF EXISTS _st_l2; DROP TABLE IF EXISTS _st_a3;
+  DROP TABLE IF EXISTS _st_l3;
+  CREATE TEMP TABLE _st_l0 ON COMMIT DROP AS
+    SELECT s, min(a) AS lbl FROM _st_pairs GROUP BY s;
+  CREATE TEMP TABLE _st_a1 ON COMMIT DROP AS
+    SELECT p.a, min(l.lbl) AS lbl FROM _st_pairs p JOIN _st_l0 l ON l.s = p.s GROUP BY p.a;
+  CREATE TEMP TABLE _st_l1 ON COMMIT DROP AS
+    SELECT p.s, min(x.lbl) AS lbl FROM _st_pairs p JOIN _st_a1 x ON x.a = p.a GROUP BY p.s;
+  CREATE TEMP TABLE _st_a2 ON COMMIT DROP AS
+    SELECT p.a, min(l.lbl) AS lbl FROM _st_pairs p JOIN _st_l1 l ON l.s = p.s GROUP BY p.a;
+  CREATE TEMP TABLE _st_l2 ON COMMIT DROP AS
+    SELECT p.s, min(x.lbl) AS lbl FROM _st_pairs p JOIN _st_a2 x ON x.a = p.a GROUP BY p.s;
+  CREATE TEMP TABLE _st_a3 ON COMMIT DROP AS
+    SELECT p.a, min(l.lbl) AS lbl FROM _st_pairs p JOIN _st_l2 l ON l.s = p.s GROUP BY p.a;
+  CREATE TEMP TABLE _st_l3 ON COMMIT DROP AS
+    SELECT p.s, min(x.lbl) AS lbl FROM _st_pairs p JOIN _st_a3 x ON x.a = p.a GROUP BY p.s;
+
+  DELETE FROM identity_stitch;
+  INSERT INTO identity_stitch (kind, key, visitor_key)
+    SELECT 'sid', s, lbl FROM _st_l3
+    UNION ALL
+    SELECT 'aid', a, lbl FROM _st_a3;
 END $function$
 
 

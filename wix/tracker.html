@@ -1,11 +1,30 @@
 <!--
   COOKED — first-party SEO tracker (cookieless, RGPD-exempt)
-  Version: sprint40 (02/07/2026, audit T-14) — page_exit ré-armé au retour
+  Version: sprint41 (12/07/2026) — identifiants auto-réparants. Un wipe/
+    transition de storage en cours de page faisait tourner le sid (relu à
+    chaque event) puis l'aid (jamais ré-écrit → tournait à la navigation
+    suivante) : ~22 % des sessions coupées, ~95 % des cta_phone_click sans
+    amont visible. Quatre gestes, iso-comportement si le storage est sain :
+      1. cache mémoire _cachedSid {id,start,last}, miroir du blob '_ckd' :
+         si le blob disparaît du storage mais que la fenêtre 30 min court
+         encore en mémoire, on RÉ-ÉCRIT le blob au lieu de minter un sid ;
+      2. aid re-vérifié / ré-écrit opportunistement dans localStorage
+         (healAid, adossé au debounce 5 s de l'écriture du blob session —
+         aucune I/O ajoutée par event) ;
+      3. lecture sessionStorage sur MISS localStorage (plus seulement sur
+         exception), avec rapatriement : aid/sid survivent à une phase
+         « localStorage bloqué (écrit en sessionStorage) puis revenu vide » ;
+      4. exposeIds() rejoué au flush si la paire (aid,sid) exposée dans
+         l'URL a tourné (champs cachés des forms + referrer toujours à jour).
+    Le format des ids ne change pas : rid() garde son suffixe Date.now()
+    en base36 (sert au diagnostic), et le batching fige toujours les ids à
+    l'enqueue.
+  (sprint40 02/07/2026, audit T-14 — page_exit ré-armé au retour
     d'onglet (visibilitychange) : avant, un visiteur qui masquait l'onglet
     puis revenait lire n'émettait JAMAIS de page_exit final (dwell/scroll
     figés au premier masquage). Corollaire SQL : max(duration) par
     session×path — une session peut émettre plusieurs page_exit à durées
-    croissantes.
+    croissantes.)
   Refactor D9 (10/07/2026) — helpers internes hissés en tête d'IIFE
     (stripSlash, base commune de normPC/normalizePath ; inStickyAncestor ;
     labelOf). Strictement iso-comportement : aucun event, payload, seuil
@@ -66,7 +85,7 @@
   // version label never appears after a Wix republish, the paste
   // failed or was truncated. Bump this string on every meaningful
   // tracker change.
-  var COOKED_VERSION       = 'sprint40';
+  var COOKED_VERSION       = 'sprint41';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -147,8 +166,16 @@
       var KEY = '_ckd_aid';
       var aid = localStorage.getItem(KEY);
       if (!aid || aid.length < 8) {
-        aid = rid() + rid(); // ~28 chars of alphanumeric randomness
-        localStorage.setItem(KEY, aid);
+        // sprint41 — lecture sur MISS (plus seulement sur exception) : si
+        // localStorage a été vidé/transitionné mais que sessionStorage
+        // porte encore l'aid (écrit pendant une phase où localStorage
+        // jetait), le rapatrier au lieu de minter — l'aid survit au wipe.
+        try {
+          var sess = sessionStorage.getItem(KEY);
+          if (sess && sess.length >= 8) aid = sess;
+        } catch (es) {}
+        if (!aid || aid.length < 8) aid = rid() + rid(); // ~28 chars of alphanumeric randomness
+        localStorage.setItem(KEY, aid); // mint OU rapatriement session→local
       }
       _cachedAid = aid;
       return aid;
@@ -200,46 +227,118 @@
   // each write costs 0.5-1.5ms of main-thread sync I/O → ~35ms cumulative
   // jank on iPhone 8-era devices, sub-INP but felt. The 30-min sliding
   // timeout doesn't need ms precision — 5s drift is irrelevant.
+  // sprint41 — cache mémoire du blob session {id,start,last}, miroir du
+  // storage. Un wipe/transition de storage en cours de page faisait tourner
+  // le sid (relu à chaque event) puis l'aid → ~22 % des sessions coupées,
+  // ~95 % des cta_phone_click sans amont visible. Ordre de résolution :
+  // localStorage valide > mémoire valide (ré-écrite dans le storage) >
+  // sessionStorage valide (rapatrié) > mint. On ne mint que si NI le
+  // storage NI la mémoire n'ont de session dans la fenêtre 30 min.
+  // Iso-comportement pour un navigateur au storage sain.
   var _sessionLastWrite = 0;
-  function getSessionId() {
+  var _cachedSid = null;
+
+  function sidOk(s, now) {
+    return !!(s && s.id && (now - s.last) < SESSION_TIMEOUT_MS);
+  }
+
+  // sprint41 — réparation opportuniste de l'aid. Adossée aux écritures du
+  // blob session (déjà debouncées à 5 s) : aucune I/O ajoutée par event.
+  // Si localStorage a perdu (ou changé) l'aid résolu, on le ré-écrit —
+  // sans ça l'aid tournait à la navigation suivante (jamais ré-écrit).
+  // _cachedAid est toujours client-généré (rid()+rid()) : aucun risque de
+  // ré-écrire un aid de fallback serveur (32 hex, partageable).
+  function healAid() {
     try {
-      var KEY = '_ckd';
-      var now = Date.now();
-      var raw = localStorage.getItem(KEY);
-      if (raw) {
-        var s = JSON.parse(raw);
-        if (s && s.id && (now - s.last) < SESSION_TIMEOUT_MS) {
-          s.last = now;
-          if (now - _sessionLastWrite > 5000) {
-            localStorage.setItem(KEY, JSON.stringify(s));
-            _sessionLastWrite = now;
+      if (_cachedAid && localStorage.getItem('_ckd_aid') !== _cachedAid) {
+        localStorage.setItem('_ckd_aid', _cachedAid);
+      }
+    } catch (e) {}
+  }
+
+  // Écriture localStorage du blob session + healAid() dans la foulée (même
+  // rythme d'I/O : le debounce 5 s est décidé PAR L'APPELANT). Jette si
+  // localStorage est bloqué → outer catch de getSessionId (voulu).
+  function putSid(s) {
+    localStorage.setItem('_ckd', JSON.stringify(s));
+    _sessionLastWrite = Date.now();
+    healAid();
+  }
+
+  function getSessionId() {
+    var KEY = '_ckd';
+    var now = Date.now();
+    try {
+      // Blob corrompu ≠ localStorage bloqué : on isole le parse pour que
+      // JSON.parse cassé retombe sur la réparation mémoire ci-dessous (et
+      // plus dans le fallback sessionStorage). Si l'ACCÈS à localStorage
+      // jette (privé strict), s reste null et le setItem plus bas jettera
+      // aussi → outer catch (comportement historique conservé).
+      var s = null;
+      try {
+        var raw = localStorage.getItem(KEY);
+        if (raw) s = JSON.parse(raw);
+      } catch (ep) {}
+      if (sidOk(s, now)) {
+        s.last = now;
+        _cachedSid = s; // rafraîchit le miroir mémoire à chaque event
+        if (now - _sessionLastWrite > 5000) putSid(s);
+        return s.id;
+      }
+      // MISS storage. Pas de session valide en mémoire non plus ? Regarder
+      // sessionStorage (écrit pendant une phase « localStorage bloqué ») —
+      // rapatriement au lieu de mint (sprint41, point 3).
+      if (!sidOk(_cachedSid, now)) {
+        try {
+          var rawS = sessionStorage.getItem(KEY);
+          if (rawS) {
+            var ss = JSON.parse(rawS);
+            if (sidOk(ss, now)) _cachedSid = ss;
           }
-          return s.id;
-        }
+        } catch (es) {}
+      }
+      if (sidOk(_cachedSid, now)) {
+        // Auto-réparation : le storage a perdu le blob mais la fenêtre
+        // 30 min court encore → on RÉ-ÉCRIT au lieu de minter.
+        _cachedSid.last = now;
+        putSid(_cachedSid);
+        return _cachedSid.id;
       }
       var ns = { id: rid(), start: now, last: now };
-      localStorage.setItem(KEY, JSON.stringify(ns));
-      _sessionLastWrite = now;
+      _cachedSid = ns;
+      putSid(ns); // healAid inclus : un mint post-wipe ne perd pas l'aid
       return ns.id;
     } catch (e) {
       // localStorage blocked (private mode, strict cookie blockers).
-      // Best-effort fallback: try sessionStorage so at least pageviews
-      // within a single tab stitch together.
+      // sprint41 : la mémoire prime (même sid pour toute la page), puis
+      // sessionStorage so at least pageviews within a single tab stitch.
+      if (sidOk(_cachedSid, now)) {
+        _cachedSid.last = now;
+        try { sessionStorage.setItem(KEY, JSON.stringify(_cachedSid)); } catch (e1) {}
+        return _cachedSid.id;
+      }
       try {
-        var raw2 = sessionStorage.getItem('_ckd');
-        var now2 = Date.now();
+        var raw2 = sessionStorage.getItem(KEY);
         if (raw2) {
           var s2 = JSON.parse(raw2);
-          if (s2 && s2.id && (now2 - s2.last) < SESSION_TIMEOUT_MS) {
-            s2.last = now2;
-            sessionStorage.setItem('_ckd', JSON.stringify(s2));
+          if (sidOk(s2, now)) {
+            s2.last = now;
+            _cachedSid = s2;
+            sessionStorage.setItem(KEY, JSON.stringify(s2));
             return s2.id;
           }
         }
-        var ns2 = { id: rid(), start: now2, last: now2 };
-        sessionStorage.setItem('_ckd', JSON.stringify(ns2));
+        var ns2 = { id: rid(), start: now, last: now };
+        _cachedSid = ns2;
+        sessionStorage.setItem(KEY, JSON.stringify(ns2));
         return ns2.id;
-      } catch (e2) { return rid(); }
+      } catch (e2) {
+        // Dernier recours : plus un sid par EVENT (l'ancien return rid()
+        // non stocké) mais un sid par page load, mémorisé en closure.
+        var ns3 = { id: rid(), start: now, last: now };
+        _cachedSid = ns3;
+        return ns3.id;
+      }
     }
   }
 
@@ -295,6 +394,13 @@
   var B_MS = 30000;
   var CRITICAL = ' pageview page_exit cta_phone_click cta_booking_click cta_anchor_click click_internal click_outbound ';
   var queue = [];
+  // sprint41 — dernière paire (aid,sid) exposée dans l'URL par exposeIds().
+  // Comparée au flush (endroit peu fréquent, déjà dans le flot) : si les
+  // ids ont tourné (auto-réparation, re-mint, expiration 30 min), on
+  // rejoue exposeIds() pour que les champs cachés des forms (masterPage.js
+  // lit la query) et le referrer de la page suivante portent les ids
+  // courants.
+  var _exposedAid = null, _exposedSid = null;
 
   function transmit(body) {
     if (navigator.sendBeacon) {
@@ -318,6 +424,12 @@
     var batch = queue.splice(0, 50);
     transmit(JSON.stringify({ events: batch }));
     if (queue.length) flushQ(); // file > 50 (théorique)
+    // sprint41 — rotation d'ids détectée sur les ids DÉJÀ figés à
+    // l'enqueue (aucun accès storage ici) : ré-exposer la paire courante.
+    var le = batch[batch.length - 1];
+    if (le && (le.anonymous_id !== _exposedAid || le.session_id !== _exposedSid)) {
+      exposeIds();
+    }
   }
 
   function send(name, props) {
@@ -998,9 +1110,15 @@
   //   d'attribution hidden_field, le fallback temporal du webhook reste).
   // ==============================================================
   function exposeIds() {
+    // sprint41 — mémorise la paire exposée AVANT le replaceState (getters
+    // sans throw : ils ont leurs try/catch internes) : même si
+    // URLSearchParams/replaceState jette (vieux navigateurs), le flush ne
+    // re-tente pas en boucle — comportement historique (échec silencieux).
+    var aid = getAnonymousId(), sid = getSessionId();
+    _exposedAid = aid;
+    _exposedSid = sid;
     try {
       var q = new URLSearchParams(location.search);
-      var aid = getAnonymousId(), sid = getSessionId();
       if (q.get('cooked_aid') === aid && q.get('cooked_sid') === sid) return;
       q.set('cooked_aid', aid);
       q.set('cooked_sid', sid);
