@@ -10,22 +10,21 @@ import { Trend, dirDotClass } from "./ui";
 import { cn } from "@/lib/cn";
 import type { ResourceRow } from "@/lib/types";
 import { num, seconds, dec, pct, delta } from "@/lib/format";
-import { momentumDir, momentumLabelFr } from "@/lib/momentum";
+import { momentumDir, momentumLabelFr, isScored, isGisement } from "@/lib/momentum";
 
 // ── Verdict de santé : momentum (relatif au site) + grade de confiance ───────
 // Pour les pages sans conversion (articles éducatifs), le potentiel
 // hors-conversion est le bon repère — d'où la ★ gisement.
 export function HealthCell({ r }: { r: ResourceRow }) {
-  if (r.cpi_grade == null || r.cpi_grade === "C" || r.momentum == null) {
+  if (!isScored(r.cpi_grade, r.momentum)) {
     return (
       <span className="font-mono text-[11px] text-dim">—</span>
     );
   }
-  const m = r.momentum;
-  const dir = momentumDir(m);
+  const dir = momentumDir(r.momentum!);
   const dot = dirDotClass(dir);
   const word = momentumLabelFr(dir);
-  const gisement = (r.cpi_grade === "A" || r.cpi_grade === "B") && r.convertit === false;
+  const gisement = isGisement(r.cpi_grade, r.convertit);
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", dot)} />
