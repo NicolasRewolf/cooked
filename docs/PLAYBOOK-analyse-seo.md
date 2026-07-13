@@ -2,7 +2,9 @@
 
 Guide opérationnel pour mener les analyses que Nicolas demande, sans
 retomber dans les pièges déjà payés. Issu des sessions des 09-10/06/2026
-(Sprint 37-38), à jour CPI **v2.2** + vue `cpi_gisement` (Sprint 39). À lire
+(Sprint 37-38), **à jour au 12/07/2026** : CPI **v2.2** (validé J+28 le
+11/07/2026) + vue `cpi_gisement` (Sprint 39) + couture d'identité
+`identity_stitch` / `conversion_journeys` v2 recousue (12/07/2026). À lire
 AVANT la première analyse d'une session.
 
 ## 0. Démarrage de session (30 secondes)
@@ -85,6 +87,13 @@ Pages présentes dans les parcours convertis SANS être la page d'entrée
 `/notre-cabinet` + `/nos-affaires` + catégorie médias = colonne vertébrale
 de confiance — investir là rapporte sur TOUS les parcours.
 
+⚠️ **Sémantique recousue depuis le 12/07/2026** : `conversion_journeys` v2
+reconstruit les parcours sur le **visiteur recousu** (`identity_stitch` —
+les sessions coupées par l'ancien bug de rotation d'ids sont recollées).
+Les chiffres d'assists produits AVANT le 12/07/2026 sous-comptaient ~2× sur
+les ressources : toute comparaison avant/après le 12/07 doit le dire
+explicitement (cf. piège 11).
+
 ## 4. CPI — l'outil de tri
 
 ```sql
@@ -110,7 +119,11 @@ sujet** (indemnisation = audience concernée > pénal éducatif = curieux).
 L'alerte `cpi_drop` ne sonne que sur un vrai decay (momentum/capture en baisse),
 pas sur la volatilité de la conversion (recalibrée 17/06).
 
-## 5. Les 8 pièges (chacun a déjà coûté une fausse conclusion)
+⚠️ **Note pratique** : `cooked_page_index(28)` en ad-hoc peut dépasser le
+timeout MCP. Préférer lire le dernier snapshot :
+`SELECT * FROM cpi_daily WHERE day = (SELECT max(day) FROM cpi_daily)`.
+
+## 5. Les 11 pièges (chacun a déjà coûté une fausse conclusion)
 
 1. **Mix de canaux** → métriques de lecture sur organique uniquement.
 2. **Position moyenne** → pondérée impressions, mélange des requêtes.
@@ -154,6 +167,16 @@ pas sur la volatilité de la conversion (recalibrée 17/06).
    pageview (é vs e). 8 paires univoques backfillées (migration
    `20260702132222`) ; pour toute jointure target_path ↔ paths, passer par
    `unaccent()` en lecture (les variantes sans jumeau pageview restent).
+10. **Coudre des parcours via un aid 32-hex — INTERDIT** (12/07/2026) : un
+    `anonymous_id` 32-hex est le fallback serveur (hash IP|UA), **partageable
+    entre visiteurs** — le joindre fusionnerait des inconnus entre eux. Pour
+    rattacher sessions et visiteurs, passer par `identity_stitch`
+    (`visitor_key`), jamais par une jointure directe sur l'aid.
+11. **Attribution pré-12/07/2026 = mono-session** : avant la couture
+    d'identité, les contacts assistés étaient sous-comptés (16 → 37 sur les
+    ressources, 28 j). Requalifier toute analyse d'assists antérieure au
+    12/07/2026 avant de la citer ; toute comparaison avant/après doit nommer
+    le restatement.
 
 ## 6. Livraison à Nicolas
 

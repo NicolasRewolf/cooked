@@ -1,3 +1,5 @@
+> ⚠️ Archive du 02/07/2026 — plan de correction exécuté à 100 % le 03/07/2026 (plan-correction-audit-2026-07-02.md).
+
 # Audit Fable 5 — 02/07/2026 : état du système + cap « Cooked next level »
 
 > Audit multi-agents mené les 01-02/07/2026 : 8 auditeurs de zone (tracker,

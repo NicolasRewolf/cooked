@@ -1,5 +1,14 @@
 # Journal des actions contenu/SEO — jplouton-avocat.fr
 
+> ⚠️ **Source canonique des actions contenu depuis le 11/06/2026 : table
+> `annotations` (migration 20260611201942). Ce fichier = archive des
+> vagues 1-2.**
+>
+> **Verdict de la vague du 11/06/2026 (constat revue stratégique des
+> 10-11/07/2026) : VALIDÉE** — les CTA/maillage posés sur les posts ont
+> fait passer les phone clicks des posts de ~2 à ~43 par période
+> comparable.
+
 > Chaque action déployée sur le site (title, meta, bloc de conversion,
 > maillage) est consignée ici AVEC SA DATE de mise en ligne. C'est ce qui
 > permet de lire l'avant/après dans `cpi_daily` / `cpi_movers` / GSC sans
@@ -11,7 +20,7 @@
 |---|---|---|---|---|---|
 | 1 | **11/06/2026** ✅ vérifié servi | `/` (home) | Title + meta réécrits (intent local d'abord, marque ensuite) | zc CPI + CTR GSC sur `avocat bordeaux`, `avocat pénal(iste) bordeaux` | CTR 0,58 % → ≥ 1,2 % sur `avocat bordeaux` (pos ~4,8) |
 | 2 | **11/06/2026** ✅ vérifié servi | `/post/casier-judiciaire-comprendre-et-effacer` | Title + meta réécrits (intent effacement/délais + service avocat) | zc + momentum (page en ↘) ; CTR sur `avocat casier judiciaire` (0 % à pos 4,1 !) | inverser le ↘ ; premiers clics sur la requête avocat |
-| 3 | ⚠️ EN ATTENTE — le site sert encore l'ancien title (passé en « 2026 ») ; champ « Titre SEO » du panneau Référencement à remplir | `/post/itt-pénale-définition-en-2025` | Title + meta réécrits (seuil 8 jours / plainte / indemnisation) | zc ; CTR sur `jour itt et plainte` (647 imps, pos 6,8) et `itt supérieur à 8 jours` | récupérer une partie des 59 clics perdus/28j |
+| 3 | CLOS — non suivi individuellement, englobé dans le verdict de vague (constat 10-11/07/2026) | `/post/itt-pénale-définition-en-2025` | Title + meta réécrits (seuil 8 jours / plainte / indemnisation) | zc ; CTR sur `jour itt et plainte` (647 imps, pos 6,8) et `itt supérieur à 8 jours` | récupérer une partie des 59 clics perdus/28j |
 | 4 | **11/06/2026** ✅ vérifié servi | `/post/durée-de-la-garde-à-vue-24h-48h-96h…` | Bloc pont « proche en garde à vue » (urgence, tél) | zv CPI + cta_phone_click sur la page | premiers contacts depuis la page n°1 du site (1 726 entrées/28j, zv −3) |
 | 5 | **11/06/2026** ✅ vérifié servi | `/post/itt-pénale-définition-en-2025` | Bloc pont « victime avec certificat ITT » | zv + assists `conversion_journeys` | — |
 | 6 | **11/06/2026** ✅ vérifié servi (wording adapté par Nicolas) | `/post/indemnisation-civi-2025-guide-complet…` | Bloc pont « êtes-vous éligible CIVI » placé tôt. Bonus Nicolas : title réécrit « Indemnisation CIVI : montants et démarches 2026 » + meta orientée intent | zv + assists ; zc en bonus | — |

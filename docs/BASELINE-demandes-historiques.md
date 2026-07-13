@@ -1,3 +1,5 @@
+> ⚠️ Archive du 10/06/2026 — baseline figée au 10/06/2026 ; a servi la validation CPI du 11/07/2026.
+
 # Baseline historique des demandes entrantes — formulaire « Prise de contact site-web »
 
 > Source : export Wix du 11/06/2026 (672 soumissions, 22/03/2025 → 10/06/2026),

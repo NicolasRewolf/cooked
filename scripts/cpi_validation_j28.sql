@@ -2,6 +2,9 @@
 -- CPI v2.2 — Harnais de validation J+28 (Sprint 38 → amendé T-07, 02/07/2026)
 -- ============================================================================
 --
+-- ✅ EXÉCUTÉ LE 11/07/2026 — VALIDÉ (voir docs/cpi-cooked-page-index.md).
+--    Re-test diagnostic 56 j prévu le 05/08/2026.
+--
 -- À LANCER À PARTIR DU 08/07/2026 (t0 = snapshot cpi_daily du 10/06/2026 + 28 j
 -- de contacts observés) ; re-test DIAGNOSTIC à 56 j = 05/08/2026 (t0 inchangé,
 -- horizon doublé — pas un gate). Chaque section (§) est une requête AUTONOME

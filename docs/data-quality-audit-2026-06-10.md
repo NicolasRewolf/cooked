@@ -1,3 +1,5 @@
+> ⚠️ Archive du 10/06/2026 — l'audit fiabilité le plus récent est celui du 02/07/2026 (audit-fable5-2026-07-02.md).
+
 # Audit qualité des données — 10/06/2026 (Sprint 37, post-déploiement)
 
 Audit complet de Cooked comme « source de vérité » : events, GSC, pipeline.

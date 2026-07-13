@@ -1,3 +1,7 @@
+> ⚠️ **ARCHIVE — handoff historique (09/06→03/07/2026). Ne fait plus foi :
+> l'essentiel des P0/P1/P2 est résolu ou dépriorisé. Reste à faire courant :
+> [docs/ROADMAP.md](ROADMAP.md).**
+
 # Cooked — Roadmap Sprint 38+ (passation Fable 5 → Opus 4.8)
 
 Rédigé le 09/06/2026 en fin de Sprint 37, par l'agent qui vient de passer la

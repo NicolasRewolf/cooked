@@ -8,7 +8,7 @@
 --
 -- Ce fichier est un INSTANTANÉ LISIBLE de l'état prod (projet
 -- mxycmjkeotrycyneacje) — signatures/vues ; **corps RPC → supabase/rpcs.sql**
--- (généré 10/07/2026, 104 fonctions, gate CI Arch #5).
+-- (régénéré 12/07/2026, 105 fonctions, gate CI Arch #5).
 --
 -- Régénérer (MCP Supabase execute_sql, ou psql) : voir les 2 requêtes en bas.
 -- ============================================================================
@@ -231,5 +231,5 @@ CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
 --
 -- Pour le CORPS d'une fonction : supabase/rpcs.sql (généré, Arch #5)
 -- ou : SELECT pg_get_functiondef('public.<nom>(<args>)'::regprocedure);
--- Généré le 10/07/2026 — corps RPC : supabase/rpcs.sql (104 fonctions).
+-- Généré le 10/07/2026 — corps RPC : supabase/rpcs.sql (régénéré 12/07/2026, 105 fonctions).
 -- ============================================================================

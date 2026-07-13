@@ -154,9 +154,10 @@ Navigateur (Wix)          Wix Automations (server-side)
       ↓                          ↓                          (crons quotidien/hebdo)
   ┌─────────────────────── Postgres (Supabase) ───────────────────────┐
   │  events (brut)  →  events_human (sans bots ni bruit)              │
+  │       →  identity_stitch (visites recousues, pour l'attribution)  │
   │  gsc_path_daily / gsc_query_daily / gsc_query_page_daily          │
   │  snapshots nocturnes · CPI quotidien · alertes horaires           │
-  │  ~104 fonctions SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
+  │  ~105 fonctions SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
   └───────────────────────────────────────────────────────────────────┘
       ↓
   Claude Code (MCP Supabase) — Nicolas pose des questions, en français
@@ -186,15 +187,32 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ---
 
-## Où en est le système (10/07/2026)
+## Où en est le système (12/07/2026)
 
-**En production depuis le 06/05/2026.** Tracker navigateur **`sprint40`**
-(refactor D9 mergé 10/07 — même version stamp ; déployer via minify + Wix).
-Edge Functions dans le repo : **`track` v25**, **`form-webhook` v12** (D4) ;
-prod peut encore tourner v23/v11 tant que non redéployé. ~1,05 M d'événements
+> Cette section est datée par construction : pour l'état le plus frais,
+> c'est le [CHANGELOG.md](CHANGELOG.md) qui fait foi.
+
+**En production depuis le 06/05/2026.** Tracker navigateur **`sprint41`**
+(déployé le 12/07/2026). Edge Functions **`track` v25** et **`form-webhook`
+v12** déployées — prod alignée avec le repo. ~1,05 M d'événements
 bruts (bruit > 28 j purgé chaque semaine), ~2 millions de lignes Search Console
-(16 mois), ~190 pages scorées par le CPI chaque matin, **104 RPC** documentées
+(16 mois), ~190 pages scorées par le CPI chaque matin, **105 RPC** documentées
 dans `supabase/rpcs.sql`.
+
+**12/07 — la couture d'identité.** Un bug du tracker faisait tourner les
+identifiants visiteur/session quand le navigateur vidait son storage :
+~22 % des sessions étaient coupées en deux, et ~95 % des clics téléphone
+n'avaient aucun amont visible. Réparé aux deux bouts : le tracker
+**`sprint41`** (ids auto-réparants, déployé le 12/07/2026) supprime la
+rotation ; la table **`identity_stitch`** (composantes connexes du graphe
+identifiants, recalculée chaque nuit sur 90 j) recoud rétroactivement les
+visites coupées. Résultat : l'attribution des contacts aux articles
+redevient lisible (contacts assistés « ressource » 28 j : 16 → 37), et
+**`conversion_journeys` v2** reconstruit les parcours sur le visiteur
+recousu (le funnel SEO et `content_performance` en héritent). Le CPI du
+12/07 a été **restaté** en conséquence (seule la composante conversion
+bouge, aucun grade ne change) — réflexe : un saut de CPI daté du
+12/07/2026 est un restatement, pas un mouvement de page.
 
 **Sprint 39 (15-18/06) — l'outil passe en prod opérationnelle.**
 - **CPI v2.2** : momentum à transition continue + lissage empirical Bayes
@@ -239,19 +257,19 @@ enrichi (onglet Expertises, fiches article, contacts assistés). Détail :
   colonnes métriques dashboard ; helpers tracker (iso-comportement).
 - **Repo** : LICENSE, CONTRIBUTING, AGENTS, CHANGELOG, `.env.example`, templates GitHub.
 
-**Déploiement à faire pour aligner prod sur le repo** (code mergé, pas encore live partout) :
-- Edge **track v25** + **form-webhook v12** → `supabase functions deploy`
-- Tracker refactor D9 → `python3 scripts/minify-tracker.py` → Wix Custom Code
-  (`COOKED_VERSION` reste `sprint40` jusqu'au prochain bump volontaire)
-
 **Repère 10/06/2026** (premier snapshot CPI) : CPI moyen pondéré trafic
 **32/100**, ~446 clics Google « perdus »/mois — marge chiffrée page par page.
 
-**Validation CPI J+28 (08/07/2026)** : harnais
-[scripts/cpi_validation_j28.sql](scripts/cpi_validation_j28.sql) — dry-run audit
-juillet : stabilité poids τ-b ≥ 0,952 ; le verdict prédictif complet vit dans
-[docs/cpi-cooked-page-index.md](docs/cpi-cooked-page-index.md). L'outil CPI
-reste en prod opérationnelle sans complexification v2.3.
+**Validation CPI J+28 — tir réel FAIT le 11/07/2026, VALIDÉ.** Harnais
+[scripts/cpi_validation_j28.sql](scripts/cpi_validation_j28.sql) : reproduction
+exacte 194/194 pages, calibration CTR R² = 0,931 (médiane |écart| 20,5 % en
+suivi), stabilité des poids τ-b ≥ 0,952. Bonus prédictif : ratio tiers 3,11,
+mais ratio 0,10 sans la composante conversion — la prédiction vient de la
+« mémoire de conversion », pas des composantes comportementales. Libellé
+maximal acté : **« score de priorisation »**. Limite connue : biais de taille
+(issue GitHub #19). Re-test diagnostic 56 j le 05/08/2026. Le verdict complet
+vit dans [docs/cpi-cooked-page-index.md](docs/cpi-cooked-page-index.md).
+L'outil CPI reste en prod opérationnelle sans complexification v2.3.
 
 ---
 
@@ -267,8 +285,9 @@ reste en prod opérationnelle sans complexification v2.3.
   jusqu'à ~94 % des requêtes d'une page — les totaux viennent toujours
   de `gsc_path_daily`, l'attribution requête → page reste partielle
   par construction.
-- **Les volumes sont petits** (~130 contacts/mois) : le système
-  préfère dire « hypothèse » que sur-interpréter. C'est un choix.
+- **Les volumes sont petits** (≈210 contacts macro/28 j, mesure 07/2026
+  post-couture) : le système préfère dire « hypothèse » que
+  sur-interpréter. C'est un choix.
 
 ---
 
@@ -287,7 +306,7 @@ reste en prod opérationnelle sans complexification v2.3.
 | Mener une analyse SEO sans tomber dans les pièges | [docs/PLAYBOOK-analyse-seo.md](docs/PLAYBOOK-analyse-seo.md) |
 | Comprendre et utiliser le score CPI | [docs/cpi-cooked-page-index.md](docs/cpi-cooked-page-index.md) |
 | Le dashboard de lecture (articles ressources) | [dashboard/README.md](dashboard/README.md) |
-| Ce qui reste à faire (P0/P1/P2) | [docs/ROADMAP-sprint38-handoff.md](docs/ROADMAP-sprint38-handoff.md) |
+| Ce qui reste à faire | [docs/ROADMAP.md](docs/ROADMAP.md) (+ [CHANGELOG.md](CHANGELOG.md) pour le plus frais) |
 | Fiabilité des données (audits) | [docs/data-quality-audit-2026-06-10.md](docs/data-quality-audit-2026-06-10.md) |
 | Chronologie des sprints | [docs/HISTORY-sprints.md](docs/HISTORY-sprints.md) |
 | Règles de l'agent Claude Code (lu automatiquement) | [CLAUDE.md](CLAUDE.md) |

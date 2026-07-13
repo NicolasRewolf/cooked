@@ -1,12 +1,17 @@
 name: Edge shared helpers
 
 # C5 — helpers partagés track + form-webhook (_shared/events_row.ts)
+# D4 — mappers payload → row (_shared/track_row.ts, _shared/form_row.ts)
 
 on:
   pull_request:
     paths:
       - 'supabase/functions/_shared/events_row.ts'
       - 'supabase/functions/_shared/events_row_test.ts'
+      - 'supabase/functions/_shared/track_row.ts'
+      - 'supabase/functions/_shared/track_row_test.ts'
+      - 'supabase/functions/_shared/form_row.ts'
+      - 'supabase/functions/_shared/form_row_test.ts'
       - 'supabase/functions/track/index.ts'
       - 'supabase/functions/form-webhook/index.ts'
       - '.github/workflows/edge-shared-helpers.yml'
@@ -14,16 +19,21 @@ on:
     branches: [main]
     paths:
       - 'supabase/functions/_shared/events_row.ts'
+      - 'supabase/functions/_shared/track_row.ts'
+      - 'supabase/functions/_shared/form_row.ts'
       - 'supabase/functions/track/index.ts'
       - 'supabase/functions/form-webhook/index.ts'
 
 jobs:
-  events-row:
+  shared-helpers:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Deno tests (_shared/events_row.ts)
-        run: deno test supabase/functions/_shared/events_row_test.ts
+      - name: Deno tests (_shared — events_row, track_row, form_row)
+        run: |
+          deno test supabase/functions/_shared/events_row_test.ts
+          deno test supabase/functions/_shared/track_row_test.ts
+          deno test supabase/functions/_shared/form_row_test.ts

@@ -1,3 +1,5 @@
+> ⚠️ Archive du 03/06/2026 — chiffres de perf mesurés le 03/06/2026, re-mesurer avant toute réutilisation.
+
 # Audit vitesse — page « avocat divorce Bordeaux »
 
 **URL :** https://www.jplouton-avocat.fr/droit-des-contrats-et-des-personnes/droit-de-la-famille/avocat-divorce-bordeaux

@@ -1,3 +1,5 @@
+> ⚠️ Archive du 02/07/2026 — exécuté à 100 % (18 PRs), clos le 03/07/2026.
+
 # Plan de correction — audit du 02/07/2026
 
 > **Public : développeur tiers qui découvre le repo.** Ce document est

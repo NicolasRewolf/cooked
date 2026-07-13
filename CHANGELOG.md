@@ -3,6 +3,40 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-07-13] — Grand ménage : docs A→Z + hygiène repo
+
+### Modifié — Documentation (audit 4 agents + 5 rédacteurs, 12-13/07)
+- **28 fichiers .md alignés** sur l'état canonique du 12/07/2026 au soir :
+  sprint41 déployé, couture d'identité documentée partout (README, CLAUDE.md,
+  AGENTS.md, OPERATIONS — nouvelle section dédiée + table des 12 crons réels +
+  inventaire des restatements + procédure de vérif J+1 tracker), validation
+  CPI J+28 écrite au passé (11/07, VALIDÉE, « score de priorisation »),
+  encadré « ruptures de série cpi_daily » (02/07 + 12/07), 2 nouveaux pièges
+  au playbook (aid 32-hex, assists pré-12/07 sous-comptés), 105 RPC partout.
+- **Index docs/README.md** restructuré (docs vivants vs archives datées) ;
+  **8 bandeaux d'archive** posés ; ROADMAP-sprint38-handoff gelé en archive,
+  remplacé par **`docs/ROADMAP.md`** (reste-à-faire courant, 6 items datés) ;
+  JOURNAL-actions-contenu clos (source canonique = table `annotations`,
+  verdict vague 11/06 consigné : validée, phone posts ~2→~43).
+- **dashboard/README.md** : section Données réécrite (14 RPC consommées
+  vérifiées dans le code, crons, zod) + paragraphe « Contacts assistés v2 » ;
+  **dashboard/CLAUDE.md** : 4 règles dures projet (contrat RPC, secret
+  server-only, snapshots J-1, sémantique assistés).
+
+### Corrigé — Hygiène
+- **`backup-weekly.yml` : schedule retiré** — il échouait en rouge chaque
+  dimanche (secret jamais créé ; backup décliné le 02/07, risque assumé).
+  Déclenchement manuel uniquement.
+- **Trou de CI comblé** : `edge-shared-helpers.yml` exécute désormais les
+  tests Deno de `track_row.ts` et `form_row.ts` (D4) — jamais lancés en CI.
+- `cooked_events_window_contract.sql` retiré des paths CI (contrat manuel,
+  documenté dans OPERATIONS) ; smoke-tests `test_refresh_*.sql` documentés.
+- Supprimés : `supabase/scripts/` (répertoire fantôme périmé),
+  `scripts/c1_finish_noise_regression.sql`,
+  `scripts/cooked_events_window_adoption_regression.sql` (one-shots morts).
+- Migration `20260713000733` : `expected_tracker_version` → `sprint41`
+  (évite une fausse alerte `tracker_drift` post-déploiement).
+
 ## [2026-07-12] — Couture d'identité : sessions coupées recollées, attribution réparée
 
 ### Corrigé — Bug d'identité tracker (cause racine)

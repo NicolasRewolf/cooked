@@ -209,7 +209,7 @@ après C1–C9 ; tue les fuites SQL restantes :
   `contracts/branded_query_vectors.json`).
 - **`cooked_snapshot_window(w, grain)`** : driver bornes `live_j1` + GSC +
   `cooked_events_window` pour les 3 refreshers dashboard.
-- **`supabase/rpcs.sql`** : miroir lecture des 104 corps RPC (`pg_get_functiondef`) ;
+- **`supabase/rpcs.sql`** : miroir lecture des 105 corps RPC (`pg_get_functiondef`) ;
   gate CI `check_rpcs_sql_fresh.py` si migration redéfinit une RPC.
 
 **Revue architecture D4–D9 (10/07 soir, PRs #57–#65)** — chantiers opportunistes
@@ -219,6 +219,24 @@ mergés sur `main` :
 - **D8** `lib/chart-geometry.ts` — géométrie SVG partagée.
 - **D6** `metric-columns.tsx` — colonnes Resources / Expertises dédupliquées.
 - **D9** helpers tracker (`labelOf`, `inStickyAncestor`…) — iso-comportement.
+
+**12/07/2026 — couture d'identité (PRs #68–#69)** :
+- Bug tracker : rotation aid/sid sur wipe de storage → ~22 % des sessions
+  coupées, ~95 % des `cta_phone_click` sans amont visible.
+- Fix : table **`identity_stitch`** (composantes connexes aid↔sid, cron
+  03:40 UTC, 90 j) + `refresh_dashboard_resources_assisted` **v2** (assistés
+  ressource 28 j : 16→37) + **`conversion_journeys` v2** recousue (migration
+  `20260712203935` ; funnel + content_performance réparés par héritage).
+- **Restatement CPI du 12/07 au soir** (voir avertissement plus bas) ;
+  tracker **`sprint41`** déployé le 12/07 ~22:20 (vérif J+1 le 13/07).
+
+⚠️ **Restatement CPI du 12/07/2026** (couture d'identité, `conversion_journeys`
+v2) : le `cpi_daily` du 12/07 a été restaté — seule la composante conversion
+zv bouge (zc/zr/zl/momentum/gate inchangés page par page), delta moyen
+−0,1 pt, 0 changement de grade, 7 movers ≥15 pts (dont arnaque-en-ligne
+41→100 et /nos-affaires 67→12 qui rend un crédit usurpé). Annotation posée
+dans `annotations`. **Un « avant/après 12/07 » dans cpi_daily n'est PAS un
+decay.** Table d'audit `cpi_pre_restatement_20260712` à supprimer ~19/07/2026.
 
 Cooked sert de remplaçant GA4 : des données comportementales fiables pour
 Nicolas et Me Plouton, et les analyses Cooked × GSC (intent matching,
@@ -250,9 +268,9 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (104, lecture agent) | `supabase/rpcs.sql` |
-| Ce qui reste à faire (P0/P1/P2) | `docs/ROADMAP-sprint38-handoff.md` |
-| État de fiabilité des données (audits) | `docs/data-quality-audit-2026-06-10.md` |
+| Corps complets des RPC (105, lecture agent) | `supabase/rpcs.sql` |
+| Ce qui reste à faire | `docs/ROADMAP.md` |
+| État de fiabilité des données (audits) | `docs/audit-fable5-2026-07-02.md` (plus récent ; historique : `docs/data-quality-audit-2026-06-10.md`) |
 | Chronologie des sprints | `docs/HISTORY-sprints.md` |
 | Ambition & vue d'ensemble du système | `README.md` |
 | Architecture détaillée, déploiement, events, dépannage | `docs/OPERATIONS.md` |
@@ -378,6 +396,8 @@ Edge Function /track (Deno)              Edge Function /form-webhook (Deno)
 events table (raw)
        ↓ refresh_bot_fingerprints() — Sprint 17
        ↓ events_human view (events MINUS bots MINUS noise)
+       ↓ identity_stitch (couture aid↔sid → visitor_key,
+       ↓   refresh_identity_stitch(90), cron 03:40 UTC — 12/07/2026)
        ↓ pg_cron nightly
 refresh_seo_url_snapshot()
        ↓
@@ -440,7 +460,10 @@ RPCs attribution & santé (Sprint 37-38) :
 - `form_submits_attributed(days)` — attribution des forms : hidden_field >
   temporal_unique > unresolved
 - `conversion_journeys(days)` — un row par contact macro : entry_path,
-  entry_channel, journey[] (séquence de pages), pages_count, device
+  entry_channel, journey[] (séquence de pages), pages_count, device.
+  **v2 recousue depuis le 12/07/2026** (migration `20260712203935`) : contrat
+  de sortie inchangé, mais l'entrée/parcours se calcule sur le **visiteur
+  recousu** via `identity_stitch` (priorité sid > aid > fallback session brute)
 - `content_performance(days)` — perf par page_type × theme
 - `seo_to_contact_funnel(days)` — GSC clics → entrées organiques → contacts
   par landing
@@ -485,8 +508,8 @@ Paris (première ingestion réelle).
 
 **Versions canoniques (repo `main`, 12/07/2026)** :
 - Tracker : **`sprint41`** (ids auto-réparants — fin de la rotation aid/sid sur
-  wipe de storage qui coupait ~22 % des sessions ; déployer via minify + Wix
-  Custom Code. Tant que la prod est en `sprint40`, la couture SQL compense).
+  wipe de storage qui coupait ~22 % des sessions). **DÉPLOYÉ le 12/07/2026
+  ~22:20 par Nicolas** — vérification J+1 le 13/07/2026.
 - Edge `track` : **v25** (D4 `track_row` + C5 `events_row` ; clamp horloge v23).
 - Edge `form-webhook` : **v12** (D4 `form_row` ; v11 = submissionTime + drop alert).
 
@@ -498,8 +521,11 @@ Prod peut lagger : vérifier la version déployée avant d'annoncer un changemen
 rotation d'ids (~22 % des sessions, ~95 % des phone clicks sans amont). Consommée
 par `refresh_dashboard_resources_assisted` v2 (entrée = première pageview de la
 **visite recousue**, segmentation 30 min). ⚠️ Ne JAMAIS coudre via un aid 32-hex
-(fallback serveur hash IP|UA, partageable entre visiteurs). Reste à brancher :
-`conversion_journeys`, `seo_to_contact_funnel`, `content_performance`.
+(fallback serveur hash IP|UA, partageable entre visiteurs).
+**`conversion_journeys` v2 branchée** le 12/07 au soir (migration
+`20260712203935`) : parcours sur le visiteur recousu, contrat de sortie
+inchangé, ~1 s sur 28 j — `seo_to_contact_funnel` et `content_performance`
+sont réparés par héritage (ils la consomment).
 
 ---
 
