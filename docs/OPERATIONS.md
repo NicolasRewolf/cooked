@@ -37,6 +37,14 @@ Postgres
    │     ↓ refresh_bot_fingerprints + refresh_noise_sessions (hourly)
    │     ↓ events_human view (events MINUS bots MINUS noise)
    │
+   │  pg_cron 03:40 UTC
+   │     ↓ refresh_identity_stitch(90)
+   │  identity_stitch — couture d'identité (12/07/2026) : sid|aid →
+   │     visitor_key (composantes connexes aid↔sid, 90 j glissants).
+   │     Consommée par les lectures d'attribution : conversion_journeys v2,
+   │     refresh_dashboard_resources_assisted v2 (→ seo_to_contact_funnel
+   │     et content_performance par héritage)
+   │
    │  pg_cron 03:00 UTC
    │     ↓ refresh_seo_url_snapshot()
    │
@@ -75,8 +83,64 @@ Postgres
 - `session_id` lives in `localStorage._ckd` with a 30-minute sliding idle window since Sprint 28 (21/05/2026). Survives hard navigations (the previous `sessionStorage`-only design was producing ~10 % of fake "referral" sessions because Wix Studio's hard-nav was dropping the per-tab storage). Falls back to `sessionStorage` if `localStorage` is blocked
 - IPs are never stored — only used as input for the server-side hash fallback, and rotated daily via the salt
 - The browser-side identifiers (`_ckd_aid`, `_ckd`) are inspectable in DevTools → Application → Local Storage → the visitor can delete them at any time
+- **Ids auto-réparants depuis le tracker `sprint41` (12/07/2026)** : sur un wipe de storage en cours de visite (ITP, extensions privacy), les trackers ≤ `sprint40` re-mintaient un `sid` neuf à chaque event pendant que l'`aid` (en closure) n'était jamais ré-écrit — rotation croisée qui coupait ~22 % des sessions. `sprint41` garde le `sid` en cache mémoire et **ré-écrit** les deux ids dans le storage au lieu d'en re-minter (détail : section « Couture d'identité » ci-dessous)
 
 **Exempted from cookie-banner consent** under CNIL délibération 2020-091 and the 2022 guidelines (mesure d'audience strictement statistique, pas de recoupement, pas de transfert tiers). The use of `localStorage` for a non-PII random UUID with no cross-site tracking and no advertising re-use is accepted by the CNIL within this exemption — see the [2022 guidelines, §"Solutions techniques exemptées"](https://www.cnil.fr/fr/cookies-et-traceurs-que-dit-la-loi).
+
+---
+
+## Couture d'identité (12/07/2026)
+
+### Le bug (trackers ≤ sprint40)
+
+Le `sid` était relu dans le storage **à chaque event** et re-minté sur miss,
+tandis que l'`aid` vivait en closure et n'était **jamais ré-écrit** dans le
+storage. Sur un wipe de storage en cours de visite, les deux ids tournaient
+donc de façon croisée : **~22 % des sessions étaient coupées** en deux ou
+plus, et **~95 % des `cta_phone_click` apparaissaient sans amont** visible
+(contact « sans parcours »).
+
+### Le fix tracker (`sprint41`, déployé le 12/07/2026)
+
+Quatre gestes, comportement identique par ailleurs :
+
+1. **Cache mémoire `_cachedSid`** : sur miss storage, le `sid` connu est
+   **ré-écrit** dans le storage au lieu d'en re-minter un nouveau.
+2. **`healAid()` opportuniste** : l'`aid` en closure est ré-écrit dans le
+   storage dès qu'il en a disparu.
+3. **`sessionStorage` lu sur MISS**, avec rapatriement vers `localStorage`.
+4. **`exposeIds()` rejoué au flush** — les query params
+   `cooked_aid`/`cooked_sid` (attribution formulaires) restent posés.
+
+Vérification J+1 prévue le 13/07/2026 (procédure : « Vérifier un
+déploiement tracker (J+1) » plus bas).
+
+### La couture SQL (répare l'historique)
+
+Table `identity_stitch` (`kind` = `sid` | `aid`, `key` → `visitor_key`) :
+**composantes connexes du graphe biparti aid↔sid**, calculées par label
+propagation (convergence en 2 itérations), sur **90 j glissants**.
+Exclusions : identités `webhook-%` et **aid 32-hex** (fallback serveur).
+Reconstruite chaque nuit par `refresh_identity_stitch(90)` (cron
+`refresh-identity-stitch`, 03:40 UTC).
+
+🚨 **Garde-fou : ne JAMAIS coudre via un aid 32-hex.** C'est le fallback
+serveur `sha256(IP | UA | sel journalier)`, potentiellement **partagé entre
+plusieurs visiteurs** (même IP + même UA) — coudre dessus fusionnerait des
+inconnus entre eux.
+
+### Consommateurs v2
+
+- `refresh_dashboard_resources_assisted` **v2** : l'entrée d'un contact =
+  première pageview de la **visite recousue** (segmentation à trous
+  > 30 min, rattachement à la dernière pageview ≤ 6 h avant le contact),
+  fallback session brute. Effet mesuré : contacts assistés « ressource »
+  28 j **16 → 37**.
+- `conversion_journeys` **v2** : parcours sur le visiteur recousu
+  (`visitor_key`, priorité sid > aid > fallback session brute) ; journey =
+  pageviews de la visite [t−6h, t+3min], chaîne sans trou > 30 min.
+  Contrat de sortie inchangé, ~1 s sur 28 j. `seo_to_contact_funnel` et
+  `content_performance` sont réparés **par héritage** (ils la consomment).
 
 ---
 
@@ -145,7 +209,10 @@ cooked/
 │   ├── check_migration_paris_date.py  — Gate CI C6 (pas de cast Paris brut)
 │   ├── validate_gsc_is_branded.sql    — Pilote Arch #3 branded
 │   ├── validate_period_bounds_live_j1.sql — Pilote Arch #1 live_j1
-│   ├── cpi_validation_j28.sql         — Harnais validation prédictive CPI (08/07/2026)
+│   ├── cpi_validation_j28.sql         — Harnais validation prédictive CPI (tir réel validé le 11/07/2026)
+│   ├── test_refresh_dashboard_rolling28.sql — Smoke-test MANUEL post-migration dashboard (articles)
+│   ├── test_refresh_expertises_rolling28.sql — Smoke-test MANUEL post-migration dashboard (expertises)
+│   ├── cooked_events_window_contract.sql — Contrat cooked_events_window (MANUEL, non exécuté par la CI)
 │   ├── requirements-gsc.txt             — pip deps pour scripts GSC
 │   └── requirements-dfs.txt           — pip deps pour scripts DataForSEO
 ├── contracts/
@@ -164,7 +231,7 @@ cooked/
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS (référence)
 │   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets 104 RPC (généré, lecture seule)
+│   ├── rpcs.sql                       — corps complets 105 RPC (généré, lecture seule)
 │   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
@@ -239,12 +306,19 @@ Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Cla
   (tracker-seeded `cooked_aid`/`cooked_sid` read by webhook v10) >
   `temporal_unique` > `unresolved`. ~75 % resolved before hidden fields,
   ~95 % expected after.
-- `conversion_journeys(days)` — one row per macro contact: entry_path,
-  entry_channel, journey[] (page sequence), pages_count, device.
+- `conversion_journeys(days)` — **v2 (12/07/2026)** : one row per macro
+  contact (≈210 events/28 j mesurés le 12/07/2026) : entry_path,
+  entry_channel, journey[] (page sequence), pages_count, device. Parcours
+  reconstruit sur le **visiteur recousu** (`visitor_key` via
+  `identity_stitch`, priorité sid > aid > fallback session brute) ;
+  journey = pageviews de la visite [t−6h, t+3min], chaîne sans trou
+  > 30 min. Contrat de sortie inchangé (voir « Couture d'identité »).
 - `content_performance(days)` — page_type × theme: sessions, median
-  dwell/scroll, booking_intents, assisted contacts.
+  dwell/scroll, booking_intents, assisted contacts. Consomme
+  `conversion_journeys` → couture héritée depuis le 12/07/2026.
 - `seo_to_contact_funnel(days)` — GSC clicks → organic entries → contacts
-  per landing page.
+  per landing page. Consomme `conversion_journeys` → couture héritée
+  depuis le 12/07/2026.
 - `cooked_page_index(days)` / `cooked_cpi_snapshot()` / table `cpi_daily` —
   CPI **v2.2**, score santé 0-100 par page (spec : `docs/cpi-cooked-page-index.md`).
 - `cpi_movers` (vue) — Δ CPI ~7j : statuts present/nouveau/disparu, delta_z
@@ -257,6 +331,12 @@ Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Cla
   (cabinet/hub/expertise/post/blog-nav) + theme (slug heuristic).
 - `alerts` table + `cooked_alerts_refresh()` (hourly cron) — self-monitoring.
   Session reflex: `SELECT * FROM alerts WHERE NOT acked`.
+- `annotations` table (`day`, `kind`, `label`, `paths[]`, migration
+  `20260611201942`) — journal des **événements hors-site** (passage TV /
+  presse, campagnes, changements de site) **et des restatements de séries**
+  (ex. restatement CPI du 12/07/2026). Réflexe : la consulter avant
+  d'interpréter un mouvement dans `cpi_daily` (voir « Restatements des
+  séries » plus bas).
 
 ---
 
@@ -378,22 +458,30 @@ ALL RPCs + snapshot read from events_human
 
 **Detection rule** : `anonymous_id` with > 20 pageviews/day AND 0 scroll events = crawler. Catches the nightly Ahrefs audit crawler and similar bots.
 
-**11 pg_cron jobs + 3 GitHub Actions** (état 03/07/2026, vérifié en prod) :
+**12 pg_cron jobs + 3 GitHub Actions** (état 12/07/2026 ; horaires UTC —
+Paris = UTC+2 l'été) :
 
-| Job | Schedule | What |
+| Job | Schedule (UTC) | What |
 |---|---|---|
 | `refresh_seo_url_snapshot` | `0 3 * * *` (05:00 Paris) | Rebuild nocturne de `seo_url_snapshot` · `SET statement_timeout='600s'` — rebuild ≈ 230 s depuis la matérialisation d'`events_human` en temp table (30/06) |
-| `refresh_noise_filters_hourly` | `5 * * * *` | Bot fingerprints + noise sessions, **incrémental 48 h depuis T-08 (02/07)** : ~4 s/run (155 s avant ; fingerprints historiques conservés, noise = delete-récent + réinsertion) |
 | `run_rpc_contract_tests` | `30 3 * * *` (05:30 Paris) | Contract-tests nocturnes des RPCs publiées → `rpc_health` (Sprint 27) |
-| `purge_old_events_monthly` | `0 4 1 * *` (1er du mois) | Rétention : supprime les events > 400 j (⚠️ destruction d'historique RÉEL — re-poser la question du backup à Nicolas ~juin 2027 avant le 1er run utile) |
-| `cooked-purge-noise-weekly` | `30 4 * * 0` (dimanche) | **T-09 (03/07)** : `purge_cooked_noise(28)` — supprime le bruit bot/noise > 28 j + TTL 90 j sur `noise_sessions`. Ne change AUCUN résultat (lignes déjà hors `events_human` à toute fenêtre). 1er run : 41 589 lignes |
-| `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — pipeline, double-embed, RPCs, attribution, `gsc_lag` + **`gsc_gap`** (jours manquants), `cpi_drop` (garde `ecart_jours ≤ 8`), `dfs_stale`, `tracker_drift` (grâce 48 h) — les `critical` **poussent sur ntfy** (T-11, topic dans `cooked_config`) |
+| `refresh-identity-stitch` | `40 3 * * *` (05:40 Paris) | `refresh_identity_stitch(90)` — reconstruit la table `identity_stitch` (couture d'identité, 90 j glissants) |
+| `refresh-dashboard-snapshots` | `0 4 * * *` (06:00 Paris) | Snapshots dashboard articles (fenêtres ancrées J-1 Paris, T-16) |
+| `purge_old_events_monthly` | `0 4 1 * *` (06:00 Paris, 1er du mois) | Rétention : supprime les events > 400 j (⚠️ destruction d'historique RÉEL — re-poser la question du backup à Nicolas ~juin 2027 avant le 1er run utile) |
+| `refresh-dashboard-expertises` | `12 4 * * *` (06:12 Paris) | Snapshots onglet Expertises (T-20) — scope = liste business des 14 pages, canal = 1er pageview GLOBAL · timeout 590 s |
+| `refresh-dashboard-assisted` | `16 4 * * *` (06:16 Paris) | Snapshot « contacts assistés » par article — **v2 depuis le 12/07/2026** : attribution sur la visite recousue (`identity_stitch`) · timeout 590 s |
+| `cooked-purge-noise-weekly` | `30 4 * * 0` (06:30 Paris, dimanche) | **T-09 (03/07)** : `purge_cooked_noise(28)` — supprime le bruit bot/noise > 28 j + TTL 90 j sur `noise_sessions`. Ne change AUCUN résultat (lignes déjà hors `events_human` à toute fenêtre). 1er run : 41 589 lignes |
 | `cooked-cpi-daily-snapshot` | `30 7 * * *` (09:30 Paris) | `cooked_cpi_snapshot()` → `cpi_daily` · `SET statement_timeout='600s'` · run à froid ≈ 322 s au 03/07 (croît avec `events` ; la purge hebdo le contient) |
-| `refresh-dashboard-snapshots` | `15 8 * * *` | Snapshots dashboard articles (fenêtres ancrées J-1 Paris, T-16) · `SET statement_timeout='600s'` |
-| `refresh-dashboard-expertises` | `20 8 * * *` | Snapshots onglet Expertises (T-20) — scope = liste business des 14 pages, canal = 1er pageview GLOBAL |
-| `refresh-dashboard-assisted` | `25 8 * * *` | Snapshot « contacts assistés » par article (Vague A — attribution page d'entrée) |
+| `refresh_noise_filters_hourly` | `5 * * * *` | Bot fingerprints + noise sessions, **incrémental 48 h depuis T-08 (02/07)** : ~4 s/run (155 s avant ; fingerprints historiques conservés, noise = delete-récent + réinsertion) |
+| `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — pipeline, double-embed, RPCs, attribution, `gsc_lag` + **`gsc_gap`** (jours manquants), `cpi_drop` (garde `ecart_jours ≤ 8`), `dfs_stale`, `tracker_drift` (grâce 48 h) — les `critical` **poussent sur ntfy** (T-11, topic dans `cooked_config`) |
 | `dashboard-stale-check` | `30 * * * *` | Alerte `dashboard_stale` si snapshot dashboard > 36 h (29/06) |
-| `gsc-daily-ingest` / `dfs-weekly-sync` / `backup-weekly` | GitHub Actions | GSC quotidien 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) ; DFS hebdo (échec = run rouge) ; backup **inerte** (décision Nicolas 02/07 : pas de backup externe — ne pas re-proposer). Les 2 actifs notifient ntfy en échec |
+| `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
+| `backup-weekly.yml` | GitHub Actions | **Schedule désactivé** (backup externe décliné le 02/07/2026, risque assumé — ne pas re-proposer) — déclenchable manuellement via `workflow_dispatch` uniquement |
+
+⚠️ **Piège `statement_timeout`** : un `SET statement_timeout` posé *dans*
+une fonction ne protège **pas** un statement déjà lancé. C'est pourquoi les
+crons lourds posent le `SET` **séparément dans la commande cron, avant
+l'appel** de la fonction (cf. `cron.job` en prod).
 
 ---
 
@@ -437,6 +525,25 @@ WHERE e.occurred_at > now() - interval '24 hours'
     AND p.name='pageview' AND p.occurred_at > now() - interval '24 hours');
 ```
 
+### Restatements des séries (lire l'historique sans conclure à tort)
+
+Les corrections rétroactives suivantes ont modifié des séries historiques.
+Un « avant/après » qui enjambe une de ces dates n'est **pas** un signal
+(ni un decay, ni un progrès) :
+
+| Date | Restatement | Effet |
+|---|---|---|
+| 09/06/2026 (Sprint 37) | Dédup des clics dupliqués même-seconde (double-embed) | `cta_phone_click` corrigé rétroactivement de **−13,6 %** |
+| 02/07/2026 | CPI — passage au grain lectures session×path | **±7 pts max** sur 4 pages A/B ; 8 pages C sorties du scoring |
+| 02/07/2026 | `classify_channel` v2 — IA détectée aussi par `utm_source` | restatement des canaux (~35 % du canal `organic_ai` récupéré) |
+| 12/07/2026 | CPI — conversion recousue (couture d'identité) | **seule la composante conversion zv bouge** (zc/zr/zl/momentum/gate inchangés) ; delta moyen −0,1 pt ; **0 changement de grade** ; 7 movers ≥ 15 pts (ex. arnaque-en-ligne 41→100, /nos-affaires 67→12) |
+| 12/07/2026 | Contacts assistés « ressource » (dashboard) — attribution sur la visite recousue | **16 → 37** sur 28 j |
+
+Le restatement du 12/07/2026 est annoté dans la table `annotations` : la
+consulter avant d'interpréter un mouvement dans `cpi_daily`. Table d'audit
+`cpi_pre_restatement_20260712` (comparaison avant/après du 12/07) à
+supprimer ~19/07/2026.
+
 ### Redémarrage après sinistre — briques ajoutées
 
 - **`dashboard/`** : sous-app Next 16 (Vercel, rootDir=`dashboard`,
@@ -464,9 +571,11 @@ supabase functions deploy track --no-verify-jwt
 supabase functions deploy form-webhook --no-verify-jwt
 ```
 
-Versions repo (10/07/2026) : **track v25** (D4 `track_row`), **form-webhook v12**
-(D4 `form_row`). Modules testables dans `supabase/functions/_shared/` :
-`events_row`, `track_row`, `form_row` (+ tests Deno, CI `edge-shared-helpers`).
+Versions (12/07/2026, **prod alignée avec le repo**) : **track v25**
+(D4 `track_row`), **form-webhook v12** (D4 `form_row`) ; tracker Wix
+**`sprint41`** (déployé le 12/07/2026). Modules testables dans
+`supabase/functions/_shared/` : `events_row`, `track_row`, `form_row`
+(+ tests Deno, CI `edge-shared-helpers`).
 
 `--no-verify-jwt` is required: requests come from the Velo proxy without a Supabase user JWT (auth is via service-role key injected by the proxy).
 
@@ -480,7 +589,7 @@ canonique d'une base fraîche.
 
 | Fichier | Contenu | Régénération |
 |---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 104 fonctions/procédures publiques | `python3 scripts/generate_rpcs_sql.py` (`DATABASE_URL`) ; gate CI si migration touche une RPC |
+| `supabase/rpcs.sql` | **Corps complets** des 105 fonctions/procédures publiques (régénéré le 12/07/2026) | `python3 scripts/generate_rpcs_sql.py` (`DATABASE_URL`) ; gate CI si migration touche une RPC |
 | `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
 | `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
 
@@ -525,6 +634,24 @@ GROUP BY 1 ORDER BY 2 DESC;
 
 If the new version label never appears after 15 min, the paste was
 truncated or Wix didn't republish.
+
+Version courante : **`sprint41`** (déployé le 12/07/2026 ~22:20).
+
+### Vérifier un déploiement tracker (J+1)
+
+Le lendemain d'un déploiement tracker, quatre contrôles (réflexe posé pour
+`sprint41`, vérification prévue le 13/07/2026) :
+
+1. **Version** — les events du jour portent `props->>'_v'` = nouvelle
+   version (requête ci-dessus, fenêtre élargie à 24 h).
+2. **Sessions saines** — chaque session a une pageview et **un seul
+   `anonymous_id`**.
+3. **Signature de split ≈ 0** — sessions sans pageview dont l'`aid` a une
+   pageview dans une session sœur (c'était la trace du bug de rotation
+   corrigé par `sprint41`).
+4. **`cooked_config.expected_tracker_version` bumpé** (migration
+   `20260713000733` pour `sprint41`) — sinon l'alerte `tracker_drift` se
+   déclenche (grâce 48 h).
 
 ### Updating the Velo proxy
 

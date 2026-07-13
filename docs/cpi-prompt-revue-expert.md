@@ -1,3 +1,5 @@
+> ⚠️ Archive du 18/06/2026 — revue experte close le 18/06/2026, verdict : outil suffisant, ne pas complexifier.
+
 # Prompt — Revue critique experte du « Cooked Page Index » (CPI v2.2)
 
 > **Comment utiliser ce document.** Copiez-le tel quel à un·e mathématicien·ne,

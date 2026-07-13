@@ -1,6 +1,10 @@
 name: Backup Weekly
 
-# T-10 (02/07/2026) — backup hebdomadaire des tables clés Cooked → artifact GitHub
+# Backup externe décliné par Nicolas le 02/07/2026 (risque assumé) —
+# déclenchement manuel uniquement. Le cron hebdomadaire a été retiré :
+# il échouait en rouge chaque dimanche (secret SUPABASE_DB_URL jamais créé).
+#
+# T-10 (02/07/2026) — backup des tables clés Cooked → artifact GitHub
 #
 # ⚠️ PIS-ALLER ASSUMÉ. Ce workflow dumpe les tables critiques en CSV gzippé et
 # les pousse comme ARTIFACT GitHub (rétention 90 jours MAX — voir
@@ -27,11 +31,7 @@ name: Backup Weekly
 # artifact hebdomadaire.
 
 on:
-  schedule:
-    # Dimanche 05:00 UTC (= 06:00 ou 07:00 Paris selon DST). Heure creuse,
-    # aucune contrainte de tomber pile à la minute.
-    - cron: "0 5 * * 0"
-  workflow_dispatch: # bouton "Run workflow" manuel
+  workflow_dispatch: # bouton "Run workflow" manuel — seul déclencheur
 
 # Empêche 2 backups simultanés (dump lourd sur `events`)
 concurrency:

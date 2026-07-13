@@ -1,3 +1,5 @@
+> ⚠️ Archive du 24/05/2026 — superseded par l'audit du 10/06/2026 puis par celui du 02/07/2026 (audit-fable5-2026-07-02.md).
+
 # Audit qualité data — Cooked × GSC × Dashboard
 
 **Date** : 24/05/2026

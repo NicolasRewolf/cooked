@@ -1,7 +1,9 @@
 name: SQL contracts
 
 # C6 — bloque les casts Paris bruts dans les nouvelles migrations.
-# C1 — contrat cooked_events_window (optionnel en local si projet linké).
+# Arch #5 — rpcs.sql régénéré si une RPC change dans les migrations.
+# (Le contrat cooked_events_window — scripts/cooked_events_window_contract.sql —
+#  est un contrat MANUEL, exécuté hors CI : voir docs/OPERATIONS.md.)
 
 on:
   pull_request:
@@ -11,7 +13,6 @@ on:
       - 'contracts/rpc_snapshot_meta.json'
       - 'scripts/check_migration_paris_date.py'
       - 'scripts/check_rpcs_sql_fresh.py'
-      - 'scripts/cooked_events_window_contract.sql'
       - '.github/workflows/sql-contracts.yml'
   push:
     branches: [main]

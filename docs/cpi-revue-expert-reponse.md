@@ -1,3 +1,5 @@
+> ⚠️ Archive du 18/06/2026 — revue close le 18/06/2026 (verdict : outil suffisant), confirmé par la validation J+28 du 11/07/2026.
+
 # Revue critique experte — CPI v2.2
 
 > Réponse au prompt `cpi-prompt-revue-expert.md`.  

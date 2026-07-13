@@ -9,13 +9,13 @@
 //   ce code (masterPage)   → lit wixLocation.query, écrit dans les champs
 //                            cachés via setFieldValues() — même rail que le
 //                            page_source de public/faq-system.js
-//   form-webhook v10       → lit field:cooked_aid / field:cooked_sid (inchangé)
+//   form-webhook v12       → lit field:cooked_aid / field:cooked_sid (inchangé)
 //   form_submits_attributed() → méthode hidden_field (~95 % attendu)
 //
 // Pré-requis côté éditeur de formulaires : chaque Wix Form doit avoir les
 // 2 champs cachés avec pour CLÉ exacte (onglet Avancé) `cooked_aid` et
-// `cooked_sid`. Au 11/06/2026 : présents sur « Prise de contact site-web »,
-// MANQUANTS sur « Formulaire Divorce ».
+// `cooked_sid`. Présents sur « Prise de contact site-web » ; ajoutés sur
+// « Formulaire Divorce » le 11/06/2026.
 // ============================================================================
 import wixLocation from 'wix-location';
 

@@ -148,6 +148,13 @@ $$\boxed{\,x_v(p)=\ln\frac{\text{val}(p)+30\,\nu_\tau+0{,}05}{n(p)+30}\,}.$$
 *(EB volontairement laissé fixe ici : trop peu de contacts par type pour
 estimer $\kappa$ de façon fiable — cf. §13.)*
 
+> **Entrée des données (12/07/2026)** : `conversion_journeys` est depuis le
+> 12/07/2026 la **v2 « recousue »** — parcours reconstruits sur le visiteur
+> recousu via `identity_stitch` (sessions coupées par l'ancien bug de
+> rotation d'ids recollées). Restatement du `cpi_daily` du 12/07 : seul
+> $x_v$ (donc $z_v$) bouge, **0 changement de grade**. La formule ci-dessus
+> est inchangée.
+
 ---
 
 ## 7. Standardisation robuste (médiane / MAD) → $z_j$ *(inchangé v2.1)*
@@ -224,10 +231,18 @@ Grades : $A$ si $n\ge100,e\ge20$ ; $B$ si $n\ge30,e\ge5$ ; $C$ sinon.
 **Propriétés.** $\text{CPI}\in[0,100]$ ; croissant en chaque $z_j$ ; point
 neutre $50\,MG$ ; momentum désormais **continu** en $(c_1,c_0,p_1,p_0)$.
 
-**Validation empirique** (protocole `cpi_validation_j28.sql`, J+28) : stabilité
-des poids (Kendall $\tau_b\in[0{,}952,0{,}966]$), calibration CTR ($R^2=0{,}915$,
-réserve : courbure SERP mal captée en pos. 9–13 → candidat fit 2 segments),
-validité prédictive cible Spearman$(\text{CPI}_t,\Delta\text{contacts})>0{,}3$.
+**Validation empirique — tir réel du 11/07/2026 : VALIDÉ** (protocole
+`cpi_validation_j28.sql`, t0 = 10/06/2026). §0 recomposition exacte du score
+depuis les $z$ stockés (194/194, écart 0) ; §3 calibration CTR $R^2=0{,}931$
+(médiane $|\text{obs}-\text{préd}|$ = 20,5 %, indicateur de suivi non liant —
+courbure SERP mal captée en pos. 9–13, candidat fit 2 segments) ; §5 stabilité
+des poids Kendall $\tau_b\ge0{,}952$ sur les 8 perturbations ±0,05. Bonus
+prédictif (non liant) : ratio de taux de contact futur tiers haut/bas = 3,11
+(score complet) vs 0,10 (sans conversion) → le signal prédictif vient de la
+**mémoire de conversion** de $z_v$, pas des composantes comportementales.
+Libellé acté : **score de priorisation**, non prédicteur d'outcome à 28 j.
+Limite connue : biais de taille (issue GitHub #19). Re-test diagnostic 56 j :
+05/08/2026.
 
 **Analyse de sensibilité (16/06/2026).** $S$ étant linéaire en $z$, la
 décomposition de variance est exacte : $\text{part}_j=w_j\operatorname{Cov}(z_j,S)/\operatorname{Var}(S)$.
@@ -242,7 +257,7 @@ décomposition de variance est exacte : $\text{part}_j=w_j\operatorname{Cov}(z_j
 → **La conversion porte 65 % de la variance** (vs poids nominal 35 %), car
 $z_v$ est le signal le plus dispersé (sature massivement à $\pm3$ : sépare « 0
 contact » de « quelques contacts »). Le CPI est *de facto* dominé par le signal
-le moins abondant en données — c'est le **point ouvert principal** (cf. §13).
+le moins abondant en données — point **tranché au J+28 du 11/07/2026** (cf. §13).
 
 ---
 
@@ -276,11 +291,14 @@ heuristiques robustes actuelles. À reconsidérer si le volume est multiplié pa
    \text{CPI}\approx100\,\sigma(-1{,}5)\approx 18$ (« malade »). Le poids fort de
    la conversion gère déjà le cas.
 
-**Point ouvert prioritaire** (confirmé par §12) : le surpoids effectif de la
-conversion (65 % de variance) sur un signal fragile. Levier privilégié — non
-pas une agrégation non-compensatoire complexe, mais une **régularisation plus
-forte de $z_v$** (EB conversion plus agressif, ou compression de l'échelle) —
-à trancher sur preuve au J+28.
+**Point ouvert prioritaire — TRANCHÉ au J+28 (11/07/2026)** : le surpoids
+effectif de la conversion (65 % de variance) sur un signal fragile désignait
+comme levier une **régularisation plus forte de $z_v$** (EB conversion plus
+agressif, ou compression de l'échelle). Le tir réel (§12) a montré que ce
+surpoids porte le **seul signal prédictif** du score — la mémoire de
+conversion (ratio tiers 3,11 avec conversion vs 0,10 sans) : re-régulariser
+$z_v$ détruirait ce signal. **Décision : pas de re-régularisation de $z_v$,
+v2.2 conservée telle quelle.**
 
 ---
 
@@ -392,5 +410,6 @@ FROM scored;
 
 ---
 
-*Mis à jour le 16/06/2026 (v2.2). En cas de divergence, **le code en base fait
-foi** — merci de signaler tout écart.*
+*Mis à jour le 13/07/2026 (v2.2 — intègre la validation J+28 du 11/07/2026 et
+le restatement conversion recousue du 12/07/2026). En cas de divergence, **le
+code en base fait foi** — merci de signaler tout écart.*

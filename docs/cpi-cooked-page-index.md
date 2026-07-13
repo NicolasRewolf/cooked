@@ -10,7 +10,10 @@ au site et gate technique LCP.
 > lissage **empirical Bayes dynamique** (Beta-Binomial par type) pour rétention
 > et lecture. Formules : `cpi-modele-mathematique.md`. Analyse de sensibilité :
 > la conversion porte **65 % de la variance** du score (surpoids effectif vs
-> poids nominal 0,35 — point ouvert, à juger au J+28).
+> poids nominal 0,35). **Point tranché au J+28 (tir réel du 11/07/2026)** :
+> ce surpoids porte le seul signal prédictif du score — la « mémoire de
+> conversion » (ratio tiers 3,11 avec conversion vs 0,10 sans) — donc pas de
+> re-régularisation de zv, v2.2 conservée telle quelle.
 
 ## Usage
 
@@ -81,6 +84,8 @@ nombre sans ses composantes.
   du type), même lissage EB dynamique. Orthogonal à zr par construction.
 - **zv conversion** : contacts directs + assists dilués (1/longueur du
   parcours) + 0,25×bookings, par entrée organique, lissage empirical Bayes.
+  Depuis le **12/07/2026**, l'entrée vient de `conversion_journeys` **v2
+  recousue** (parcours du visiteur recousu via `identity_stitch`).
 
 `momentum` ∈ [0,71-1,40] : tendance clics **relative au site** (une marée qui
 baisse partout ne punit personne) ; **transition continue** entre régime
@@ -99,29 +104,47 @@ descendre à 6 % — d'où le scaling v2.1).
 Premier snapshot : 10/06/2026 — 192 pages, CPI pondéré trafic = 32,
 446 clics perdus/28j.
 
-## Validation à J+28 (P1)
+## Validation à J+28 — tir réel FAIT le 11/07/2026 : **VALIDÉ**
 
-Spearman(CPI_t, Δcontacts_{t→t+28}) > 0,3 ; calibration courbe CTR ;
-ablation par composante ; stabilité des poids ±0,05 (Kendall τ > 0,9).
+Harnais `scripts/cpi_validation_j28.sql` (t0 = snapshot du 10/06/2026,
+grille de verdict pré-déclarée en tête de fichier). Résultats :
 
-**Protocole prêt à lancer : `scripts/cpi_validation_j28.sql`** (sections
-autonomes, critères et grille de décision en tête de fichier). À lancer à
-partir du **08/07/2026**. Déjà validé au dry-run du 10/06/2026 :
+- **§0 intégrité : PASSE** — le score se recompose exactement depuis les z
+  stockés de `cpi_daily` (194/194, écart 0).
+- **§3 calibration : PASSE** — R² = 0,931 (critère liant ≥ 0,85). Médiane
+  |obs−préd| = 20,5 % : indicateur de **suivi** (non liant) — reflète la
+  courbure SERP non captée par la loi de puissance à 1 segment (candidat :
+  fit log-log à 2 segments). §3 sert aussi de check mensuel.
+- **§5 stabilité des poids : PASSE** — τ-b ≥ 0,952 sur les 8 perturbations
+  ±0,05. Le classement n'est pas un artefact des poids.
+- **Bonus prédictif (§1/§4, non liant)** : ratio de taux de contact futur
+  tiers haut vs bas = **3,11** (score complet) contre **0,10** sans la
+  composante conversion → le signal prédictif vient de la **mémoire de
+  conversion** (zv encode les contacts passés des mêmes pages), pas des
+  composantes comportementales. Cohérent avec la philosophie gisement :
+  le potentiel ne convertit pas sans action.
 
-- §0 intégrité : le score se recompose exactement depuis les z stockés de
-  `cpi_daily` (194/194, écart 0) — l'ablation et la stabilité sont fondées.
-- §5 stabilité des poids : **PASSE** — τ-b ∈ [0,952 ; 0,966] sur les 8
-  perturbations ±0,05. Le classement n'est pas un artefact des poids.
-- §3 calibration : R² = 0,915 (réf. 0,917 au fit initial — stable). Réserve :
-  la loi de puissance ne capte pas la courbure de la SERP (CTR observé
-  +44/+67 % vs prédit en pos 3-4, −28/−42 % en pos 9-13). Le zc des pages
-  rankant 9-13 est donc légèrement pénalisé, celui des pages 3-4 flatté —
-  en partie absorbé par la comparaison aux pairs. Candidat v2.2 : fit
-  log-log à 2 segments. §3 sert aussi de check mensuel (les SERP dérivent).
-- Périmètres figés du test : n = 194 pages (toutes), n = 51 (grade A/B —
-  le critère officiel s'applique là). Attendre ~70-90 % de ties sur la
-  cible contacts : si le test primaire est sous-puissant, juger sur les
-  cibles secondaires (Δvaleur composite, Δclics GSC) avant de recalibrer.
+**Libellé maximal acté** : le CPI est validé comme **score de
+priorisation**, non comme prédicteur d'outcome à 28 j. **Limite connue** :
+biais de taille (issue GitHub #19). **Re-test diagnostic 56 j** (t0
+inchangé, horizon doublé, non-gating) : à lancer le **05/08/2026**.
+
+## Ruptures de série `cpi_daily` (restatements)
+
+Deux corrections de mesure ont restaté le snapshot du jour. **Comparer un
+CPI d'avant/après ces dates revient à comparer deux définitions**, pas une
+évolution de la page. Annotations posées dans la table `annotations`.
+
+- **02/07/2026 — grain lectures (session×path)** : ±7 pts max sur 4 pages
+  A/B, 8 pages C sorties du scoring.
+- **12/07/2026 — conversion recousue** : l'entrée de zv passe à
+  `conversion_journeys` v2 (visiteur recousu via `identity_stitch`). Seule
+  la composante zv bouge (zc/zr/zl/momentum/gate inchangés page par page),
+  delta moyen −0,1 pt, **0 changement de grade**, 7 movers ≥ 15 pts — dont
+  arnaque-en-ligne 41→100 et `/nos-affaires` 67→12 (qui rend un crédit
+  usurpé par l'ancienne attribution mono-session).
+
+Table d'audit `cpi_pre_restatement_20260712` : à supprimer ~19/07/2026.
 
 ## v2.2 — analyses d'impact (instruites le 10/06/2026, AVANT tout code)
 
