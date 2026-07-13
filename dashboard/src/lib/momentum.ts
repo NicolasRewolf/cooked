@@ -25,12 +25,28 @@ export function momentumBadgeFr(dir: MomentumDir): string {
 
 export type SanteFilterValue = "monte" | "stable" | "ralentit" | "nonscore";
 
+// Prédicats de santé — source UNIQUE, partagée par le filtre (santeFromMomentum)
+// et la cellule rendue (HealthCell). Toute évolution du seuil se fait ici, une fois.
+export function isScored(
+  cpiGrade: string | null | undefined,
+  momentum: number | null | undefined,
+): boolean {
+  return cpiGrade != null && cpiGrade !== "C" && momentum != null;
+}
+
+export function isGisement(
+  cpiGrade: string | null | undefined,
+  convertit: boolean | null | undefined,
+): boolean {
+  return (cpiGrade === "A" || cpiGrade === "B") && convertit === false;
+}
+
 export function santeFromMomentum(
   momentum: number | null | undefined,
   cpiGrade: string | null | undefined,
   convertit: boolean | null | undefined,
 ): SanteFilterValue | "gisement" {
-  if (cpiGrade == null || cpiGrade === "C" || momentum == null) return "nonscore";
-  if ((cpiGrade === "A" || cpiGrade === "B") && convertit === false) return "gisement";
-  return momentumLabelFr(momentumDir(momentum)) as SanteFilterValue;
+  if (!isScored(cpiGrade, momentum)) return "nonscore";
+  if (isGisement(cpiGrade, convertit)) return "gisement";
+  return momentumLabelFr(momentumDir(momentum!)) as SanteFilterValue;
 }
