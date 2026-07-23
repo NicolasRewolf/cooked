@@ -10,11 +10,11 @@ import { Trend, dirDotClass } from "./ui";
 import { cn } from "@/lib/cn";
 import type { ResourceRow } from "@/lib/types";
 import { num, seconds, dec, pct, delta } from "@/lib/format";
-import { momentumDir, momentumLabelFr, isScored, isGisement } from "@/lib/momentum";
+import { momentumDir, momentumLabelFr, isScored, isOpportuniteContact } from "@/lib/momentum";
 
-// ── Verdict de santé : momentum (relatif au site) + grade de confiance ───────
+// ── Verdict de santé : momentum (relatif au site) + Fiabilité CPI ────────────
 // Pour les pages sans conversion (articles éducatifs), le potentiel
-// hors-conversion est le bon repère — d'où la ★ gisement.
+// hors-conversion est le bon repère — d'où la ★ opportunité de contact.
 export function HealthCell({ r }: { r: ResourceRow }) {
   if (!isScored(r.cpi_grade, r.momentum)) {
     return (
@@ -24,13 +24,13 @@ export function HealthCell({ r }: { r: ResourceRow }) {
   const dir = momentumDir(r.momentum!);
   const dot = dirDotClass(dir);
   const word = momentumLabelFr(dir);
-  const gisement = isGisement(r.cpi_grade, r.convertit);
+  const opportunite = isOpportuniteContact(r.cpi_grade, r.convertit);
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", dot)} />
       <span className="text-[11.5px] text-[#45423c]">{word}</span>
-      {gisement && (
-        <span aria-label="gisement" className="text-[11px] text-accent">
+      {opportunite && (
+        <span aria-label="opportunité de contact" className="text-[11px] text-accent">
           ★
         </span>
       )}
@@ -64,7 +64,7 @@ export const santeColumn: Column<ResourceRow> = {
   header: "santé",
   align: "left",
   headerInfo:
-    "Momentum des clics Google relatif au site : ● monte / ● stable / ● ralentit. ★ gisement = fort potentiel (capture + lecture) mais pas encore de contact → poser un pont. — = trop peu de trafic organique pour un verdict.",
+    "Momentum des clics Google relatif au site : ● monte / ● stable / ● ralentit. ★ opportunité de contact = fort potentiel (capture + lecture) mais pas encore de contact → poser un pont. — = trop peu de trafic organique pour un verdict (Fiabilité C).",
   sortValue: (r) => r.momentum,
   render: (r) => <HealthCell r={r} />,
 };

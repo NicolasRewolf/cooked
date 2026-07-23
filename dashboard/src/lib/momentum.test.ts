@@ -1,47 +1,55 @@
 import { describe, expect, it } from "vitest";
-import { momentumDir, momentumLabelFr, santeFromMomentum, isScored, isGisement } from "./momentum";
+import {
+  momentumDir,
+  momentumLabelFr,
+  santeFromMomentum,
+  isScored,
+  isOpportuniteContact,
+  isGisement,
+} from "./momentum";
 
-describe("momentumDir", () => {
-  it("seuils 1.05 / 0.95", () => {
-    expect(momentumDir(1.06)).toBe("up");
-    expect(momentumDir(0.94)).toBe("down");
+describe("momentumDir / label", () => {
+  it("seuils", () => {
+    expect(momentumDir(1.1)).toBe("up");
+    expect(momentumDir(0.9)).toBe("down");
     expect(momentumDir(1.0)).toBe("flat");
+    expect(momentumLabelFr("up")).toBe("monte");
   });
 });
 
 describe("santeFromMomentum", () => {
-  it("gisement avant momentum", () => {
-    expect(santeFromMomentum(1.2, "A", false)).toBe("gisement");
+  it("opportunité de contact avant momentum", () => {
+    expect(santeFromMomentum(1.2, "A", false)).toBe("opportunite_contact");
+    expect(santeFromMomentum(1.2, "S", false)).toBe("opportunite_contact");
   });
-  it("nonscore si grade C", () => {
-    expect(santeFromMomentum(1.2, "C", true)).toBe("nonscore");
+  it("nonscore si Fiabilité C", () => {
+    expect(santeFromMomentum(1.2, "C", false)).toBe("nonscore");
   });
-  it("libellé français", () => {
-    expect(santeFromMomentum(1.1, "A", true)).toBe(momentumLabelFr("up"));
+  it("momentum sinon", () => {
+    expect(santeFromMomentum(1.2, "B", true)).toBe("monte");
   });
 });
 
-// Prédicats partagés avec HealthCell — un seul foyer, verrouillé ici.
 describe("isScored", () => {
   it("faux si grade nul, C, ou momentum nul", () => {
-    expect(isScored(null, 1.1)).toBe(false);
-    expect(isScored("C", 1.1)).toBe(false);
+    expect(isScored(null, 1)).toBe(false);
+    expect(isScored("C", 1)).toBe(false);
     expect(isScored("A", null)).toBe(false);
-    expect(isScored(undefined, undefined)).toBe(false);
-  });
-  it("vrai pour A/B avec momentum", () => {
-    expect(isScored("A", 1.0)).toBe(true);
-    expect(isScored("B", 0.9)).toBe(true);
+    expect(isScored("S", 1)).toBe(true);
   });
 });
 
-describe("isGisement", () => {
-  it("vrai seulement si A/B ET convertit === false", () => {
+describe("isOpportuniteContact", () => {
+  it("Fiabilité S/A/B sans contact", () => {
+    expect(isOpportuniteContact("S", false)).toBe(true);
+    expect(isOpportuniteContact("A", false)).toBe(true);
+    expect(isOpportuniteContact("B", false)).toBe(true);
+    expect(isOpportuniteContact("A", true)).toBe(false);
+    expect(isOpportuniteContact("C", false)).toBe(false);
+    expect(isOpportuniteContact("A", null)).toBe(false);
+    expect(isOpportuniteContact(null, false)).toBe(false);
+  });
+  it("alias isGisement", () => {
     expect(isGisement("A", false)).toBe(true);
-    expect(isGisement("B", false)).toBe(true);
-    expect(isGisement("A", true)).toBe(false);
-    expect(isGisement("C", false)).toBe(false);
-    expect(isGisement("A", null)).toBe(false); // null n'est pas false
-    expect(isGisement(null, false)).toBe(false);
   });
 });

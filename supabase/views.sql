@@ -18,10 +18,11 @@
 -- ║ VUES (5) — définition complète                                            ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
--- VIEW public.cpi_gisement
---   Pilotage conversion (Sprint 39) : relit le dernier cpi_daily, sépare le
---   potentiel (capture+rétention+lecture, hors conversion) du badge convertit.
-CREATE OR REPLACE VIEW public.cpi_gisement AS
+-- VIEW public.cpi_opportunite_contact
+--   Opportunité de contact (ex-gisement, norme 23/07/2026) : relit le dernier
+--   cpi_daily, sépare potentiel (hors conversion) du badge convertit.
+--   Filtrer grade IN ('S','A','B') AND NOT convertit.
+CREATE OR REPLACE VIEW public.cpi_opportunite_contact AS
  SELECT path,
     ptype,
     grade,
@@ -38,9 +39,13 @@ CREATE OR REPLACE VIEW public.cpi_gisement AS
   WHERE day = (( SELECT max(cpi_daily_1.day) AS max
            FROM cpi_daily cpi_daily_1));
 
+-- VIEW public.cpi_gisement — ALIAS déprécié de cpi_opportunite_contact
+CREATE OR REPLACE VIEW public.cpi_gisement AS
+  SELECT * FROM public.cpi_opportunite_contact;
+
 -- VIEW public.cpi_movers
 --   Δ CPI sur ~7j glissants depuis cpi_daily (statuts present/nouveau/disparu,
---   fiable = grade A/B aux deux dates, delta_z par composante).
+--   fiable = Fiabilité S/A/B aux deux dates, delta_z par composante).
 CREATE OR REPLACE VIEW public.cpi_movers AS
  WITH bounds AS (
          SELECT l.d1,
@@ -79,7 +84,7 @@ CREATE OR REPLACE VIEW public.cpi_movers AS
     n.cpi - p.cpi AS delta_cpi,
     n.grade AS grade_now,
     p.grade AS grade_ref,
-    COALESCE((n.grade = ANY (ARRAY['A'::text, 'B'::text])) AND (p.grade = ANY (ARRAY['A'::text, 'B'::text])), false) AS fiable,
+    COALESCE((n.grade = ANY (ARRAY['S'::text, 'A'::text, 'B'::text])) AND (p.grade = ANY (ARRAY['S'::text, 'A'::text, 'B'::text])), false) AS fiable,
     round(n.zc - p.zc, 1) AS delta_zc,
     round(n.zr - p.zr, 1) AS delta_zr,
     round(n.zl - p.zl, 1) AS delta_zl,

@@ -90,10 +90,10 @@ gagne des colonnes, `dashboard_resources_overview` (SETOF) les expose sans chang
 
 - **Tableau Articles** — colonnes snapshot ajoutées : `unique_visitors_prev`, `gsc_clicks_prev`
   (tendance N-1, déjà chargée par le refresh) ; `cpi`, `cpi_grade`, `momentum`, `potentiel`,
-  `convertit` (croisés depuis `cpi_daily` / `cpi_gisement` par `path`) ; `ctr_expected`
+  `convertit` (croisés depuis `cpi_daily` / `cpi_opportunite_contact` par `path`) ; `ctr_expected`
   (= `ctr_for_position(position) × 100`, la courbe CTR du site). Rendu UI :
-  - **Santé** = verdict momentum relatif au site (monte / stable / ralentit) + ⭐ *gisement*
-    (grade A/B mais sans contact). On affiche le **potentiel hors-conversion**, pas le CPI brut —
+  - **Santé** = verdict momentum relatif au site (monte / stable / ralentit) + ⭐ *opportunité de contact*
+    (Fiabilité S/A/B mais sans contact). On affiche le **potentiel hors-conversion**, pas le CPI brut —
     le CPI complet est tiré vers le bas par la conversion, rare sur des articles éducatifs, et
     ferait passer une page saine pour malade (le score CPI reste en infobulle).
   - **Tendance ▲▼** inline sur Visiteurs et Clics Google.

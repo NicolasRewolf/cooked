@@ -3,6 +3,15 @@
 export const MOMENTUM_UP = 1.05;
 export const MOMENTUM_DOWN = 0.95;
 
+/** Fiabilité CPI S/A/B/C — « fiable » = pas C (norme 23/07/2026). */
+export type Fiabilite = "S" | "A" | "B" | "C";
+
+export function isFiabiliteFiable(
+  grade: string | null | undefined,
+): boolean {
+  return grade === "S" || grade === "A" || grade === "B";
+}
+
 export type MomentumDir = "up" | "down" | "flat";
 
 export function momentumDir(m: number): MomentumDir {
@@ -31,22 +40,26 @@ export function isScored(
   cpiGrade: string | null | undefined,
   momentum: number | null | undefined,
 ): boolean {
-  return cpiGrade != null && cpiGrade !== "C" && momentum != null;
+  return isFiabiliteFiable(cpiGrade) && momentum != null;
 }
 
-export function isGisement(
+/** Opportunité de contact (ex-gisement) : Fiabilité S/A/B + pas encore de contact. */
+export function isOpportuniteContact(
   cpiGrade: string | null | undefined,
   convertit: boolean | null | undefined,
 ): boolean {
-  return (cpiGrade === "A" || cpiGrade === "B") && convertit === false;
+  return isFiabiliteFiable(cpiGrade) && convertit === false;
 }
+
+/** @deprecated alias — préférer isOpportuniteContact */
+export const isGisement = isOpportuniteContact;
 
 export function santeFromMomentum(
   momentum: number | null | undefined,
   cpiGrade: string | null | undefined,
   convertit: boolean | null | undefined,
-): SanteFilterValue | "gisement" {
+): SanteFilterValue | "opportunite_contact" {
   if (!isScored(cpiGrade, momentum)) return "nonscore";
-  if (isGisement(cpiGrade, convertit)) return "gisement";
+  if (isOpportuniteContact(cpiGrade, convertit)) return "opportunite_contact";
   return momentumLabelFr(momentumDir(momentum!)) as SanteFilterValue;
 }

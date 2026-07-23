@@ -182,7 +182,7 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 | « Cet article est-il bon ? » | `gsc_page_performance` + lecture décomposée par canal |
 | « Le SEO rapporte-t-il des clients ? » | `seo_to_contact_funnel` — requête → landing → contact |
 | « Quoi écrire ensuite ? Quels quick wins ? » | `content_performance` + `gsc_x_dfs_opportunities` |
-| « Quelles pages ont du trafic mais ne convertissent pas ? » | `cpi_gisement` — potentiel vs conversion réalisée |
+| « Quelles pages ont du trafic mais ne convertissent pas ? » | `cpi_opportunite_contact` — potentiel vs conversion réalisée |
 | « Le système va bien ? » | `alerts` + `refresh_pipeline_health()` |
 
 ---
@@ -217,10 +217,10 @@ bouge, aucun grade ne change) — réflexe : un saut de CPI daté du
 **Sprint 39 (15-18/06) — l'outil passe en prod opérationnelle.**
 - **CPI v2.2** : momentum à transition continue + lissage empirical Bayes
   dynamique par type (corr 0,9855 avec v2.1, aucun verdict fiable déplacé).
-- Vue **`cpi_gisement`** : sépare le *potentiel* d'une page (capture +
+- Vue **`cpi_opportunite_contact`** (ex-`cpi_gisement`) : sépare le *potentiel* d'une page (capture +
   rétention + lecture) de sa *conversion réalisée* → pointe les pages à fort
-  trafic qui ne convertissent pas encore — le gisement à « ponter » vers le
-  contact.
+  trafic qui ne convertissent pas encore — l'**opportunité de contact** à « ponter » vers le
+  contact. Colonne `grade` = **Fiabilité** S/A/B/C.
 - Alertes recalibrées (`cpi_drop` = vrai decay uniquement) ; bug P1
   `click_internal.target_path` résolu (Edge v22 + backfill).
 - 3 revues d'experts externes du CPI passées au crible → verdict : l'outil est

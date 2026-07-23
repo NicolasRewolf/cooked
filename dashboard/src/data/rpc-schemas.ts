@@ -5,7 +5,7 @@ import { z } from "zod";
 export const periodSchema = z.enum(["rolling_28", "rolling_90"]);
 export type Period = z.infer<typeof periodSchema>;
 
-const gradeSchema = z.enum(["A", "B", "C"]);
+const gradeSchema = z.enum(["S", "A", "B", "C"]);
 const isoDate = z.string();
 const num = z.number();
 const numNull = z.number().nullable();

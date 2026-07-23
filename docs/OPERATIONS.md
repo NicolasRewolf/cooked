@@ -324,9 +324,10 @@ Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Cla
 - `cpi_movers` (vue) — Δ CPI ~7j : statuts present/nouveau/disparu, delta_z
   par composante, flag `fiable` ; alimente l'alerte `cpi_drop` (recalibrée S39 :
   vrai decay momentum/capture uniquement, volatilité conversion exclue).
-- `cpi_gisement` (vue, S39) — pilotage conversion : `potentiel` (capture +
+- `cpi_opportunite_contact` (vue, ex-`cpi_gisement`) — pilotage conversion : `potentiel` (capture +
   rétention + lecture, hors conversion) vs badge `convertit`, relu depuis
-  `cpi_daily`. Gisement = grade A/B + `NOT convertit`, trié par potentiel.
+  `cpi_daily`. Opportunité = Fiabilité S/A/B + `NOT convertit`, trié par potentiel.
+  Alias déprécié : `cpi_gisement`. Colonne `grade` = Fiabilité S/A/B/C.
 - `page_taxonomy` table + `cooked_page_type(path)` — page typing
   (cabinet/hub/expertise/post/blog-nav) + theme (slug heuristic).
 - `alerts` table + `cooked_alerts_refresh()` (hourly cron) — self-monitoring.
