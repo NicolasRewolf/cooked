@@ -885,9 +885,10 @@ d'un article à partir de son slug : l'API Wix est la seule référence
   maillage dans le corps des posts) sont actionnables sans tiers.
 - **Cooked est mono-utilisateur (Nicolas)** : pas de digest/rapport pour
   des tiers ; le mode de sortie reste le question/réponse ad-hoc.
-- **GMB : non branché (décision agent 11/06/2026)** — angle mort assumé
-  (appels directs fiche invisibles). À revisiter si on attaque
-  l'attribution téléphone ou si la part GMB des formulaires monte.
+- **GMB / GBP : pipeline livré le 23/07/2026** (`gbp_location_daily`,
+  `scripts/gbp_ingest.py`, cron `gbp-daily-ingest`) — OAuth one-shot
+  encore à faire par Nicolas (voir `docs/OPERATIONS.md` § GBP). Tant
+  que le 1er ingest n'a pas tourné, les alertes `gbp_*` restent inertes.
 - **Google Ads : MCP CONNECTÉ** (vérifié le 01/07/2026 — 5 customer IDs
   accessibles). Premier usage à cadrer : coûts/CPA par campagne croisés
   avec les macro-contacts Cooked (« boucle 3 »).

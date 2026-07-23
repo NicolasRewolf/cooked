@@ -76,7 +76,7 @@ Docs : synchro arch 10/07 + rpcs.sql
 | `dashboard-contract` | Vitest dashboard (85 tests) |
 | `tracker-test` | Suite jsdom tracker |
 | `edge-shared-helpers` | Deno tests `_shared/` (events_row, track_row, form_row) |
-| `gsc-daily-ingest` / `dfs-weekly-sync` | Crons ingestion (GitHub Actions) |
+| `gsc-daily-ingest` / `dfs-weekly-sync` / `gbp-daily-ingest` | Crons ingestion (GitHub Actions) |
 
 ## Issues
 

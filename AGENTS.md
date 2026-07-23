@@ -22,7 +22,7 @@ SELECT gsc_last_data_day();
 
 | Besoin | Fichier |
 |---|---|
-| Corps complets des RPC (105) | [supabase/rpcs.sql](supabase/rpcs.sql) |
+| Corps complets des RPC (109) | [supabase/rpcs.sql](supabase/rpcs.sql) |
 | Signatures + vues | [supabase/views.sql](supabase/views.sql) |
 | DDL déploiement | [supabase/migrations/](supabase/migrations/) |
 | Couture d'identité (`identity_stitch` : table, `refresh_identity_stitch(90)`, garde-fou aid 32-hex) | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
@@ -51,7 +51,7 @@ SELECT gsc_last_data_day();
 | Tracker | `sprint41` (ids auto-réparants) | Wix Custom Code (minify) — déployé 12/07/2026 |
 | Edge `track` | v25 (D4) | `supabase functions deploy track` |
 | Edge `form-webhook` | v12 (D4) | `supabase functions deploy form-webhook` |
-| RPC Postgres | 105 fonctions | migrations Supabase |
+| RPC Postgres | 109 fonctions | migrations Supabase |
 
 **Repo et prod peuvent diverger** tant que Edge / tracker ne sont pas redéployés.
 Toujours vérifier : `props->>'_v'` sur events récents + version commentée en tête

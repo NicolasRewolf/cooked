@@ -14,3 +14,4 @@ décide pas. Historique : [ROADMAP-sprint38-handoff.md](ROADMAP-sprint38-handoff
 | 4 | Premiers `cpi_movers` post-restatement fiables | ~19/07/2026 | La dérivée ~7 j du CPI a besoin de 7 jours de snapshots post-restatement pour redevenir lisible. |
 | 5 | Re-test diagnostic CPI 56 j | 05/08/2026 | Suite de la validation J+28 du 11/07/2026 (VALIDÉE — « score de priorisation ») sur fenêtre doublée. |
 | 6 | Issue GitHub [#19](https://github.com/NicolasRewolf/cooked/issues/19) — biais de taille CPI | ouverte | Limite connue actée lors de la validation J+28 ; à traiter ou documenter, pas urgent. |
+| 7 | Brancher OAuth GBP + 1er ingest | — | Pipeline code prêt (23/07/2026) ; reste : accès API Google + `gbp_oauth_setup.py` + secrets Actions + migration prod. |

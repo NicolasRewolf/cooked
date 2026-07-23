@@ -407,6 +407,53 @@ Run manuel via le bouton **"Run workflow"** sur l'onglet Actions. Monitoring via
 
 ---
 
+## Google Business Profile (GBP) — appels & clics fiche
+
+Ferme l'angle mort GMB : appels téléphone, clics site, itinéraires,
+impressions Maps/Search. Table `gbp_location_daily` (1 row / jour / fiche),
+RPC `site_gbp_kpis_compare(period_kind)`, `gbp_last_data_day()`. Alertes
+`gbp_lag` / `gbp_gap` **inertes** tant qu'aucune donnée n'a été ingérée.
+
+### Prérequis Google (à faire une fois, côté Nicolas)
+
+1. Sur le projet GCP (ex. `plouton-472207`) : activer
+   **My Business Account Management**, **My Business Business Information**,
+   **Business Profile Performance**.
+2. Si le quota API est à 0 : demander l'accès GBP (formulaire Google —
+   délai jours/semaines).
+3. Créer des credentials OAuth **Application de bureau** + consent screen
+   avec le scope `https://www.googleapis.com/auth/business.manage`.
+4. Autoriser avec le Google Account qui **gère la fiche** du cabinet :
+
+```bash
+pip install -r scripts/requirements-gbp.txt
+python3 scripts/gbp_oauth_setup.py --client-secrets ~/Downloads/client_secret_….json
+# → écrit ~/.claude/gbp-token.json (hors repo)
+
+python3 scripts/gbp_ingest.py --list-locations   # sanity
+export SUPABASE_SECRET_KEY='sb_secret_...'
+python3 scripts/gbp_ingest.py --days 365         # 1er backfill
+```
+
+### Cron quotidien
+
+`.github/workflows/gbp-daily-ingest.yml` à 06:30 UTC (`--daily` = 90 j).
+Inerte (warning) tant que les secrets OAuth ne sont pas posés.
+
+| Secret | Valeur |
+|---|---|
+| `GBP_OAUTH_CLIENT_ID` | `client_id` du JSON OAuth |
+| `GBP_OAUTH_CLIENT_SECRET` | `client_secret` |
+| `GBP_OAUTH_REFRESH_TOKEN` | `refresh_token` (sortie setup) |
+| `SUPABASE_SECRET_KEY` | déjà présent pour GSC |
+| `GBP_LOCATION_ID` | optionnel — sinon auto-découverte |
+
+Lecture ad-hoc : `SELECT * FROM site_gbp_kpis_compare('28d');`
+
+DDL : `supabase/migrations/20260723074839_gbp_location_daily.sql`.
+
+---
+
 ## DataForSEO weekly sync (Sprint 33+)
 
 Source de vérité pour le volume mensuel France et le CPC sur les top
@@ -473,7 +520,7 @@ Paris = UTC+2 l'été) :
 | `cooked-purge-noise-weekly` | `30 4 * * 0` (06:30 Paris, dimanche) | **T-09 (03/07)** : `purge_cooked_noise(28)` — supprime le bruit bot/noise > 28 j + TTL 90 j sur `noise_sessions`. Ne change AUCUN résultat (lignes déjà hors `events_human` à toute fenêtre). 1er run : 41 589 lignes |
 | `cooked-cpi-daily-snapshot` | `30 7 * * *` (09:30 Paris) | `cooked_cpi_snapshot()` → `cpi_daily` · `SET statement_timeout='600s'` · run à froid ≈ 322 s au 03/07 (croît avec `events` ; la purge hebdo le contient) |
 | `refresh_noise_filters_hourly` | `5 * * * *` | Bot fingerprints + noise sessions, **incrémental 48 h depuis T-08 (02/07)** : ~4 s/run (155 s avant ; fingerprints historiques conservés, noise = delete-récent + réinsertion) |
-| `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — pipeline, double-embed, RPCs, attribution, `gsc_lag` + **`gsc_gap`** (jours manquants), `cpi_drop` (garde `ecart_jours ≤ 8`), `dfs_stale`, `tracker_drift` (grâce 48 h) — les `critical` **poussent sur ntfy** (T-11, topic dans `cooked_config`) |
+| `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — pipeline, double-embed, RPCs, attribution, `gsc_lag` + **`gsc_gap`**, `gbp_lag` + `gbp_gap` (inertes avant 1er ingest), `cpi_drop` (garde `ecart_jours ≤ 8`), `dfs_stale`, `tracker_drift` (grâce 48 h) — les `critical` **poussent sur ntfy** (T-11, topic dans `cooked_config`) |
 | `dashboard-stale-check` | `30 * * * *` | Alerte `dashboard_stale` si snapshot dashboard > 36 h (29/06) |
 | `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
 | `backup-weekly.yml` | GitHub Actions | **Schedule désactivé** (backup externe décliné le 02/07/2026, risque assumé — ne pas re-proposer) — déclenchable manuellement via `workflow_dispatch` uniquement |

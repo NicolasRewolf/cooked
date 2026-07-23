@@ -157,7 +157,7 @@ Navigateur (Wix)          Wix Automations (server-side)
   │       →  identity_stitch (visites recousues, pour l'attribution)  │
   │  gsc_path_daily / gsc_query_daily / gsc_query_page_daily          │
   │  snapshots nocturnes · CPI quotidien · alertes horaires           │
-  │  ~105 fonctions SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
+  │  ~109 fonctions SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
   └───────────────────────────────────────────────────────────────────┘
       ↓
   Claude Code (MCP Supabase) — Nicolas pose des questions, en français
@@ -196,7 +196,7 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 (déployé le 12/07/2026). Edge Functions **`track` v25** et **`form-webhook`
 v12** déployées — prod alignée avec le repo. ~1,05 M d'événements
 bruts (bruit > 28 j purgé chaque semaine), ~2 millions de lignes Search Console
-(16 mois), ~190 pages scorées par le CPI chaque matin, **105 RPC** documentées
+(16 mois), ~190 pages scorées par le CPI chaque matin, **109 RPC** documentées
 dans `supabase/rpcs.sql`.
 
 **12/07 — la couture d'identité.** Un bug du tracker faisait tourner les

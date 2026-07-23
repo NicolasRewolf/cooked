@@ -3,6 +3,21 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-07-23] — Google Business Profile → Cooked
+
+### Ajouté — Ingestion fiche Google (appels / clics)
+- Table **`gbp_location_daily`** (jour × fiche) : `call_clicks`,
+  `website_clicks`, `direction_requests`, `conversations`, impressions
+  Maps/Search desktop+mobile.
+- Scripts **`gbp_oauth_setup.py`** (OAuth one-shot) + **`gbp_ingest.py`**
+  / `gbp_common.py` ; workflow **`gbp-daily-ingest.yml`** (06:30 UTC,
+  fenêtre 90 j, inerte sans secrets OAuth).
+- RPC **`gbp_last_data_day()`**, **`site_gbp_kpis_compare(period_kind)`** ;
+  alertes **`gbp_lag`** / **`gbp_gap`** (inertes avant 1er ingest) ;
+  soft-check dans `refresh_pipeline_health` si données présentes.
+- Migration `20260723074839_gbp_location_daily.sql`. Setup : § GBP dans
+  `docs/OPERATIONS.md`.
+
 ## [2026-07-13] — Grand ménage : docs A→Z + hygiène repo
 
 ### Modifié — Documentation (audit 4 agents + 5 rédacteurs, 12-13/07)

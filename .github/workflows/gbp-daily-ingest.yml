@@ -1,0 +1,89 @@
+name: GBP Daily Ingest
+
+# 23/07/2026 — cron quotidien Google Business Profile → Cooked
+#
+# Pourquoi GitHub Actions et pas pg_cron ?
+#   Même raison que GSC : pg_cron n'a pas d'accès aux APIs externes.
+#   scripts/gbp_ingest.py parle à la Performance API, puis upserte
+#   gbp_location_daily. Idempotent (PK day, location_id).
+#
+# Auth : OAuth refresh token (pas un service account — GBP l'exige).
+# Setup one-shot : scripts/gbp_oauth_setup.py (voir docs/OPERATIONS.md).
+#
+# Secrets GitHub (Settings → Secrets and variables → Actions) :
+#   GBP_OAUTH_CLIENT_ID       : client_id OAuth Desktop
+#   GBP_OAUTH_CLIENT_SECRET   : client_secret OAuth Desktop
+#   GBP_OAUTH_REFRESH_TOKEN   : refresh_token (sortie de gbp_oauth_setup.py)
+#   SUPABASE_SECRET_KEY       : clé sb_secret_* du projet Cooked
+# Optionnel :
+#   GBP_LOCATION_ID           : forcer une fiche (sinon auto-découverte)
+
+on:
+  schedule:
+    # 06:30 UTC quotidien (30 min après GSC) — lag Google typique J-2/J-3.
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: gbp-daily-ingest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "scripts/requirements-gbp.txt"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements-gbp.txt
+
+      - name: Guard — secrets OAuth présents
+        id: guard
+        env:
+          GBP_OAUTH_CLIENT_ID: ${{ secrets.GBP_OAUTH_CLIENT_ID }}
+          GBP_OAUTH_CLIENT_SECRET: ${{ secrets.GBP_OAUTH_CLIENT_SECRET }}
+          GBP_OAUTH_REFRESH_TOKEN: ${{ secrets.GBP_OAUTH_REFRESH_TOKEN }}
+        run: |
+          if [ -z "$GBP_OAUTH_CLIENT_ID" ] || [ -z "$GBP_OAUTH_CLIENT_SECRET" ] || [ -z "$GBP_OAUTH_REFRESH_TOKEN" ]; then
+            echo "::warning::Secrets GBP OAuth manquants — workflow inerte jusqu'au setup (docs/OPERATIONS.md § GBP)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run GBP ingest (90 j)
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GBP_OAUTH_CLIENT_ID: ${{ secrets.GBP_OAUTH_CLIENT_ID }}
+          GBP_OAUTH_CLIENT_SECRET: ${{ secrets.GBP_OAUTH_CLIENT_SECRET }}
+          GBP_OAUTH_REFRESH_TOKEN: ${{ secrets.GBP_OAUTH_REFRESH_TOKEN }}
+          GBP_LOCATION_ID: ${{ secrets.GBP_LOCATION_ID }}
+        run: python3 scripts/gbp_ingest.py --daily
+
+      - name: notify-failure
+        if: failure()
+        run: |
+          if [ -n "${{ secrets.NTFY_TOPIC }}" ]; then
+            curl -s \
+              -H "Title: Cooked CI en échec" \
+              -H "Priority: high" \
+              -H "Tags: warning" \
+              -d "Workflow « ${{ github.workflow }} » en échec (run #${{ github.run_number }}) — voir Actions : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}" || true
+          else
+            echo "NTFY_TOPIC non configuré — notification push ignorée (inerte)."
+          fi

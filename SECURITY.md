@@ -11,6 +11,7 @@ Délai de réponse visé : 48 h ouvrées.
 
 - Clés Supabase (`sb_secret_*`, `service_role`, tokens `sbp_*`)
 - Credentials Google Search Console / service accounts JSON
+- Tokens OAuth Google Business Profile (`gbp-token.json`, refresh tokens)
 - Identifiants DataForSEO (`DFS_USERNAME`, `DFS_PASSWORD`)
 - `FORM_WEBHOOK_SECRET`, `ANON_SALT`
 - Fichiers `.env`, `.env.local`, `*credentials*.json`
@@ -23,6 +24,7 @@ Le `.gitignore` et la CI limitent les risques ; en cas de fuite accidentelle :
 | Secret | Emplacement |
 |---|---|
 | GSC service account | `~/.claude/gsc-credentials.json` (local) ; `GSC_CREDENTIALS_B64` (GitHub Actions) |
+| GBP OAuth | `~/.claude/gbp-token.json` (local) ; `GBP_OAUTH_CLIENT_ID` / `_CLIENT_SECRET` / `_REFRESH_TOKEN` (GitHub Actions) |
 | Supabase service | `SUPABASE_SECRET_KEY` (Vercel, GitHub Actions, Edge Functions) |
 | Dashboard allowlist | `DASHBOARD_ALLOWED_EMAILS` (Vercel) |
 | Webhook formulaires | `FORM_WEBHOOK_SECRET` (Supabase Edge + Wix Automation) |
