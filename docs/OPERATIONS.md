@@ -231,7 +231,7 @@ cooked/
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS (référence)
 │   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets 105 RPC (généré, lecture seule)
+│   ├── rpcs.sql                       — corps complets 109 RPC (généré, lecture seule)
 │   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
@@ -636,7 +636,7 @@ canonique d'une base fraîche.
 
 | Fichier | Contenu | Régénération |
 |---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 105 fonctions/procédures publiques (régénéré le 12/07/2026) | `python3 scripts/generate_rpcs_sql.py` (`DATABASE_URL`) ; gate CI si migration touche une RPC |
+| `supabase/rpcs.sql` | **Corps complets** des 109 fonctions/procédures publiques (régénéré le 23/07/2026) | `python3 scripts/generate_rpcs_sql.py` (`DATABASE_URL`) ; gate CI si migration touche une RPC |
 | `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
 | `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
 
