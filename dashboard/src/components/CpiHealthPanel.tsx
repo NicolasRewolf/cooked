@@ -100,8 +100,9 @@ export function CpiHealthPanel({ detail }: { detail: ArticleDetail }) {
             </span>
             <ConfidenceBadge grade={c.grade} />
             <Info>
-              Grade de confiance selon le volume d&apos;entrées organiques : A = solide, B =
-              indicatif, C = hypothèse (petit volume, à confirmer).
+              Fiabilité selon le volume d&apos;entrées organiques : S = très
+              fiable, A = fiable, B = indicatif, C = insuffisant (pas de
+              verdict).
             </Info>
             {c.momentum != null && (() => {
               const dir = momentumDir(c.momentum);

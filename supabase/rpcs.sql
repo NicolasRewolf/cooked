@@ -919,7 +919,12 @@ scored AS (
       + (1.0/(1+exp(-((coalesce(m.c1,0)+coalesce(m.c0,0))-20)/5.0))) * (ln((coalesce(m.c1,0)+5.0)/(coalesce(m.c0,0)+5.0)) - ln((s.s1+50.0)/(s.s0+50.0)))
     ,-0.336),0.336))::numeric,2) mm,
     round((1 - 0.15*least(greatest((coalesce(l.lcp75,2500)-2500)/2500.0,0),1))::numeric,2) gg,
-    CASE WHEN x.n_org>=100 AND coalesce(x.e,0)>=20 THEN 'A' WHEN x.n_org>=30 AND coalesce(x.e,0)>=5 THEN 'B' ELSE 'C' END grade
+    CASE
+      WHEN x.n_org >= 200 AND coalesce(x.e,0) >= 40 THEN 'S'
+      WHEN x.n_org >= 100 AND coalesce(x.e,0) >= 20 THEN 'A'
+      WHEN x.n_org >= 30 AND coalesce(x.e,0) >= 5 THEN 'B'
+      ELSE 'C'
+    END grade
   FROM xs x LEFT JOIN medt mt ON mt.ptype=x.ptype LEFT JOIN madt dt ON dt.ptype=x.ptype
   CROSS JOIN medg mg CROSS JOIN madg dg LEFT JOIN mom m ON m.path=x.path CROSS JOIN site s LEFT JOIN lcp l ON l.path=x.path
 )
@@ -3011,7 +3016,7 @@ BEGIN
             FROM gsc_path_metrics(gns,gne) m JOIN _xp ON _xp.path=m.path),
     gscp AS (SELECT m.path,m.clicks_total AS clicks_prev FROM gsc_path_metrics(gps,gpe) m JOIN _xp ON _xp.path=m.path),
     cpi_d AS (SELECT path,cpi,grade,momentum FROM cpi_daily WHERE day=cpi_day),
-    gis AS (SELECT path,potentiel,convertit FROM cpi_gisement),
+    gis AS (SELECT path,potentiel,convertit FROM cpi_opportunite_contact),
     bestq AS (
       SELECT DISTINCT ON (q.path) q.path,q.query,q.clicks FROM (
         SELECT qp.path,qp.query,SUM(qp.clicks) clicks,SUM(qp.impressions) impr
@@ -3260,7 +3265,7 @@ BEGIN
             FROM gsc_path_metrics(gns,gne) m JOIN res ON res.path=m.path),
     gscp AS (SELECT m.path, m.clicks_total AS clicks_prev FROM gsc_path_metrics(gps,gpe) m JOIN res ON res.path=m.path),
     cpi_d AS (SELECT path, cpi, grade, momentum FROM cpi_daily WHERE day = cpi_day),
-    gis AS (SELECT path, potentiel, convertit FROM cpi_gisement),
+    gis AS (SELECT path, potentiel, convertit FROM cpi_opportunite_contact),
     bestq AS (
       SELECT DISTINCT ON (q.path) q.path, q.query, q.clicks FROM (
         SELECT qp.path, qp.query, SUM(qp.clicks) clicks, SUM(qp.impressions) impr

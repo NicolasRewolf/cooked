@@ -124,7 +124,13 @@ function buildColumns(periodQ: string): Column<ResourceRow>[] {
   ];
 }
 
-type SanteFilter = "tous" | "monte" | "stable" | "ralentit" | "gisement" | "nonscore";
+type SanteFilter =
+  | "tous"
+  | "monte"
+  | "stable"
+  | "ralentit"
+  | "opportunite_contact"
+  | "nonscore";
 
 function santeOf(r: ResourceRow): Exclude<SanteFilter, "tous"> {
   return santeFromMomentum(r.momentum, r.cpi_grade, r.convertit);
@@ -140,11 +146,13 @@ interface ResourcesFilters {
 
 function filtersFromUrl(sp: UrlParamsReader): ResourcesFilters {
   const s = sp.get("sante");
-  const valid = ["monte", "stable", "ralentit", "gisement", "nonscore"];
+  // Alias URL historique « gisement » → opportunite_contact
+  const normalized = s === "gisement" ? "opportunite_contact" : s;
+  const valid = ["monte", "stable", "ralentit", "opportunite_contact", "nonscore"];
   return {
     q: sp.get("q") ?? "",
     theme: sp.get("theme") ?? "tous",
-    sante: s && valid.includes(s) ? (s as SanteFilter) : "tous",
+    sante: normalized && valid.includes(normalized) ? (normalized as SanteFilter) : "tous",
     recents: sp.get("recents") === "1",
   };
 }
@@ -231,7 +239,7 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
             <option value="monte">● monte</option>
             <option value="stable">● stable</option>
             <option value="ralentit">● ralentit</option>
-            <option value="gisement">★ gisement</option>
+            <option value="opportunite_contact">★ opportunité de contact</option>
             <option value="nonscore">— non scoré</option>
           </select>
           <label className="flex w-fit cursor-pointer items-center gap-2 text-[11.5px] text-muted">

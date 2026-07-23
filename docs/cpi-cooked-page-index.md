@@ -24,7 +24,7 @@ SELECT * FROM cooked_page_index(28) ORDER BY cpi ASC;
 -- Les malades certifiés (à traiter en priorité)
 SELECT path, cpi, zc, zr, zl, zv, momentum_badge, clics_perdus
 FROM cooked_page_index(28)
-WHERE grade IN ('A','B') AND cpi < 35 ORDER BY n_org DESC;
+WHERE grade IN ('S','A','B') AND cpi < 35 ORDER BY n_org DESC;
 
 -- Trajectoire d'une page (snapshot quotidien, cron 07:30 UTC)
 SELECT day, cpi, zc, zv, momentum FROM cpi_daily
@@ -40,26 +40,27 @@ WHERE fiable AND delta_cpi <= -10 ORDER BY delta_cpi;
 -- Les pages sorties du radar (souvent le decay le plus avancé)
 SELECT path, ptype, cpi_ref, grade_ref FROM cpi_movers WHERE statut = 'disparu';
 
--- Pilotage conversion (Sprint 39) : le gisement = potentiel haut, ne convertit pas
+-- Pilotage conversion : opportunité de contact = potentiel haut, ne convertit pas
 SELECT path, ptype, n_org, potentiel, cpi, convertit
-FROM cpi_gisement
-WHERE grade IN ('A','B') AND NOT convertit
+FROM cpi_opportunite_contact
+WHERE grade IN ('S','A','B') AND NOT convertit
 ORDER BY potentiel DESC;
 ```
 
 L'alerte `cpi_drop` (cron horaire, bloc 6 de `cooked_alerts_refresh`) pointe
-les pages fiables (grade A/B aux deux dates) qui perdent ≥ 15 pts sur ~7 j,
+les pages fiables (Fiabilité S/A/B aux deux dates) qui perdent ≥ 15 pts sur ~7 j,
 **uniquement si la chute est portée par un vrai decay** (momentum ≤ −0,10 ou
 capture delta_zc ≤ −0,5). La volatilité pure de la conversion (un contact qui
 sort de la fenêtre 28 j) ne déclenche plus l'alerte (recalibrée 17/06/2026).
 Le diagnostic vit dans les `delta_z*` de la vue — même grille que les z.
 
-Pour le **pilotage conversion**, la vue `cpi_gisement` sépare le *potentiel*
-(capture + rétention + lecture, renormalisés hors conversion) du badge
-*conversion réalisée* (`convertit`) — voir la requête « gisement » ci-dessus.
-Elle ne recalcule rien : elle relit le dernier `cpi_daily`. Le gisement
-(potentiel haut + ne convertit pas) = les pages où agir, à croiser avec
-l'intention du sujet (indemnisation > pénal éducatif).
+Pour le **pilotage conversion**, la vue `cpi_opportunite_contact` (alias
+déprécié `cpi_gisement`) sépare le *potentiel* (capture + rétention + lecture,
+renormalisés hors conversion) du badge *conversion réalisée* (`convertit`) —
+voir la requête ci-dessus. Elle ne recalcule rien : elle relit le dernier
+`cpi_daily`. Une **opportunité de contact** (potentiel haut + ne convertit
+pas) = les pages où agir, à croiser avec l'intention du sujet
+(indemnisation > pénal éducatif).
 
 ## Grille de lecture
 
@@ -70,7 +71,7 @@ l'intention du sujet (indemnisation > pénal éducatif).
 | 35-50 | à surveiller |
 | < 35 | malade |
 
-**Grades de confiance** : A = verdict (n_org≥100, E≥20) · B = solide · C = hypothèse.
+**Fiabilité** (colonne SQL `grade`) : S = très fiable (n_org≥200, E≥40) · A = fiable (≥100, ≥20) · B = indicatif (≥30, ≥5) · C = insuffisant.
 Règle d'or : **le CPI trie, les quatre z diagnostiquent** — ne jamais lire le
 nombre sans ses composantes.
 

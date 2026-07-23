@@ -3,7 +3,7 @@
 Guide opérationnel pour mener les analyses que Nicolas demande, sans
 retomber dans les pièges déjà payés. Issu des sessions des 09-10/06/2026
 (Sprint 37-38), **à jour au 12/07/2026** : CPI **v2.2** (validé J+28 le
-11/07/2026) + vue `cpi_gisement` (Sprint 39) + couture d'identité
+11/07/2026) + vue `cpi_opportunite_contact` (ex-gisement) + couture d'identité
 `identity_stitch` / `conversion_journeys` v2 recousue (12/07/2026). À lire
 AVANT la première analyse d'une session.
 
@@ -23,8 +23,8 @@ Traiter ou expliquer l'alerte d'abord.
 | Question de Nicolas | Outil |
 |---|---|
 | « Bilan de cette page / cet article » | `gsc_page_performance(path)` + décomposition canal (recette §2) |
-| « Quelles pages vont bien/mal ? » | `cooked_page_index(28)` — trier `cpi ASC`, filtrer `grade IN ('A','B')` |
-| « Pages à fort trafic qui ne convertissent pas ? » | `cpi_gisement` — `grade IN ('A','B') AND NOT convertit ORDER BY potentiel DESC` |
+| « Quelles pages vont bien/mal ? » | `cooked_page_index(28)` — trier `cpi ASC`, filtrer `grade IN ('S','A','B')` |
+| « Pages à fort trafic qui ne convertissent pas ? » | `cpi_opportunite_contact` — `grade IN ('S','A','B') AND NOT convertit ORDER BY potentiel DESC` |
 | « Qui monte, qui chute ? » | momentum 28v28 sur `gsc_path_daily` (recette §3.1) |
 | « Des pages qui se cannibalisent ? » | requêtes multi-paths sur `gsc_query_page_daily` (§3.2) |
 | « Quelles pages aident à convertir ? » | `conversion_journeys(days)` + unnest journey (§3.3) |
@@ -110,9 +110,9 @@ snippet malade + decay (zc−− M↘) = le prochain à réparer, étoile montan
 
 **CPI v2.2 (Sprint 39)** : momentum à transition continue + empirical Bayes
 dynamique par type (formules dans `cpi-cooked-page-index.md`). Pour le
-**pilotage conversion**, la vue `cpi_gisement` sépare le *potentiel* d'une
+**pilotage conversion**, la vue `cpi_opportunite_contact` sépare le *potentiel* d'une
 page (capture + rétention + lecture, hors conversion) du badge *conversion
-réalisée*. Le gisement (`grade IN ('A','B') AND NOT convertit ORDER BY
+réalisée*. L'opportunité de contact (`grade IN ('S','A','B') AND NOT convertit ORDER BY
 potentiel DESC`) = les pages qui captent une audience mais ne la convertissent
 pas encore → où poser un pont vers le contact. **Croiser avec l'intention du
 sujet** (indemnisation = audience concernée > pénal éducatif = curieux).

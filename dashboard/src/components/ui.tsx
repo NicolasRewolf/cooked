@@ -65,10 +65,17 @@ export function Badge({
   );
 }
 
-export function ConfidenceBadge({ grade }: { grade: "A" | "B" | "C" }) {
-  const tone = grade === "A" ? "good" : grade === "B" ? "info" : "neutral";
+export function ConfidenceBadge({ grade }: { grade: "S" | "A" | "B" | "C" }) {
+  const tone =
+    grade === "S" || grade === "A" ? "good" : grade === "B" ? "info" : "neutral";
   const title =
-    grade === "A" ? "Fiable" : grade === "B" ? "Indicatif" : "Faible volume — pas de verdict";
+    grade === "S"
+      ? "Fiabilité S — très fiable"
+      : grade === "A"
+        ? "Fiabilité A — fiable"
+        : grade === "B"
+          ? "Fiabilité B — indicatif"
+          : "Fiabilité C — volume insuffisant, pas de verdict";
   return (
     <span title={title}>
       <Badge tone={tone}>{grade}</Badge>

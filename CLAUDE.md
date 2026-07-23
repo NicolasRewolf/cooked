@@ -153,20 +153,21 @@ recalibrée sur les sessions réellement dupliquées, seuil 30).
   ≤ −0,10 OU capture delta_zc ≤ −0,5), exclut la volatilité pure de la
   conversion (un contact qui sort de la fenêtre 28 j faisait plonger une page
   de ~50 pts sans déclin réel).
-- Vue **`cpi_gisement`** (`20260618102429`) : pilotage conversion. Relit le
-  dernier `cpi_daily` et sépare le **potentiel** (capture+rétention+lecture,
-  hors conversion, renormalisés) du badge **conversion réalisée** ; **ne
-  complexifie PAS le CPI** (aucun nouveau calcul). Gisement = `grade IN
-  ('A','B') AND NOT convertit ORDER BY potentiel DESC` = pages à fort trafic
-  qui ne convertissent pas → où poser un pont vers le contact (croiser avec
-  l'intention : indemnisation > pénal éducatif).
+- Vue **`cpi_opportunite_contact`** (`20260723212008`, ex-`cpi_gisement`) : pilotage
+  conversion. Relit le dernier `cpi_daily` et sépare le **potentiel**
+  (capture+rétention+lecture, hors conversion, renormalisés) du badge
+  **conversion réalisée** ; **ne complexifie PAS le CPI** (aucun nouveau calcul).
+  Opportunité de contact = `grade IN ('S','A','B') AND NOT convertit ORDER BY
+  potentiel DESC` = pages à fort trafic qui ne convertissent pas → où poser un
+  pont vers le contact (croiser avec l'intention : indemnisation > pénal éducatif).
+  Alias déprécié : `cpi_gisement`.
 - Décision produit : 3 revues d'experts externes du CPI passées au crible
   (fenêtre zv étendue, attribution non conservée, MAD saturée, score 2-volets…).
   Verdict — **l'outil est suffisant, on ne le complexifie pas** : le benchmark
   a montré que « réparer » zv en continu est une impasse vu la rareté des
   contacts (~10/mois **attribuables par page en organique** — le site fait
-  ~170 contacts macro/28 j toutes sources). Le levier est l'**action sur le
-  gisement**, pas une
+  ~170 contacts macro/28 j toutes sources). Le levier est l'**action sur les
+  opportunités de contact**, pas une
   v2.3. **On passe en prod opérationnelle : focus site (conversion), plus
   l'outil.**
 - Croisement export Wix ↔ `form_submit` Cooked validé : Cooked ne rate aucun
@@ -257,7 +258,7 @@ SELECT gsc_last_data_day();                    -- 3. fraîcheur GSC (lag J-2/J-3
 Si une alerte est active : la traiter ou l'expliquer AVANT de produire des
 chiffres (un chiffre produit pendant un incident pipeline est un chiffre
 faux). Pour prioriser le travail SEO/contenu :
-`SELECT * FROM cooked_page_index(28) WHERE grade IN ('A','B') ORDER BY cpi ASC`.
+`SELECT * FROM cooked_page_index(28) WHERE grade IN ('S','A','B') ORDER BY cpi ASC`.
 
 **Carte de la documentation** (lire selon le besoin) :
 
@@ -473,11 +474,12 @@ RPCs attribution & santé (Sprint 37-38) :
   present/nouveau/disparu, `fiable` (grade A/B aux deux dates), delta_z par
   composante ; alimente l'alerte `cpi_drop` (chute ≥15 pts **+ vrai decay
   momentum/capture**, warn — recalibré S39, exclut la volatilité conversion)
-- `cpi_gisement` (vue, S39) — pilotage conversion : relit le dernier
+- `cpi_opportunite_contact` (vue, ex-`cpi_gisement`) — pilotage conversion : relit le dernier
   `cpi_daily` et sépare le **potentiel** (capture+rétention+lecture, hors
   conversion, renormalisés) du badge **conversion réalisée** (`convertit`).
-  Gisement = `grade IN ('A','B') AND NOT convertit ORDER BY potentiel DESC`.
-  Ne recalcule rien, ne complexifie pas le CPI
+  Opportunité de contact = `grade IN ('S','A','B') AND NOT convertit ORDER BY potentiel DESC`.
+  Ne recalcule rien, ne complexifie pas le CPI. Alias déprécié : `cpi_gisement`.
+  Colonne `grade` = **Fiabilité** S/A/B/C (S≥200∧E≥40, A≥100∧≥20, B≥30∧≥5, C sinon).
 - `cooked_alerts_refresh()` — recalcul des alertes (cron horaire) ; table
   `alerts` (acked boolean)
 - `cooked_page_type(path)` — cabinet / hub / expertise / post / blog-nav ;

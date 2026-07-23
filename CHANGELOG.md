@@ -3,6 +3,20 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-07-23] — Norme CPI : Fiabilité S/A/B/C + Opportunité de contact
+
+### Modifié
+- **Fiabilité** (colonne SQL `grade`) : échelle **S / A / B / C**
+  (S: n_org≥200∧E≥40 ; A: ≥100∧≥20 ; B: ≥30∧≥5 ; C: sinon).
+  `cpi_movers.fiable` et opportunités = S/A/B.
+- Vue **`cpi_opportunite_contact`** (ex-libellé « gisement ») ; alias
+  déprécié `cpi_gisement` conservé pour les refreshers.
+- Dashboard : filtre ★ opportunité de contact, badges Fiabilité, docs
+  (CLAUDE, PLAYBOOK, CPI, OPERATIONS, README).
+
+### Non renommé
+- `GisementsPanel` / quick wins SEO (autre concept : gain clics GSC).
+
 ## [2026-07-13] — Grand ménage : docs A→Z + hygiène repo
 
 ### Modifié — Documentation (audit 4 agents + 5 rédacteurs, 12-13/07)
