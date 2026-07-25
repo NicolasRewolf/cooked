@@ -1184,7 +1184,7 @@ AS $function$
 DECLARE
   v_last_ingest   timestamptz;
   v_last_complete timestamptz;
-  v_today_paris   date := (now() AT TIME ZONE 'Europe/Paris')::date;
+  v_today_paris   date := public.paris_today();
   v_steps constant text[] := ARRAY[
     'cooked_cpi_snapshot',
     'refresh_dashboard_snapshots',
@@ -1212,7 +1212,7 @@ BEGIN
 
   -- L'ingestion du jour n'a pas encore atterri : on repassera dans une heure.
   IF v_last_ingest IS NULL
-     OR (v_last_ingest AT TIME ZONE 'Europe/Paris')::date < v_today_paris THEN
+     OR public.paris_date(v_last_ingest) < v_today_paris THEN
     RETURN 'skip: ingestion GSC du jour pas encore arrivée';
   END IF;
 
