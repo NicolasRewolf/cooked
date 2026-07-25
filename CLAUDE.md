@@ -508,11 +508,13 @@ Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
 Paris (première ingestion réelle).
 
-**Versions canoniques (repo `main`, 12/07/2026)** :
+**Versions canoniques (repo `main`, 25/07/2026)** :
 - Tracker : **`sprint41`** (ids auto-réparants — fin de la rotation aid/sid sur
   wipe de storage qui coupait ~22 % des sessions). **DÉPLOYÉ le 12/07/2026
   ~22:20 par Nicolas** — vérification J+1 le 13/07/2026.
-- Edge `track` : **v25** (D4 `track_row` + C5 `events_row` ; clamp horloge v23).
+- Edge `track` : **v26** (25/07/2026 — filtre bots à l'ingestion, audit n°5/R2 :
+  la taxonomie ua_bot est appliquée AVANT l'INSERT, drops comptés dans
+  `ingest_drops` ; v25 = D4 `track_row` + C5 `events_row` ; clamp horloge v23).
 - Edge `form-webhook` : **v12** (D4 `form_row` ; v11 = submissionTime + drop alert).
 
 Prod peut lagger : vérifier la version déployée avant d'annoncer un changement Edge.

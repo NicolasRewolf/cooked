@@ -56,6 +56,61 @@ export async function hashAnonymous(
     .join("");
 }
 
+// n°5 (audit 25/07/2026, R2) — taxonomie ua_bot de refresh_noise_sessions,
+// répliquée à l'identique (39 motifs, même ordre que le SQL). Un event
+// droppé ici aurait été exclu d'events_human de toute façon : mesuré le
+// 25/07/2026 sur 48 h, 90,2 % des écritures matchaient, et 0 event bot-UA
+// de plus de 90 minutes restait visible dans events_human.
+const BOT_UA_RE = new RegExp(
+  [
+    "headless",
+    "googlebot",
+    "bingbot",
+    "applebot",
+    "duckduckbot",
+    "yandexbot",
+    "baiduspider",
+    "gptbot",
+    "claudebot",
+    "perplexitybot",
+    "chatgpt-user",
+    "googleother",
+    "semrushbot",
+    "ahrefsbot",
+    "mj12bot",
+    "dotbot",
+    "petalbot",
+    "bytespider",
+    "lighthouse",
+    "pingdom",
+    "uptimerobot",
+    "gtmetrix",
+    "facebookexternalhit",
+    "linkedinbot",
+    "twitterbot",
+    "discordbot",
+    "telegrambot",
+    "slackbot",
+    "whatsapp/",
+    "crawler",
+    "spider",
+    "axios/",
+    "curl/",
+    "wget",
+    "python",
+    "go-http",
+    "node-fetch",
+    "httpclient",
+    "java/",
+  ].join("|"),
+  "i",
+);
+
+/** true si l'UA appartient à la taxonomie ua_bot (drop avant INSERT). */
+export function isBotUa(ua: string): boolean {
+  return BOT_UA_RE.test(ua);
+}
+
 export function parseUserAgent(ua: string) {
   const isTablet = /iPad|Tablet|PlayBook/i.test(ua);
   const isMobile = !isTablet && /Mobi|Android|iPhone|iPod/i.test(ua);

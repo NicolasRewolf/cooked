@@ -1,4 +1,4 @@
-// COOKED — track Edge Function (v25 — 10/07/2026 : C5 _shared/events_row ; D4 _shared/track_row)
+// COOKED — track Edge Function (v26 — 25/07/2026 : filtre bots à l'ingestion, audit n°5/R2)
 // POST /functions/v1/track
 // Auth: this function does NOT verify a JWT. Authorization is via the Velo proxy
 // which holds the Supabase secret key server-side and forwards it as `apikey`.
@@ -13,6 +13,7 @@ import {
   buildEventRow,
   clientIp,
   hashAnonymous,
+  isBotUa,
   parseUserAgent,
 } from "../_shared/track_row.ts";
 
@@ -101,6 +102,23 @@ Deno.serve(async (req) => {
 
   const ip = clientIp(req);
   const ua = req.headers.get("user-agent") ?? "";
+
+  // v26 (audit 25/07/2026, n°5/R2) — les crawlers/headless ne sont plus
+  // écrits : leur UA matche la taxonomie ua_bot que refresh_noise_sessions
+  // appliquait après coup (90 % des writes). Compteur ingest_drops pour
+  // l'audit ; réponse 200 pour ne rien révéler au bot (et éviter tout retry).
+  if (isBotUa(ua)) {
+    const { error } = await supabase.rpc("record_ingest_drop", {
+      p_reason: "bot_ua",
+      p_n: events.length,
+    });
+    if (error) console.error("[track] record_ingest_drop error:", error.message);
+    return new Response(JSON.stringify({ ok: true, inserted: 0 }), {
+      status: 200,
+      headers: { ...cors, "content-type": "application/json" },
+    });
+  }
+
   const serverHash = await hashAnonymous(ip, ua, ANON_SALT);
   const device = parseUserAgent(ua);
 
@@ -124,6 +142,19 @@ Deno.serve(async (req) => {
       `[track] dropped events in batch (size=${events.length}): ` +
       `missing_fields=${droppedMissingFields} disallowed_name=${droppedDisallowedName}`,
     );
+    // v26 — mêmes drops qu'avant, désormais comptés (auditabilité n°5).
+    for (const [reason, cnt] of [
+      ["missing_fields", droppedMissingFields],
+      ["disallowed_name", droppedDisallowedName],
+    ] as const) {
+      if (cnt > 0) {
+        const { error } = await supabase.rpc("record_ingest_drop", {
+          p_reason: reason,
+          p_n: cnt,
+        });
+        if (error) console.error("[track] record_ingest_drop error:", error.message);
+      }
+    }
   }
 
   if (!rows.length) {
