@@ -59,6 +59,77 @@ END;
 $function$
 
 
+-- ═══ public.alert_rule_cpi_stale() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_cpi_stale()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_last date;
+  v_lag  int;
+BEGIN
+  SELECT max(day) INTO v_last FROM public.cpi_daily;
+
+  IF v_last IS NULL THEN
+    RETURN QUERY SELECT 'cpi_stale'::text, 'critical'::text,
+      'cpi_daily est vide — le snapshot CPI n a jamais tourné.'::text;
+    RETURN;
+  END IF;
+
+  v_lag := public.paris_today() - v_last;  -- foyer unique, cf. contrat C6
+
+  IF v_lag >= 2 THEN
+    RETURN QUERY SELECT
+      'cpi_stale'::text,
+      'critical'::text,
+      ('cpi_daily s arrête au ' || to_char(v_last, 'DD/MM/YYYY') || ' (' || v_lag
+       || ' jours de retard) — un jour de CPI non calculé est perdu définitivement.')::text;
+  END IF;
+END;
+$function$
+
+
+-- ═══ public.alert_rule_cron_failed() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_cron_failed()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'cron', 'pg_catalog'
+AS $function$
+DECLARE v_list text;
+BEGIN
+  SELECT string_agg(
+           x.jobname || ' (' || to_char(x.start_time AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI')
+           || ' — ' || left(regexp_replace(coalesce(x.return_message, 'sans message'), '\s+', ' ', 'g'), 90) || ')',
+           ' | ' ORDER BY x.start_time DESC)
+    INTO v_list
+  FROM (
+    SELECT j.jobname, d.status, d.return_message, d.start_time
+    FROM cron.job j
+    JOIN LATERAL (
+      SELECT dd.status, dd.return_message, dd.start_time
+      FROM cron.job_run_details dd
+      WHERE dd.jobid = j.jobid
+      ORDER BY dd.start_time DESC
+      LIMIT 1
+    ) d ON true
+    WHERE j.active
+      AND d.status = 'failed'
+      AND d.start_time > now() - interval '7 days'
+  ) x;
+
+  IF v_list IS NOT NULL THEN
+    RETURN QUERY SELECT
+      'cron_failed'::text,
+      'critical'::text,
+      ('Tâche(s) planifiée(s) en échec au dernier passage : ' || v_list)::text;
+  END IF;
+END;
+$function$
+
+
 -- ═══ public.alert_rule_dfs_stale() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_dfs_stale()
  RETURNS TABLE(kind text, severity text, detail text)
@@ -576,6 +647,8 @@ DECLARE
 BEGIN
   FOR r IN
     SELECT * FROM public.alert_rule_pipeline_dead()
+    UNION ALL SELECT * FROM public.alert_rule_cron_failed()
+    UNION ALL SELECT * FROM public.alert_rule_cpi_stale()
     UNION ALL SELECT * FROM public.alert_rule_double_embed_suspect()
     UNION ALL SELECT * FROM public.alert_rule_rpc_health()
     UNION ALL SELECT * FROM public.alert_rule_form_attribution_degraded()
@@ -2333,8 +2406,16 @@ CREATE OR REPLACE FUNCTION public.latest_rpc_health()
 AS $function$
   select distinct on (h.rpc_name)
     h.rpc_name,
-    h.status,
-    h.detail,
+    case when h.checked_at < now() - interval '48 hours'
+         then 'stale'
+         else h.status
+    end as status,
+    case when h.checked_at < now() - interval '48 hours'
+         then 'mesure du ' || to_char(h.checked_at AT TIME ZONE 'Europe/Paris', 'DD/MM/YYYY HH24:MI')
+              || ' — le contract test n a pas tourné depuis, statut réel inconnu. Dernier état connu : '
+              || coalesce(h.status, 'null') || '. ' || coalesce(h.detail, '')
+         else h.detail
+    end as detail,
     h.rows_returned,
     h.duration_ms,
     h.checked_at,
@@ -2822,10 +2903,12 @@ AS $function$
 declare
   v_topic text;
 begin
-  -- Dédup : identique à l'existant, comportement inchangé.
+  -- Dédup sur `kind` SEUL (et non plus `kind AND not acked`) : acquitter une
+  -- alerte ne la fait plus réapparaître au tick suivant. Si la condition
+  -- persiste au-delà de 24 h, une nouvelle alerte est levée — voulu.
   if exists (
     select 1 from public.alerts
-    where kind = p_kind and not acked
+    where kind = p_kind
       and created_at > now() - interval '24 hours'
   ) then
     return 0;
