@@ -619,115 +619,85 @@ CREATE OR REPLACE PROCEDURE public.cooked_events_window(IN p_occurred_from times
  SET search_path TO 'public', 'pg_catalog'
 AS $procedure$
 BEGIN
-  IF p_grain NOT IN ('raw', 'clean', 'human') THEN
+  IF p_grain NOT IN ('raw','clean','human') THEN
     RAISE EXCEPTION 'cooked_events_window: grain must be raw|clean|human, got %', p_grain;
   END IF;
-  IF p_site NOT IN ('main', 'outremer') THEN
+  IF p_site NOT IN ('main','outremer') THEN
     RAISE EXCEPTION 'cooked_events_window: site must be main|outremer, got %', p_site;
   END IF;
 
   DROP TABLE IF EXISTS _cooked_ev;
+  DROP TABLE IF EXISTS _cooked_ev_raw;
 
   IF p_grain = 'raw' THEN
     IF p_site = 'main' THEN
       CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
-        SELECT e.*, public.paris_date(e.occurred_at) AS d
+        SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path, e.referrer_hostname,
+               e.utm_source, e.utm_medium, e.user_agent, e.device_type, e.props,
+               e.occurred_at, public.paris_date(e.occurred_at) AS d
         FROM public.events_main e
-        WHERE e.occurred_at >= p_occurred_from
-          AND e.occurred_at < p_occurred_to;
+        WHERE e.occurred_at >= p_occurred_from AND e.occurred_at < p_occurred_to;
     ELSE
       CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
-        SELECT e.*, public.paris_date(e.occurred_at) AS d
+        SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path, e.referrer_hostname,
+               e.utm_source, e.utm_medium, e.user_agent, e.device_type, e.props,
+               e.occurred_at, public.paris_date(e.occurred_at) AS d
         FROM public.events_outremer e
-        WHERE e.occurred_at >= p_occurred_from
-          AND e.occurred_at < p_occurred_to;
+        WHERE e.occurred_at >= p_occurred_from AND e.occurred_at < p_occurred_to;
     END IF;
 
   ELSIF p_grain = 'clean' THEN
     IF p_site = 'main' THEN
       CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
-        SELECT e.*, public.paris_date(e.occurred_at) AS d
+        SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path, e.referrer_hostname,
+               e.utm_source, e.utm_medium, e.user_agent, e.device_type, e.props,
+               e.occurred_at, public.paris_date(e.occurred_at) AS d
         FROM public.events_main e
-        WHERE e.occurred_at >= p_occurred_from
-          AND e.occurred_at < p_occurred_to
-          AND NOT EXISTS (
-            SELECT 1 FROM public.bot_fingerprints b WHERE b.anonymous_id = e.anonymous_id
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM public.noise_sessions n WHERE n.session_id = e.session_id
-          );
+        WHERE e.occurred_at >= p_occurred_from AND e.occurred_at < p_occurred_to
+          AND NOT EXISTS (SELECT 1 FROM public.bot_fingerprints b WHERE b.anonymous_id = e.anonymous_id)
+          AND NOT EXISTS (SELECT 1 FROM public.noise_sessions n WHERE n.session_id = e.session_id);
     ELSE
       CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
-        SELECT e.*, public.paris_date(e.occurred_at) AS d
+        SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path, e.referrer_hostname,
+               e.utm_source, e.utm_medium, e.user_agent, e.device_type, e.props,
+               e.occurred_at, public.paris_date(e.occurred_at) AS d
         FROM public.events_outremer e
-        WHERE e.occurred_at >= p_occurred_from
-          AND e.occurred_at < p_occurred_to
-          AND NOT EXISTS (
-            SELECT 1 FROM public.bot_fingerprints b WHERE b.anonymous_id = e.anonymous_id
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM public.noise_sessions n WHERE n.session_id = e.session_id
-          );
+        WHERE e.occurred_at >= p_occurred_from AND e.occurred_at < p_occurred_to
+          AND NOT EXISTS (SELECT 1 FROM public.bot_fingerprints b WHERE b.anonymous_id = e.anonymous_id)
+          AND NOT EXISTS (SELECT 1 FROM public.noise_sessions n WHERE n.session_id = e.session_id);
     END IF;
 
   ELSIF p_site = 'main' THEN
-    DROP TABLE IF EXISTS _cooked_ev_raw;
-    CREATE TEMP TABLE _cooked_ev_raw ON COMMIT DROP AS
-      SELECT e.*, public.paris_date(e.occurred_at) AS d
-      FROM public.events_main e
-      WHERE e.occurred_at >= p_occurred_from
-        AND e.occurred_at < p_occurred_to;
-    ANALYZE _cooked_ev_raw;
-
     CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
-      SELECT r.*
-      FROM _cooked_ev_raw r
-      WHERE NOT EXISTS (
-          SELECT 1 FROM public.bot_fingerprints b WHERE b.anonymous_id = r.anonymous_id
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM public.noise_sessions n WHERE n.session_id = r.session_id
-        )
+      SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path, e.referrer_hostname,
+             e.utm_source, e.utm_medium, e.user_agent, e.device_type, e.props,
+             e.occurred_at, public.paris_date(e.occurred_at) AS d
+      FROM public.events_main e
+      WHERE e.occurred_at >= p_occurred_from AND e.occurred_at < p_occurred_to
+        AND NOT EXISTS (SELECT 1 FROM public.bot_fingerprints b WHERE b.anonymous_id = e.anonymous_id)
+        AND NOT EXISTS (SELECT 1 FROM public.noise_sessions n WHERE n.session_id = e.session_id)
+        AND NOT (e.name = 'cta_anchor_click' AND public.cooked_is_chrome_anchor(e.props))
         AND NOT (
-          r.name = 'cta_anchor_click' AND public.cooked_is_chrome_anchor(r.props)
-        )
-        AND NOT (
-          r.name IN (
-            'cta_phone_click', 'cta_booking_click', 'cta_anchor_click',
-            'click_internal', 'click_outbound'
-          )
+          e.name IN ('cta_phone_click','cta_booking_click','cta_anchor_click','click_internal','click_outbound')
           AND EXISTS (
-            SELECT 1 FROM public.events_main d
-            WHERE d.session_id = r.session_id
-              AND d.name = r.name
-              AND d.path IS NOT DISTINCT FROM r.path
-              AND date_trunc('second', d.occurred_at) = date_trunc('second', r.occurred_at)
-              AND (d.props->>'anchor') IS NOT DISTINCT FROM (r.props->>'anchor')
-              AND d.id < r.id
-          )
-        );
-    DROP TABLE IF EXISTS _cooked_ev_raw;
+            SELECT 1 FROM public.events_main dup
+            WHERE dup.session_id = e.session_id
+              AND dup.name = e.name
+              AND dup.path IS NOT DISTINCT FROM e.path
+              AND date_trunc('second', dup.occurred_at) = date_trunc('second', e.occurred_at)
+              AND (dup.props->>'anchor') IS NOT DISTINCT FROM (e.props->>'anchor')
+              AND dup.id < e.id));
 
   ELSE
     CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
-      SELECT
-        e.id, e.anonymous_id, e.session_id, e.name, e.url, e.path, e.hostname, e.title,
-        e.referrer, e.referrer_hostname, e.utm_source, e.utm_medium, e.utm_campaign,
-        e.utm_term, e.utm_content, e.user_agent, e.device_type, e.os, e.browser,
-        e.viewport_width, e.viewport_height, e.country, e.props, e.occurred_at, e.received_at,
-        public.paris_date(e.occurred_at) AS d
+      SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path, e.referrer_hostname,
+             e.utm_source, e.utm_medium, e.user_agent, e.device_type, e.props,
+             e.occurred_at, public.paris_date(e.occurred_at) AS d
       FROM public.events_outremer e
-      WHERE e.occurred_at >= p_occurred_from
-        AND e.occurred_at < p_occurred_to
-        AND NOT EXISTS (
-          SELECT 1 FROM public.bot_fingerprints b WHERE b.anonymous_id = e.anonymous_id
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM public.noise_sessions n WHERE n.session_id = e.session_id
-        )
-        AND NOT (
-          e.name = 'cta_anchor_click' AND public.cooked_is_chrome_anchor(e.props)
-        );
+      WHERE e.occurred_at >= p_occurred_from AND e.occurred_at < p_occurred_to
+        AND NOT EXISTS (SELECT 1 FROM public.bot_fingerprints b WHERE b.anonymous_id = e.anonymous_id)
+        AND NOT EXISTS (SELECT 1 FROM public.noise_sessions n WHERE n.session_id = e.session_id)
+        AND NOT (e.name = 'cta_anchor_click' AND public.cooked_is_chrome_anchor(e.props));
   END IF;
 
   ANALYZE _cooked_ev;
