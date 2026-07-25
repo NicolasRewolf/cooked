@@ -2647,7 +2647,6 @@ CREATE OR REPLACE FUNCTION public.paris_date(ts timestamp with time zone)
  RETURNS date
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE
- SET search_path TO 'public', 'pg_catalog'
 AS $function$
   SELECT (ts AT TIME ZONE 'Europe/Paris')::date;
 $function$
@@ -2658,9 +2657,8 @@ CREATE OR REPLACE FUNCTION public.paris_today()
  RETURNS date
  LANGUAGE sql
  STABLE PARALLEL SAFE
- SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  SELECT (now() AT TIME ZONE 'Europe/Paris')::date;
+  SELECT public.paris_date(now());
 $function$
 
 
