@@ -762,7 +762,7 @@ CREATE OR REPLACE FUNCTION public.cooked_cpi_snapshot()
 AS $function$
   INSERT INTO public.cpi_daily
     (day, path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct, convertit)
-  SELECT (now() AT TIME ZONE 'Europe/Paris')::date,
+  SELECT public.paris_today(),
     path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct, convertit
   FROM public.cooked_page_index(28)
   ON CONFLICT (day, path) DO UPDATE SET
