@@ -1,4 +1,4 @@
-// COOKED — track Edge Function (v26 — 25/07/2026 : filtre bots à l'ingestion, audit n°5/R2)
+// COOKED — track Edge Function (v27 — 25/07/2026 : x-cooked-key ingest gate, audit n°3)
 // POST /functions/v1/track
 // Auth: this function does NOT verify a JWT. Authorization is via the Velo proxy
 // which holds the Supabase secret key server-side and forwards it as `apikey`.
@@ -45,6 +45,7 @@ if (!ANON_SALT || ANON_SALT === "cooked-default-salt-CHANGE-ME-IN-DASHBOARD") {
 }
 const ALLOWED_ORIGIN =
   Deno.env.get("ALLOWED_ORIGIN") ?? "https://www.jplouton-avocat.fr";
+const COOKED_INGEST_KEY = Deno.env.get("COOKED_INGEST_KEY") ?? "";
 
 const supabase = createClient(SUPABASE_URL, SECRET_KEY, {
   auth: { persistSession: false },
@@ -54,7 +55,7 @@ function corsHeaders(origin: string): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type, apikey, authorization, x-client-info",
+    "Access-Control-Allow-Headers": "content-type, apikey, authorization, x-client-info, x-cooked-key",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
@@ -81,6 +82,13 @@ Deno.serve(async (req) => {
   }
   if (req.method !== "POST") {
     return jsonError(405, "method_not_allowed");
+  }
+
+  if (COOKED_INGEST_KEY) {
+    const key = req.headers.get("x-cooked-key") ?? "";
+    if (key !== COOKED_INGEST_KEY) {
+      return jsonError(401, "unauthorized");
+    }
   }
 
   let body: any;

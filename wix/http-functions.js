@@ -19,6 +19,7 @@
 //   SUPABASE_TRACK_URL       e.g. https://xxxx.supabase.co/functions/v1/track
 //   SUPABASE_SERVICE_KEY     the secret_key (sb_secret_…) from Supabase Dashboard
 //                            → Settings → API
+//   COOKED_INGEST_KEY        shared secret forwarded as x-cooked-key (audit 25/07)
 // ============================================================
 
 import { fetch } from 'wix-fetch';
@@ -30,7 +31,7 @@ const ALLOWED_ORIGIN = 'https://www.jplouton-avocat.fr';
 const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'content-type',
+  'Access-Control-Allow-Headers': 'content-type, x-cooked-key',
   'Access-Control-Max-Age': '86400',
   'Vary': 'Origin',
 };
@@ -47,7 +48,7 @@ export async function post_track(request) {
   try {
     // Same-origin sanity check
     const origin = (request.headers && (request.headers.origin || request.headers.referer)) || '';
-    if (origin && !origin.startsWith(ALLOWED_ORIGIN)) {
+    if (!origin || !origin.startsWith(ALLOWED_ORIGIN)) {
       return response({
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -55,9 +56,10 @@ export async function post_track(request) {
       });
     }
 
-    const [supabaseUrl, supabaseKey] = await Promise.all([
+    const [supabaseUrl, supabaseKey, ingestKey] = await Promise.all([
       getSecret('SUPABASE_TRACK_URL'),
       getSecret('SUPABASE_SERVICE_KEY'),
+      getSecret('COOKED_INGEST_KEY'),
     ]);
 
     const body = await request.body.text();
@@ -85,6 +87,7 @@ export async function post_track(request) {
         'authorization': `Bearer ${supabaseKey}`,
         'x-forwarded-for': fwd,
         'user-agent': ua,
+        ...(ingestKey ? { 'x-cooked-key': ingestKey } : {}),
       },
       body,
     });

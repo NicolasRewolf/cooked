@@ -269,6 +269,25 @@ en-tête `Origin` — donc contournable en curl.
 
 ---
 
+## État d'exécution (25/07/2026 soir)
+
+| # | Correctif | État |
+|---|-----------|------|
+| 1 | Disque / refresh trop lourd | **Fait** (PR #76) |
+| 2 | CPI séparé du gros refresh | **Fait** (PR #79) |
+| 3 | Sécurité (portes + `x-cooked-key`) | **Code + Edge v27 déployés** — activer en posant le secret `COOKED_INGEST_KEY` (même valeur Wix Velo + Supabase Edge) |
+| 4 | Alertes / surveillance honnête | **Fait** (PR #78) |
+| 5 | Bots bloqués à l'ingestion + purge | **Fait** — compression nuit (`VACUUM`) en attente fenêtre 04h–06h |
+| 6 | `/seo` + filet CI | **Fait** — `check_dashboard_contracts.py` + job CI Arch #6 |
+| 7 | Contacts assistés unifiés | **Fait** — `assisted_contacts_by_entry_path` + `macro_contacts` `(non rattaché)` |
+| 8 | Bounce + filtre Baidu unifié | **Fait** — `cooked_is_spam_referrer`, `bounce_rate_pct`, annotation restatement |
+| 9 | 3 corrections CPI | **Fait** — `convertit` réel, momentum non-brandé, panel grade C |
+| 10 | Repo aligné prod | **Fait** — 3 migrations `2026072522*`, `rpcs.sql` régénéré (112 RPC), gate Arch #10 |
+
+**Reste côté Nicolas (5 min)** : secret Wix `COOKED_INGEST_KEY` + même secret Supabase → le verrou ingest devient actif sans couper le trafic (tant que le secret n'est pas posé, l'Edge accepte encore tout).
+
+---
+
 ## Ce que j'ai écarté (vérifié, non problématique)
 
 - **Duplication d'events du tracker** : 0,12 % (pageview) / 0,09 % (page_exit)

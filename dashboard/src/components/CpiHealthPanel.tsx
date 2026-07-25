@@ -123,11 +123,18 @@ export function CpiHealthPanel({ detail }: { detail: ArticleDetail }) {
         </p>
       ) : (
         <>
-          <div className="divide-y divide-[#f2f2f0]">
-            {AXES.map((a) => (
-              <AxisRow key={a.key} label={a.label} z={c[a.key]} good={a.good} mid={a.mid} bad={a.bad} lever={a.lever} />
-            ))}
-          </div>
+          {c.grade !== 'C' ? (
+            <div className="divide-y divide-[#f2f2f0]">
+              {AXES.map((a) => (
+                <AxisRow key={a.key} label={a.label} z={c[a.key]} good={a.good} mid={a.mid} bad={a.bad} lever={a.lever} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-[12px] leading-relaxed text-muted">
+              Fiabilité C — volume insuffisant pour lire les 4 axes. Le score CPI seul
+              n&apos;est pas actionnable ; attendre plus de trafic organique.
+            </p>
+          )}
           <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-[10.5px] text-dim">
             {c.clics_perdus != null && c.clics_perdus > 0 && (
               <span title="Clics Google estimés perdus vs le CTR attendu du site à ces positions">

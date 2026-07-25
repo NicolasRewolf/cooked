@@ -1,0 +1,35 @@
+{
+  "dashboard_seo_by_query": [
+    "query",
+    "clicks",
+    "impressions",
+    "position_avg",
+    "ctr_pct",
+    "nb_pages",
+    "top_page",
+    "top_page_clicks",
+    "top_page_theme",
+    "volume_fr",
+    "cpc",
+    "competition_level",
+    "capture_pct",
+    "is_quick_win",
+    "clicks_prev",
+    "position_prev",
+    "ctr_expected",
+    "opportunity_clicks",
+    "gsc_start",
+    "gsc_end"
+  ],
+  "dashboard_honoraires_funnel": [
+    "booking_sessions",
+    "honoraires_sessions",
+    "booking_then_honoraires",
+    "forms_after_booking_6h",
+    "forms_on_honoraires",
+    "forms_macro_total",
+    "rate_booking_to_form",
+    "cooked_start",
+    "cooked_end"
+  ]
+}

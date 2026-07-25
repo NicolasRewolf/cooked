@@ -29,7 +29,7 @@ CREATE OR REPLACE VIEW public.cpi_opportunite_contact AS
     n_org,
     cpi,
     round(public.cpi_compose(zc, zr, zl, 0::numeric, momentum, gate, true))::integer AS potentiel,
-    zv > 0::numeric AS convertit,
+    coalesce(convertit, false) AS convertit,
     zc,
     zr,
     zl,

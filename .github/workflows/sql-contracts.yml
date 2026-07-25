@@ -11,8 +11,11 @@ on:
       - 'supabase/migrations/**'
       - 'supabase/rpcs.sql'
       - 'contracts/rpc_snapshot_meta.json'
+      - 'contracts/dashboard_rpc_columns.json'
       - 'scripts/check_migration_paris_date.py'
       - 'scripts/check_rpcs_sql_fresh.py'
+      - 'scripts/check_dashboard_contracts.py'
+      - 'scripts/check_schema_migrations.py'
       - '.github/workflows/sql-contracts.yml'
   push:
     branches: [main]
@@ -40,3 +43,17 @@ jobs:
           fetch-depth: 0
       - name: Arch #5 — rpcs.sql régénéré si une RPC change dans les migrations
         run: python3 scripts/check_rpcs_sql_fresh.py
+
+  dashboard-rpc-columns:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Arch #6 — colonnes RPC dashboard = schémas Zod
+        run: python3 scripts/check_dashboard_contracts.py
+
+  schema-migrations-local:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Arch #10 — versions migrations locales uniques
+        run: python3 scripts/check_schema_migrations.py

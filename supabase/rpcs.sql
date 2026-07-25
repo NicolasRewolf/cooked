@@ -6,8 +6,7 @@
 -- Source de vérité DDL = supabase/migrations/*.sql (+ état prod).
 -- Ce fichier = instantané lisible pour humains et agents (Arch #5, 10/07/2026).
 --
--- Régénérer : python3 scripts/generate_rpcs_sql.py  (DATABASE_URL requis)
--- Généré le 12/07/2026 — projet mxycmjkeotrycyneacje.
+-- Régénéré le 25/07/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
 -- ═══ public.alert_rule_cpi_drop() ═══
@@ -263,14 +262,33 @@ CREATE OR REPLACE FUNCTION public.alert_rule_gsc_lag()
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE v_lag int;
+DECLARE
+  v_now_paris   timestamp := now() AT TIME ZONE 'Europe/Paris';
+  v_last_ingest timestamptz;
+  v_lag         int;
 BEGIN
-  SELECT (current_date - public.gsc_last_data_day()) INTO v_lag;
-  IF v_lag > 3 THEN
+  -- Avant 13:00 Paris, l'ingestion du jour n'est pas garantie passée
+  -- (GitHub Actions atterrit entre 09:40 et 11:30 Paris) : ne rien conclure.
+  IF v_now_paris::time < time '13:00' THEN
+    RETURN;
+  END IF;
+
+  SELECT max(ingested_at) INTO v_last_ingest FROM public.gsc_path_daily;
+  v_lag := v_now_paris::date - public.gsc_last_data_day();
+
+  IF v_last_ingest IS NULL
+     OR (v_last_ingest AT TIME ZONE 'Europe/Paris')::date < v_now_paris::date THEN
     RETURN QUERY SELECT
       'gsc_lag'::text,
       'warn'::text,
-      format('Dernière donnée GSC : J-%s — ingestion en panne ?', v_lag);
+      format('Ingestion GSC pas passée aujourd''hui (dernier run : %s) — workflow GitHub Actions en panne ?',
+             COALESCE(to_char(v_last_ingest AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'), 'jamais'));
+  ELSIF v_lag > 3 THEN
+    RETURN QUERY SELECT
+      'gsc_lag'::text,
+      'warn'::text,
+      format('Ingestion OK ce matin, mais Google ne publie que J-%s (dernier jour : %s) — retard côté Google.',
+             v_lag, to_char(public.gsc_last_data_day(), 'DD/MM/YYYY'));
   END IF;
 END;
 $function$
@@ -372,80 +390,150 @@ END;
 $function$
 
 
+-- ═══ public.assisted_contacts_by_entry_path(p_start date, p_end date) ═══
+CREATE OR REPLACE FUNCTION public.assisted_contacts_by_entry_path(p_start date, p_end date)
+ RETURNS TABLE(entry_path text, contacts bigint)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '120s'
+AS $function$
+DECLARE
+  t0 timestamptz := (p_start::timestamp AT TIME ZONE 'Europe/Paris');
+  t1 timestamptz := ((p_end + 1)::timestamp AT TIME ZONE 'Europe/Paris');
+BEGIN
+  DROP TABLE IF EXISTS _pvk;
+  CREATE TEMP TABLE _pvk ON COMMIT DROP AS
+    SELECT COALESCE(st.visitor_key, 'sid:' || e.session_id) AS vk,
+           e.occurred_at AS t, e.path
+    FROM public.events_human e
+    LEFT JOIN public.identity_stitch st ON st.kind = 'sid' AND st.key = e.session_id
+    WHERE e.name = 'pageview'
+      AND e.occurred_at >= t0 AND e.occurred_at < t1
+      AND NOT public.cooked_is_spam_referrer(e.referrer_hostname);
+
+  DROP TABLE IF EXISTS _pvseg;
+  CREATE TEMP TABLE _pvseg ON COMMIT DROP AS
+    SELECT vk, t, path,
+           sum(brk) OVER (PARTITION BY vk ORDER BY t) AS visit_n
+    FROM (
+      SELECT vk, t, path,
+             CASE WHEN lag(t) OVER (PARTITION BY vk ORDER BY t) IS NULL
+                    OR t - lag(t) OVER (PARTITION BY vk ORDER BY t) > interval '30 minutes'
+                  THEN 1 ELSE 0 END AS brk
+      FROM _pvk
+    ) x;
+  CREATE INDEX ON _pvseg (vk, t);
+  ANALYZE _pvseg;
+
+  DROP TABLE IF EXISTS _ventry;
+  CREATE TEMP TABLE _ventry ON COMMIT DROP AS
+    SELECT vk, visit_n, (array_agg(path ORDER BY t))[1] AS entry_path
+    FROM _pvseg GROUP BY vk, visit_n;
+  ANALYZE _ventry;
+
+  DROP TABLE IF EXISTS _ct;
+  CREATE TEMP TABLE _ct ON COMMIT DROP AS
+    SELECT e.occurred_at AS t,
+           COALESCE(st.visitor_key, 'sid:' || e.session_id) AS vk
+    FROM public.events_human e
+    LEFT JOIN public.identity_stitch st ON st.kind = 'sid' AND st.key = e.session_id
+    WHERE e.name = 'cta_phone_click'
+      AND e.occurred_at >= t0 AND e.occurred_at < t1
+    UNION ALL
+    SELECT e.occurred_at,
+           COALESCE(sts.visitor_key, sta.visitor_key, 'sid:' || (e.props->>'cooked_sid'))
+    FROM public.events_human e
+    LEFT JOIN public.identity_stitch sts ON sts.kind = 'sid' AND sts.key = e.props->>'cooked_sid'
+    LEFT JOIN public.identity_stitch sta ON sta.kind = 'aid' AND sta.key = e.props->>'cooked_aid'
+    WHERE e.name = 'form_submit'
+      AND public.form_submit_counts_as_macro(e.props)
+      AND e.occurred_at >= t0 AND e.occurred_at < t1
+      AND COALESCE(e.props->>'cooked_sid', e.props->>'cooked_aid') IS NOT NULL;
+  ANALYZE _ct;
+
+  DROP TABLE IF EXISTS _ce;
+  CREATE TEMP TABLE _ce ON COMMIT DROP AS
+    SELECT COALESCE(v.entry_path, '(non rattaché)') AS entry_path
+    FROM _ct c
+    JOIN LATERAL (
+      SELECT s.vk, s.visit_n
+      FROM _pvseg s
+      WHERE s.vk = c.vk AND s.t <= c.t AND c.t - s.t <= interval '6 hours'
+      ORDER BY s.t DESC LIMIT 1
+    ) lp ON true
+    LEFT JOIN _ventry v ON v.vk = lp.vk AND v.visit_n = lp.visit_n;
+
+  RETURN QUERY
+  SELECT ce.entry_path, count(*)::bigint
+  FROM _ce ce
+  GROUP BY ce.entry_path;
+END;
+$function$
+
+
 -- ═══ public.behavior_pages_for_period(date_from timestamp with time zone, date_to timestamp with time zone) ═══
 CREATE OR REPLACE FUNCTION public.behavior_pages_for_period(date_from timestamp with time zone, date_to timestamp with time zone)
- RETURNS TABLE(path text, sessions bigint, pages_per_session numeric, avg_session_duration_s numeric, bounce_rate numeric, scroll_depth_avg numeric, scroll_complete_pct numeric, lcp_p75_ms numeric, inp_p75_ms numeric, cls_p75 numeric, ttfb_p75_ms numeric, outbound_clicks bigint)
+ RETURNS TABLE(path text, sessions bigint, pages_per_session numeric, avg_session_duration_s numeric, bounce_rate numeric, bounce_rate_pct numeric, scroll_depth_avg numeric, scroll_complete_pct numeric, lcp_p75_ms numeric, inp_p75_ms numeric, cls_p75 numeric, ttfb_p75_ms numeric, outbound_clicks bigint)
  LANGUAGE sql
  STABLE
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  with we as (
-    select * from public.events_human
-    where occurred_at >= date_from and occurred_at < date_to
+  WITH we AS (
+    SELECT * FROM public.events_human
+    WHERE occurred_at >= date_from AND occurred_at < date_to
   ),
-  ss as (
-    select
-      session_id,
-      count(*) filter (where name = 'pageview')                       as pages_viewed,
-      extract(epoch from max(occurred_at) - min(occurred_at))::numeric as session_seconds
-    from we
-    group by session_id
+  ss AS (
+    SELECT session_id,
+      count(*) FILTER (WHERE name = 'pageview') AS pages_viewed,
+      extract(epoch FROM max(occurred_at) - min(occurred_at))::numeric AS session_seconds
+    FROM we GROUP BY session_id
   ),
-  sp as (
-    select distinct e.path, e.session_id
-    from we e
-    where e.name = 'pageview' and e.path is not null
+  sp AS (
+    SELECT DISTINCT e.path, e.session_id
+    FROM we e
+    WHERE e.name = 'pageview' AND e.path IS NOT NULL
   ),
-  per_path_session_stats as (
-    select
-      sp.path,
-      avg(ss.pages_viewed)::numeric                                  as pages_per_session,
-      avg(ss.session_seconds)::numeric                               as avg_session_seconds
-    from sp
-    join ss on ss.session_id = sp.session_id
-    group by sp.path
+  per_path_session_stats AS (
+    SELECT sp.path,
+      avg(ss.pages_viewed)::numeric AS pages_per_session,
+      avg(ss.session_seconds)::numeric AS avg_session_seconds
+    FROM sp JOIN ss ON ss.session_id = sp.session_id
+    GROUP BY sp.path
   ),
-  cwv as (
-    select
-      path,
-      (percentile_cont(0.75) within group (order by (props->>'value')::numeric)
-        filter (where props->>'metric' = 'LCP'))::numeric  as lcp_p75,
-      (percentile_cont(0.75) within group (order by (props->>'value')::numeric)
-        filter (where props->>'metric' = 'INP'))::numeric  as inp_p75,
-      (percentile_cont(0.75) within group (order by (props->>'value')::numeric)
-        filter (where props->>'metric' = 'CLS'))::numeric  as cls_p75,
-      (percentile_cont(0.75) within group (order by (props->>'value')::numeric)
-        filter (where props->>'metric' = 'TTFB'))::numeric as ttfb_p75
-    from we
-    where name = 'web_vitals' and path is not null
-    group by path
+  cwv AS (
+    SELECT path,
+      (percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric)
+        FILTER (WHERE props->>'metric' = 'LCP'))::numeric AS lcp_p75,
+      (percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric)
+        FILTER (WHERE props->>'metric' = 'INP'))::numeric AS inp_p75,
+      (percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric)
+        FILTER (WHERE props->>'metric' = 'CLS'))::numeric AS cls_p75,
+      (percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric)
+        FILTER (WHERE props->>'metric' = 'TTFB'))::numeric AS ttfb_p75
+    FROM we
+    WHERE name = 'web_vitals' AND path IS NOT NULL
+    GROUP BY path
   ),
-  oc as (
-    select path, count(*) as clicks
-    from we
-    where name = 'click_outbound' and path is not null
-    group by path
+  oc AS (
+    SELECT path, count(*) AS clicks
+    FROM we
+    WHERE name = 'click_outbound' AND path IS NOT NULL
+    GROUP BY path
   ),
-  base as (
-    select * from public.seo_pages_overview(date_from, date_to)
-  )
-  select
-    b.path,
-    b.sessions,
-    coalesce(round(pp.pages_per_session, 2), 0)         as pages_per_session,
-    coalesce(round(pp.avg_session_seconds, 0), 0)       as avg_session_duration_s,
-    coalesce(round(b.bounce_rate / 100.0, 4), 0)        as bounce_rate,
-    b.scroll_avg                                        as scroll_depth_avg,
-    b.scroll_complete_pct,
-    cwv.lcp_p75                                         as lcp_p75_ms,
-    cwv.inp_p75                                         as inp_p75_ms,
-    cwv.cls_p75                                         as cls_p75,
-    cwv.ttfb_p75                                        as ttfb_p75_ms,
-    coalesce(oc.clicks, 0)::bigint                      as outbound_clicks
-  from base b
-  left join per_path_session_stats pp on pp.path = b.path
-  left join cwv on cwv.path = b.path
-  left join oc  on oc.path  = b.path;
+  base AS (SELECT * FROM public.seo_pages_overview(date_from, date_to))
+  SELECT b.path, b.sessions,
+    coalesce(round(pp.pages_per_session, 2), 0),
+    coalesce(round(pp.avg_session_seconds, 0), 0),
+    coalesce(round(b.bounce_rate / 100.0, 4), 0),
+    coalesce(round(b.bounce_rate, 2), 0),
+    b.scroll_avg, b.scroll_complete_pct,
+    cwv.lcp_p75, cwv.inp_p75, cwv.cls_p75, cwv.ttfb_p75,
+    coalesce(oc.clicks, 0)::bigint
+  FROM base b
+  LEFT JOIN per_path_session_stats pp ON pp.path = b.path
+  LEFT JOIN cwv ON cwv.path = b.path
+  LEFT JOIN oc ON oc.path = b.path;
 $function$
 
 
@@ -673,15 +761,16 @@ CREATE OR REPLACE FUNCTION public.cooked_cpi_snapshot()
  SET statement_timeout TO '600s'
 AS $function$
   INSERT INTO public.cpi_daily
-    (day, path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct)
+    (day, path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct, convertit)
   SELECT (now() AT TIME ZONE 'Europe/Paris')::date,
-    path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct
+    path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct, convertit
   FROM public.cooked_page_index(28)
   ON CONFLICT (day, path) DO UPDATE SET
     ptype=EXCLUDED.ptype, grade=EXCLUDED.grade, cpi=EXCLUDED.cpi, cpi_raw=EXCLUDED.cpi_raw,
     momentum=EXCLUDED.momentum, gate=EXCLUDED.gate,
     zc=EXCLUDED.zc, zr=EXCLUDED.zr, zl=EXCLUDED.zl, zv=EXCLUDED.zv,
-    clics_perdus=EXCLUDED.clics_perdus, n_org=EXCLUDED.n_org, couv_gsc_pct=EXCLUDED.couv_gsc_pct;
+    clics_perdus=EXCLUDED.clics_perdus, n_org=EXCLUDED.n_org, couv_gsc_pct=EXCLUDED.couv_gsc_pct,
+    convertit=EXCLUDED.convertit;
 $function$
 
 
@@ -825,6 +914,18 @@ AS $function$
 $function$
 
 
+-- ═══ public.cooked_is_spam_referrer(p_hostname text) ═══
+CREATE OR REPLACE FUNCTION public.cooked_is_spam_referrer(p_hostname text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT p_hostname IS NOT NULL
+    AND p_hostname IN ('m.baidu.com', 'baidu.com');
+$function$
+
+
 -- ═══ public.cooked_page_daily_series(target_path text, days_back integer, end_date date) ═══
 CREATE OR REPLACE FUNCTION public.cooked_page_daily_series(target_path text, days_back integer, end_date date DEFAULT NULL::date)
  RETURNS TABLE(day date, sessions bigint)
@@ -860,7 +961,7 @@ $function$
 
 -- ═══ public.cooked_page_index(p_days integer) ═══
 CREATE OR REPLACE FUNCTION public.cooked_page_index(p_days integer DEFAULT 28)
- RETURNS TABLE(path text, ptype text, grade text, cpi integer, cpi_raw integer, momentum numeric, momentum_badge text, gate numeric, zc numeric, zr numeric, zl numeric, zv numeric, clics_perdus integer, n_org bigint, couv_gsc_pct integer)
+ RETURNS TABLE(path text, ptype text, grade text, cpi integer, cpi_raw integer, momentum numeric, momentum_badge text, gate numeric, zc numeric, zr numeric, zl numeric, zv numeric, clics_perdus integer, n_org bigint, couv_gsc_pct integer, convertit boolean)
  LANGUAGE sql
  STABLE
  SET search_path TO 'public', 'pg_temp'
@@ -940,12 +1041,14 @@ madg AS (SELECT greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(
   greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_ret-g.mr)),0.15) sr,
   greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_lec-g.ml)),0.15) sl,
   greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_conv-g.mv)),0.15) sv FROM xs x, medg g),
-mom AS (SELECT gpd.path,
+mom AS (SELECT g.path,
     coalesce(sum(clicks) FILTER (WHERE day > current_date - p_days),0) c1,
     coalesce(sum(clicks) FILTER (WHERE day BETWEEN current_date - 2*p_days AND current_date - p_days - 1),0) c0,
     avg(position) FILTER (WHERE day > current_date - p_days) p1,
     avg(position) FILTER (WHERE day BETWEEN current_date - 2*p_days AND current_date - p_days - 1) p0
-  FROM public.gsc_path_daily gpd WHERE day > current_date - 2*p_days GROUP BY gpd.path),
+  FROM public.gsc_query_page_daily g
+  WHERE g.day > current_date - 2*p_days AND NOT public.gsc_is_branded(g.query)
+  GROUP BY g.path),
 site AS (SELECT sum(c1) s1, sum(c0) s0 FROM mom),
 lcp AS (SELECT eh.path, percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric) lcp75
   FROM public.events_human eh WHERE name='web_vitals' AND props->>'metric'='LCP' AND device_type='mobile'
@@ -967,15 +1070,17 @@ scored AS (
       WHEN x.n_org >= 100 AND coalesce(x.e,0) >= 20 THEN 'A'
       WHEN x.n_org >= 30 AND coalesce(x.e,0) >= 5 THEN 'B'
       ELSE 'C'
-    END grade
+    END grade,
+    coalesce(cv.val, 0) > 0 AS convertit
   FROM xs x LEFT JOIN medt mt ON mt.ptype=x.ptype LEFT JOIN madt dt ON dt.ptype=x.ptype
   CROSS JOIN medg mg CROSS JOIN madg dg LEFT JOIN mom m ON m.path=x.path CROSS JOIN site s LEFT JOIN lcp l ON l.path=x.path
+  LEFT JOIN convv cv ON cv.path=x.path
 )
 SELECT scored.path, scored.ptype, scored.grade,
   least(100, round(public.cpi_compose(zc, zr, zl, zv, mm, gg))::int) cpi,
   round(public.cpi_compose(zc, zr, zl, zv, mm, gg))::int cpi_raw,
   mm momentum, (CASE WHEN mm>=1.15 THEN '↗' WHEN mm<=0.87 THEN '↘' ELSE '→' END) momentum_badge,
-  gg gate, zc, zr, zl, zv, clics_perdus, n_org, couv couv_gsc_pct
+  gg gate, zc, zr, zl, zv, clics_perdus, n_org, couv couv_gsc_pct, convertit
 FROM scored
 $function$
 
@@ -1501,37 +1606,23 @@ AS $function$
 DECLARE
   q_start date := date_trunc('quarter', public.paris_today())::date;
   q_end   date := public.paris_today();
-  q_label text := 'T' || extract(quarter from q_start)::int || ' ' || extract(year from q_start)::int;
-  v_value int; v_target int;
+  q_label text := 'T' || extract(quarter FROM q_start)::int || ' ' || extract(year FROM q_start)::int;
+  v_value int;
+  v_target int;
 BEGIN
-  WITH ct AS (  -- contacts macro du trimestre (petit ensemble) — D'ABORD
-    SELECT e.session_id AS sid FROM events_human e
-    WHERE e.name='cta_phone_click'
-      AND e.occurred_at >= (q_start::timestamp AT TIME ZONE 'Europe/Paris')
-      AND e.occurred_at <  ((q_end + 1)::timestamp AT TIME ZONE 'Europe/Paris')
-    UNION ALL
-    SELECT e.props->>'cooked_sid' FROM events_human e
-    WHERE e.name='form_submit' AND form_submit_counts_as_macro(e.props) AND e.props->>'cooked_sid' IS NOT NULL
-      AND e.occurred_at >= (q_start::timestamp AT TIME ZONE 'Europe/Paris')
-      AND e.occurred_at <  ((q_end + 1)::timestamp AT TIME ZONE 'Europe/Paris')
-  ),
-  fpv AS (  -- 1er pageview UNIQUEMENT pour les sessions à contact
-    SELECT DISTINCT ON (e.session_id) e.session_id, e.path AS entry_path
-    FROM events_human e
-    WHERE e.name='pageview'
-      AND e.session_id IN (SELECT sid FROM ct)
-      AND e.referrer_hostname IS DISTINCT FROM 'm.baidu.com' AND e.referrer_hostname IS DISTINCT FROM 'baidu.com'
-      AND e.occurred_at >= (q_start::timestamp AT TIME ZONE 'Europe/Paris')
-      AND e.occurred_at <  ((q_end + 1)::timestamp AT TIME ZONE 'Europe/Paris')
-    ORDER BY e.session_id, e.occurred_at
-  )
-  SELECT count(*) INTO v_value
-  FROM ct JOIN fpv ON fpv.session_id = ct.sid
-  JOIN page_taxonomy pt ON pt.path = fpv.entry_path AND pt.category='ressource';
+  SELECT coalesce(sum(a.contacts), 0)::int INTO v_value
+  FROM public.assisted_contacts_by_entry_path(q_start, q_end) a
+  JOIN public.page_taxonomy pt ON pt.path = a.entry_path AND pt.category = 'ressource';
 
-  SELECT NULLIF(btrim(value),'')::int INTO v_target FROM cooked_config WHERE key='objectif_assistes_trimestre';
+  SELECT NULLIF(btrim(value), '')::int INTO v_target
+  FROM public.cooked_config WHERE key = 'objectif_assistes_trimestre';
 
-  RETURN jsonb_build_object('quarter', q_label, 'quarter_start', q_start, 'value', COALESCE(v_value,0), 'target', v_target);
+  RETURN jsonb_build_object(
+    'quarter', q_label,
+    'quarter_start', q_start,
+    'value', COALESCE(v_value, 0),
+    'target', v_target
+  );
 END;
 $function$
 
@@ -1593,6 +1684,85 @@ AS $function$
   SELECT visitors_daily, pageviews_daily, contacts_daily, gsc_clicks_daily, gsc_impressions_daily
   FROM public.dashboard_expertises_trend_snapshot
   WHERE window_kind = CASE WHEN period_kind IN ('rolling_28','rolling_90') THEN period_kind ELSE 'rolling_90' END;
+$function$
+
+
+-- ═══ public.dashboard_honoraires_funnel(period_kind text) ═══
+CREATE OR REPLACE FUNCTION public.dashboard_honoraires_funnel(period_kind text DEFAULT 'rolling_28'::text)
+ RETURNS TABLE(booking_sessions bigint, honoraires_sessions bigint, booking_then_honoraires bigint, forms_after_booking_6h bigint, forms_on_honoraires bigint, forms_macro_total bigint, rate_booking_to_form numeric, cooked_start date, cooked_end date)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+ SET statement_timeout TO '60s'
+AS $function$
+DECLARE
+  b record;
+  t0 timestamptz;
+  t1 timestamptz;
+BEGIN
+  SELECT * INTO b FROM public.cooked_period_bounds(period_kind, 'live_j1');
+  t0 := (b.n_start::timestamp AT TIME ZONE 'Europe/Paris');
+  t1 := ((b.n_end + 1)::timestamp AT TIME ZONE 'Europe/Paris');
+
+  RETURN QUERY
+  WITH book AS (
+    SELECT e.session_id, min(e.occurred_at) AS bt
+    FROM public.events_human e
+    WHERE e.occurred_at >= t0 AND e.occurred_at < t1
+      AND e.name = 'cta_booking_click'
+      AND e.device_type IS DISTINCT FROM 'server'
+    GROUP BY e.session_id
+  ),
+  hon AS (
+    SELECT DISTINCT e.session_id
+    FROM public.events_human e
+    WHERE e.occurred_at >= t0 AND e.occurred_at < t1
+      AND e.name = 'pageview'
+      AND e.path = '/honoraires-rendez-vous'
+  ),
+  forms AS (
+    SELECT e.occurred_at AS ft,
+           e.props->>'cooked_sid' AS sid,
+           e.path,
+           e.props->>'page_source' AS page_source
+    FROM public.events_human e
+    WHERE e.occurred_at >= t0 AND e.occurred_at < t1
+      AND e.name = 'form_submit'
+      AND public.form_submit_counts_as_macro(e.props)
+  ),
+  agg AS (
+    SELECT
+      (SELECT count(*)::bigint FROM book) AS booking_sessions,
+      (SELECT count(*)::bigint FROM hon) AS honoraires_sessions,
+      (SELECT count(*)::bigint FROM book bk INNER JOIN hon h USING (session_id))
+        AS booking_then_honoraires,
+      (SELECT count(*)::bigint FROM (
+         SELECT DISTINCT f.sid
+         FROM forms f
+         INNER JOIN book bk ON bk.session_id = f.sid
+         WHERE f.ft >= bk.bt AND f.ft <= bk.bt + interval '6 hours'
+           AND f.sid IS NOT NULL
+       ) x) AS forms_after_booking_6h,
+      (SELECT count(*)::bigint FROM forms f
+        WHERE f.path = '/honoraires-rendez-vous'
+           OR coalesce(f.page_source, '') ILIKE '%honoraires%')
+        AS forms_on_honoraires,
+      (SELECT count(*)::bigint FROM forms) AS forms_macro_total
+  )
+  SELECT
+    a.booking_sessions,
+    a.honoraires_sessions,
+    a.booking_then_honoraires,
+    a.forms_after_booking_6h,
+    a.forms_on_honoraires,
+    a.forms_macro_total,
+    CASE WHEN a.booking_sessions > 0
+      THEN round((100.0 * a.forms_after_booking_6h / a.booking_sessions)::numeric, 1)
+      ELSE NULL END,
+    b.n_start,
+    b.n_end
+  FROM agg a;
+END;
 $function$
 
 
@@ -2556,7 +2726,7 @@ CREATE OR REPLACE FUNCTION public.macro_contacts_by_path(start_date date, end_da
  SET search_path TO 'public'
 AS $function$
   SELECT
-    e.path,
+    coalesce(e.path, '(non rattaché)'),
     count(*) FILTER (WHERE e.name = 'cta_phone_click')::bigint,
     count(*) FILTER (
       WHERE e.name = 'form_submit' AND public.form_submit_counts_as_macro(e.props)
@@ -2571,15 +2741,14 @@ AS $function$
       WHERE e.name = 'cta_booking_click' AND e.device_type != 'server'
     )::bigint
   FROM public.events_human e
-  WHERE e.path IS NOT NULL
-    AND (
+  WHERE (
       e.name = 'cta_phone_click'
       OR (e.name = 'form_submit' AND public.form_submit_counts_as_macro(e.props))
       OR (e.name = 'cta_booking_click' AND e.device_type != 'server')
     )
     AND public.paris_date(e.occurred_at) >= start_date
     AND public.paris_date(e.occurred_at) <= end_date
-  GROUP BY e.path;
+  GROUP BY 1;
 $function$
 
 
@@ -2820,9 +2989,7 @@ CREATE OR REPLACE FUNCTION public.paris_date(ts timestamp with time zone)
  RETURNS date
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE
-AS $function$
-  SELECT (ts AT TIME ZONE 'Europe/Paris')::date;
-$function$
+AS $function$ SELECT (ts AT TIME ZONE 'Europe/Paris')::date; $function$
 
 
 -- ═══ public.paris_today() ═══
@@ -2830,9 +2997,7 @@ CREATE OR REPLACE FUNCTION public.paris_today()
  RETURNS date
  LANGUAGE sql
  STABLE PARALLEL SAFE
-AS $function$
-  SELECT public.paris_date(now());
-$function$
+AS $function$ SELECT public.paris_date(now()); $function$
 
 
 -- ═══ public.pogo_rates_for_period(date_from timestamp with time zone, date_to timestamp with time zone) ═══
@@ -3011,9 +3176,6 @@ AS $function$
 declare
   v_topic text;
 begin
-  -- Dédup sur `kind` SEUL (et non plus `kind AND not acked`) : acquitter une
-  -- alerte ne la fait plus réapparaître au tick suivant. Si la condition
-  -- persiste au-delà de 24 h, une nouvelle alerte est levée — voulu.
   if exists (
     select 1 from public.alerts
     where kind = p_kind
@@ -3024,8 +3186,6 @@ begin
 
   insert into public.alerts (kind, severity, detail) values (p_kind, p_sev, p_detail);
 
-  -- Push ntfy : uniquement sur un VRAI insert + severity critical + topic non-vide.
-  -- Entièrement défensif : toute erreur est avalée, l'alerte reste posée, retour = 1.
   if p_sev = 'critical' then
     begin
       select nullif(btrim(value), '') into v_topic
@@ -3045,7 +3205,7 @@ begin
         );
       end if;
     exception when others then
-      null; -- ne jamais laisser le push casser l'alerte
+      null;
     end;
   end if;
 
@@ -3202,7 +3362,7 @@ BEGIN
             FROM gsc_path_metrics(gns,gne) m JOIN _xp ON _xp.path=m.path),
     gscp AS (SELECT m.path,m.clicks_total AS clicks_prev FROM gsc_path_metrics(gps,gpe) m JOIN _xp ON _xp.path=m.path),
     cpi_d AS (SELECT path,cpi,grade,momentum FROM cpi_daily WHERE day=cpi_day),
-    gis AS (SELECT path,potentiel,convertit FROM cpi_opportunite_contact),
+    gis AS (SELECT path,potentiel,convertit FROM cpi_gisement),
     bestq AS (
       SELECT DISTINCT ON (q.path) q.path,q.query,q.clicks FROM (
         SELECT qp.path,qp.query,SUM(qp.clicks) clicks,SUM(qp.impressions) impr
@@ -3308,88 +3468,22 @@ BEGIN
   FOREACH w IN ARRAY windows LOOP
     CALL public.cooked_snapshot_window(w, 'human', lbl, lns, lne, lps, lpe, lpt, ld, gns, gne, gps, gpe, glast, glag);
 
-    -- Pageviews avec identité recousue (fallback : session brute).
-    DROP TABLE IF EXISTS _pvk;
-    CREATE TEMP TABLE _pvk ON COMMIT DROP AS
-      SELECT COALESCE(st.visitor_key, 'sid:' || e.session_id) AS vk,
-             e.occurred_at AS t, e.path
-      FROM _cooked_ev e
-      LEFT JOIN identity_stitch st ON st.kind = 'sid' AND st.key = e.session_id
-      WHERE e.name = 'pageview'
-        AND e.referrer_hostname IS DISTINCT FROM 'm.baidu.com'
-        AND e.referrer_hostname IS DISTINCT FROM 'baidu.com';
-
-    -- Segmentation en visites : nouveau segment si trou > 30 min entre
-    -- deux pageviews du même visiteur (sémantique fenêtre de session).
-    DROP TABLE IF EXISTS _pvseg;
-    CREATE TEMP TABLE _pvseg ON COMMIT DROP AS
-      SELECT vk, t, path,
-             sum(brk) OVER (PARTITION BY vk ORDER BY t) AS visit_n
-      FROM (
-        SELECT vk, t, path,
-               CASE WHEN lag(t) OVER (PARTITION BY vk ORDER BY t) IS NULL
-                      OR t - lag(t) OVER (PARTITION BY vk ORDER BY t) > interval '30 minutes'
-                    THEN 1 ELSE 0 END AS brk
-        FROM _pvk
-      ) x;
-    CREATE INDEX ON _pvseg (vk, t);
-    ANALYZE _pvseg;
-
-    DROP TABLE IF EXISTS _ventry;
-    CREATE TEMP TABLE _ventry ON COMMIT DROP AS
-      SELECT vk, visit_n, (array_agg(path ORDER BY t))[1] AS entry_path
-      FROM _pvseg GROUP BY vk, visit_n;
-    ANALYZE _ventry;
-
-    -- Contacts macro avec leur visitor_key : phone (session de l'event),
-    -- form (cooked_sid, puis cooked_aid si le sid manque — champs cachés).
-    DROP TABLE IF EXISTS _ct;
-    CREATE TEMP TABLE _ct ON COMMIT DROP AS
-      SELECT e.occurred_at AS t, e.d,
-             COALESCE(st.visitor_key, 'sid:' || e.session_id) AS vk
-      FROM _cooked_ev e
-      LEFT JOIN identity_stitch st ON st.kind = 'sid' AND st.key = e.session_id
-      WHERE e.name = 'cta_phone_click'
-      UNION ALL
-      SELECT e.occurred_at, e.d,
-             COALESCE(sts.visitor_key, sta.visitor_key,
-                      'sid:' || (e.props->>'cooked_sid'))
-      FROM _cooked_ev e
-      LEFT JOIN identity_stitch sts ON sts.kind = 'sid' AND sts.key = e.props->>'cooked_sid'
-      LEFT JOIN identity_stitch sta ON sta.kind = 'aid' AND sta.key = e.props->>'cooked_aid'
-      WHERE e.name = 'form_submit' AND form_submit_counts_as_macro(e.props)
-        AND COALESCE(e.props->>'cooked_sid', e.props->>'cooked_aid') IS NOT NULL;
-    ANALYZE _ct;
-
-    -- Entrée de visite de chaque contact : visite de la dernière pageview
-    -- qui précède le contact (≤ 6 h), première pageview de cette visite.
-    DROP TABLE IF EXISTS _ce;
-    CREATE TEMP TABLE _ce ON COMMIT DROP AS
-      SELECT c.d, v.entry_path
-      FROM _ct c
-      JOIN LATERAL (
-        SELECT s.vk, s.visit_n
-        FROM _pvseg s
-        WHERE s.vk = c.vk AND s.t <= c.t AND c.t - s.t <= interval '6 hours'
-        ORDER BY s.t DESC LIMIT 1
-      ) lp ON true
-      JOIN _ventry v ON v.vk = lp.vk AND v.visit_n = lp.visit_n;
-
     INSERT INTO public.dashboard_resources_assisted_snapshot
       (window_kind, path, assisted_contacts, assisted_prev, refreshed_at)
     SELECT w, pt.path, COALESCE(cur.n, 0), COALESCE(prv.n, 0), now()
-    FROM page_taxonomy pt
+    FROM public.page_taxonomy pt
     LEFT JOIN (
-      SELECT entry_path, count(*) AS n FROM _ce
-      WHERE d BETWEEN lns AND lne GROUP BY entry_path
+      SELECT entry_path, contacts AS n
+      FROM public.assisted_contacts_by_entry_path(lns, lne)
     ) cur ON cur.entry_path = pt.path
     LEFT JOIN (
-      SELECT entry_path, count(*) AS n FROM _ce
-      WHERE d BETWEEN lps AND lpe GROUP BY entry_path
+      SELECT entry_path, contacts AS n
+      FROM public.assisted_contacts_by_entry_path(lps, lpe)
     ) prv ON prv.entry_path = pt.path
     WHERE pt.category = 'ressource';
   END LOOP;
-END $function$
+END;
+$function$
 
 
 -- ═══ public.refresh_dashboard_snapshots(p_window text) ═══
@@ -3451,7 +3545,7 @@ BEGIN
             FROM gsc_path_metrics(gns,gne) m JOIN res ON res.path=m.path),
     gscp AS (SELECT m.path, m.clicks_total AS clicks_prev FROM gsc_path_metrics(gps,gpe) m JOIN res ON res.path=m.path),
     cpi_d AS (SELECT path, cpi, grade, momentum FROM cpi_daily WHERE day = cpi_day),
-    gis AS (SELECT path, potentiel, convertit FROM cpi_opportunite_contact),
+    gis AS (SELECT path, potentiel, convertit FROM cpi_gisement),
     bestq AS (
       SELECT DISTINCT ON (q.path) q.path, q.query, q.clicks FROM (
         SELECT qp.path, qp.query, SUM(qp.clicks) clicks, SUM(qp.impressions) impr
@@ -4704,7 +4798,8 @@ BEGIN
   INTO v_sessions_n, v_pageviews_n
   FROM public.events_human
   WHERE public.paris_date(occurred_at) >= b.n_start
-    AND public.paris_date(occurred_at) <= b.n_end;
+    AND public.paris_date(occurred_at) <= b.n_end
+    AND NOT public.cooked_is_spam_referrer(referrer_hostname);
 
   SELECT m.phone_clicks, m.form_submits, m.macro_conversions
   INTO v_phone_n, v_form_n, v_macro_n
@@ -4720,7 +4815,8 @@ BEGIN
   INTO v_sessions_prev, v_pageviews_prev
   FROM public.events_human
   WHERE public.paris_date(occurred_at) >= b.prev_start
-    AND public.paris_date(occurred_at) <= b.prev_end;
+    AND public.paris_date(occurred_at) <= b.prev_end
+    AND NOT public.cooked_is_spam_referrer(referrer_hostname);
 
   SELECT m.phone_clicks, m.form_submits, m.macro_conversions
   INTO v_phone_prev, v_form_prev, v_macro_prev
@@ -5103,82 +5199,3 @@ exception
     return input;
 end;
 $function$
-
--- ═══ public.dashboard_honoraires_funnel(period_kind text) ═══
-CREATE OR REPLACE FUNCTION public.dashboard_honoraires_funnel(period_kind text DEFAULT 'rolling_28'::text)
- RETURNS TABLE(booking_sessions bigint, honoraires_sessions bigint, booking_then_honoraires bigint, forms_after_booking_6h bigint, forms_on_honoraires bigint, forms_macro_total bigint, rate_booking_to_form numeric, cooked_start date, cooked_end date)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
- SET statement_timeout TO '60s'
-AS $function$
-DECLARE
-  b record;
-  t0 timestamptz;
-  t1 timestamptz;
-BEGIN
-  SELECT * INTO b FROM public.cooked_period_bounds(period_kind, 'live_j1');
-  t0 := (b.n_start::timestamp AT TIME ZONE 'Europe/Paris');
-  t1 := ((b.n_end + 1)::timestamp AT TIME ZONE 'Europe/Paris');
-
-  RETURN QUERY
-  WITH book AS (
-    SELECT e.session_id, min(e.occurred_at) AS bt
-    FROM public.events_human e
-    WHERE e.occurred_at >= t0 AND e.occurred_at < t1
-      AND e.name = 'cta_booking_click'
-      AND e.device_type IS DISTINCT FROM 'server'
-    GROUP BY e.session_id
-  ),
-  hon AS (
-    SELECT DISTINCT e.session_id
-    FROM public.events_human e
-    WHERE e.occurred_at >= t0 AND e.occurred_at < t1
-      AND e.name = 'pageview'
-      AND e.path = '/honoraires-rendez-vous'
-  ),
-  forms AS (
-    SELECT e.occurred_at AS ft,
-           e.props->>'cooked_sid' AS sid,
-           e.path,
-           e.props->>'page_source' AS page_source
-    FROM public.events_human e
-    WHERE e.occurred_at >= t0 AND e.occurred_at < t1
-      AND e.name = 'form_submit'
-      AND public.form_submit_counts_as_macro(e.props)
-  ),
-  agg AS (
-    SELECT
-      (SELECT count(*)::bigint FROM book) AS booking_sessions,
-      (SELECT count(*)::bigint FROM hon) AS honoraires_sessions,
-      (SELECT count(*)::bigint FROM book bk INNER JOIN hon h USING (session_id))
-        AS booking_then_honoraires,
-      (SELECT count(*)::bigint FROM (
-         SELECT DISTINCT f.sid
-         FROM forms f
-         INNER JOIN book bk ON bk.session_id = f.sid
-         WHERE f.ft >= bk.bt AND f.ft <= bk.bt + interval '6 hours'
-           AND f.sid IS NOT NULL
-       ) x) AS forms_after_booking_6h,
-      (SELECT count(*)::bigint FROM forms f
-        WHERE f.path = '/honoraires-rendez-vous'
-           OR coalesce(f.page_source, '') ILIKE '%honoraires%')
-        AS forms_on_honoraires,
-      (SELECT count(*)::bigint FROM forms) AS forms_macro_total
-  )
-  SELECT
-    a.booking_sessions,
-    a.honoraires_sessions,
-    a.booking_then_honoraires,
-    a.forms_after_booking_6h,
-    a.forms_on_honoraires,
-    a.forms_macro_total,
-    CASE WHEN a.booking_sessions > 0
-      THEN round((100.0 * a.forms_after_booking_6h / a.booking_sessions)::numeric, 1)
-      ELSE NULL END,
-    b.n_start,
-    b.n_end
-  FROM agg a;
-END;
-$function$
-
