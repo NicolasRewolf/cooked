@@ -3054,6 +3054,19 @@ end;
 $function$
 
 
+-- ═══ public.record_ingest_drop(p_reason text, p_n integer) ═══
+CREATE OR REPLACE FUNCTION public.record_ingest_drop(p_reason text, p_n integer)
+ RETURNS void
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  INSERT INTO public.ingest_drops (day, reason, n)
+  VALUES (public.paris_today(), p_reason, greatest(p_n, 0))
+  ON CONFLICT (day, reason) DO UPDATE SET n = ingest_drops.n + excluded.n;
+$function$
+
+
 -- ═══ public.refresh_bot_fingerprints() ═══
 CREATE OR REPLACE FUNCTION public.refresh_bot_fingerprints()
  RETURNS void

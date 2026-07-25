@@ -14,6 +14,7 @@ import {
   clientIp,
   dailySalt,
   hashAnonymous,
+  isBotUa,
   parseUserAgent,
   type TrackRowContext,
 } from "./track_row.ts";
@@ -410,4 +411,50 @@ Deno.test("buildEventRow — props non-objet remplacées par {}", () => {
     assert(r.ok);
     assertEquals(r.row.props, {});
   }
+});
+
+// ─── n°5 (audit 25/07/2026) — isBotUa : taxonomie ua_bot iso refresh_noise_sessions ───
+
+Deno.test("isBotUa — HeadlessChrome (84 % du bruit mesuré en prod)", () => {
+  assert(isBotUa(
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/126.0.0.0 Safari/537.36",
+  ));
+});
+
+Deno.test("isBotUa — Googlebot smartphone", () => {
+  assert(isBotUa(
+    "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+  ));
+});
+
+Deno.test("isBotUa — clients HTTP (curl, python-requests, Java)", () => {
+  assert(isBotUa("curl/8.6.0"));
+  assert(isBotUa("python-requests/2.32.0"));
+  assert(isBotUa("Java/17.0.2"));
+  assert(isBotUa("axios/1.7.2"));
+});
+
+Deno.test("isBotUa — previews sociaux (WhatsApp, facebookexternalhit)", () => {
+  assert(isBotUa("WhatsApp/2.23.20.0"));
+  assert(isBotUa("facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"));
+});
+
+Deno.test("isBotUa — insensible à la casse", () => {
+  assert(isBotUa("Mozilla/5.0 SEMRUSHBOT-BA"));
+});
+
+Deno.test("isBotUa — humains : Chrome desktop, iPhone Safari, Android = false", () => {
+  assert(!isBotUa(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  ));
+  assert(!isBotUa(
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+  ));
+  assert(!isBotUa(
+    "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+  ));
+});
+
+Deno.test("isBotUa — UA vide = false (iso-comportement : jamais classé ua_bot en SQL)", () => {
+  assert(!isBotUa(""));
 });

@@ -572,8 +572,10 @@ supabase functions deploy track --no-verify-jwt
 supabase functions deploy form-webhook --no-verify-jwt
 ```
 
-Versions (12/07/2026, **prod alignée avec le repo**) : **track v25**
-(D4 `track_row`), **form-webhook v12** (D4 `form_row`) ; tracker Wix
+Versions (25/07/2026, **prod alignée avec le repo**) : **track v26**
+(filtre bots à l'ingestion — taxonomie ua_bot appliquée avant l'INSERT,
+drops comptés dans `ingest_drops` ; D4 `track_row`), **form-webhook v12**
+(D4 `form_row`) ; tracker Wix
 **`sprint41`** (déployé le 12/07/2026). Modules testables dans
 `supabase/functions/_shared/` : `events_row`, `track_row`, `form_row`
 (+ tests Deno, CI `edge-shared-helpers`).
