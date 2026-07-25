@@ -9,6 +9,7 @@ import {
   cohortsResultSchema,
   expertiseKpisSchema,
   expertiseRowsSchema,
+  honorairesFunnelSchema,
   interventionEffectSchema,
   resourceKpisSchema,
   resourceRowsSchema,
@@ -21,6 +22,7 @@ import {
   type CohortsResult,
   type ExpertiseKpis,
   type ExpertiseRow,
+  type HonorairesFunnel,
   type InterventionEffect,
   type Period,
   type ResourceKpis,
@@ -43,6 +45,10 @@ export async function getExpertisesOverview(period: Period): Promise<ExpertiseRo
 
 export async function getExpertisesKpis(period: Period): Promise<ExpertiseKpis | null> {
   return callRpc("dashboard_expertises_kpis", { period_kind: period }, expertiseKpisSchema);
+}
+
+export async function getHonorairesFunnel(period: Period): Promise<HonorairesFunnel | null> {
+  return callRpc("dashboard_honoraires_funnel", { period_kind: period }, honorairesFunnelSchema);
 }
 
 export async function getSeoByQuery(

@@ -292,3 +292,21 @@ export const expertiseRowsSchema = z.array(expertiseRowSchema);
 export const seoQueryRowsSchema = z.array(seoQueryRowSchema);
 export const assistedRowsSchema = z.array(assistedRowSchema);
 export const annotationRowsSchema = z.array(annotationSchema);
+
+/** Funnel intent RDV → form (live, lens live_j1). */
+export const honorairesFunnelSchema = z
+  .array(
+    z.object({
+      booking_sessions: num,
+      honoraires_sessions: num,
+      booking_then_honoraires: num,
+      forms_after_booking_6h: num,
+      forms_on_honoraires: num,
+      forms_macro_total: num,
+      rate_booking_to_form: z.coerce.number().nullable(),
+      cooked_start: isoDate,
+      cooked_end: isoDate,
+    }),
+  )
+  .transform((rows) => rows[0] ?? null);
+export type HonorairesFunnel = NonNullable<z.infer<typeof honorairesFunnelSchema>>;

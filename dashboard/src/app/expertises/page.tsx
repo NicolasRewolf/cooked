@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { parsePeriod } from "@/lib/periods";
-import { getExpertisesKpis, getExpertisesOverview } from "@/data/dashboard";
+import { getExpertisesKpis, getExpertisesOverview, getHonorairesFunnel } from "@/data/dashboard";
 import { getExpertisesTrend } from "@/data/trend";
 import { buildExpertisesView } from "@/data/view-models";
 import { requireUser } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { KpiHeader } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
 import { PeriodSelector } from "@/components/PeriodSelector";
 import { ExpertisesTable } from "@/components/ExpertisesTable";
+import { HonorairesFunnelPanel } from "@/components/HonorairesFunnelPanel";
 import { TrendChart } from "@/components/TrendChart";
 import type { Period } from "@/lib/types";
 
@@ -39,10 +40,11 @@ export default async function Page({
 }
 
 async function Content({ period }: { period: Period }) {
-  const [kpis, rows, trendResult] = await Promise.all([
+  const [kpis, rows, trendResult, funnel] = await Promise.all([
     getExpertisesKpis(period),
     getExpertisesOverview(period),
     getExpertisesTrend(period),
+    getHonorairesFunnel(period),
   ]);
   const trend = trendResult.data;
   const { items } = buildExpertisesView({ kpis, trend });
@@ -59,6 +61,7 @@ async function Content({ period }: { period: Period }) {
         />
       )}
       <KpiHeader items={items} />
+      {funnel ? <HonorairesFunnelPanel funnel={funnel} /> : null}
       {trendResult.error ? (
         <div className="border border-warn/40 bg-warn/5 px-3 py-2 font-mono text-[11px] leading-snug text-muted">
           ⚠ Séries journalières indisponibles — le RPC des tendances a échoué (sparklines et graphe masqués).

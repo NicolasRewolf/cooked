@@ -8,6 +8,7 @@ export type {
   CohortsResult,
   ExpertiseKpis,
   ExpertiseRow,
+  HonorairesFunnel,
   InterventionEffect,
   Period,
   ResourceKpis,
