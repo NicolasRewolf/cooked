@@ -94,6 +94,34 @@ position (peu de clics) et régime clics relatif (v2.2 — fin du saut à 20 cli
 `couv_gsc_pct` : part des impressions dont Google révèle la requête (peut
 descendre à 6 % — d'où le scaling v2.1).
 
+### ⚠️ Limites de mesure des quatre z (mesurées le 27/07/2026)
+
+Trois limites structurelles, à citer chaque fois qu'un z est livré seul.
+
+**1. `zr` et `zl` reposent sur un événement qui manque une visite sur deux.**
+Le dwell et le scroll viennent de `page_exit`, qui ne se déclenche que sur
+**~59 %** des visites — **66 %** sur mobile, **50 %** sur desktop. Pire, la
+couverture varie de **40 % à 92 %** selon la page (médiane 63 %) et elle est
+**corrélée négativement au dwell mesuré : r = −0,32** sur 63 posts à ≥ 30
+visites. Autrement dit, les pages qui affichent les plus longs temps de lecture
+sont en partie celles où l'événement de sortie se déclenche le moins : le
+« champion de lecture » est mesuré sur un sous-échantillon auto-sélectionné.
+Le seuil `retained = (d >= 15 OR pv >= 2)` hérite du même biais. Ne jamais
+comparer un dwell médian entre deux pages sans sortir aussi leur couverture.
+
+**2. `zc` est relatif à un plancher zéro-clic, pas à un standard.** La courbe
+CTR du site — l'étalon du terme capture — donne **7,69 % en position 1** et
+s'aplatit dès la position 2 (3,83 % → 3,79 % en position 3). Une courbe saine
+s'effondre de ~30 % à ~5 %. Une courbe basse et plate est la signature de SERP
+où le bloc organique n'est plus la réponse principale (AI Overview, PAA, Local
+Pack). Donc `zc = 0` ne veut pas dire « capture normale » mais « aussi mal
+capté que la moyenne d'un site qui plafonne à 7,7 % en position 1 ». C'est un
+choix de conception assumé — le CPI trie, il ne mesure pas un absolu — mais le
+niveau absolu, lui, n'est surveillé par personne.
+
+**3. `zv` ne voyait pas la fiche Google Business jusqu'au 27/07/2026.** Voir la
+rupture de série ci-dessous.
+
 ## Archétypes détectés (run de validation 10/06/2026)
 
 - zc−− zl−− zv−− : **dictionnaire** (mis-en-cause, période-de-sûreté)
@@ -132,7 +160,7 @@ inchangé, horizon doublé, non-gating) : à lancer le **05/08/2026**.
 
 ## Ruptures de série `cpi_daily` (restatements)
 
-Deux corrections de mesure ont restaté le snapshot du jour. **Comparer un
+Trois corrections de mesure ont restaté le snapshot du jour. **Comparer un
 CPI d'avant/après ces dates revient à comparer deux définitions**, pas une
 évolution de la page. Annotations posées dans la table `annotations`.
 
@@ -145,7 +173,22 @@ CPI d'avant/après ces dates revient à comparer deux définitions**, pas une
   arnaque-en-ligne 41→100 et `/nos-affaires` 67→12 (qui rend un crédit
   usurpé par l'ancienne attribution mono-session).
 
-Table d'audit `cpi_pre_restatement_20260712` : à supprimer ~19/07/2026.
+- **27/07/2026 — la fiche Google Business sort de l'organique**
+  (`classify_channel` v3). Les clics du Local Pack arrivent sur
+  `/?utm_source=gmb` avec un referrer `google.*` : la branche
+  `ref ilike '%google.%'` les classait `organic_google`, `classify_channel`
+  ne testant `utm_source` que pour le paid et l'IA. **137 des 306 entrées
+  « organiques » de la home sur 28 j étaient du GMB (44,8 %)** ; 672 sessions
+  depuis le 06/05/2026, dont 99,3 % sur `/`. Le canal `gmb` ne matche pas
+  `LIKE 'organic%'`, donc ce trafic sort du CPI, de `conversion_journeys` et
+  de `seo_to_contact_funnel`. Impact mesuré : **`n_org` de `/` passe de 305 à
+  164, grade S → A**, et son `zv` baisse. Aucune autre page n'est
+  matériellement touchée (2 sessions au maximum ailleurs).
+  Écart de performance que la moyenne masquait : GMB **3,68 %** de taux de
+  contact contre **0,57 %** pour le SEO organique réel — 6,5×.
+
+Tables d'audit : `cpi_pre_restatement_20260712` (à supprimer ~19/07/2026),
+`cpi_pre_restatement_20260727` (à supprimer ~03/08/2026).
 
 ## v2.2 — analyses d'impact (instruites le 10/06/2026, AVANT tout code)
 

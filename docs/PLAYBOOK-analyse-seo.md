@@ -177,6 +177,39 @@ timeout MCP. Préférer lire le dernier snapshot :
     ressources, 28 j). Requalifier toute analyse d'assists antérieure au
     12/07/2026 avant de la citer ; toute comparaison avant/après doit nommer
     le restatement.
+12. **La position GSC n'est PAS la position à l'écran — vérifier le SERP réel
+    avant toute reco de title/meta** (27/07/2026). GSC compte le rang *dans le
+    bloc organique* et ignore tout ce qui le précède : AI Overview, People Also
+    Ask, Knowledge Graph, Local Pack. Deux mesures faites le 27/07 :
+    - `période de sûreté` — GSC annonce « position 1,9 » ; le SERP mobile réel
+      donne AI Overview, puis PAA (dont la 1ʳᵉ question est *le titre exact de
+      l'article*), puis Legifrance, puis Wikipédia, **puis** le cabinet en 5ᵉ
+      position absolue.
+    - `avocat bordeaux` — le cabinet est **n°1 du Local Pack** mais son
+      résultat organique n'apparaît pas dans les 22 premiers items ; le 1ᵉʳ
+      organique est en position absolue 7, sous 6 entrées Local Pack.
+
+    Conséquence : une page « sous-capturante » informationnelle n'a pas
+    forcément un problème de snippet — le clic est capté en amont. Sur les
+    sujets définitionnels, l'objectif réaliste n'est plus le clic mais la
+    citation dans l'AI Overview. **Contrôle obligatoire** :
+    `mcp__dataforseo__serp_organic_live_advanced`, `device: mobile`,
+    `location_name: France`.
+13. **`couv_gsc_pct` faible ⇒ `clics_perdus` non interprétable** (27/07/2026).
+    Le classement des clics perdus est partiellement un classement de la
+    couverture GSC : `corr(couv_qpd, capture) = −0,29` sur 120 pages, −0,19 sur
+    les seuls grades S/A/B. Sous 10 % de couverture (indemnisation-passager
+    3 %, responsabilité-du-fait-des-choses 5 %), l'extrapolation de la traîne
+    anonymisée produit mécaniquement des ratios de 3× à 5× — à ne pas lire
+    comme de la surperformance, ni l'inverse comme un gisement.
+14. **Le dwell ne prédit pas la conversion en organique** (27/07/2026).
+    `corr(dwell, taux de contact) = −0,05` sur 38 posts organiques (soit
+    *rien*) contre **+0,65** sur 12 cellules paid. L'agrégat tous canaux
+    (−0,35) est un paradoxe de Simpson : deux mécaniques opposées moyennées.
+    Les 4 articles les plus lus du site (152 s, 128 s, 126 s, 118 s) font
+    **0 contact** chacun. Ne jamais utiliser le dwell comme proxy de qualité
+    éditoriale ; c'est l'intention transactionnelle du sujet qui discrimine.
+    Voir aussi le caveat de mesure au §5 du document CPI.
 
 ## 6. Livraison à Nicolas
 
