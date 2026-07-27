@@ -57,6 +57,42 @@ _Avoid_ : présenter un total scopé (ressources seules) comme « les contacts d
 site » — c'est le piège de la tuile actuelle (36 affichés pour 210 réels au
 13/07/2026).
 
+### Lecture
+
+Le CPI repose à parts égales sur quatre composantes, dont deux — `zr` rétention
+et `zl` lecture — relèvent de ce vocabulaire. Il a été figé le 28/07/2026, après
+avoir constaté que la lecture était redérivée à la main dans **8 RPC** avec trois
+définitions divergentes (grain, source du scroll, traitement du zéro).
+
+**Lecture** :
+Une visite d'**une page** par un visiteur, avec sa **durée** (`dwell_s`) et sa
+**profondeur** (`scroll_pct`). Grain : **une ligne par (session × path)** — une
+même visite qui voit trois pages produit trois lectures, et repasser sur une page
+au cours de la même visite n'en crée pas une seconde (on garde le `max`).
+Source : `page_exit`.
+_Avoid_ : « dwell » ou « temps passé » sans dire de quel grain ; agréger au
+niveau session quand la question porte sur une page.
+
+**Retenue** :
+Lecture qui franchit le seuil de survie — `dwell_s >= 15` **OU** la visite compte
+au moins 2 pageviews. C'est le dénominateur de `zl` et le numérateur de `zr`.
+_Avoid_ : « rebond » (notion importée de GA, jamais définie ici).
+
+**Lecture qualifiée** :
+Parmi les retenues, celle dont la durée **et** la profondeur dépassent toutes deux
+les médianes de son **type de page** (`cooked_page_type`). C'est ce que `zl`
+mesure — une profondeur relative aux pairs, jamais un seuil absolu.
+_Avoid_ : parler de « lecture complète » ou d'un seuil fixe (75 %, 2 min) : les
+seuils sont calculés par type à chaque run.
+
+**Couverture de lecture** :
+Part des visites pour lesquelles `page_exit` est bien arrivé. **Elle n'est pas de
+100 % et ne le sera jamais** : mesurée à **59 %** sur 28 j au 27/07/2026 (66 %
+mobile, **50 % desktop**), et elle varie de 40 % à 92 % selon la page. En desktop,
+94,9 % des visites sans `page_exit` sont pourtant actives — ce sont des onglets
+laissés ouverts, pas des rebonds.
+_Avoid_ : présenter un dwell médian comme un fait sans sa couverture.
+
 ## Invariants
 
 - **Une seule méthode pour l'attribution à l'entrée : la visite recousue.**
@@ -69,3 +105,11 @@ site » — c'est le piège de la tuile actuelle (36 affichés pour 210 réels a
   jamais un libellé nu « contacts ». Toujours qualifier lequel des deux.
 - **Conversion = macro uniquement.** Le booking (micro, intention) n'entre
   jamais dans un décompte de conversions / contacts.
+- **Une seule source pour la profondeur de lecture : `page_exit.max_scroll`.**
+  Voir [ADR-0001](docs/adr/0001-source-unique-profondeur-lecture.md).
+  ⚠️ Au 28/07/2026, `seo_pages_overview` et `refresh_seo_url_snapshot` lisent
+  encore `scroll_depth.percent` — à migrer pour respecter cette définition.
+- **Toute statistique de lecture se présente avec sa couverture.** Un dwell
+  médian sans son taux de `page_exit` n'est pas un chiffre livrable — la
+  couverture varie de 40 % à 92 % selon la page et elle est corrélée
+  négativement (−0,32) au dwell mesuré.

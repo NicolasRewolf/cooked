@@ -2852,6 +2852,52 @@ AS $function$
 $function$
 
 
+-- ═══ public.page_reads(p_days integer) ═══
+CREATE OR REPLACE FUNCTION public.page_reads(p_days integer DEFAULT 28)
+ RETURNS TABLE(session_id text, path text, dwell_s numeric, scroll_pct numeric, session_pageviews bigint, retained boolean, source text)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT * FROM public.page_reads(now() - make_interval(days => p_days), now());
+$function$
+
+
+-- ═══ public.page_reads(p_from timestamp with time zone, p_to timestamp with time zone) ═══
+CREATE OR REPLACE FUNCTION public.page_reads(p_from timestamp with time zone, p_to timestamp with time zone)
+ RETURNS TABLE(session_id text, path text, dwell_s numeric, scroll_pct numeric, session_pageviews bigint, retained boolean, source text)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  WITH pex AS (
+    SELECT e.session_id, e.path,
+           max((e.props->>'duration_seconds')::numeric) AS d,
+           max(coalesce((e.props->>'max_scroll')::numeric, 0)) AS s
+    FROM public.events_human e
+    WHERE e.name = 'page_exit'
+      AND e.path IS NOT NULL
+      AND e.occurred_at > p_from AND e.occurred_at <= p_to
+    GROUP BY e.session_id, e.path
+  ),
+  spv AS (
+    SELECT e.session_id, count(*) AS pv
+    FROM public.events_human e
+    WHERE e.name = 'pageview'
+      AND e.occurred_at > p_from AND e.occurred_at <= p_to
+    GROUP BY e.session_id
+  )
+  SELECT pex.session_id,
+         pex.path,
+         pex.d,
+         pex.s,
+         coalesce(spv.pv, 1)::bigint,
+         (pex.d >= 15 OR coalesce(spv.pv, 1) >= 2),
+         'page_exit'::text
+  FROM pex LEFT JOIN spv ON spv.session_id = pex.session_id;
+$function$
+
+
 -- ═══ public.pages_overview_unified(period_kind text, max_rows integer) ═══
 CREATE OR REPLACE FUNCTION public.pages_overview_unified(period_kind text DEFAULT 'rolling_28'::text, max_rows integer DEFAULT 1000)
  RETURNS TABLE(path text, gsc_clicks bigint, gsc_impressions bigint, gsc_position_avg numeric, gsc_ctr_pct numeric, cooked_sessions bigint, cooked_dwell_avg_s numeric, cooked_bounce_rate numeric, cooked_phone_clicks bigint, cooked_form_submits bigint, cooked_contacts bigint, cooked_booking_intent bigint, cooked_pogo_rate numeric, has_cooked_data boolean)
