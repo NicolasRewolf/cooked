@@ -66,10 +66,14 @@ CREATE OR REPLACE FUNCTION public.alert_rule_cpi_stale()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  v_last date;
-  v_lag  int;
+  v_last    date;
+  v_lag     int;
+  v_debut   date;
+  v_fin     date;
+  v_trous   date[];
+  v_premier date;
 BEGIN
-  SELECT max(day) INTO v_last FROM public.cpi_daily;
+  SELECT max(day), min(day) INTO v_last, v_premier FROM public.cpi_daily;
 
   IF v_last IS NULL THEN
     RETURN QUERY SELECT 'cpi_stale'::text, 'critical'::text,
@@ -86,9 +90,29 @@ BEGIN
       ('cpi_daily s arrête au ' || to_char(v_last, 'DD/MM/YYYY') || ' (' || v_lag
        || ' jours de retard) — un jour de CPI non calculé est perdu définitivement.')::text;
   END IF;
+
+  -- Trous au milieu de la série : invisibles au test de retard ci-dessus.
+  v_debut := greatest(v_premier, public.paris_today() - 7);
+  v_fin   := public.paris_today() - 1;
+
+  SELECT array_agg(s.d ORDER BY s.d) INTO v_trous
+  FROM (
+    SELECT (v_debut + i)::date AS d
+    FROM generate_series(0, greatest(v_fin - v_debut, -1)) AS i
+  ) s
+  WHERE NOT EXISTS (SELECT 1 FROM public.cpi_daily c WHERE c.day = s.d);
+
+  IF v_trous IS NOT NULL AND cardinality(v_trous) > 0 THEN
+    RETURN QUERY SELECT
+      'cpi_gap'::text,
+      'warn'::text,
+      ('cpi_daily : ' || cardinality(v_trous) || ' jour(s) manquant(s) sur les 7 derniers — '
+       || (SELECT string_agg(to_char(d, 'DD/MM'), ', ') FROM unnest(v_trous) d)
+       || '. Jours perdus définitivement ; cpi_movers compare contre un snapshot '
+       || 'plus ancien que prévu sur ces dates. Vérifier cron.job_run_details.')::text;
+  END IF;
 END;
 $function$
-
 
 -- ═══ public.alert_rule_cron_failed() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_cron_failed()
@@ -565,6 +589,10 @@ AS $function$
     when ref ilike '%' || self_host || '%' then null
     when lower(utm_medium) in ('cpc','paid','ppc')
       or lower(utm_source) like '%google%ads%' then 'paid'
+    -- Fiche Google Business : posee AVANT la branche google.*, sinon le
+    -- referrer (google.com / maps) la ferait tomber dans organic_google.
+    when lower(utm_source) like 'gmb%' or lower(utm_source) like 'gbp%'
+      then 'gmb'
     when ref ilike '%claude.ai%' or ref ilike '%perplexity.ai%'
       or ref ilike '%chatgpt.com%' or ref ilike '%chat.openai.com%'
       or ref ilike '%gemini.google.com%' or ref ilike '%copilot.microsoft.com%'
@@ -587,7 +615,6 @@ AS $function$
     else 'referral'
   end;
 $function$
-
 
 -- ═══ public.content_performance(days_back integer) ═══
 CREATE OR REPLACE FUNCTION public.content_performance(days_back integer DEFAULT 28)
@@ -4378,6 +4405,7 @@ CREATE OR REPLACE FUNCTION public.run_rpc_contract_tests()
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
+ SET statement_timeout TO '900s'
 AS $function$
 declare
   v_start timestamptz;
@@ -4399,7 +4427,7 @@ begin
       values ('snapshot_pages_export', 'ok', v_rows,
               extract(epoch from (clock_timestamp() - v_start)) * 1000);
     end if;
-  exception when others then
+  exception when others or query_canceled then
     insert into rpc_health (rpc_name, status, detail, duration_ms)
     values ('snapshot_pages_export', 'failed', SQLERRM,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
@@ -4422,7 +4450,7 @@ begin
       values ('site_context_export', 'ok', v_rows,
               extract(epoch from (clock_timestamp() - v_start)) * 1000);
     end if;
-  exception when others then
+  exception when others or query_canceled then
     insert into rpc_health (rpc_name, status, detail, duration_ms)
     values ('site_context_export', 'failed', SQLERRM,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
@@ -4439,7 +4467,7 @@ begin
     insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
     values ('cta_breakdown_for_path', 'ok', v_rows,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  exception when others then
+  exception when others or query_canceled then
     insert into rpc_health (rpc_name, status, detail, duration_ms)
     values ('cta_breakdown_for_path', 'failed', SQLERRM,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
@@ -4454,7 +4482,7 @@ begin
     insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
     values ('outbound_destinations_for_path', 'ok', v_rows,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  exception when others then
+  exception when others or query_canceled then
     insert into rpc_health (rpc_name, status, detail, duration_ms)
     values ('outbound_destinations_for_path', 'failed', SQLERRM,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
@@ -4469,7 +4497,7 @@ begin
     insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
     values ('behavior_pages_for_period', 'ok', v_rows,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  exception when others then
+  exception when others or query_canceled then
     insert into rpc_health (rpc_name, status, detail, duration_ms)
     values ('behavior_pages_for_period', 'failed', SQLERRM,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
@@ -4484,7 +4512,7 @@ begin
     insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
     values ('engagement_density_for_path', 'ok', v_rows,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  exception when others then
+  exception when others or query_canceled then
     insert into rpc_health (rpc_name, status, detail, duration_ms)
     values ('engagement_density_for_path', 'failed', SQLERRM,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
@@ -4502,7 +4530,7 @@ begin
       values ('tracker_first_seen_global', 'ok', 1,
               extract(epoch from (clock_timestamp() - v_start)) * 1000);
     end if;
-  exception when others then
+  exception when others or query_canceled then
     insert into rpc_health (rpc_name, status, detail, duration_ms)
     values ('tracker_first_seen_global', 'failed', SQLERRM,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);
@@ -4523,7 +4551,7 @@ begin
       values ('refresh_pipeline_health', 'ok', v_rows,
               extract(epoch from (clock_timestamp() - v_start)) * 1000);
     end if;
-  exception when others then
+  exception when others or query_canceled then
     insert into rpc_health (rpc_name, status, detail, duration_ms)
     values ('refresh_pipeline_health', 'failed', SQLERRM,
             extract(epoch from (clock_timestamp() - v_start)) * 1000);

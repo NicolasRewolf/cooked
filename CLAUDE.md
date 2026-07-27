@@ -889,9 +889,15 @@ d'un article à partir de son slug : l'API Wix est la seule référence
   maillage dans le corps des posts) sont actionnables sans tiers.
 - **Cooked est mono-utilisateur (Nicolas)** : pas de digest/rapport pour
   des tiers ; le mode de sortie reste le question/réponse ad-hoc.
-- **GMB : non branché (décision agent 11/06/2026)** — angle mort assumé
-  (appels directs fiche invisibles). À revisiter si on attaque
-  l'attribution téléphone ou si la part GMB des formulaires monte.
+- **GMB : canal à part entière depuis le 27/07/2026** (`classify_channel` v3).
+  La décision du 11/06 (« non branché, angle mort assumé ») reposait sur une
+  erreur : le **trafic web** de la fiche était bel et bien tracké, mais classé
+  `organic_google` — les clics du Local Pack arrivent sur `/?utm_source=gmb`
+  avec un referrer `google.*`. 137 des 306 entrées « organiques » de la home
+  sur 28 j étaient du GMB (44,8 %). Il convertit à **3,68 %** contre **0,57 %**
+  pour le SEO organique réel : meilleur canal du site, devant le paid.
+  Angle mort restant, réel celui-là : les **appels passés depuis la fiche**,
+  que Cooked ne verra jamais.
 - **Google Ads : MCP CONNECTÉ** (vérifié le 01/07/2026 — 5 customer IDs
   accessibles). Premier usage à cadrer : coûts/CPA par campagne croisés
   avec les macro-contacts Cooked (« boucle 3 »).
