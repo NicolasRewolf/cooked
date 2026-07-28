@@ -1,0 +1,6 @@
+# Framework d'analyse mathematique avancee (scripts/advanced_math_analytics.py)
+numpy>=1.26
+scipy>=1.11
+networkx>=3.0
+statsmodels>=0.14
+supabase>=2.0.0
