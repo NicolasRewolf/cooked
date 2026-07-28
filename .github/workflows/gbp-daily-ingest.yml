@@ -1,0 +1,96 @@
+name: GBP Daily Ingest
+
+# 28/07/2026 — cron quotidien Google Business Profile → Cooked.
+#
+# Pourquoi GitHub Actions et pas pg_cron ?
+#   Même raison que l'ingest GSC : pg_cron tourne dans Postgres et n'a pas
+#   accès aux APIs externes. Ce workflow exécute scripts/gbp_ingest.py, qui
+#   parle à l'API Business Profile Performance puis upserte vers Supabase.
+#   Idempotent grâce à la PK composite (day, location, metric).
+#
+# Fenêtre : 30 jours (DAILY_DAYS_BACK). Large devant le lag ~J-4 parce que
+# Google révise ses chiffres après coup ; repasser dessus les rattrape. Le
+# script coupe systématiquement la queue de fenêtre rembourrée à zéro par
+# l'API — un zéro récent n'est pas un vrai zéro.
+#
+# Auth : les APIs Business Profile REFUSENT les comptes de service. Il faut
+# un refresh token utilisateur. Celui du secret est le fichier ADC produit
+# en local par :
+#   gcloud auth application-default login \
+#       --scopes=https://www.googleapis.com/auth/business.manage
+#
+# Secrets à configurer dans GitHub
+# (Settings → Secrets and variables → Actions → New repository secret) :
+#   GBP_CREDENTIALS_B64   : base64 de ~/.config/gcloud/application_default_credentials.json
+#   SUPABASE_SECRET_KEY   : déjà posé pour l'ingest GSC, rien à refaire
+
+on:
+  schedule:
+    # 05:30 UTC quotidien. Aucune contrainte d'ordre avec l'ingest GSC :
+    # les deux sources sont indépendantes et n'écrivent pas les mêmes tables.
+    - cron: "30 5 * * *"
+  workflow_dispatch: # bouton "Run workflow" manuel
+    inputs:
+      days:
+        description: "Profondeur en jours (540 = backfill 18 mois, tout l'historique)"
+        required: false
+        default: "30"
+
+concurrency:
+  group: gbp-daily-ingest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "scripts/requirements-gbp.txt"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements-gbp.txt
+
+      - name: Write GBP credentials from secret
+        run: |
+          mkdir -p "$RUNNER_TEMP/gbp"
+          echo "${{ secrets.GBP_CREDENTIALS_B64 }}" | base64 -d > "$RUNNER_TEMP/gbp/credentials.json"
+          chmod 600 "$RUNNER_TEMP/gbp/credentials.json"
+          # Sanity check (sans logger le contenu)
+          test -s "$RUNNER_TEMP/gbp/credentials.json" || { echo "credentials.json vide ou base64 invalide" >&2; exit 1; }
+
+      - name: Run ingest
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gbp/credentials.json
+          GBP_DAYS: ${{ github.event.inputs.days || '30' }}
+        run: python3 scripts/gbp_ingest.py ingest --days "$GBP_DAYS"
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/gbp/credentials.json"
+
+      - name: notify-failure
+        if: failure()
+        run: |
+          if [ -n "${{ secrets.NTFY_TOPIC }}" ]; then
+            curl -s \
+              -H "Title: Cooked CI en échec" \
+              -H "Priority: high" \
+              -H "Tags: warning" \
+              -d "Workflow « ${{ github.workflow }} » en échec (run #${{ github.run_number }}) — voir Actions : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}" || true
+          else
+            echo "NTFY_TOPIC non configuré — notification push ignorée (inerte)."
+          fi
