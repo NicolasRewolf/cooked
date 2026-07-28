@@ -4445,6 +4445,44 @@ END;
 $function$
 
 
+-- ═══ public.rpc_contract_check(p_name text, p_sql text, p_min_rows integer, p_exact_rows integer) ═══
+CREATE OR REPLACE FUNCTION public.rpc_contract_check(p_name text, p_sql text, p_min_rows integer DEFAULT NULL::integer, p_exact_rows integer DEFAULT NULL::integer)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_start timestamptz := clock_timestamp();
+  v_rows  bigint;
+  v_ms    numeric;
+BEGIN
+  EXECUTE p_sql INTO v_rows;
+  v_ms := extract(epoch from (clock_timestamp() - v_start)) * 1000;
+
+  IF p_exact_rows IS NOT NULL AND v_rows <> p_exact_rows THEN
+    INSERT INTO rpc_health (rpc_name, status, detail, rows_returned, duration_ms)
+    VALUES (p_name, 'failed',
+            format('expected exactly %s row(s), got %s', p_exact_rows, v_rows),
+            v_rows, v_ms);
+  ELSIF p_min_rows IS NOT NULL AND v_rows < p_min_rows THEN
+    INSERT INTO rpc_health (rpc_name, status, detail, rows_returned, duration_ms)
+    VALUES (p_name, 'failed',
+            format('expected at least %s row(s), got %s', p_min_rows, v_rows),
+            v_rows, v_ms);
+  ELSE
+    INSERT INTO rpc_health (rpc_name, status, rows_returned, duration_ms)
+    VALUES (p_name, 'ok', v_rows, v_ms);
+  END IF;
+
+EXCEPTION WHEN OTHERS OR query_canceled THEN
+  INSERT INTO rpc_health (rpc_name, status, detail, duration_ms)
+  VALUES (p_name, 'failed', SQLERRM,
+          extract(epoch from (clock_timestamp() - v_start)) * 1000);
+END;
+$function$
+
+
 -- ═══ public.run_rpc_contract_tests() ═══
 CREATE OR REPLACE FUNCTION public.run_rpc_contract_tests()
  RETURNS void
@@ -4453,161 +4491,49 @@ CREATE OR REPLACE FUNCTION public.run_rpc_contract_tests()
  SET search_path TO 'public', 'pg_catalog'
  SET statement_timeout TO '900s'
 AS $function$
-declare
-  v_start timestamptz;
-  v_rows  bigint;
-begin
-  -- 1. snapshot_pages_export
-  v_start := clock_timestamp();
-  begin
-    select count(*) into v_rows
-    from public.snapshot_pages_export()
-    where refreshed_at is not null;
+DECLARE
+  t record;
+BEGIN
+  FOR t IN
+    SELECT * FROM (VALUES
+      ('snapshot_pages_export',
+       $q$select count(*) from public.snapshot_pages_export() where refreshed_at is not null$q$,
+       1, NULL),
+      ('site_context_export',
+       $q$select count(*) from public.site_context_export() where global_sessions_28d > 0$q$,
+       NULL, 1),
+      ('cta_breakdown_for_path',
+       $q$select count(*) from public.cta_breakdown_for_path('/', 28)
+          where cta_type in ('phone', 'email', 'booking')
+            and placement in ('header', 'footer', 'body', 'sticky')$q$,
+       NULL, NULL),
+      ('outbound_destinations_for_path',
+       $q$select count(*) from public.outbound_destinations_for_path('/', 28)$q$,
+       NULL, NULL),
+      ('behavior_pages_for_period',
+       $q$select count(*) from public.behavior_pages_for_period(now() - interval '7 days', now())$q$,
+       NULL, NULL),
+      ('engagement_density_for_path',
+       $q$select count(*) from public.engagement_density_for_path('/', 28)$q$,
+       NULL, NULL),
+      ('tracker_first_seen_global',
+       $q$select count(*) from (select public.tracker_first_seen_global() v) s where s.v is not null$q$,
+       NULL, 1),
+      ('refresh_pipeline_health',
+       $q$select count(*) from public.refresh_pipeline_health()$q$,
+       NULL, 1),
+      ('page_reads',
+       $q$select count(*) from public.page_reads(7) where source = 'page_exit'$q$,
+       1, NULL)
+    ) AS v(nom, requete, min_rows, exact_rows)
+  LOOP
+    PERFORM public.rpc_contract_check(t.nom, t.requete, t.min_rows, t.exact_rows);
+  END LOOP;
 
-    if v_rows < 1 then
-      insert into rpc_health (rpc_name, status, detail, rows_returned, duration_ms)
-      values ('snapshot_pages_export', 'failed', 'no rows with refreshed_at',
-              v_rows, extract(epoch from (clock_timestamp() - v_start)) * 1000);
-    else
-      insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
-      values ('snapshot_pages_export', 'ok', v_rows,
-              extract(epoch from (clock_timestamp() - v_start)) * 1000);
-    end if;
-  exception when others or query_canceled then
-    insert into rpc_health (rpc_name, status, detail, duration_ms)
-    values ('snapshot_pages_export', 'failed', SQLERRM,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  end;
-
-  -- 2. site_context_export
-  v_start := clock_timestamp();
-  begin
-    select count(*) into v_rows
-    from public.site_context_export()
-    where global_sessions_28d > 0;
-
-    if v_rows <> 1 then
-      insert into rpc_health (rpc_name, status, detail, rows_returned, duration_ms)
-      values ('site_context_export', 'failed',
-              format('expected 1 row, got %s', v_rows),
-              v_rows, extract(epoch from (clock_timestamp() - v_start)) * 1000);
-    else
-      insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
-      values ('site_context_export', 'ok', v_rows,
-              extract(epoch from (clock_timestamp() - v_start)) * 1000);
-    end if;
-  exception when others or query_canceled then
-    insert into rpc_health (rpc_name, status, detail, duration_ms)
-    values ('site_context_export', 'failed', SQLERRM,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  end;
-
-  -- 3. cta_breakdown_for_path
-  v_start := clock_timestamp();
-  begin
-    select count(*) into v_rows
-    from public.cta_breakdown_for_path('/', 28)
-    where cta_type in ('phone', 'email', 'booking')
-      and placement in ('header', 'footer', 'body', 'sticky');
-
-    insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
-    values ('cta_breakdown_for_path', 'ok', v_rows,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  exception when others or query_canceled then
-    insert into rpc_health (rpc_name, status, detail, duration_ms)
-    values ('cta_breakdown_for_path', 'failed', SQLERRM,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  end;
-
-  -- 4. outbound_destinations_for_path
-  v_start := clock_timestamp();
-  begin
-    select count(*) into v_rows
-    from public.outbound_destinations_for_path('/', 28);
-
-    insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
-    values ('outbound_destinations_for_path', 'ok', v_rows,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  exception when others or query_canceled then
-    insert into rpc_health (rpc_name, status, detail, duration_ms)
-    values ('outbound_destinations_for_path', 'failed', SQLERRM,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  end;
-
-  -- 5. behavior_pages_for_period — signature timestamptz, timestamptz
-  v_start := clock_timestamp();
-  begin
-    select count(*) into v_rows
-    from public.behavior_pages_for_period(now() - interval '7 days', now());
-
-    insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
-    values ('behavior_pages_for_period', 'ok', v_rows,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  exception when others or query_canceled then
-    insert into rpc_health (rpc_name, status, detail, duration_ms)
-    values ('behavior_pages_for_period', 'failed', SQLERRM,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  end;
-
-  -- 6. engagement_density_for_path
-  v_start := clock_timestamp();
-  begin
-    select count(*) into v_rows
-    from public.engagement_density_for_path('/', 28);
-
-    insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
-    values ('engagement_density_for_path', 'ok', v_rows,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  exception when others or query_canceled then
-    insert into rpc_health (rpc_name, status, detail, duration_ms)
-    values ('engagement_density_for_path', 'failed', SQLERRM,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  end;
-
-  -- 7. tracker_first_seen_global
-  v_start := clock_timestamp();
-  begin
-    if (select public.tracker_first_seen_global()) is null then
-      insert into rpc_health (rpc_name, status, detail, duration_ms)
-      values ('tracker_first_seen_global', 'failed', 'returned NULL',
-              extract(epoch from (clock_timestamp() - v_start)) * 1000);
-    else
-      insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
-      values ('tracker_first_seen_global', 'ok', 1,
-              extract(epoch from (clock_timestamp() - v_start)) * 1000);
-    end if;
-  exception when others or query_canceled then
-    insert into rpc_health (rpc_name, status, detail, duration_ms)
-    values ('tracker_first_seen_global', 'failed', SQLERRM,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  end;
-
-  -- 8. refresh_pipeline_health
-  v_start := clock_timestamp();
-  begin
-    select count(*) into v_rows from public.refresh_pipeline_health();
-
-    if v_rows <> 1 then
-      insert into rpc_health (rpc_name, status, detail, rows_returned, duration_ms)
-      values ('refresh_pipeline_health', 'failed',
-              format('expected 1 row, got %s', v_rows),
-              v_rows, extract(epoch from (clock_timestamp() - v_start)) * 1000);
-    else
-      insert into rpc_health (rpc_name, status, rows_returned, duration_ms)
-      values ('refresh_pipeline_health', 'ok', v_rows,
-              extract(epoch from (clock_timestamp() - v_start)) * 1000);
-    end if;
-  exception when others or query_canceled then
-    insert into rpc_health (rpc_name, status, detail, duration_ms)
-    values ('refresh_pipeline_health', 'failed', SQLERRM,
-            extract(epoch from (clock_timestamp() - v_start)) * 1000);
-  end;
-
-  -- Rétention 90j
-  delete from rpc_health where checked_at < now() - interval '90 days';
-end;
+  -- Retention 90j
+  DELETE FROM rpc_health WHERE checked_at < now() - interval '90 days';
+END;
 $function$
-
 
 -- ═══ public.seo_pages_overview(date_from timestamp with time zone, date_to timestamp with time zone) ═══
 CREATE OR REPLACE FUNCTION public.seo_pages_overview(date_from timestamp with time zone, date_to timestamp with time zone DEFAULT now())
