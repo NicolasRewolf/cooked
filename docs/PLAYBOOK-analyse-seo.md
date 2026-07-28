@@ -196,6 +196,12 @@ timeout MCP. Préférer lire le dernier snapshot :
     `mcp__dataforseo__serp_organic_live_advanced`, `device: mobile`,
     `location_name: France`.
 13. **`couv_gsc_pct` faible ⇒ `clics_perdus` non interprétable** (27/07/2026).
+    → Ne plus lire `cpi_daily.clics_perdus` à la main : passer par la vue
+    **`cpi_capture_perdue`** et filtrer `interpretable`. Elle porte
+    `fiabilite_capture` (directe ≥ 40 % / partielle 20-39 % / extrapolée < 20 %).
+    Au 27/07 : 13 pages en déficit, **5 seulement interprétables** — et
+    `accident-du-travail`, 2ᵉ plus gros déficit apparent (56 clics), en sort
+    avec ses 19 % de couverture.
     Le classement des clics perdus est partiellement un classement de la
     couverture GSC : `corr(couv_qpd, capture) = −0,29` sur 120 pages, −0,19 sur
     les seuls grades S/A/B. Sous 10 % de couverture (indemnisation-passager

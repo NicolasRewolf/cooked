@@ -480,6 +480,13 @@ RPCs attribution & santé (Sprint 37-38) :
   Opportunité de contact = `grade IN ('S','A','B') AND NOT convertit ORDER BY potentiel DESC`.
   Ne recalcule rien, ne complexifie pas le CPI. Alias déprécié : `cpi_gisement`.
   Colonne `grade` = **Fiabilité** S/A/B/C (S≥200∧E≥40, A≥100∧≥20, B≥30∧≥5, C sinon).
+- `cpi_capture_perdue` (vue, 28/07/2026) — pilotage capture : les pages en
+  déficit de clics face à la courbe CTR du site, **avec la fiabilité du
+  chiffre**. `clics_perdus` est extrapolé depuis la fraction de requêtes que
+  Google révèle ; sous 20 % de couverture l'extrapolation domine.
+  `fiabilite_capture` = directe (≥ 40 %) / partielle (20-39 %) / extrapolée
+  (< 20 %), `interpretable` = grade S/A/B **ET** couverture ≥ 20 %.
+  Ne plus lire `cpi_daily.clics_perdus` à la main.
 - `cooked_alerts_refresh()` — recalcul des alertes (cron horaire) ; table
   `alerts` (acked boolean)
 - `cooked_page_type(path)` — cabinet / hub / expertise / post / blog-nav ;
