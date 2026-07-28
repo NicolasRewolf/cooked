@@ -15,7 +15,7 @@
 
 
 -- ╔══════════════════════════════════════════════════════════════════════════╗
--- ║ VUES (5) — définition complète                                            ║
+-- ║ VUES (6) — définition complète                                            ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 -- VIEW public.cpi_opportunite_contact
@@ -42,6 +42,30 @@ CREATE OR REPLACE VIEW public.cpi_opportunite_contact AS
 -- VIEW public.cpi_gisement — ALIAS déprécié de cpi_opportunite_contact
 CREATE OR REPLACE VIEW public.cpi_gisement AS
   SELECT * FROM public.cpi_opportunite_contact;
+
+-- VIEW public.cpi_capture_perdue
+--   Pilotage capture : pages en déficit de clics face à la courbe CTR du site,
+--   accompagnées de la fiabilité du chiffre. `clics_perdus` est extrapolé
+--   depuis la seule fraction de requêtes que Google révèle : sous 20 % de
+--   couverture, l'extrapolation domine. Filtrer `interpretable`.
+CREATE OR REPLACE VIEW public.cpi_capture_perdue AS
+ SELECT path,
+    ptype,
+    grade,
+    clics_perdus,
+    couv_gsc_pct,
+    CASE
+      WHEN couv_gsc_pct >= 40 THEN 'directe'
+      WHEN couv_gsc_pct >= 20 THEN 'partielle'
+      ELSE 'extrapolee'
+    END AS fiabilite_capture,
+    (grade IN ('S','A','B') AND couv_gsc_pct >= 20) AS interpretable,
+    zc,
+    n_org,
+    day
+   FROM cpi_daily
+  WHERE day = (SELECT max(cpi_daily_1.day) FROM cpi_daily cpi_daily_1)
+    AND clics_perdus > 0;
 
 -- VIEW public.cpi_movers
 --   Δ CPI sur ~7j glissants depuis cpi_daily (statuts present/nouveau/disparu,
