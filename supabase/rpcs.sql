@@ -6,7 +6,7 @@
 -- Source de vérité DDL = supabase/migrations/*.sql (+ état prod).
 -- Ce fichier = instantané lisible pour humains et agents (Arch #5, 10/07/2026).
 --
--- Régénéré le 25/07/2026 — projet mxycmjkeotrycyneacje.
+-- Régénéré le 28/07/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
 -- ═══ public.alert_rule_cpi_drop() ═══
