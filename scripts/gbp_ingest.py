@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Google Business Profile → Cooked — ÉTAPE 1 : reconnaissance (lecture seule).
+Google Business Profile → Cooked — ingestion des métriques de la fiche.
 
 Pourquoi ce script existe
 -------------------------
@@ -11,12 +11,14 @@ L'API Business Profile Performance donne `CALL_CLICKS` par jour SANS
 toucher à la fiche et SANS numéro de tracking — elle ferme l'angle mort
 par le seul côté qui restait ouvert.
 
-Deux modes, tous deux en lecture seule et SANS écriture Supabase. La mise
-en base viendra après validation (méthodo CLAUDE.md : itératif strict
-avant scale) :
+Trois modes — les deux premiers en lecture seule, sans écriture Supabase :
 
-    python3 scripts/gbp_ingest.py discover
-    python3 scripts/gbp_ingest.py probe --days 30
+    python3 scripts/gbp_ingest.py discover              # comptes + fiches
+    python3 scripts/gbp_ingest.py probe --days 30       # séries à l'écran
+    python3 scripts/gbp_ingest.py ingest --days 540     # → gbp_daily
+
+`ingest` demande SUPABASE_SECRET_KEY (absente en local, posée en CI) et
+n'écrit JAMAIS la queue de fenêtre rembourrée à zéro par l'API.
 
 Auth
 ----
@@ -35,8 +37,10 @@ cet ordre :
          refresh token : ~/.claude/gbp-token.json         (JAMAIS committé)
      Surchargeables via GBP_CLIENT_SECRETS_PATH / GBP_TOKEN_PATH.
 
-En CI (GitHub Actions), c'est la voie 2 qui sert : le refresh token est
-posé en secret, l'ADC gcloud n'y existe pas.
+En CI (GitHub Actions), c'est encore la voie 1 : le fichier ADC produit en
+local est posé en secret (GBP_CREDENTIALS_B64), décodé sur le runner, et
+lu via GOOGLE_APPLICATION_CREDENTIALS. La voie 2 reste le filet de secours
+si ce refresh token venait à être révoqué.
 
 Timezone
 --------
@@ -51,10 +55,11 @@ import argparse
 import os
 import sys
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import google.auth
+from cooked_store import SupabaseStore
 from google.auth.exceptions import DefaultCredentialsError
 from google.auth.transport.requests import AuthorizedSession, Request
 from google.oauth2.credentials import Credentials
@@ -70,6 +75,16 @@ INFO_API = "https://mybusinessbusinessinformation.googleapis.com/v1"
 PERF_API = "https://businessprofileperformance.googleapis.com/v1"
 
 LOCATION_READ_MASK = "name,title,storefrontAddress,websiteUri,phoneNumbers"
+
+# Le compte donne accès à 4 fiches (REWOLF, deux restaurants parisiens…).
+# Cooked est le système du cabinet : par défaut on n'ingère que la sienne.
+CABINET_LOCATION = "locations/3503242316391395629"
+
+BATCH_SIZE = 1000
+# Fenêtre du cron quotidien. Large devant le lag ~J-4 : l'upsert est
+# idempotent (PK day+location+metric) et Google révise ses chiffres après
+# coup — repasser sur 30 jours rattrape ces révisions sans coût.
+DAILY_DAYS_BACK = 30
 
 # Ordre d'affichage : le macro d'abord (c'est la raison d'être du chantier),
 # la visibilité ensuite.
@@ -282,18 +297,63 @@ def cmd_discover(_args) -> None:
         print(f"→ Étape suivante : python3 scripts/gbp_ingest.py probe --location {first}")
 
 
+def _trim_unconsolidated(rows: dict[date, dict[str, int]]) -> dict[date, dict[str, int]]:
+    """Coupe la queue de fenêtre rembourrée à zéro par l'API.
+
+    Google renvoie des jours à zéro tant qu'il n'a pas consolidé (~J-4).
+    Les écrire tels quels graverait de faux zéros ; la fenêtre glissante du
+    cron quotidien les corrigerait plus tard, mais toute lecture faite entre
+    temps serait fausse. On ne persiste que jusqu'au dernier jour non nul.
+    """
+    filled = [d for d in sorted(rows) if sum(rows[d].values()) > 0]
+    if not filled:
+        return {}
+    last_real = filled[-1]
+    return {d: v for d, v in rows.items() if d <= last_real}
+
+
+def _to_store_rows(location: str, rows: dict[date, dict[str, int]]) -> list[dict]:
+    now = datetime.now(timezone.utc).isoformat()
+    return [
+        {
+            "day": day.isoformat(),
+            "location": location,
+            "metric": metric,
+            "value": int(value),
+            "ingested_at": now,
+        }
+        for day, metrics in sorted(rows.items())
+        for metric, value in sorted(metrics.items())
+    ]
+
+
+def cmd_ingest(args) -> None:
+    store = SupabaseStore.from_env()
+    session = authorized_session()
+    location = args.location or CABINET_LOCATION
+
+    end = date.today()
+    start = end - timedelta(days=args.days)
+    raw = fetch_daily(session, location, start, end)
+    rows = _trim_unconsolidated(raw)
+    if not rows:
+        sys.exit("Aucun jour consolidé sur la fenêtre — rien à écrire.")
+
+    days = sorted(rows)
+    payload = _to_store_rows(location, rows)
+    store.upsert_batches("gbp_daily", payload, "day,location,metric", BATCH_SIZE)
+
+    dropped = len(raw) - len(rows)
+    print(f"gbp_daily : {len(payload):,} lignes upsertées".replace(",", " "))
+    print(f"  fiche   : {location}")
+    print(f"  couvert : {fr(days[0])} → {fr(days[-1])} ({len(days)} jours)")
+    print(f"  écartés : {dropped} jour(s) non consolidé(s) en fin de fenêtre")
+
+
 def cmd_probe(args) -> None:
     session = authorized_session()
 
-    location = args.location
-    if not location:
-        found = resolve_locations(session)
-        if len(found) != 1:
-            sys.exit(
-                f"{len(found)} fiche(s) trouvée(s) — préciser --location locations/XXXX "
-                "(voir `discover`)."
-            )
-        location = found[0][1]["name"]
+    location = args.location or CABINET_LOCATION
 
     end = date.today()
     start = end - timedelta(days=args.days)
@@ -368,7 +428,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     p_probe = sub.add_parser("probe", help="séries quotidiennes affichées à l'écran")
-    p_probe.add_argument("--location", help="locations/XXXX (défaut: l'unique fiche)")
+    p_probe.add_argument("--location", help=f"défaut: {CABINET_LOCATION}")
     p_probe.add_argument(
         "--days", type=int, default=30, help="profondeur en jours (défaut: 30)"
     )
@@ -376,6 +436,16 @@ def main(argv: list[str] | None = None) -> None:
         "--tail", type=int, default=14, help="jours détaillés en fin de tableau"
     )
     p_probe.set_defaults(func=cmd_probe)
+
+    p_ing = sub.add_parser("ingest", help="écrit dans gbp_daily (upsert idempotent)")
+    p_ing.add_argument("--location", help=f"défaut: {CABINET_LOCATION}")
+    p_ing.add_argument(
+        "--days",
+        type=int,
+        default=DAILY_DAYS_BACK,
+        help=f"profondeur en jours (défaut: {DAILY_DAYS_BACK} ; backfill: 540)",
+    )
+    p_ing.set_defaults(func=cmd_ingest)
 
     args = parser.parse_args(argv)
     args.func(args)
