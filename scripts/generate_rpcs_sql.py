@@ -77,6 +77,13 @@ def write_outputs(body: str) -> None:
                 "project_id": "mxycmjkeotrycyneacje",
                 "function_count": function_count,
                 "content_sha256": hashlib.sha256(body.encode()).hexdigest(),
+                # Hash du FICHIER entier, en-tête compris. content_sha256 ne
+                # couvre que les corps de RPC : un revert vers une définition
+                # identique laissait donc le méta inchangé, et la gate Arch #5
+                # — qui exige le méta au diff dès qu'une migration porte un
+                # CREATE OR REPLACE — devenait impossible à satisfaire
+                # honnêtement (constaté le 28/07/2026 sur la PR #85).
+                "file_sha256": hashlib.sha256(content.encode()).hexdigest(),
             },
             indent=2,
         )
