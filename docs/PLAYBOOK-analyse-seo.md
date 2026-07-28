@@ -194,7 +194,20 @@ timeout MCP. Préférer lire le dernier snapshot :
     sujets définitionnels, l'objectif réaliste n'est plus le clic mais la
     citation dans l'AI Overview. **Contrôle obligatoire** :
     `mcp__dataforseo__serp_organic_live_advanced`, `device: mobile`,
-    `location_name: France`.
+    `location_name: France`. Les relevés sont consignés dans **`serp_features`**
+    (panel fixe — le changer casse la comparabilité) : y regarder d'abord avant
+    de rappeler l'API.
+
+    ⚠️ **Le zéro-clic n'explique pas tout — vérifier aussi l'intention.**
+    Relevé du 28/07/2026 sur `surveillance électronique`, plus grosse requête
+    du site (**10 394 impressions, 5 clics**) : GSC annonce position 7
+    organique, le visiteur nous voit en **position absolue 19**, sous un
+    Knowledge Graph, un PAA, 3 organiques, un carrousel d'annuaires et **six
+    entrées de Local Pack qui sont des magasins de caméras de
+    vidéosurveillance**. L'intention dominante de la requête n'a rien à voir
+    avec le droit pénal. Des impressions massives à CTR nul peuvent donc être
+    un problème d'intention, pas de capture — et aucun travail éditorial ne
+    les récupérera.
 13. **`couv_gsc_pct` faible ⇒ `clics_perdus` non interprétable** (27/07/2026).
     → Ne plus lire `cpi_daily.clics_perdus` à la main : passer par la vue
     **`cpi_capture_perdue`** et filtrer `interpretable`. Elle porte
