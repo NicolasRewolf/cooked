@@ -904,7 +904,13 @@ d'un article à partir de son slug : l'API Wix est la seule référence
   sur 28 j étaient du GMB (44,8 %). Il convertit à **3,68 %** contre **0,57 %**
   pour le SEO organique réel : meilleur canal du site, devant le paid.
   Angle mort restant, réel celui-là : les **appels passés depuis la fiche**,
-  que Cooked ne verra jamais.
+  que Cooked ne verra jamais. **Numéro traçable sur la fiche : DÉCLINÉ par
+  Nicolas le 28/07/2026** — ne plus le proposer. L'angle mort est donc assumé
+  en connaissance de cause (contrairement à juin, où il reposait sur une
+  erreur de classification). Ordre de grandeur pour mémoire : GMB pèse
+  6 contacts / 28 j sur les 208 du site (2,9 %) côté web mesuré, contre 12 %
+  des formulaires qui déclarent GMB dans l'export Wix — l'écart reste non
+  mesurable. **B3 clos.**
 - **Google Ads : MCP CONNECTÉ** (vérifié le 01/07/2026 — 5 customer IDs
   accessibles). Premier usage à cadrer : coûts/CPA par campagne croisés
   avec les macro-contacts Cooked (« boucle 3 »).
