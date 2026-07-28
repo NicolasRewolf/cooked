@@ -30,6 +30,11 @@ on:
     # les deux sources sont indépendantes et n'écrivent pas les mêmes tables.
     - cron: "30 5 * * *"
   workflow_dispatch: # bouton "Run workflow" manuel
+    inputs:
+      days:
+        description: "Profondeur en jours (540 = backfill 18 mois, tout l'historique)"
+        required: false
+        default: "30"
 
 concurrency:
   group: gbp-daily-ingest
@@ -65,11 +70,12 @@ jobs:
           # Sanity check (sans logger le contenu)
           test -s "$RUNNER_TEMP/gbp/credentials.json" || { echo "credentials.json vide ou base64 invalide" >&2; exit 1; }
 
-      - name: Run ingest (fenêtre glissante 30 jours)
+      - name: Run ingest
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gbp/credentials.json
-        run: python3 scripts/gbp_ingest.py ingest
+          GBP_DAYS: ${{ github.event.inputs.days || '30' }}
+        run: python3 scripts/gbp_ingest.py ingest --days "$GBP_DAYS"
 
       - name: Cleanup credentials
         if: always()
