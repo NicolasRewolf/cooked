@@ -1,0 +1,13 @@
+-- Etape 2, appelant 1/5 — content_performance lit page_reads.
+--
+-- ANNULEE le meme jour par 20260728104500 : neutre fonctionnellement mais
+-- 27 s -> 120 s+. Conservee pour la trace ; ne pas rejouer.
+--
+-- Divergence trouvee avant de toucher au code : content_performance faisait
+-- max((props->>'max_scroll')::numeric) SANS coalesce a 0, la ou page_reads
+-- coalesce. percentile_cont ignorant les NULL mais pas les zeros, la mediane
+-- de scroll aurait pu bouger. Mesure sur 21 478 page_exit / 28 j : 0 sans
+-- max_scroll, 0 sans duration_seconds, 0 evenement futur. Divergence latente,
+-- pas active.
+
+-- (corps applique puis annule — voir 20260728104500 pour la definition vive)
