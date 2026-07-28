@@ -264,6 +264,20 @@ Consignés parce qu'ils se reproduiront :
    été touchée** (source canonique) — mais c'est le goulot documenté des crons
    nocturnes, et il grossit.
 
+   → Ce n'est plus théorique : le contract test de **`behavior_pages_for_period`
+   échoue en production** sur `canceling statement due to statement timeout`
+   après 53,8 s (dernier passage : 28/07/2026 10:19). C'est **antérieur et
+   étranger à ce chantier**, mais c'est la même cause racine. Piste, sans
+   toucher à la définition de la vue : matérialiser `bot_fingerprints` dans un
+   `IN (…)` ou forcer un *hash anti join*.
+
+6. **RPC `SECURITY DEFINER` ouvertes à `anon`** — Postgres accorde `EXECUTE` à
+   `PUBLIC` à la création. Le `GRANT … TO service_role` ne retire rien : les
+   trois RPC `math_*` étaient appelables **sans authentification** via
+   `/rest/v1/rpc/…`. Corrigé (migration `20260728222238`), advisors 0028/0029
+   propres pour ces fonctions.
+   *Restent exposées, hors périmètre : `page_reads` et `rpc_contract_check`.*
+
 ---
 
 ## 7. Ce qui est en base
@@ -325,3 +339,7 @@ python3 scripts/advanced_math_analytics.py --source cache --cache-dir <dir>
   mesure (valeur `restatement`).
 - **Disque Supabase** : la saturation du 24/07 a coûté 3 jours de `cpi_daily`.
 - **Liens internes accentués** : 56 clics/28 j passent par une redirection.
+- **`behavior_pages_for_period`** : contract test en échec (timeout 53,8 s),
+  antérieur à ce chantier — même cause racine que le goulot `events_human`.
+- **`page_reads` / `rpc_contract_check`** : `SECURITY DEFINER` toujours
+  exécutables par `anon` (advisors 0028/0029).
