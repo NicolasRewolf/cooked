@@ -6,7 +6,8 @@
 -- Source de vérité DDL = supabase/migrations/*.sql (+ état prod).
 -- Ce fichier = instantané lisible pour humains et agents (Arch #5, 10/07/2026).
 --
--- Régénéré le 28/07/2026 — projet mxycmjkeotrycyneacje.
+-- Régénérer : python3 scripts/generate_rpcs_sql.py  (DATABASE_URL requis)
+-- Généré le 29/07/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
 -- ═══ public.alert_rule_cpi_drop() ═══
@@ -113,6 +114,7 @@ BEGIN
   END IF;
 END;
 $function$
+
 
 -- ═══ public.alert_rule_cron_failed() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_cron_failed()
@@ -589,8 +591,10 @@ AS $function$
     when ref ilike '%' || self_host || '%' then null
     when lower(utm_medium) in ('cpc','paid','ppc')
       or lower(utm_source) like '%google%ads%' then 'paid'
-    -- Fiche Google Business : posee AVANT la branche google.*, sinon le
+    -- Fiche Google Business : posée AVANT la branche google.*, sinon le
     -- referrer (google.com / maps) la ferait tomber dans organic_google.
+    -- Le lien de la fiche est `/?utm_source=gmb`; 'gbp' couvre la variante
+    -- Google Business Profile vue dans les données.
     when lower(utm_source) like 'gmb%' or lower(utm_source) like 'gbp%'
       then 'gmb'
     when ref ilike '%claude.ai%' or ref ilike '%perplexity.ai%'
@@ -615,6 +619,7 @@ AS $function$
     else 'referral'
   end;
 $function$
+
 
 -- ═══ public.content_performance(days_back integer) ═══
 CREATE OR REPLACE FUNCTION public.content_performance(days_back integer DEFAULT 28)
@@ -2833,6 +2838,237 @@ AS $function$
 $function$
 
 
+-- ═══ public.math_internal_edges(days_back integer) ═══
+CREATE OR REPLACE FUNCTION public.math_internal_edges(days_back integer DEFAULT 28)
+ RETURNS TABLE(src text, dst text, kind text, placement text, weight bigint, dst_resolved boolean)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  with ev as materialized (
+    select e.anonymous_id, e.session_id, e.name, e.path, e.occurred_at, e.props
+    from public.events_human e
+    where e.name in ('pageview', 'click_internal')
+      and e.occurred_at > now() - make_interval(days => days_back)
+      and e.path is not null
+  ),
+  seen as (
+    select distinct e.path from ev e where e.name = 'pageview'
+  ),
+  clicks_raw as (
+    select e.path as src,
+           e.props->>'target_path' as dst_raw,
+           coalesce(e.props->>'placement', 'inconnu') as placement,
+           count(*)::bigint as weight
+    from ev e
+    where e.name = 'click_internal' and e.props->>'target_path' is not null
+    group by 1, 2, 3
+  ),
+  clicks as (
+    -- resolution ciblee des cibles orphelines : les liens du site pointent
+    -- vers des URL accentuees qui redirigent (301) vers la forme desaccentuee
+    -- ou atterrissent les pageviews. On ne desaccentue QUE si la cible brute
+    -- n'existe pas et que la forme desaccentuee, elle, existe.
+    select c.src,
+      case when c.raw_exists then c.dst_raw
+           when c.flat_exists then c.dst_flat
+           else c.dst_raw end as dst,
+      c.placement, c.weight,
+      (not c.raw_exists and c.flat_exists) as dst_resolved
+    from (
+      select c0.*,
+        translate(c0.dst_raw, 'àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ',
+                              'aaaeeeeiioouuucAAAEEEEIIOOUUUC') as dst_flat,
+        exists (select 1 from seen s where s.path = c0.dst_raw) as raw_exists,
+        exists (select 1 from seen s where s.path =
+                translate(c0.dst_raw, 'àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ',
+                                      'aaaeeeeiioouuucAAAEEEEIIOOUUUC')) as flat_exists
+      from clicks_raw c0
+    ) c
+  ),
+  pv as (
+    select
+      coalesce(ss.visitor_key, sa.visitor_key,
+               'sid:' || coalesce(e.session_id, e.anonymous_id, 'inconnu')) as vk,
+      e.path, e.occurred_at as t
+    from ev e
+    left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = e.session_id
+    left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = e.anonymous_id
+    where e.name = 'pageview'
+  ),
+  seg as (
+    select pv.*,
+      case when pv.t - lag(pv.t) over (partition by pv.vk order by pv.t)
+                > interval '30 minutes'
+             or lag(pv.t) over (partition by pv.vk order by pv.t) is null
+           then 1 else 0 end as is_new
+    from pv
+  ),
+  vis as (
+    select seg.*,
+      sum(is_new) over (partition by vk order by t rows unbounded preceding) as visit_no
+    from seg
+  ),
+  flows as (
+    select v.path as src,
+           lead(v.path) over (partition by v.vk, v.visit_no order by v.t) as dst
+    from vis v
+  )
+  select f.src, f.dst, 'flow'::text, null::text, count(*)::bigint, false
+  from flows f
+  where f.dst is not null and f.dst <> f.src
+  group by f.src, f.dst
+  union all
+  select c.src, c.dst, 'click'::text, c.placement, c.weight, c.dst_resolved
+  from clicks c
+  where c.dst <> c.src;
+$function$
+
+
+-- ═══ public.math_refresh_snapshots(p_window_days integer) ═══
+CREATE OR REPLACE FUNCTION public.math_refresh_snapshots(p_window_days integer DEFAULT 28)
+ RETURNS TABLE(sequences bigint, edges bigint)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_seq bigint;
+  v_edg bigint;
+BEGIN
+  DELETE FROM public.math_visit_sequences_snapshot WHERE window_days = p_window_days;
+  INSERT INTO public.math_visit_sequences_snapshot
+    (window_days, journey, converted, entry_channel, n)
+  SELECT p_window_days, s.journey, s.converted, s.entry_channel, s.n
+  FROM public.math_visit_sequences(p_window_days) s;
+  GET DIAGNOSTICS v_seq = ROW_COUNT;
+
+  DELETE FROM public.math_internal_edges_snapshot WHERE window_days = p_window_days;
+  INSERT INTO public.math_internal_edges_snapshot
+    (window_days, src, dst, kind, placement, weight, dst_resolved)
+  SELECT p_window_days, e.src, e.dst, e.kind, e.placement, e.weight, e.dst_resolved
+  FROM public.math_internal_edges(p_window_days) e;
+  GET DIAGNOSTICS v_edg = ROW_COUNT;
+
+  RETURN QUERY SELECT v_seq, v_edg;
+END;
+$function$
+
+
+-- ═══ public.math_visit_sequences(days_back integer) ═══
+CREATE OR REPLACE FUNCTION public.math_visit_sequences(days_back integer DEFAULT 28)
+ RETURNS TABLE(journey text[], converted boolean, entry_channel text, n bigint)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  with ev as materialized (
+    select e.anonymous_id, e.session_id, e.name, e.path, e.occurred_at,
+           e.referrer_hostname, e.utm_source, e.utm_medium
+    from public.events_human e
+    where e.name in ('pageview', 'cta_phone_click')
+      and e.occurred_at > now() - make_interval(days => days_back)
+  ),
+  pv as materialized (
+    select
+      coalesce(ss.visitor_key, sa.visitor_key,
+               'sid:' || coalesce(e.session_id, e.anonymous_id, 'inconnu')) as vk,
+      e.path, e.occurred_at as t,
+      e.referrer_hostname, e.utm_source, e.utm_medium
+    from ev e
+    left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = e.session_id
+    left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = e.anonymous_id
+    where e.name = 'pageview' and e.path is not null
+  ),
+  contacts as materialized (
+    select
+      coalesce(ss.visitor_key, sa.visitor_key,
+               'sid:' || coalesce(c.session_id, c.anonymous_id, 'inconnu')) as vk,
+      c.occurred_at as t
+    from (
+      select e.occurred_at, e.anonymous_id, e.session_id
+      from ev e where e.name = 'cta_phone_click'
+      union all
+      select f.occurred_at, f.resolved_anonymous_id, f.resolved_session_id
+      from public.form_submits_attributed(days_back) f
+      where f.counts_as_macro
+    ) c
+    left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = c.session_id
+    left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = c.anonymous_id
+  ),
+  vis as materialized (
+    select seg.*,
+      sum(is_new) over (partition by vk order by t rows unbounded preceding) as visit_no
+    from (
+      select pv.*,
+        case when pv.t - lag(pv.t) over (partition by pv.vk order by pv.t)
+                  > interval '30 minutes'
+               or lag(pv.t) over (partition by pv.vk order by pv.t) is null
+             then 1 else 0 end as is_new
+      from pv
+    ) seg
+  ),
+  bounds as materialized (
+    select vk, visit_no, min(t) as t_start, max(t) as t_end
+    from vis group by vk, visit_no
+  ),
+  -- un contact = au plus une visite : la plus recente qui le precede,
+  -- dans la limite de 6 h (fenetre de conversion_journeys v2)
+  contact_visit as materialized (
+    select distinct on (c.vk, c.t) c.vk, c.t as contact_at, b.visit_no
+    from contacts c
+    join bounds b
+      on b.vk = c.vk
+     and b.t_start <= c.t + interval '3 minutes'
+     and c.t <= b.t_end + interval '6 hours'
+    order by c.vk, c.t, b.t_start desc
+  ),
+  vc as materialized (
+    select vk, visit_no, min(contact_at) as contact_at
+    from contact_visit group by vk, visit_no
+  ),
+  kept as materialized (
+    select v.vk, v.visit_no, v.path, v.t,
+           v.referrer_hostname, v.utm_source, v.utm_medium,
+           (vc.contact_at is not null) as converted
+    from vis v
+    left join vc on vc.vk = v.vk and vc.visit_no = v.visit_no
+    where vc.contact_at is null
+       or v.t <= vc.contact_at + interval '3 minutes'
+  ),
+  entry as materialized (
+    select distinct on (k.vk, k.visit_no)
+           k.vk, k.visit_no, k.referrer_hostname, k.utm_source, k.utm_medium
+    from kept k
+    order by k.vk, k.visit_no, k.t
+  ),
+  per_visit as materialized (
+    select f.vk, f.visit_no,
+      array_agg(f.path order by f.first_seen) as journey,
+      bool_or(f.converted) as converted
+    from (
+      select vk, visit_no, path, min(t) as first_seen, bool_or(converted) as converted
+      from kept group by vk, visit_no, path
+    ) f
+    group by f.vk, f.visit_no
+  ),
+  raw_grouped as (
+    select p.journey, p.converted,
+           e.referrer_hostname, e.utm_source, e.utm_medium,
+           count(*)::bigint as n
+    from per_visit p
+    join entry e on e.vk = p.vk and e.visit_no = p.visit_no
+    group by 1, 2, 3, 4, 5
+  )
+  select g.journey, g.converted,
+         public.classify_channel(g.referrer_hostname, g.utm_source, g.utm_medium,
+                                 'www.jplouton-avocat.fr'),
+         sum(g.n)::bigint
+  from raw_grouped g
+  group by 1, 2, 3;
+$function$
+
+
 -- ═══ public.outbound_destinations_for_path(path text, days_back integer) ═══
 CREATE OR REPLACE FUNCTION public.outbound_destinations_for_path(path text, days_back integer DEFAULT 28)
  RETURNS TABLE(hostname text, clicks bigint)
@@ -4475,6 +4711,11 @@ BEGIN
     VALUES (p_name, 'ok', v_rows, v_ms);
   END IF;
 
+-- WHEN OTHERS ne rattrape PAS query_canceled (57014) : l'exclusion est
+-- explicite en PL/pgSQL. Sans le OR, un statement_timeout sur un seul RPC
+-- annulerait la transaction entiere et n'ecrirait aucune ligne — le bug qui
+-- a rendu le harnais muet pendant 23 jours. Une fois le timeout rattrape,
+-- le minuteur est desarme et les tests suivants s'executent normalement.
 EXCEPTION WHEN OTHERS OR query_canceled THEN
   INSERT INTO rpc_health (rpc_name, status, detail, duration_ms)
   VALUES (p_name, 'failed', SQLERRM,
@@ -4499,29 +4740,41 @@ BEGIN
       ('snapshot_pages_export',
        $q$select count(*) from public.snapshot_pages_export() where refreshed_at is not null$q$,
        1, NULL),
+
       ('site_context_export',
        $q$select count(*) from public.site_context_export() where global_sessions_28d > 0$q$,
        NULL, 1),
+
       ('cta_breakdown_for_path',
        $q$select count(*) from public.cta_breakdown_for_path('/', 28)
           where cta_type in ('phone', 'email', 'booking')
             and placement in ('header', 'footer', 'body', 'sticky')$q$,
        NULL, NULL),
+
       ('outbound_destinations_for_path',
        $q$select count(*) from public.outbound_destinations_for_path('/', 28)$q$,
        NULL, NULL),
+
       ('behavior_pages_for_period',
        $q$select count(*) from public.behavior_pages_for_period(now() - interval '7 days', now())$q$,
        NULL, NULL),
+
       ('engagement_density_for_path',
        $q$select count(*) from public.engagement_density_for_path('/', 28)$q$,
        NULL, NULL),
+
       ('tracker_first_seen_global',
        $q$select count(*) from (select public.tracker_first_seen_global() v) s where s.v is not null$q$,
        NULL, 1),
+
       ('refresh_pipeline_health',
        $q$select count(*) from public.refresh_pipeline_health()$q$,
        NULL, 1),
+
+      -- Ajoute le 28/07/2026 : le module Lecture (CONTEXT.md § Lecture).
+      -- Cout d'ajout d'un test au contrat : une ligne. C'etait tout l'objet
+      -- de ce depliage. `source` doit rester 'page_exit' tant que la
+      -- reconstruction engagement_tick n'est pas decidee et annotee.
       ('page_reads',
        $q$select count(*) from public.page_reads(7) where source = 'page_exit'$q$,
        1, NULL)
@@ -4534,6 +4787,7 @@ BEGIN
   DELETE FROM rpc_health WHERE checked_at < now() - interval '90 days';
 END;
 $function$
+
 
 -- ═══ public.seo_pages_overview(date_from timestamp with time zone, date_to timestamp with time zone) ═══
 CREATE OR REPLACE FUNCTION public.seo_pages_overview(date_from timestamp with time zone, date_to timestamp with time zone DEFAULT now())
@@ -5264,3 +5518,4 @@ exception
     return input;
 end;
 $function$
+
