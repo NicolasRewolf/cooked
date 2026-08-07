@@ -123,7 +123,7 @@ pas sur la volatilité de la conversion (recalibrée 17/06).
 timeout MCP. Préférer lire le dernier snapshot :
 `SELECT * FROM cpi_daily WHERE day = (SELECT max(day) FROM cpi_daily)`.
 
-## 5. Les 11 pièges (chacun a déjà coûté une fausse conclusion)
+## 5. Les 15 pièges (chacun a déjà coûté une fausse conclusion)
 
 1. **Mix de canaux** → métriques de lecture sur organique uniquement.
 2. **Position moyenne** → pondérée impressions, mélange des requêtes.
@@ -152,6 +152,11 @@ timeout MCP. Préférer lire le dernier snapshot :
    16-29/06) — le 2,4× ne vaut que page par page sur les pages à enjeu
    local, ne pas l'appliquer globalement. Les visites Cooked font foi pour
    le trafic réel ; GSC fait foi pour impressions/positions.
+   ⚠️⚠️ **Ces deux ratios ont été mesurés AVANT le 27/07/2026**, quand le
+   trafic de la fiche Google vivait encore dans `organic_google` (piège 15) :
+   ils gonflaient donc d'autant. Sur une fenêtre post-27/07, `organic_google`
+   exclut le GMB — le ratio doit être **re-mesuré** avant d'être cité, pas
+   repris tel quel.
 8. **Date de publication Wix trompeuse (antidatable)** (retex 22/06/2026) :
    `firstPublishedDate` (API Wix) et le `<lastmod>` du sitemap peuvent être
    **antidatés** à la main → ils ne reflètent PAS la mise en ligne réelle. Pour
@@ -229,6 +234,20 @@ timeout MCP. Préférer lire le dernier snapshot :
     **0 contact** chacun. Ne jamais utiliser le dwell comme proxy de qualité
     éditoriale ; c'est l'intention transactionnelle du sujet qui discrimine.
     Voir aussi le caveat de mesure au §5 du document CPI.
+15. **Le GMB n'est PLUS de l'organique depuis le 27/07/2026**
+    (`classify_channel` v3). Les clics du Local Pack arrivent sur
+    `/?utm_source=gmb` avec un referrer `google.*` : jusqu'au 27/07 ils étaient
+    comptés `organic_google` — **44,8 %** des entrées « organiques » de la home
+    en étaient. Conséquences dures : (a) toute série `organic_google` qui
+    traverse le 27/07 a une **rupture de définition**, pas une baisse de
+    trafic ; (b) le GMB convertit à **3,68 %** contre **0,57 %** pour le SEO
+    réel — les mélanger écrase le vrai signal SEO ; (c) le CPI a été restaté
+    ce jour-là (home grade S→A). Toujours nommer le canal exact et vérifier de
+    quel côté du 27/07 tombe la fenêtre.
+    Corollaire de mesure : la fiche Google est **quasi invisible sur
+    l'indemnisation** (sonde du 05/08/2026 : ≤75 impressions/12 mois contre
+    ~2 100 sur le pénal) — donc un « le local ne marche pas en indemnisation »
+    lu dans Cooked peut n'être que l'ombre de ce déséquilibre de fiche.
 
 ## 6. Livraison à Nicolas
 

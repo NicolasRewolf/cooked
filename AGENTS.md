@@ -22,7 +22,7 @@ SELECT gsc_last_data_day();
 
 | Besoin | Fichier |
 |---|---|
-| Corps complets des RPC (105) | [supabase/rpcs.sql](supabase/rpcs.sql) |
+| Corps complets des RPC (118 routines) | [supabase/rpcs.sql](supabase/rpcs.sql) |
 | Signatures + vues | [supabase/views.sql](supabase/views.sql) |
 | DDL déploiement | [supabase/migrations/](supabase/migrations/) |
 | Couture d'identité (`identity_stitch` : table, `refresh_identity_stitch(90)`, garde-fou aid 32-hex) | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
@@ -43,15 +43,16 @@ SELECT gsc_last_data_day();
 | `branded_query_vectors.json` | `gsc_is_branded(query)` (Arch #3) |
 | `recruitment_objet_vectors.json` | Filtrage macro `form_submit` (D4) |
 | `rpc_snapshot_meta.json` | Hash + count de `supabase/rpcs.sql` (Arch #5) |
+| `dashboard_rpc_columns.json` | Colonnes RPC dashboard ↔ schémas Zod `rpc-schemas.ts` (Arch #6) |
 
 ## Versions canoniques (repo `main`)
 
 | Composant | Version repo | Déploiement prod |
 |---|---|---|
 | Tracker | `sprint41` (ids auto-réparants) | Wix Custom Code (minify) — déployé 12/07/2026 |
-| Edge `track` | v25 (D4) | `supabase functions deploy track` |
+| Edge `track` | v27 (gate `x-cooked-key` ; v26 = filtre bots à l'ingestion) | `supabase functions deploy track` — v27 déployée (vérifié 05/08/2026) |
 | Edge `form-webhook` | v12 (D4) | `supabase functions deploy form-webhook` |
-| RPC Postgres | 105 fonctions | migrations Supabase |
+| RPC Postgres | 118 routines (116 fonctions + 2 procédures) | migrations Supabase |
 
 **Repo et prod peuvent diverger** tant que Edge / tracker ne sont pas redéployés.
 Toujours vérifier : `props->>'_v'` sur events récents + version commentée en tête

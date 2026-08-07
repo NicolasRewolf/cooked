@@ -65,6 +65,7 @@ Docs : synchro arch 10/07 + rpcs.sql
 | `branded_query_vectors.json` | Arch #3 — `gsc_is_branded` |
 | `recruitment_objet_vectors.json` | D4 — filtrage macro `form_submit` |
 | `rpc_snapshot_meta.json` | Arch #5 — hash de `supabase/rpcs.sql` |
+| `dashboard_rpc_columns.json` | Arch #6 — colonnes RPC dashboard ↔ Zod (`rpc-schemas.ts`) |
 
 ## Contrats CI (ne pas casser)
 
@@ -76,7 +77,7 @@ Docs : synchro arch 10/07 + rpcs.sql
 | `dashboard-contract` | Vitest dashboard (85 tests) |
 | `tracker-test` | Suite jsdom tracker |
 | `edge-shared-helpers` | Deno tests `_shared/` (events_row, track_row, form_row) |
-| `gsc-daily-ingest` / `dfs-weekly-sync` | Crons ingestion (GitHub Actions) |
+| `gsc-daily-ingest` / `dfs-weekly-sync` / `gbp-daily-ingest` | Crons ingestion (GitHub Actions) |
 
 ## Issues
 

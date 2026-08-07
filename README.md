@@ -150,14 +150,15 @@ Navigateur (Wix)          Wix Automations (server-side)
       ↓ same-origin              ↓ webhook signé
   Proxy Velo                     ↓
       ↓ clé injectée côté serveur
-  Edge Function track       Edge Function form-webhook     GSC + DataForSEO
-      ↓                          ↓                          (crons quotidien/hebdo)
+  Edge Function track       Edge Function form-webhook   GSC + DataForSEO + GBP
+      ↓                          ↓                        (crons quotidiens/hebdo)
   ┌─────────────────────── Postgres (Supabase) ───────────────────────┐
   │  events (brut)  →  events_human (sans bots ni bruit)              │
   │       →  identity_stitch (visites recousues, pour l'attribution)  │
   │  gsc_path_daily / gsc_query_daily / gsc_query_page_daily          │
+  │  gbp_daily (fiche Google : appels, itinéraires, vues)             │
   │  snapshots nocturnes · CPI quotidien · alertes horaires           │
-  │  ~105 fonctions SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
+  │  ~118 routines SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
   └───────────────────────────────────────────────────────────────────┘
       ↓
   Claude Code (MCP Supabase) — Nicolas pose des questions, en français
@@ -165,7 +166,7 @@ Navigateur (Wix)          Wix Automations (server-side)
 
 Six briques, aucune exotique : un traceur JavaScript artisanal (testé,
 versionné, minifié sous la limite Wix de 15 000 caractères), deux
-fonctions serveur Deno, une base Postgres managée (Supabase), deux
+fonctions serveur Deno, une base Postgres managée (Supabase), trois
 ingestions planifiées (GitHub Actions), et Claude comme interface.
 Le détail opérationnel — events captés, déploiement, crons, sécurité,
 dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
@@ -187,17 +188,37 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ---
 
-## Où en est le système (12/07/2026)
+## Où en est le système (05/08/2026)
 
 > Cette section est datée par construction : pour l'état le plus frais,
 > c'est le [CHANGELOG.md](CHANGELOG.md) qui fait foi.
 
 **En production depuis le 06/05/2026.** Tracker navigateur **`sprint41`**
-(déployé le 12/07/2026). Edge Functions **`track` v25** et **`form-webhook`
-v12** déployées — prod alignée avec le repo. ~1,05 M d'événements
-bruts (bruit > 28 j purgé chaque semaine), ~2 millions de lignes Search Console
-(16 mois), ~190 pages scorées par le CPI chaque matin, **105 RPC** documentées
-dans `supabase/rpcs.sql`.
+(déployé le 12/07/2026, vérifié J+1). Edge Functions **`track` v27** et
+**`form-webhook` v12** déployées — prod alignée avec le repo (contrôlé le
+05/08/2026 sur le code servi). ~1,05 M d'événements bruts (bruit > 28 j purgé
+chaque semaine), ~2 millions de lignes Search Console (16 mois), 18 mois de
+métriques de la fiche Google, ~190 pages scorées par le CPI chaque matin,
+**118 routines** documentées dans `supabase/rpcs.sql`.
+
+**Fin juillet — trois angles morts fermés.**
+- **Revue d'architecture n°2 (25/07)** : les crawlers ne sont plus écrits du
+  tout (filtre bots *avant* l'INSERT, Edge `track` v26), gate `x-cooked-key` à
+  l'ingestion (v27), attribution unifiée sur la visite recousue — 48 constats
+  dans [docs/audit-architecture-2026-07-25.md](docs/audit-architecture-2026-07-25.md).
+- **La fiche Google devient un canal (27/07)** : `classify_channel` v3 sort les
+  clics de la fiche du canal organique — **44,8 %** des entrées « organiques »
+  de la home en étaient. Elle convertit à **3,68 %** contre **0,57 %** pour le
+  SEO réel : le meilleur canal du site, devant le paid.
+- **Les appels depuis la fiche sont mesurés (28/07)** : table `gbp_daily`,
+  **~162 clics d'appel / 28 j** — l'angle mort pesait l'ordre de grandeur de
+  tout le contact web mesuré. Il n'est plus assumé, il est chiffré.
+
+**29/07 — outillage mathématique.** Chaînes de Markov, graphe de navigation,
+Shapley, inférence causale, STL/Kalman
+([docs/analyse-mathematique-avancee-2026-07-29.md](docs/analyse-mathematique-avancee-2026-07-29.md)) —
+avec ses limites de conclusion écrites noir sur blanc : sur de petits volumes,
+ces méthodes disent moins que ce qu'on croit.
 
 **12/07 — la couture d'identité.** Un bug du tracker faisait tourner les
 identifiants visiteur/session quand le navigateur vidait son storage :
@@ -307,6 +328,7 @@ L'outil CPI reste en prod opérationnelle sans complexification v2.3.
 | Comprendre et utiliser le score CPI | [docs/cpi-cooked-page-index.md](docs/cpi-cooked-page-index.md) |
 | Le dashboard de lecture (articles ressources) | [dashboard/README.md](dashboard/README.md) |
 | Ce qui reste à faire | [docs/ROADMAP.md](docs/ROADMAP.md) (+ [CHANGELOG.md](CHANGELOG.md) pour le plus frais) |
-| Fiabilité des données (audits) | [docs/data-quality-audit-2026-06-10.md](docs/data-quality-audit-2026-06-10.md) |
+| Fiabilité des données (audits) | [docs/audit-fable5-2026-07-02.md](docs/audit-fable5-2026-07-02.md) (plus récent ; historique : [docs/data-quality-audit-2026-06-10.md](docs/data-quality-audit-2026-06-10.md)) |
+| Revue d'architecture (48 constats) | [docs/audit-architecture-2026-07-25.md](docs/audit-architecture-2026-07-25.md) |
 | Chronologie des sprints | [docs/HISTORY-sprints.md](docs/HISTORY-sprints.md) |
 | Règles de l'agent Claude Code (lu automatiquement) | [CLAUDE.md](CLAUDE.md) |

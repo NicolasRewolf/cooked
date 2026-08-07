@@ -98,9 +98,9 @@ _Avoid_ : présenter un dwell médian comme un fait sans sa couverture.
 - **Une seule méthode pour l'attribution à l'entrée : la visite recousue.**
   Tout compteur « attribué / assisté » (colonne du tableau, fiche article,
   **objectif trimestriel**) doit lire la même base.
-  ⚠️ Au 13/07/2026, `dashboard_assisted_quarter` utilise encore la **session
-  brute** (19 vs 38 sur une même fenêtre 28 j) — à migrer vers
-  `identity_stitch` pour respecter cette définition.
+  ✅ Résolu le 25/07/2026 : `dashboard_assisted_quarter` lit désormais
+  `assisted_contacts_by_entry_path` (visite recousue via `identity_stitch`),
+  migration `20260725220100_audit_assisted_contacts_unified`.
 - **« sur la page » et « à l'entrée » ne se somment jamais** et ne partagent
   jamais un libellé nu « contacts ». Toujours qualifier lequel des deux.
 - **Conversion = macro uniquement.** Le booking (micro, intention) n'entre

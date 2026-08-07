@@ -231,7 +231,7 @@ cooked/
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS (référence)
 │   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets 105 RPC (généré, lecture seule)
+│   ├── rpcs.sql                       — corps complets des 118 routines (généré, lecture seule)
 │   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
@@ -459,8 +459,10 @@ ALL RPCs + snapshot read from events_human
 
 **Detection rule** : `anonymous_id` with > 20 pageviews/day AND 0 scroll events = crawler. Catches the nightly Ahrefs audit crawler and similar bots.
 
-**12 pg_cron jobs + 3 GitHub Actions** (état 12/07/2026 ; horaires UTC —
-Paris = UTC+2 l'été) :
+**pg_cron jobs + 4 GitHub Actions planifiés** (état 05/08/2026 ; horaires UTC —
+Paris = UTC+2 l'été). Le décompte pg_cron n'est plus figé ici : il a bougé
+depuis le 12/07 (snapshots `math_*` hebdo, migration `20260728221518`) —
+la source de vérité est `SELECT jobname, schedule FROM cron.job` en prod.
 
 | Job | Schedule (UTC) | What |
 |---|---|---|
@@ -477,6 +479,7 @@ Paris = UTC+2 l'été) :
 | `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — pipeline, double-embed, RPCs, attribution, `gsc_lag` + **`gsc_gap`** (jours manquants), `cpi_drop` (garde `ecart_jours ≤ 8`), `dfs_stale`, `tracker_drift` (grâce 48 h) — les `critical` **poussent sur ntfy** (T-11, topic dans `cooked_config`) |
 | `dashboard-stale-check` | `30 * * * *` | Alerte `dashboard_stale` si snapshot dashboard > 36 h (29/06) |
 | `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
+| `gbp-daily-ingest` | GitHub Actions | Google Business Profile quotidien 05:30 UTC, fenêtre 30 j (lag ~J-4, la queue rembourrée à zéro est coupée par le script) → `gbp_daily`. Notifie ntfy en échec. ⚠️ **Le credential est un ADC utilisateur : Google exige une reauth périodique** — panne silencieuse de 6 jours du 30/07 au 04/08/2026, réparée le 05/08 (`gcloud auth application-default login --scopes=…business.manage,…cloud-platform` puis secret `GBP_CREDENTIALS_B64` re-poussé). **Aucune alerte `gbp_gap` n'existe encore** : jusqu'à sa création, contrôler `max(day)` de `gbp_daily` avant de livrer un chiffre GBP. Parade durable : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`) |
 | `backup-weekly.yml` | GitHub Actions | **Schedule désactivé** (backup externe décliné le 02/07/2026, risque assumé — ne pas re-proposer) — déclenchable manuellement via `workflow_dispatch` uniquement |
 
 ⚠️ **Piège `statement_timeout`** : un `SET statement_timeout` posé *dans*
@@ -572,8 +575,9 @@ supabase functions deploy track --no-verify-jwt
 supabase functions deploy form-webhook --no-verify-jwt
 ```
 
-Versions (25/07/2026, **prod alignée avec le repo**) : **track v26**
-(filtre bots à l'ingestion — taxonomie ua_bot appliquée avant l'INSERT,
+Versions (25/07/2026, **prod alignée avec le repo** — contrôlé le 05/08/2026
+sur le code déployé) : **track v27** (gate `x-cooked-key` à l'ingestion ;
+v26 = filtre bots à l'ingestion — taxonomie ua_bot appliquée avant l'INSERT,
 drops comptés dans `ingest_drops` ; D4 `track_row`), **form-webhook v12**
 (D4 `form_row`) ; tracker Wix
 **`sprint41`** (déployé le 12/07/2026). Modules testables dans
@@ -592,7 +596,7 @@ canonique d'une base fraîche.
 
 | Fichier | Contenu | Régénération |
 |---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 105 fonctions/procédures publiques (régénéré le 12/07/2026) | `python3 scripts/generate_rpcs_sql.py` (`DATABASE_URL`) ; gate CI si migration touche une RPC |
+| `supabase/rpcs.sql` | **Corps complets** des 118 routines publiques — 116 fonctions + 2 procédures (régénéré le 29/07/2026) | `python3 scripts/generate_rpcs_sql.py` (`DATABASE_URL`) ; gate CI si migration touche une RPC |
 | `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
 | `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
 
