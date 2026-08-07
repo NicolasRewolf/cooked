@@ -3,6 +3,102 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-08-05] — Cron GBP réparé + sonde des requêtes de la fiche
+
+### Corrigé
+- **Cron `gbp-daily-ingest` en échec silencieux du 30/07 au 04/08** : le
+  credential ADC utilisateur exigeait une reauth Google (`RefreshError`).
+  Re-login gcloud (scopes `business.manage` **+** `cloud-platform` —
+  obligatoires ensemble), secret `GBP_CREDENTIALS_B64` re-poussé, run vert,
+  trou 29/07→04/08 rebouché par la fenêtre 30 j du script.
+- **À faire** : alerte de fraîcheur **`gbp_gap`** (elle n'existe pas — 6 jours
+  de panne sans signal) ; parade durable à la reauth = client OAuth dédié
+  (voie 2 de `scripts/gbp_ingest.py`).
+
+### Ajouté — mesures (lecture seule, hors base)
+- **Requêtes de recherche de la fiche GBP** (12 mois, endpoint
+  `searchkeywords/impressions/monthly`) : 839 mots-clés, ~18 100 impressions
+  exactes. La fiche est **quasi invisible sur l'indemnisation**
+  (≤75 impressions vs ~2 100 pénal) alors que la demande locale existe
+  (DataForSEO « avocat dommage corporel bordeaux » : 210/mois). Lag de
+  publication ≈ 1 mois → toute ingestion devra être **mensuelle**.
+- **Lecture API de la fiche** : catégories (dont « dommages corporels »),
+  ~43 services et description sont **déjà** orientés indemnisation ; le seul
+  signal encore 100 % pénal est le **nom** de la fiche. Avis : 200, moyenne
+  4,6, 45 mentions pénal / 20 indemnisation → les avis sont disculpés.
+- **API SECIB** : swagger lu (04/08), ticket d'accès envoyé à Septeo (05/08).
+  Pas de champ « origine du dossier » natif ; champs personnalisés
+  `InfoComplementaire` lisibles et écrivables par l'API.
+
+## [2026-07-29] — Framework d'analyse mathématique (PR #91)
+
+### Ajouté
+- `scripts/advanced_math_analytics.py` : chaînes de Markov, graphe de
+  navigation interne, valeurs de Shapley, inférence causale, STL/Kalman.
+- Briques SQL : RPC `math_visit_sequences` / `math_internal_edges` +
+  snapshots `math_*_snapshot` (refresh `math_refresh_snapshots`).
+- Rapport et **limites de conclusion** :
+  `docs/analyse-mathematique-avancee-2026-07-29.md` (lire avant d'invoquer
+  ces méthodes).
+
+### Sécurité
+- `EXECUTE` public révoqué sur les RPC `math_*` (advisors 0028/0029).
+
+## [2026-07-28] — Les appels depuis la fiche Google sont mesurés (B3 clos)
+
+### Ajouté
+- API Google Business Profile approuvée → table **`gbp_daily`** (format long
+  jour × fiche × métrique), backfill 18 mois (4 842 lignes), cron
+  `gbp-daily-ingest.yml` à 05:30 UTC. **~162 clics d'appel / 28 j**, stables
+  sur 18 mois : l'angle mort pesait l'ordre de grandeur de tout le contact
+  web mesuré (208 contacts macro / 28 j).
+- Vue **`cpi_capture_perdue`** : clics perdus face à la courbe CTR du site,
+  **avec la fiabilité du chiffre** (`fiabilite_capture`, `interpretable`).
+  Ne plus lire `cpi_daily.clics_perdus` à la main.
+
+### Pièges documentés
+- L'API rembourre la fin de fenêtre avec des **zéros** tant que Google n'a pas
+  consolidé (lag ~J-4) : un zéro récent n'est pas un vrai zéro.
+- Impressions Maps : **rupture de comptage en 09/2025** sans baisse des
+  actions — changement côté Google, pas un déclin de la fiche.
+- Auth : OAuth **utilisateur** obligatoire (les comptes de service sont
+  refusés, contrairement à GSC).
+
+### Décision
+- Numéro de téléphone traçable sur la fiche : **décliné par Nicolas**.
+
+## [2026-07-27] — `classify_channel` v3 : GMB devient un canal à part entière
+
+### Modifié
+- Les clics venant de la fiche Google (`utm_source=gmb`) sortent de
+  `organic_google` : **44,8 %** des entrées « organiques » de la home en
+  étaient. GMB convertit à **3,68 %** contre **0,57 %** pour le SEO organique
+  réel — meilleur canal du site, devant le paid.
+- **Restatement CPI** : home n_org 305→164, grade S→A, `zv` en baisse.
+  Annotation posée, photo dans `cpi_pre_restatement_20260727` (migration
+  `20260727215805`). ⚠️ Un « avant/après 27/07 » sur la home **n'est pas un
+  decay**.
+
+## [2026-07-25] — Revue d'architecture n°2 (48 constats)
+
+### Modifié
+- Edge `track` **v26** : la taxonomie `ua_bot` est appliquée **avant**
+  l'INSERT (les crawlers ne sont plus écrits ; drops comptés dans
+  `ingest_drops`) — constat n°5 / R2. Puis **v27** : gate `x-cooked-key` à
+  l'ingestion (constat n°3).
+- `dashboard_assisted_quarter` unifié sur la **visite recousue** via
+  `assisted_contacts_by_entry_path` (migration
+  `20260725220100_audit_assisted_contacts_unified`) — l'invariant
+  d'attribution de CONTEXT.md est respecté.
+
+### Ajouté
+- Contrat CI **`contracts/dashboard_rpc_columns.json`** (Arch #6) : colonnes
+  des RPC dashboard ↔ schémas Zod `rpc-schemas.ts`.
+
+### Détail
+- 48 constats et leur avertissement de fiabilité :
+  `docs/audit-architecture-2026-07-25.md`.
+
 ## [2026-07-23] — Norme CPI : Fiabilité S/A/B/C + Opportunité de contact
 
 ### Modifié

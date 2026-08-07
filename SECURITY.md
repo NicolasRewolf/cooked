@@ -10,7 +10,8 @@ Délai de réponse visé : 48 h ouvrées.
 ## Ce qui ne doit jamais entrer dans le repo
 
 - Clés Supabase (`sb_secret_*`, `service_role`, tokens `sbp_*`)
-- Credentials Google Search Console / service accounts JSON
+- Credentials Google Search Console / Business Profile (service accounts JSON,
+  ADC gcloud, `GBP_CREDENTIALS_B64`)
 - Identifiants DataForSEO (`DFS_USERNAME`, `DFS_PASSWORD`)
 - `FORM_WEBHOOK_SECRET`, `ANON_SALT`
 - Fichiers `.env`, `.env.local`, `*credentials*.json`
@@ -26,6 +27,7 @@ Le `.gitignore` et la CI limitent les risques ; en cas de fuite accidentelle :
 | Supabase service | `SUPABASE_SECRET_KEY` (Vercel, GitHub Actions, Edge Functions) |
 | Dashboard allowlist | `DASHBOARD_ALLOWED_EMAILS` (Vercel) |
 | Webhook formulaires | `FORM_WEBHOOK_SECRET` (Supabase Edge + Wix Automation) |
+| GBP OAuth (ADC utilisateur) | `~/.config/gcloud/application_default_credentials.json` (local) ; `GBP_CREDENTIALS_B64` (GitHub Actions) — reauth Google périodique, cf. `scripts/gbp_ingest.py` |
 
 Modèle sans valeurs : [.env.example](.env.example).
 

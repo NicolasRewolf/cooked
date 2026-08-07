@@ -229,7 +229,7 @@ mergés sur `main` :
   ressource 28 j : 16→37) + **`conversion_journeys` v2** recousue (migration
   `20260712203935` ; funnel + content_performance réparés par héritage).
 - **Restatement CPI du 12/07 au soir** (voir avertissement plus bas) ;
-  tracker **`sprint41`** déployé le 12/07 ~22:20 (vérif J+1 le 13/07).
+  tracker **`sprint41`** déployé le 12/07 ~22:20 (vérif J+1 du 13/07 : OK).
 
 ⚠️ **Restatement CPI du 12/07/2026** (couture d'identité, `conversion_journeys`
 v2) : le `cpi_daily` du 12/07 a été restaté — seule la composante conversion
@@ -237,7 +237,29 @@ zv bouge (zc/zr/zl/momentum/gate inchangés page par page), delta moyen
 −0,1 pt, 0 changement de grade, 7 movers ≥15 pts (dont arnaque-en-ligne
 41→100 et /nos-affaires 67→12 qui rend un crédit usurpé). Annotation posée
 dans `annotations`. **Un « avant/après 12/07 » dans cpi_daily n'est PAS un
-decay.** Table d'audit `cpi_pre_restatement_20260712` à supprimer ~19/07/2026.
+decay.**
+
+⚠️ **Restatement CPI du 27/07/2026** (`classify_channel` v3 — GMB) : les clics
+venant de la fiche Google (`utm_source=gmb`) sortent du canal `organic_google`,
+donc du CPI, de `conversion_journeys` et de `seo_to_contact_funnel`. Sur la
+home : n_org 305→164, grade S→A, zv en baisse. Annotation posée dans
+`annotations`, photo dans `cpi_pre_restatement_20260727` (migration
+`20260727215805`). **Un « avant/après 27/07 » sur la home n'est PAS un decay.**
+
+Tables d'audit `cpi_pre_restatement_20260712` (échéance ~19/07) et
+`cpi_pre_restatement_20260727` (~03/08) : suppression **en retard** au
+05/08/2026 — vérifier leur présence en prod et les dropper par une migration
+nommée.
+
+**29/07/2026 — framework d'analyse mathématique (PR #91)** :
+- `scripts/advanced_math_analytics.py` (chaînes de Markov, graphe de navigation
+  interne, Shapley, inférence causale, STL/Kalman) sur deux briques SQL : RPC
+  `math_visit_sequences` / `math_internal_edges` + snapshots `math_*_snapshot`
+  (refresh `math_refresh_snapshots`).
+- EXECUTE public révoqué sur les RPC `math_*` (advisors 0028/0029).
+- Rapport et **limites de conclusion** :
+  `docs/analyse-mathematique-avancee-2026-07-29.md` — à lire avant d'invoquer
+  ces méthodes, elles ne disent pas ce qu'on croit sur de petits volumes.
 
 Cooked sert de remplaçant GA4 : des données comportementales fiables pour
 Nicolas et Me Plouton, et les analyses Cooked × GSC (intent matching,
@@ -269,9 +291,11 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (105, lecture agent) | `supabase/rpcs.sql` |
+| Corps complets des RPC (118 routines au 29/07/2026 — régénéré par `scripts/generate_rpcs_sql.py`) | `supabase/rpcs.sql` |
 | Ce qui reste à faire | `docs/ROADMAP.md` |
-| État de fiabilité des données (audits) | `docs/audit-fable5-2026-07-02.md` (plus récent ; historique : `docs/data-quality-audit-2026-06-10.md`) |
+| État de fiabilité des données (audits) | `docs/audit-fable5-2026-07-02.md` (historique : `docs/data-quality-audit-2026-06-10.md`) |
+| Revue d'architecture (48 constats, 25/07/2026 — lire l'avertissement de fiabilité en tête) | `docs/audit-architecture-2026-07-25.md` |
+| Framework d'analyse mathématique (Markov, Shapley, causal…) | `docs/analyse-mathematique-avancee-2026-07-29.md` |
 | Chronologie des sprints | `docs/HISTORY-sprints.md` |
 | Ambition & vue d'ensemble du système | `README.md` |
 | Architecture détaillée, déploiement, events, dépannage | `docs/OPERATIONS.md` |
@@ -517,16 +541,21 @@ Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
 Paris (première ingestion réelle).
 
-**Versions canoniques (repo `main`, 25/07/2026)** :
+**Versions canoniques (repo `main`, 05/08/2026)** :
 - Tracker : **`sprint41`** (ids auto-réparants — fin de la rotation aid/sid sur
   wipe de storage qui coupait ~22 % des sessions). **DÉPLOYÉ le 12/07/2026
-  ~22:20 par Nicolas** — vérification J+1 le 13/07/2026.
-- Edge `track` : **v26** (25/07/2026 — filtre bots à l'ingestion, audit n°5/R2 :
-  la taxonomie ua_bot est appliquée AVANT l'INSERT, drops comptés dans
-  `ingest_drops` ; v25 = D4 `track_row` + C5 `events_row` ; clamp horloge v23).
+  ~22:20 par Nicolas**, vérifié J+1 le 13/07/2026 (OK).
+- Edge `track` : **v27** (25/07/2026 — gate `x-cooked-key` à l'ingestion,
+  constat n°3 de la revue d'architecture ; v26 = filtre bots à l'ingestion,
+  constat n°5/R2 — la taxonomie ua_bot est appliquée AVANT l'INSERT, drops
+  comptés dans `ingest_drops` ; v25 = D4 `track_row` + C5 `events_row` ;
+  clamp horloge v23). Détail des constats :
+  `docs/audit-architecture-2026-07-25.md`.
 - Edge `form-webhook` : **v12** (D4 `form_row` ; v11 = submissionTime + drop alert).
 
-Prod peut lagger : vérifier la version déployée avant d'annoncer un changement Edge.
+Prod peut lagger : vérifier la version déployée avant d'annoncer un changement
+Edge. Dernier contrôle le 05/08/2026 : `track` **v27 déployée**, prod alignée
+avec le repo.
 
 **Couture d'identité (12/07/2026)** : table `identity_stitch` (sid|aid →
 `visitor_key`, composantes connexes du graphe aid↔sid, cron nocturne 03:40 UTC,
@@ -938,6 +967,31 @@ d'un article à partir de son slug : l'API Wix est la seule référence
   - Auth : **OAuth utilisateur obligatoire**, les APIs Business Profile
     refusent les comptes de service (contrairement à GSC). Local = ADC
     gcloud ; CI = secret `GBP_CREDENTIALS_B64`.
+  - ⚠️ **Fragilité connue — le cron GBP peut mourir en silence.** Le credential
+    ADC utilisateur exige une **reauth Google périodique** : le cron a échoué
+    6 jours d'affilée, du 30/07 au 04/08/2026, sans qu'aucune alerte sonne
+    (`RefreshError: Reauthentication is needed`). Réparé le 05/08 —
+    `gcloud auth application-default login --scopes=…business.manage,…cloud-platform`
+    (les DEUX scopes sont obligatoires, gcloud refuse `business.manage` seul),
+    puis secret `GBP_CREDENTIALS_B64` re-poussé ; la fenêtre 30 j du script a
+    rebouché le trou toute seule. **L'alerte de fraîcheur `gbp_gap` n'existe
+    pas encore** (contrairement à `gsc_gap`) — donc les réflexes de démarrage
+    de session ne détectent PAS un pipeline GBP mort : jusqu'à sa création,
+    vérifier `max(day)` de `gbp_daily` avant de livrer un chiffre GBP. Parade
+    durable à la reauth : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`).
+  - **Requêtes de recherche de la fiche** (sonde du 05/08/2026, endpoint
+    `searchkeywords/impressions/monthly`, 12 mois) : 839 mots-clés,
+    ~18 100 impressions exactes (+ ~11 000 sous seuil — Google masque les
+    petits volumes en `threshold`). La fiche est **quasi invisible sur
+    l'indemnisation** (≤75 impressions vs ~2 100 pénal) alors que la demande
+    locale existe (DFS « avocat dommage corporel bordeaux » : 210/mois).
+    Catégories, ~43 services et description sont **déjà** orientés
+    indemnisation, et les avis aussi (200 avis, 4,6 ; 45 mentions pénal /
+    20 indemnisation) : le seul signal encore 100 % pénal est le **nom** de la
+    fiche (« Avocats en Droit Pénal à Bordeaux ») → renommage = décision
+    Julien/Nicolas, annotation à poser le jour J. **Ne pas toucher la catégorie
+    principale** (saborderait le pénal). Lag de publication ≈ 1 mois → toute
+    ingestion de ces requêtes doit être **mensuelle**, pas quotidienne.
 
   **B3 clos.**
 - **Google Ads : MCP CONNECTÉ** (vérifié le 01/07/2026 — 5 customer IDs
@@ -952,9 +1006,19 @@ d'un article à partir de son slug : l'API Wix est la seule référence
   dans la presse (migration `20260611201942`). À terme : neutralisation des
   pics dans le momentum CPI.
 - **Formulaire Divorce** : champs cachés `cooked_aid`/`cooked_sid` ajoutés
-  par Nicolas le 11/06/2026 — à VÉRIFIER à la première soumission
-  (`props.cooked_aid` non NULL sur un form_submit dont
-  `objet_de_ma_demande` est vide/divorce).
+  par Nicolas le 11/06/2026 — vérification **jamais close** au 05/08/2026
+  (aucune trace dans les docs ni le CHANGELOG). Contrôle à passer :
+  ```sql
+  SELECT to_char(occurred_at AT TIME ZONE 'Europe/Paris', 'DD/MM/YYYY HH24:MI'),
+         props->>'cooked_aid'
+  FROM events_human
+  WHERE name = 'form_submit' AND occurred_at > '2026-06-11'
+    AND props->>'objet_de_ma_demande' ILIKE '%divorce%'
+  ORDER BY occurred_at DESC LIMIT 5;
+  ```
+  Si `cooked_aid` est renseigné : clore la ligne avec la date. Si aucune
+  soumission Divorce n'est arrivée : le dire, plutôt que de laisser une action
+  ouverte sans statut.
 
 ---
 
