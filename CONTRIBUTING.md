@@ -51,7 +51,7 @@ Docs : synchro arch 10/07 + rpcs.sql
 | `supabase/rpcs.sql` | Miroir lecture des corps RPC (généré) |
 | `supabase/functions/` | Edge Functions Deno (`track`, `form-webhook`) |
 | `wix/` | Tracker + proxy Velo (collé manuellement dans Wix) |
-| `scripts/` | Ingest GSC/DFS, contrats CI, outillage |
+| `scripts/` | Ingest GSC/DFS/SECIB, import forms Wix, contrats CI, outillage |
 | `dashboard/` | Sous-app Next.js isolée (Vercel) |
 | `contracts/` | Vecteurs de test partagés (voir tableau ci-dessous) |
 | `docs/` | Documentation approfondie |

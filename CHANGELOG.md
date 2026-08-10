@@ -48,6 +48,23 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
 - Accès **prod** conditionné à la signature du devis SECIB+ (120 €HT/mois,
   engagement 12 mois, devis n° 165256_26085613 du 07/08 — validité 10 jours).
 
+### Rangement post-pivot (audit du soir, migration `rangement_post_pivot_secib`)
+- **Alerte `gbp_gap` créée** (warn > 7 j, critical > 14 j → ntfy) — première
+  levée immédiate : le cron GBP est retombé en panne reauth ADC du 06 au
+  10/08 (5 échecs GitHub Actions silencieux). Reauth = action Nicolas.
+- **Tables `cpi_pre_restatement_20260712` / `_20260727` supprimées**
+  (échéances ~19/07 et ~03/08 dépassées, recul pris).
+- **VACUUM FULL annuel désarmé** : le « one-shot » de l'audit du 26/07 était
+  programmé `0 2 26 7 *` et se serait rejoué chaque 26 juillet avec un lock
+  exclusif de `events`.
+- **19 alertes historiques acquittées** (cpi_drop de contenu résumées à
+  Nicolas, cpi_gap historiques, pipeline_dead transitoire du 01/08).
+- **Audit doc multi-agents : 39 désynchronisations corrigées** (form-webhook
+  v12→v13 dans 4 fichiers, 118→121 routines, ROADMAP resynchronisée,
+  `views.sql` régénéré — il datait du 10/07 et manquait 4 vues dont
+  `events_main`/`pont_prospects_dossiers`, vocabulaire « prospect » scopé
+  dans CONTEXT.md).
+
 ## [2026-08-05] — Cron GBP réparé + sonde des requêtes de la fiche
 
 ### Corrigé

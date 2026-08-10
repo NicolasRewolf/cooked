@@ -22,7 +22,7 @@ SELECT gsc_last_data_day();
 
 | Besoin | Fichier |
 |---|---|
-| Corps complets des RPC (118 routines) | [supabase/rpcs.sql](supabase/rpcs.sql) |
+| Corps complets des RPC (121 routines) | [supabase/rpcs.sql](supabase/rpcs.sql) |
 | Signatures + vues | [supabase/views.sql](supabase/views.sql) |
 | DDL déploiement | [supabase/migrations/](supabase/migrations/) |
 | Couture d'identité (`identity_stitch` : table, `refresh_identity_stitch(90)`, garde-fou aid 32-hex) | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
@@ -51,8 +51,8 @@ SELECT gsc_last_data_day();
 |---|---|---|
 | Tracker | `sprint41` (ids auto-réparants) | Wix Custom Code (minify) — déployé 12/07/2026 |
 | Edge `track` | v27 (gate `x-cooked-key` ; v26 = filtre bots à l'ingestion) | `supabase functions deploy track` — v27 déployée (vérifié 05/08/2026) |
-| Edge `form-webhook` | v12 (D4) | `supabase functions deploy form-webhook` |
-| RPC Postgres | 118 routines (116 fonctions + 2 procédures) | migrations Supabase |
+| Edge `form-webhook` | v13 (Pont SECIB → crm_prospects ; v12 = D4) | `supabase functions deploy form-webhook` — v13 déployée (vérifié 10/08/2026) |
+| RPC Postgres | 121 routines (119 fonctions + 2 procédures) | migrations Supabase |
 
 **Repo et prod peuvent diverger** tant que Edge / tracker ne sont pas redéployés.
 Toujours vérifier : `props->>'_v'` sur events récents + version commentée en tête

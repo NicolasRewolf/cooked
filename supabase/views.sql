@@ -8,14 +8,14 @@
 --
 -- Ce fichier est un INSTANTANÉ LISIBLE de l'état prod (projet
 -- mxycmjkeotrycyneacje) — signatures/vues ; **corps RPC → supabase/rpcs.sql**
--- (régénéré 12/07/2026, 105 fonctions, gate CI Arch #5).
+-- (régénéré 10/08/2026, 121 fonctions, gate CI Arch #5).
 --
 -- Régénérer (MCP Supabase execute_sql, ou psql) : voir les 2 requêtes en bas.
 -- ============================================================================
 
 
 -- ╔══════════════════════════════════════════════════════════════════════════╗
--- ║ VUES (6) — définition complète                                            ║
+-- ║ VUES (11) — définition complète                                           ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
 -- VIEW public.cpi_opportunite_contact
@@ -137,30 +137,105 @@ CREATE OR REPLACE VIEW public.events_human AS
     AND NOT (name = 'cta_anchor_click'::text AND cooked_is_chrome_anchor(props))
     AND NOT ((name = ANY (ARRAY['cta_phone_click'::text, 'cta_booking_click'::text, 'cta_anchor_click'::text, 'click_internal'::text, 'click_outbound'::text]))
       AND (EXISTS ( SELECT 1
-           FROM events d
+           FROM events_main d
           WHERE d.session_id = e.session_id AND d.name = e.name
             AND NOT d.path IS DISTINCT FROM e.path
             AND date_trunc('second'::text, d.occurred_at) = date_trunc('second'::text, e.occurred_at)
             AND NOT (d.props ->> 'anchor'::text) IS DISTINCT FROM (e.props ->> 'anchor'::text)
             AND d.id < e.id)));
 
--- VIEW public.events_no_bots
---   events MINUS bot_fingerprints (1er niveau du filet anti-bot, Sprint 17).
-CREATE OR REPLACE VIEW public.events_no_bots AS
+-- VIEW public.events_main
+--   Périmètre site principal (isolation Outre-mer, 08/07/2026) : events
+--   restreints à jplouton-avocat.fr via cooked_is_main_site.
+CREATE OR REPLACE VIEW public.events_main AS
  SELECT id, anonymous_id, session_id, name, url, path, hostname, title, referrer,
     referrer_hostname, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
     user_agent, device_type, os, browser, viewport_width, viewport_height, country,
     props, occurred_at, received_at
    FROM events e
+  WHERE cooked_is_main_site(hostname, props);
+
+-- VIEW public.events_no_bots
+--   events_main MINUS bot_fingerprints (1er niveau du filet anti-bot,
+--   Sprint 17 ; base events_main depuis l'isolation Outre-mer du 08/07/2026).
+CREATE OR REPLACE VIEW public.events_no_bots AS
+ SELECT id, anonymous_id, session_id, name, url, path, hostname, title, referrer,
+    referrer_hostname, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+    user_agent, device_type, os, browser, viewport_width, viewport_height, country,
+    props, occurred_at, received_at
+   FROM events_main e
   WHERE NOT (EXISTS ( SELECT 1
            FROM bot_fingerprints b
           WHERE b.anonymous_id = e.anonymous_id));
+
+-- VIEW public.events_outremer
+--   Périmètre sous-site outremer.jplouton-avocat.fr (hors CPI et analyses
+--   site principal).
+CREATE OR REPLACE VIEW public.events_outremer AS
+ SELECT id, anonymous_id, session_id, name, url, path, hostname, title, referrer,
+    referrer_hostname, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+    user_agent, device_type, os, browser, viewport_width, viewport_height, country,
+    props, occurred_at, received_at
+   FROM events e
+  WHERE cooked_site_scope(hostname, props) = 'outremer'::text;
+
+-- VIEW public.events_human_outremer
+--   Équivalent events_human pour le sous-site Outre-mer (bots + bruit +
+--   chrome anchors filtrés ; pas de dédup même-seconde).
+CREATE OR REPLACE VIEW public.events_human_outremer AS
+ SELECT id, anonymous_id, session_id, name, url, path, hostname, title, referrer,
+    referrer_hostname, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+    user_agent, device_type, os, browser, viewport_width, viewport_height, country,
+    props, occurred_at, received_at
+   FROM events_outremer e
+  WHERE NOT (EXISTS ( SELECT 1
+           FROM bot_fingerprints b
+          WHERE b.anonymous_id = e.anonymous_id))
+    AND NOT (EXISTS ( SELECT 1
+           FROM noise_sessions n
+          WHERE n.session_id = e.session_id))
+    AND NOT (name = 'cta_anchor_click'::text AND cooked_is_chrome_anchor(props));
 
 -- VIEW public.gsc_path_metrics_28d
 --   Raccourci 28j glissants sur gsc_path_metrics (fenêtre Paris).
 CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
  SELECT path, impressions_total, clicks_total, position_avg, ctr_pct
    FROM gsc_path_metrics(((now() AT TIME ZONE 'Europe/Paris'::text)::date - '28 days'::interval)::date, (now() AT TIME ZONE 'Europe/Paris'::text)::date) gsc_path_metrics(path, impressions_total, clicks_total, position_avg, ctr_pct);
+
+-- VIEW public.pont_prospects_dossiers
+--   Pont SECIB (10/08/2026) : chaque prospect web (crm_prospects) avec son
+--   meilleur dossier SECIB apparié (email norm > tél E.164), statut
+--   converti / client_existant / non_converti, délai jours, facture_total_ht.
+--   PII EN CLAIR — security_invoker : hérite du RLS deny-all (service_role only).
+CREATE OR REPLACE VIEW public.pont_prospects_dossiers AS
+ SELECT p.id AS prospect_id,
+    p.occurred_at AS prospect_le,
+    p.source, p.form_id, p.objet, p.page_source_path,
+    p.cooked_aid, p.cooked_sid,
+    p.nom, p.prenom, p.email, p.telephone,
+    d.env AS secib_env, d.dossier_id, d.code AS dossier_code,
+    d.date_creation AS dossier_cree_le, d.matiere_libelle,
+    d.etat_facturable, d.facture_total_ht,
+        CASE
+            WHEN d.dossier_id IS NULL THEN 'non_converti'::text
+            WHEN d.date_creation >= (p.occurred_at - '7 days'::interval) THEN 'converti'::text
+            ELSE 'client_existant'::text
+        END AS statut,
+        CASE
+            WHEN d.dossier_id IS NOT NULL THEN round(EXTRACT(epoch FROM d.date_creation - p.occurred_at) / 86400.0, 1)
+            ELSE NULL::numeric
+        END AS delai_jours,
+        CASE
+            WHEN p.email_norm IS NOT NULL AND (p.email_norm = ANY (d.client_emails_norm)) THEN 'email'::text
+            WHEN p.tel_norm IS NOT NULL AND (p.tel_norm = ANY (d.client_tels_norm)) THEN 'telephone'::text
+            ELSE NULL::text
+        END AS cle_match
+   FROM crm_prospects p
+     LEFT JOIN LATERAL ( SELECT dd.*
+           FROM secib_dossiers dd
+          WHERE p.email_norm IS NOT NULL AND (p.email_norm = ANY (dd.client_emails_norm)) OR p.tel_norm IS NOT NULL AND (p.tel_norm = ANY (dd.client_tels_norm))
+          ORDER BY (abs(EXTRACT(epoch FROM dd.date_creation - p.occurred_at)))
+         LIMIT 1) d ON true;
 
 
 -- ╔══════════════════════════════════════════════════════════════════════════╗
@@ -177,8 +252,10 @@ CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
 -- cooked_cpi_snapshot() -> void
 -- cpi_compose(zc numeric, zr numeric, zl numeric, zv numeric, mm numeric, gg numeric, exclude_conversion boolean) -> numeric
 -- cooked_is_chrome_anchor(props jsonb) -> boolean
+-- cooked_normalize_email(raw text) -> text  (pont SECIB — clé de matching)
+-- cooked_normalize_phone_fr(raw text) -> text  (pont SECIB — E.164 FR)
 -- cooked_page_daily_series(target_path text, days_back integer, end_date date) -> TABLE(day date, sessions bigint)
--- cooked_page_index(p_days integer) -> TABLE(path text, ptype text, grade text, cpi integer, cpi_raw integer, momentum numeric, momentum_badge text, gate numeric, zc numeric, zr numeric, zl numeric, zv numeric, clics_perdus integer, n_org bigint, couv_gsc_pct integer)
+-- cooked_page_index(p_days integer) -> TABLE(path text, ptype text, grade text, cpi integer, cpi_raw integer, momentum numeric, momentum_badge text, gate numeric, zc numeric, zr numeric, zl numeric, zv numeric, clics_perdus integer, n_org bigint, couv_gsc_pct integer, convertit boolean)
 -- cooked_page_type(p text) -> text
 -- cooked_pages_compare(period_kind text, data_lens text) -> TABLE(path text, sessions_n bigint, sessions_prev bigint, sessions_delta_pct numeric, contacts_n bigint, contacts_prev bigint, contacts_delta_pct numeric)
 -- cooked_pages_snapshot(p_period_kind text, max_rows integer) -> TABLE(path text, cooked_sessions bigint, cooked_contacts bigint, cooked_phone_clicks bigint, cooked_form_submits bigint)
@@ -260,5 +337,5 @@ CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
 --
 -- Pour le CORPS d'une fonction : supabase/rpcs.sql (généré, Arch #5)
 -- ou : SELECT pg_get_functiondef('public.<nom>(<args>)'::regprocedure);
--- Généré le 10/07/2026 — corps RPC : supabase/rpcs.sql (régénéré 12/07/2026, 105 fonctions).
+-- Généré le 10/08/2026 — corps RPC : supabase/rpcs.sql (régénéré 10/08/2026, 121 fonctions).
 -- ============================================================================

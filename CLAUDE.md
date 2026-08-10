@@ -246,17 +246,18 @@ home : n_org 305→164, grade S→A, zv en baisse. Annotation posée dans
 `annotations`, photo dans `cpi_pre_restatement_20260727` (migration
 `20260727215805`). **Un « avant/après 27/07 » sur la home n'est PAS un decay.**
 
-Tables d'audit `cpi_pre_restatement_20260712` (échéance ~19/07) et
-`cpi_pre_restatement_20260727` (~03/08) : suppression **en retard** au
-05/08/2026 — vérifier leur présence en prod et les dropper par une migration
-nommée.
+Tables d'audit `cpi_pre_restatement_20260712` / `_20260727` : **supprimées le
+10/08/2026** (migration `20260810093206_rangement_post_pivot_secib` — qui
+désarme aussi le VACUUM FULL annuel du 26/07 et crée l'alerte `gbp_gap`).
 
 **10/08/2026 — Pont SECIB (PIVOT — PII en clair)** :
 - **Décision produit (Nicolas)** : Cooked rapproche les prospects web des
   dossiers SECIB **en clair** (nom/prénom/email/téléphone) — le hachage a été
   proposé et refusé. But : savoir si chaque prospect entrant a réellement
   ouvert un dossier (puis facturé), par matière et par canal d'acquisition.
-- **Confinement PII** : `crm_prospects` (capture form-webhook v13) +
+- **Confinement PII** : `crm_prospects` (capture form-webhook v13 + backfill
+  historique Wix : 795 prospects 03/2025→08/2026 via `scripts/wix_forms_import.py`,
+  import idempotent) +
   `secib_dossiers` (ingest API SECIB) uniquement — RLS deny-all, service_role
   only. `events`/`events_human`/RPCs analytics restent SANS PII. Ne jamais
   faire transiter ces colonnes dans une vue analytics ou le dashboard sans
@@ -321,7 +322,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (118 routines au 29/07/2026 — régénéré par `scripts/generate_rpcs_sql.py`) | `supabase/rpcs.sql` |
+| Corps complets des RPC (121 routines au 10/08/2026 — régénéré par `scripts/generate_rpcs_sql.py`) | `supabase/rpcs.sql` |
 | Ce qui reste à faire | `docs/ROADMAP.md` |
 | État de fiabilité des données (audits) | `docs/audit-fable5-2026-07-02.md` (historique : `docs/data-quality-audit-2026-06-10.md`) |
 | Revue d'architecture (48 constats, 25/07/2026 — lire l'avertissement de fiabilité en tête) | `docs/audit-architecture-2026-07-25.md` |
@@ -351,6 +352,9 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
   comportement)
 - Le README du repo Cooked
 - Les analyses, graphes, rapports produits depuis Cooked
+- Le pont SECIB (`scripts/secib_ingest.py`, `scripts/wix_forms_import.py`,
+  tables `crm_prospects`/`secib_dossiers`, vue `pont_prospects_dossiers` ;
+  credentials `~/.claude/secib-credentials.json` JAMAIS committés)
 - Les scripts d'outillage (`scripts/minify-tracker.py`,
   `scripts/gsc_ingest.py`, `scripts/gsc_common.py`,
   `npx supabase functions deploy`, etc.)
@@ -447,7 +451,9 @@ Velo proxy (http-functions.js)
 Edge Function /track (Deno)              Edge Function /form-webhook (Deno)
   ├─ hash IP+UA → anonymous_id              ├─ verify token query param (401 if KO)
   ├─ parse UA → device/browser/os           ├─ parse Wix payload (body.data.*)
-  ├─ canonicalPath(path) (Sprint 13 + NFC)    ├─ strip PII (Sprint 30)
+  ├─ canonicalPath(path) (Sprint 13 + NFC)    ├─ strip PII events (Sprint 30)
+  │                                           ├─ INSERT crm_prospects (identité
+  │                                           │   en clair, v13 — RLS deny-all)
   └─ INSERT events                          └─ INSERT events (name=form_submit)
        ↓                                          ↓
 events table (raw)
@@ -571,7 +577,7 @@ Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
 Paris (première ingestion réelle).
 
-**Versions canoniques (repo `main`, 05/08/2026)** :
+**Versions canoniques (repo `main`, 10/08/2026)** :
 - Tracker : **`sprint41`** (ids auto-réparants — fin de la rotation aid/sid sur
   wipe de storage qui coupait ~22 % des sessions). **DÉPLOYÉ le 12/07/2026
   ~22:20 par Nicolas**, vérifié J+1 le 13/07/2026 (OK).
@@ -586,7 +592,8 @@ Paris (première ingestion réelle).
   `form_row` ; v11 = submissionTime + drop alert).
 
 Prod peut lagger : vérifier la version déployée avant d'annoncer un changement
-Edge. Dernier contrôle le 05/08/2026 : `track` **v27 déployée**, prod alignée
+Edge. Dernier contrôle le 10/08/2026 : `track` **v27** + `form-webhook`
+**v13 déployées**, prod alignée
 avec le repo.
 
 **Couture d'identité (12/07/2026)** : table `identity_stitch` (sid|aid →

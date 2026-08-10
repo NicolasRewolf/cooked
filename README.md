@@ -158,7 +158,7 @@ Navigateur (Wix)          Wix Automations (server-side)
   │  gsc_path_daily / gsc_query_daily / gsc_query_page_daily          │
   │  gbp_daily (fiche Google : appels, itinéraires, vues)             │
   │  snapshots nocturnes · CPI quotidien · alertes horaires           │
-  │  ~118 routines SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
+  │  ~121 routines SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
   └───────────────────────────────────────────────────────────────────┘
       ↓
   Claude Code (MCP Supabase) — Nicolas pose des questions, en français
@@ -188,18 +188,21 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ---
 
-## Où en est le système (05/08/2026)
+## Où en est le système (10/08/2026)
 
 > Cette section est datée par construction : pour l'état le plus frais,
 > c'est le [CHANGELOG.md](CHANGELOG.md) qui fait foi.
 
 **En production depuis le 06/05/2026.** Tracker navigateur **`sprint41`**
 (déployé le 12/07/2026, vérifié J+1). Edge Functions **`track` v27** et
-**`form-webhook` v12** déployées — prod alignée avec le repo (contrôlé le
-05/08/2026 sur le code servi). ~1,05 M d'événements bruts (bruit > 28 j purgé
+**`form-webhook` v13** déployées — prod alignée avec le repo (contrôlé le
+10/08/2026 sur le code servi). Depuis le 10/08/2026, le **pont SECIB**
+rapproche les prospects web (796 identités dans `crm_prospects`, PII confinée
+RLS deny-all) des dossiers du cabinet — accès prod SECIB en attente de
+signature. ~1,05 M d'événements bruts (bruit > 28 j purgé
 chaque semaine), ~2 millions de lignes Search Console (16 mois), 18 mois de
 métriques de la fiche Google, ~190 pages scorées par le CPI chaque matin,
-**118 routines** documentées dans `supabase/rpcs.sql`.
+**121 routines** documentées dans `supabase/rpcs.sql`.
 
 **Fin juillet — trois angles morts fermés.**
 - **Revue d'architecture n°2 (25/07)** : les crawlers ne sont plus écrits du

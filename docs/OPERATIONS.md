@@ -112,7 +112,7 @@ Quatre gestes, comportement identique par ailleurs :
 4. **`exposeIds()` rejoué au flush** — les query params
    `cooked_aid`/`cooked_sid` (attribution formulaires) restent posés.
 
-Vérification J+1 prévue le 13/07/2026 (procédure : « Vérifier un
+Vérification J+1 faite le 13/07/2026 — OK (procédure : « Vérifier un
 déploiement tracker (J+1) » plus bas).
 
 ### La couture SQL (répare l'historique)
@@ -231,7 +231,7 @@ cooked/
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS (référence)
 │   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets des 118 routines (généré, lecture seule)
+│   ├── rpcs.sql                       — corps complets des 121 routines (généré, lecture seule)
 │   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
@@ -542,11 +542,12 @@ Un « avant/après » qui enjambe une de ces dates n'est **pas** un signal
 | 02/07/2026 | `classify_channel` v2 — IA détectée aussi par `utm_source` | restatement des canaux (~35 % du canal `organic_ai` récupéré) |
 | 12/07/2026 | CPI — conversion recousue (couture d'identité) | **seule la composante conversion zv bouge** (zc/zr/zl/momentum/gate inchangés) ; delta moyen −0,1 pt ; **0 changement de grade** ; 7 movers ≥ 15 pts (ex. arnaque-en-ligne 41→100, /nos-affaires 67→12) |
 | 12/07/2026 | Contacts assistés « ressource » (dashboard) — attribution sur la visite recousue | **16 → 37** sur 28 j |
+| 27/07/2026 | `classify_channel` v3 — GMB sort d'`organic_google` | home : n_org 305→164, grade S→A ; CPI/journeys/funnel restatés (annotation posée) |
 
-Le restatement du 12/07/2026 est annoté dans la table `annotations` : la
-consulter avant d'interpréter un mouvement dans `cpi_daily`. Table d'audit
-`cpi_pre_restatement_20260712` (comparaison avant/après du 12/07) à
-supprimer ~19/07/2026.
+Les restatements des 12/07 et 27/07/2026 sont annotés dans la table
+`annotations` : la consulter avant d'interpréter un mouvement dans
+`cpi_daily`. Les tables d'audit `cpi_pre_restatement_*` ont été supprimées le
+10/08/2026 (migration `rangement_post_pivot_secib`).
 
 ### Redémarrage après sinistre — briques ajoutées
 
@@ -578,8 +579,9 @@ supabase functions deploy form-webhook --no-verify-jwt
 Versions (25/07/2026, **prod alignée avec le repo** — contrôlé le 05/08/2026
 sur le code déployé) : **track v27** (gate `x-cooked-key` à l'ingestion ;
 v26 = filtre bots à l'ingestion — taxonomie ua_bot appliquée avant l'INSERT,
-drops comptés dans `ingest_drops` ; D4 `track_row`), **form-webhook v12**
-(D4 `form_row`) ; tracker Wix
+drops comptés dans `ingest_drops` ; D4 `track_row`), **form-webhook v13**
+(10/08/2026 — Pont SECIB : identité prospect en clair → `crm_prospects` ;
+v12 = D4 `form_row`) ; tracker Wix
 **`sprint41`** (déployé le 12/07/2026). Modules testables dans
 `supabase/functions/_shared/` : `events_row`, `track_row`, `form_row`
 (+ tests Deno, CI `edge-shared-helpers`).
@@ -596,7 +598,7 @@ canonique d'une base fraîche.
 
 | Fichier | Contenu | Régénération |
 |---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 118 routines publiques — 116 fonctions + 2 procédures (régénéré le 29/07/2026) | `python3 scripts/generate_rpcs_sql.py` (`DATABASE_URL`) ; gate CI si migration touche une RPC |
+| `supabase/rpcs.sql` | **Corps complets** des 121 routines publiques — 119 fonctions + 2 procédures (régénéré le 10/08/2026) | `python3 scripts/generate_rpcs_sql.py` (`DATABASE_URL`) ; gate CI si migration touche une RPC |
 | `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
 | `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
 
@@ -647,7 +649,7 @@ Version courante : **`sprint41`** (déployé le 12/07/2026 ~22:20).
 ### Vérifier un déploiement tracker (J+1)
 
 Le lendemain d'un déploiement tracker, quatre contrôles (réflexe posé pour
-`sprint41`, vérification prévue le 13/07/2026) :
+`sprint41`, vérification J+1 du 13/07/2026 : OK) :
 
 1. **Version** — les events du jour portent `props->>'_v'` = nouvelle
    version (requête ci-dessus, fenêtre élargie à 24 h).

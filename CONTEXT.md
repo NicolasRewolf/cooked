@@ -17,8 +17,10 @@ comptant comme macro). Un seul concept, deux mots par convention :
 **« conversion »** est le terme technique (code, specs, RPC) ; **« contact »**
 est le mot **affiché** dans l'UI (plus lisible pour Me Plouton). = la
 macro-conversion de `CLAUDE.md`.
-_Avoid_ : « lead », « prospect », « conversion » comme libellé d'écran,
-« contact » dans le code.
+_Avoid_ : « lead », « conversion » comme libellé d'écran, « contact » dans
+le code. « **Prospect** » a un sens précis depuis le 10/08/2026 : une row de
+`crm_prospects` (identité issue d'un formulaire web, pont SECIB) — ne pas
+l'employer pour une conversion web ordinaire.
 
 **Intention** (micro) :
 Un clic « prendre RDV » (`cta_booking_click`) qui ne se matérialise pas.
