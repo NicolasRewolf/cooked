@@ -28,7 +28,15 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
 - `scripts/secib_ingest.py` (probe/ingest) : dossiers SECIB + identité premier
   client + facturation par dossier via `ExportComptable/ExportFinancier`
   (seul endroit où le lien facture→dossier existe : `DossierCode` +
-  `DossierMatiereId`). Validé sur le cabinet bac à sable (49 dossiers).
+  `DossierMatiereId`). Validé sur le cabinet bac à sable (49 dossiers,
+  chargés en base `env='test'`).
+- **Backfill historique** : `scripts/wix_forms_import.py` + migration
+  `20260810085356_crm_prospects_utm_columns` — les **795 soumissions** de
+  l'export Wix (03/2025 → 08/2026) sont dans `crm_prospects`, 100 % avec
+  email ET téléphone normalisables, 104 avec `cooked_aid` (attribution
+  canal), 438 avec `utm_source`. Import idempotent (empreinte
+  `wiximport-<sha1>`, INSERT only) — rejouable sur un export plus frais.
+  Le pont couvre donc tout l'historique dès la connexion prod SECIB.
 
 ### Étape 0 API SECIB (validée le 10/08/2026 sur credentials de test)
 - Token client_credentials OK ; `Dossier/Get` en **POST** (le GET renvoie 400) ;
