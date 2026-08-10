@@ -256,7 +256,7 @@ begin
       'gbp_daily est vide — ingestion GBP jamais passée ?'::text;
     return;
   end if;
-  v_age := (now() at time zone 'Europe/Paris')::date - v_last;
+  v_age := public.paris_today() - v_last;
   if v_age > 14 then
     return query select 'gbp_gap'::text, 'critical'::text,
       format('gbp_daily : dernier jour %s (J-%s) — cron GitHub gbp-daily-ingest mort ? Reauth ADC probable (voir scripts/gbp_ingest.py).',
