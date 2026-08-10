@@ -324,6 +324,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
 | Corps complets des RPC (121 routines au 10/08/2026 — régénéré par `scripts/generate_rpcs_sql.py`) | `supabase/rpcs.sql` |
 | Ce qui reste à faire | `docs/ROADMAP.md` |
+| RGPD du pont SECIB (textes à publier, registre, arbitrages ouverts) | `docs/rgpd-pont-secib.md` |
 | État de fiabilité des données (audits) | `docs/audit-fable5-2026-07-02.md` (historique : `docs/data-quality-audit-2026-06-10.md`) |
 | Revue d'architecture (48 constats, 25/07/2026 — lire l'avertissement de fiabilité en tête) | `docs/audit-architecture-2026-07-25.md` |
 | Framework d'analyse mathématique (Markov, Shapley, causal…) | `docs/analyse-mathematique-avancee-2026-07-29.md` |
