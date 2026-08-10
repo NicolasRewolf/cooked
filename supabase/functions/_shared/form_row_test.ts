@@ -12,7 +12,10 @@ import vectors from "../../../contracts/recruitment_objet_vectors.json" with {
 };
 import {
   buildFormSubmitRow,
+  buildProspectRow,
+  classifyIdentityKey,
   extractObjetDeMaDemande,
+  extractProspectIdentity,
   isRecruitmentObjet,
   resolvePageSource,
   stripPii,
@@ -360,4 +363,140 @@ Deno.test("buildFormSubmitRow — cooked_aid/sid invalides = null", () => {
   );
   assertEquals(row.props.cooked_aid, null);
   assertEquals(row.props.cooked_sid, null);
+});
+
+// ------------------------------------------------- v13 — Pont SECIB (identité)
+
+Deno.test("classifyIdentityKey — slots de base, accents et préfixe field:", () => {
+  assertEquals(classifyIdentityKey("field:e_mail"), "email");
+  assertEquals(classifyIdentityKey("field:prenom"), "prenom");
+  assertEquals(classifyIdentityKey("Prénom"), "prenom");
+  assertEquals(classifyIdentityKey("field:nom"), "nom");
+  assertEquals(classifyIdentityKey("field:telephone"), "telephone");
+  assertEquals(classifyIdentityKey("Téléphone portable"), "telephone");
+  assertEquals(classifyIdentityKey("first_name"), "prenom");
+  assertEquals(classifyIdentityKey("last_name"), "nom");
+});
+
+Deno.test("classifyIdentityKey — clés à ignorer (jamais un slot identité)", () => {
+  assertEquals(classifyIdentityKey("field:objet_de_ma_demande"), null);
+  assertEquals(classifyIdentityKey("field:cooked_aid"), null);
+  assertEquals(classifyIdentityKey("field:page_source"), null);
+  assertEquals(classifyIdentityKey("field:message"), null);
+  assertEquals(classifyIdentityKey("field:nom_de_l_entreprise"), null);
+  assertEquals(classifyIdentityKey("formId"), null);
+  assertEquals(classifyIdentityKey("submissionTime"), null);
+});
+
+Deno.test("extractProspectIdentity — champs field:* du payload Wix", () => {
+  const ident = extractProspectIdentity({
+    "field:nom": "Dupont",
+    "field:prenom": "Marie",
+    "field:e_mail": "marie.dupont@example.com",
+    "field:telephone": "06 12 34 56 78",
+    "field:objet_de_ma_demande": "Divorce",
+    "field:cooked_aid": "aid_12345678",
+  });
+  assertEquals(ident.nom, "Dupont");
+  assertEquals(ident.prenom, "Marie");
+  assertEquals(ident.email, "marie.dupont@example.com");
+  assertEquals(ident.telephone, "06 12 34 56 78");
+  assert(ident.fieldsKeys.includes("field:nom"));
+  assert(ident.fieldsKeys.includes("field:cooked_aid"));
+});
+
+Deno.test("extractProspectIdentity — garde-fous de valeurs", () => {
+  const ident = extractProspectIdentity({
+    "field:e_mail": "pas-un-email",       // sans @ → rejeté
+    "field:telephone": "12",              // trop court → rejeté
+    "field:nom": "aussi@un.email",        // email recopié dans nom → rejeté
+    "field:prenom": "  ",                 // vide → rejeté
+  });
+  assertEquals(ident.email, null);
+  assertEquals(ident.telephone, null);
+  assertEquals(ident.nom, null);
+  assertEquals(ident.prenom, null);
+});
+
+Deno.test("extractProspectIdentity — fallback submissions[] par label", () => {
+  const ident = extractProspectIdentity({
+    submissions: [
+      { label: "Nom", value: "Martin" },
+      { label: "E-mail", value: "j.martin@example.org" },
+      { label: "Objet de ma demande", value: "Indemnisation" },
+    ],
+  });
+  assertEquals(ident.nom, "Martin");
+  assertEquals(ident.email, "j.martin@example.org");
+  assertEquals(ident.prenom, null);
+});
+
+Deno.test("extractProspectIdentity — fallback contact Wix", () => {
+  const ident = extractProspectIdentity({
+    contact: {
+      name: { first: "Paul", last: "Durand" },
+      email: "p.durand@example.net",
+      phone: "+33 7 98 76 54 32",
+    },
+  });
+  assertEquals(ident.prenom, "Paul");
+  assertEquals(ident.nom, "Durand");
+  assertEquals(ident.email, "p.durand@example.net");
+  assertEquals(ident.telephone, "+33 7 98 76 54 32");
+});
+
+Deno.test("buildProspectRow — row complète, métadonnées héritées de la build", () => {
+  const body = {
+    data: {
+      submissionId: "sub-pont-1",
+      submissionTime: "2026-08-10T10:00:00.000Z",
+      "field:page_source": "/honoraires-rendez-vous",
+      "field:objet_de_ma_demande": "Divorce",
+      "field:cooked_aid": "aid_12345678",
+      "field:nom": "Dupont",
+      "field:e_mail": "marie.dupont@example.com",
+    },
+  };
+  const build = buildFormSubmitRow(body, OPTS);
+  const prospect = buildProspectRow(body, build);
+  assert(prospect !== null);
+  assertEquals(prospect!.wix_submission_id, "sub-pont-1");
+  assertEquals(prospect!.occurred_at, "2026-08-10T10:00:00.000Z");
+  assertEquals(prospect!.objet, "Divorce");
+  assertEquals(prospect!.page_source_path, "/honoraires-rendez-vous");
+  assertEquals(prospect!.cooked_aid, "aid_12345678");
+  assertEquals(prospect!.nom, "Dupont");
+  assertEquals(prospect!.email, "marie.dupont@example.com");
+  assertEquals(prospect!.source, "form");
+});
+
+Deno.test("buildProspectRow — null quand aucune identité (rien à rapprocher)", () => {
+  const body = {
+    data: {
+      submissionId: "sub-vide",
+      "field:objet_de_ma_demande": "Autre",
+    },
+  };
+  const build = buildFormSubmitRow(body, OPTS);
+  assertEquals(buildProspectRow(body, build), null);
+});
+
+Deno.test("buildProspectRow — la row events reste sans PII (invariant v13)", () => {
+  const body = {
+    data: {
+      submissionId: "sub-pii-guard",
+      "field:nom": "Dupont",
+      "field:e_mail": "marie.dupont@example.com",
+      "field:telephone": "0612345678",
+    },
+  };
+  const { row } = buildFormSubmitRow(body, OPTS);
+  const serialized = JSON.stringify(row);
+  assert(!serialized.includes("Dupont"));
+  assert(!serialized.includes("marie.dupont@example.com"));
+  assert(!serialized.includes("0612345678"));
+});
+
+Deno.test("classifyIdentityKey — « nombre de » ne pollue pas le slot nom", () => {
+  assertEquals(classifyIdentityKey("field:nombre_de_personnes"), null);
 });
