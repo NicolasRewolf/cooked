@@ -3,6 +3,43 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-08-10] — Pont SECIB : fondations (PIVOT — PII en clair)
+
+### Décision produit
+- **Cooked stocke désormais EN CLAIR nom/prénom/email/téléphone des prospects
+  web** pour les rapprocher des dossiers SECIB réellement ouverts/facturés
+  (décision Nicolas du 10/08/2026 ; le hachage a été proposé et refusé).
+  La PII est confinée à `crm_prospects` + `secib_dossiers` (RLS deny-all,
+  service_role uniquement) — `events`/`events_human` et toutes les RPCs
+  analytics restent sans PII. **Registre RGPD + politique de confidentialité
+  du site à mettre à jour (action Nicolas).**
+
+### Ajouté
+- Migration `20260810082433_secib_pont_fondations` : tables `crm_prospects`
+  (capture web) et `secib_dossiers` (miroir dossiers, colonne `env`
+  test/prod), fonctions `cooked_normalize_email` / `cooked_normalize_phone_fr`
+  (E.164 FR), vue **`pont_prospects_dossiers`** (matching email > téléphone,
+  statut converti / client_existant / non_converti, délai en jours).
+- **Edge `form-webhook` v13** : extraction heuristique de l'identité prospect
+  (clés `field:*`, fallback `submissions[]`, fallback contact Wix) →
+  `crm_prospects`, AVANT l'insert events, jamais bloquante. Le texte libre
+  (message) est exclu volontairement. Tests deno ajoutés (dont l'invariant
+  « la row events reste sans PII »).
+- `scripts/secib_ingest.py` (probe/ingest) : dossiers SECIB + identité premier
+  client + facturation par dossier via `ExportComptable/ExportFinancier`
+  (seul endroit où le lien facture→dossier existe : `DossierCode` +
+  `DossierMatiereId`). Validé sur le cabinet bac à sable (49 dossiers).
+
+### Étape 0 API SECIB (validée le 10/08/2026 sur credentials de test)
+- Token client_credentials OK ; `Dossier/Get` en **POST** (le GET renvoie 400) ;
+  le `PremierClient.Personne` inline contient nom/prénom/email/téléphones.
+- **Rectificatif du 05/08** : les `InfoComplementaire` sont écrivables par
+  l'API (`SaveOrUpdateListInfoComplementaire`) mais **PAS lisibles** dans ce
+  swagger — la question est posée à Septeo. Le pont par identité (ce jalon)
+  n'en dépend pas.
+- Accès **prod** conditionné à la signature du devis SECIB+ (120 €HT/mois,
+  engagement 12 mois, devis n° 165256_26085613 du 07/08 — validité 10 jours).
+
 ## [2026-08-05] — Cron GBP réparé + sonde des requêtes de la fiche
 
 ### Corrigé

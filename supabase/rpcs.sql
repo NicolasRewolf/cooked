@@ -7,7 +7,7 @@
 -- Ce fichier = instantané lisible pour humains et agents (Arch #5, 10/07/2026).
 --
 -- Régénérer : python3 scripts/generate_rpcs_sql.py  (DATABASE_URL requis)
--- Généré le 29/07/2026 — projet mxycmjkeotrycyneacje.
+-- Généré le 10/08/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
 -- ═══ public.alert_rule_cpi_drop() ═══
@@ -1004,6 +1004,34 @@ CREATE OR REPLACE FUNCTION public.cooked_is_spam_referrer(p_hostname text)
 AS $function$
   SELECT p_hostname IS NOT NULL
     AND p_hostname IN ('m.baidu.com', 'baidu.com');
+$function$
+
+
+-- ═══ public.cooked_normalize_email(raw text) ═══
+CREATE OR REPLACE FUNCTION public.cooked_normalize_email(raw text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$
+  select nullif(lower(regexp_replace(coalesce(raw, ''), '\s', '', 'g')), '')
+$function$
+
+
+-- ═══ public.cooked_normalize_phone_fr(raw text) ═══
+CREATE OR REPLACE FUNCTION public.cooked_normalize_phone_fr(raw text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$
+  select case
+    when d = '' then null
+    when d like '0033%' and length(d) = 13 then '+33' || substr(d, 5)
+    when d like '33%'   and length(d) = 11 then '+' || d
+    when d like '0%'    and length(d) = 10 then '+33' || substr(d, 2)
+    when length(d) between 8 and 15 then '+' || d
+    else null
+  end
+  from (select regexp_replace(coalesce(raw, ''), '[^0-9]', '', 'g') as d) t
 $function$
 
 

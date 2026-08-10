@@ -251,6 +251,36 @@ Tables d'audit `cpi_pre_restatement_20260712` (échéance ~19/07) et
 05/08/2026 — vérifier leur présence en prod et les dropper par une migration
 nommée.
 
+**10/08/2026 — Pont SECIB (PIVOT — PII en clair)** :
+- **Décision produit (Nicolas)** : Cooked rapproche les prospects web des
+  dossiers SECIB **en clair** (nom/prénom/email/téléphone) — le hachage a été
+  proposé et refusé. But : savoir si chaque prospect entrant a réellement
+  ouvert un dossier (puis facturé), par matière et par canal d'acquisition.
+- **Confinement PII** : `crm_prospects` (capture form-webhook v13) +
+  `secib_dossiers` (ingest API SECIB) uniquement — RLS deny-all, service_role
+  only. `events`/`events_human`/RPCs analytics restent SANS PII. Ne jamais
+  faire transiter ces colonnes dans une vue analytics ou le dashboard sans
+  décision explicite. Le texte libre des formulaires (message) reste exclu.
+- **Lecture du pont** : vue `pont_prospects_dossiers` (email norm > tél E.164,
+  statut converti / client_existant / non_converti, délai jours,
+  `facture_total_ht`). Matching SQL via `cooked_normalize_email` /
+  `cooked_normalize_phone_fr` — MIROIR STRICT dans `scripts/secib_ingest.py`.
+- **API SECIB (étape 0 validée 10/08 sur bac à sable)** : token
+  client_credentials (`~/.claude/secib-credentials.json`, JAMAIS committé) ;
+  `Dossier/Get` en **POST** body `FiltreDossierApiDto` (le GET → 400) ;
+  pagination `range=a-b` max 50 ; dates naïves = heure Paris ; lien
+  facture→dossier UNIQUEMENT via `ExportComptable/ExportFinancier`
+  (`DossierCode`, `DossierMatiereId`). `InfoComplementaire` : écrivable par
+  l'API mais PAS lisible (question posée à Septeo) — le pont n'en dépend pas.
+- **Prod en attente** : GUID reçu = cabinet de démo Septeo. Accès au cabinet
+  Plouton réel conditionné à la **signature du devis SECIB+** (120 €HT/mois,
+  12 mois min, devis du 07/08 valable ~10 j). Après signature : swap des
+  credentials, `secib_ingest.py ingest --secib-env prod`, cron GitHub Actions
+  à créer (patron gsc/gbp).
+- **RGPD (action Nicolas, engagée)** : registre des traitements + politique de
+  confidentialité du site à mettre à jour ; durée de conservation à fixer ;
+  secret professionnel → périmètre validé avec Julien.
+
 **29/07/2026 — framework d'analyse mathématique (PR #91)** :
 - `scripts/advanced_math_analytics.py` (chaînes de Markov, graphe de navigation
   interne, Shapley, inférence causale, STL/Kalman) sur deux briques SQL : RPC
@@ -551,7 +581,9 @@ Paris (première ingestion réelle).
   comptés dans `ingest_drops` ; v25 = D4 `track_row` + C5 `events_row` ;
   clamp horloge v23). Détail des constats :
   `docs/audit-architecture-2026-07-25.md`.
-- Edge `form-webhook` : **v12** (D4 `form_row` ; v11 = submissionTime + drop alert).
+- Edge `form-webhook` : **v13** (10/08/2026 — Pont SECIB : identité prospect
+  en clair → `crm_prospects`, jamais bloquant pour l'event ; v12 = D4
+  `form_row` ; v11 = submissionTime + drop alert).
 
 Prod peut lagger : vérifier la version déployée avant d'annoncer un changement
 Edge. Dernier contrôle le 05/08/2026 : `track` **v27 déployée**, prod alignée
