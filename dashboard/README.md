@@ -27,13 +27,14 @@ src/
   app/                   / · /expertises · /seo · /article/[slug] · /login · /auth/{callback,signout}
 ```
 
-**Tests** : `npm test` — 85 tests vitest (view-models, chart-geometry, metric-columns, RPC schemas…).
+**Tests** : `npm test` — 88 tests vitest (view-models, chart-geometry, metric-columns, RPC schemas…).
 
 ## Données (couche serveur, source de vérité)
-Le dashboard consomme **14 RPC** `service_role` `dashboard_*` (15 exposées en lecture — corps
+Le dashboard consomme **15 RPC** `service_role` `dashboard_*` (16 exposées en lecture — corps
 complets dans `../supabase/rpcs.sql`) qui figent les leçons de mesure.
 
-**Appelées par `src/data/dashboard.ts`** (12) :
+**Appelées par `src/data/dashboard.ts`** (13) :
+- `dashboard_honoraires_funnel(period_kind)` — tunnel intention → formulaire sur /honoraires-rendez-vous.
 - `dashboard_resources_overview(period_kind, max_rows)` — 1 ligne / article ressource.
 - `dashboard_resources_kpis(period_kind)` — KPI d'en-tête N vs N-1.
 - `dashboard_resources_assisted(period_kind)` — contacts assistés par article (voir ci-dessous).

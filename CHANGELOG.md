@@ -28,7 +28,15 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
 - `scripts/secib_ingest.py` (probe/ingest) : dossiers SECIB + identité premier
   client + facturation par dossier via `ExportComptable/ExportFinancier`
   (seul endroit où le lien facture→dossier existe : `DossierCode` +
-  `DossierMatiereId`). Validé sur le cabinet bac à sable (49 dossiers).
+  `DossierMatiereId`). Validé sur le cabinet bac à sable (49 dossiers,
+  chargés en base `env='test'`).
+- **Backfill historique** : `scripts/wix_forms_import.py` + migration
+  `20260810085356_crm_prospects_utm_columns` — les **795 soumissions** de
+  l'export Wix (03/2025 → 08/2026) sont dans `crm_prospects`, 100 % avec
+  email ET téléphone normalisables, 104 avec `cooked_aid` (attribution
+  canal), 438 avec `utm_source`. Import idempotent (empreinte
+  `wiximport-<sha1>`, INSERT only) — rejouable sur un export plus frais.
+  Le pont couvre donc tout l'historique dès la connexion prod SECIB.
 
 ### Étape 0 API SECIB (validée le 10/08/2026 sur credentials de test)
 - Token client_credentials OK ; `Dossier/Get` en **POST** (le GET renvoie 400) ;
@@ -39,6 +47,23 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
   n'en dépend pas.
 - Accès **prod** conditionné à la signature du devis SECIB+ (120 €HT/mois,
   engagement 12 mois, devis n° 165256_26085613 du 07/08 — validité 10 jours).
+
+### Rangement post-pivot (audit du soir, migration `rangement_post_pivot_secib`)
+- **Alerte `gbp_gap` créée** (warn > 7 j, critical > 14 j → ntfy) — première
+  levée immédiate : le cron GBP est retombé en panne reauth ADC du 06 au
+  10/08 (5 échecs GitHub Actions silencieux). Reauth = action Nicolas.
+- **Tables `cpi_pre_restatement_20260712` / `_20260727` supprimées**
+  (échéances ~19/07 et ~03/08 dépassées, recul pris).
+- **VACUUM FULL annuel désarmé** : le « one-shot » de l'audit du 26/07 était
+  programmé `0 2 26 7 *` et se serait rejoué chaque 26 juillet avec un lock
+  exclusif de `events`.
+- **19 alertes historiques acquittées** (cpi_drop de contenu résumées à
+  Nicolas, cpi_gap historiques, pipeline_dead transitoire du 01/08).
+- **Audit doc multi-agents : 39 désynchronisations corrigées** (form-webhook
+  v12→v13 dans 4 fichiers, 118→121 routines, ROADMAP resynchronisée,
+  `views.sql` régénéré — il datait du 10/07 et manquait 4 vues dont
+  `events_main`/`pont_prospects_dossiers`, vocabulaire « prospect » scopé
+  dans CONTEXT.md).
 
 ## [2026-08-05] — Cron GBP réparé + sonde des requêtes de la fiche
 

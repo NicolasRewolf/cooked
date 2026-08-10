@@ -34,16 +34,17 @@ docs/audits. Les sprints non listés n'ont pas laissé de trace durable.
 | 28/07 | **appels depuis la fiche mesurés** | API Google Business Profile approuvée → table `gbp_daily` (backfill 18 mois, 4 842 lignes), cron `gbp-daily-ingest` 05:30 UTC : **~162 clics d'appel/28 j**, l'angle mort B3 est fermé. Vue `cpi_capture_perdue` (clics perdus + fiabilité du chiffre). Numéro traçable sur la fiche **décliné** par Nicolas |
 | 29-31/07 | **framework mathématique** | PR #91 : `scripts/advanced_math_analytics.py` (Markov, graphe de navigation, Shapley, inférence causale, STL/Kalman) sur les RPC `math_visit_sequences` / `math_internal_edges` + snapshots `math_*_snapshot` ; EXECUTE public révoqué (advisors 0028/0029). Limites de conclusion : docs/analyse-mathematique-avancee-2026-07-29.md |
 | 30/07→05/08 | **incident cron GBP** | Le cron GBP échoue **en silence** 6 jours (reauth Google exigée sur le credential ADC utilisateur) — aucune alerte, `gbp_gap` n'existe pas. Réparé le 05/08 (re-login gcloud, secret `GBP_CREDENTIALS_B64` re-poussé, trou rebouché par la fenêtre 30 j). Sonde **search keywords** de la fiche : quasi invisible sur l'indemnisation (≤75 impressions/12 mois vs ~2 100 pénal) → levier = le nom de la fiche. Swagger **API SECIB** lu, ticket d'accès envoyé à Septeo |
+| 10/08 | **pont SECIB (pivot PII)** | Décision produit : rapprochement prospects web ↔ dossiers SECIB **en clair**. Livré le jour même (PR #93) : `crm_prospects` + `secib_dossiers` (RLS deny-all) + vue `pont_prospects_dossiers`, **form-webhook v13** déployé (extraction identité vérifiée sur un form réel), backfill 795 prospects Wix (03/2025→08/2026), `secib_ingest.py` validé sur le bac à sable Septeo. Prod SECIB = signature devis SECIB+ (120 €HT/mois). Rangement : drop `cpi_pre_restatement_*`, VACUUM FULL annuel désarmé, alerte `gbp_gap` créée |
 
 ## Constantes du projet
 
 - Projet Supabase : `mxycmjkeotrycyneacje` — site : `https://www.jplouton-avocat.fr`
 - Tracker navigateur : **`sprint41`** (déployé le 12/07/2026 ~22:20 — ids auto-réparants)
 - Edge Functions : `track` **v27** (25/07/2026 — gate `x-cooked-key` ; v26 = filtre
-  bots à l'ingestion), `form-webhook` **v12** — prod alignée avec le repo
-  (vérifié le 05/08/2026 sur le code déployé)
-- **118 routines** publiées (116 fonctions + 2 procédures) — miroir lecture
-  `supabase/rpcs.sql` (régénéré 29/07/2026)
+  bots à l'ingestion), `form-webhook` **v13** (10/08/2026 — Pont SECIB) —
+  prod alignée avec le repo (vérifié le 10/08/2026 sur le code déployé)
+- **121 routines** publiées (119 fonctions + 2 procédures) — miroir lecture
+  `supabase/rpcs.sql` (régénéré 10/08/2026)
 - pg_cron (à recompter en prod : `SELECT jobname FROM cron.job`) + **10 workflows**
   GitHub Actions (cf. docs/OPERATIONS.md) ; GSC ingéré à 06:00 UTC, fenêtre
   `--months 2`, lag J-2/J-3 ; GBP à 05:30 UTC, lag ~J-4
