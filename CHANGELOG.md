@@ -3,6 +3,44 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-08-11] — Dashboard : lifting UI (tokens, chrome de tableau collant)
+
+Reprise de l'**architecture** de [beautiful-ui](https://beautiful-ui-five.vercel.app/),
+pas de son esthétique. Identité Cooked inchangée : angles vifs, orange rewolf
+`#FF4F04`, IBM Plex, thème clair. Aucune donnée, RPC ni migration touchée.
+
+### Modifié
+- **41 couleurs en dur → 0.** Elles étaient disséminées dans 14 composants
+  (`#45423c` seul revenait 14 fois) : le système de tokens fuyait et une
+  retouche de palette demandait 14 éditions. `#45423c` devient
+  `--color-ink-2` (l'encre des valeurs de tableau) ; 5 gris quasi identiques
+  (`#efefed #f1f1ef #f2f2f0 #eeeeec #ececea`) fusionnent en `line-soft` /
+  `field` / `line`. Rendu inchangé au pixel — c'est une déduplication.
+- `globals.css` : surfaces en couches (paper/panel/inset/hover/field), filets
+  gradués, sémantique doublée d'une teinte (`up`/`down`/`warn`/`info` +
+  `-tint`), élévation par anneau (`shadow-overlay`, `shadow-sticky`).
+  Token mort `--color-zebra` retiré.
+- **`SortableTable` : en-tête, 1re colonne et pied collants.** Sur 51 articles
+  × `min-width: 1160`, on perdait le nom de l'article au défilement horizontal
+  et le nom des colonnes dès la ligne ~15.
+- Le popover `Info` passe par un **portail** : depuis que les `th` sont
+  `sticky` avec z-index, ils ouvrent un contexte d'empilement et un `fixed`
+  resté dedans passerait sous la colonne figée.
+- Filtre santé : **chips à compteurs** au lieu du `<select>` — la distribution
+  est visible en permanence, et les compteurs (calculés hors filtre santé)
+  annoncent ce qu'on obtient en cliquant.
+- Squelettes de chargement : balayage au lieu du clignotement, avec garde
+  `prefers-reduced-motion`.
+
+### Ajouté
+- `Column.total(rows)` → ligne de totaux, sur les lignes **visibles**.
+  Volontairement **sans total** : la position (une moyenne inter-pages est le
+  piège n°2 du playbook) et la lecture (une médiane de médianes n'est pas une
+  médiane). Le CTR s'agrège correctement : `aggregateCtrPct` =
+  Σ clics / Σ impressions, extrait en fonction pure et testé.
+- 4 tests (92 au total). Règles dures ajoutées dans `dashboard/CLAUDE.md`
+  (n° 5 tokens, n° 6 totaux) et section « Système visuel » du README.
+
 ## [2026-08-10] — Pont SECIB : fondations (PIVOT — PII en clair)
 
 ### Décision produit
