@@ -80,7 +80,7 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
       render: (r) => (
         <div className="flex flex-col items-end leading-tight">
           <span
-            className="font-mono text-[12px] text-[#45423c]"
+            className="font-mono text-[12px] text-ink-2"
             title={r.ctr_expected != null ? `CTR attendu à cette position : ${pct(r.ctr_expected)}` : undefined}
           >
             {dec(r.position_avg)}
@@ -98,7 +98,7 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
       sortValue: (r) => r.volume_fr,
       render: (r) =>
         r.volume_fr != null ? (
-          <span className="font-mono text-[11.5px] text-[#45423c]">{num(r.volume_fr)}</span>
+          <span className="font-mono text-[11.5px] text-ink-2">{num(r.volume_fr)}</span>
         ) : (
           <span className="text-dim">n.d.</span>
         ),
@@ -112,10 +112,10 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
       sortValue: (r) => r.capture_pct,
       render: (r) => (
         <div className="flex flex-col items-end gap-1">
-          <span className="font-mono text-[11.5px] text-[#45423c]">{pct(r.capture_pct)}</span>
-          <span className="block h-[2px] w-12 bg-[#eeeeec]">
+          <span className="font-mono text-[11.5px] text-ink-2">{pct(r.capture_pct)}</span>
+          <span className="block h-[2px] w-12 bg-field">
             <span
-              className="block h-[2px] bg-[#b9b4aa]"
+              className="block h-[2px] bg-dim"
               style={{ width: `${Math.round(((r.capture_pct ?? 0) / maxCapture) * 100)}%` }}
             />
           </span>
@@ -136,7 +136,7 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
           <span
             className={cn(
               "font-mono text-[12.5px] font-semibold",
-              r.is_quick_win ? "text-up" : "text-[#45423c]",
+              r.is_quick_win ? "text-up" : "text-ink-2",
             )}
           >
             +{num(r.opportunity_clicks)}

@@ -108,6 +108,47 @@ gagne des colonnes, `dashboard_resources_overview` (SETOF) les expose sans chang
 Composant `Trend` partagé dans `components/ui.tsx`. Le contrat typé de ces colonnes vit dans
 `lib/types.ts` (`ResourceRow`, `SeoQueryRow`).
 
+## Système visuel (tokens + chrome de tableau)
+
+Identité inchangée : **angles vifs, orange rewolf `#FF4F04`, IBM Plex**, thème clair.
+Ce qui a été importé de [beautiful-ui](https://beautiful-ui-five.vercel.app/), c'est
+l'**architecture**, pas l'esthétique.
+
+**Tous les tokens vivent dans `src/app/globals.css`** (`@theme inline`) — surfaces en
+couches (`paper` / `panel` / `inset` / `hover` / `field`), échelle d'encres
+(`ink` › `ink-2` › `muted` › `faint` › `dim`), filets gradués (`line-soft` / `line` /
+`line-strong`), sémantique doublée d'une teinte (`up` + `up-tint`, idem `down` / `warn` /
+`info`), élévation par anneau (`shadow-overlay`, `shadow-sticky`).
+
+> **Règle dure — aucune couleur en dur dans un composant.** Avant ce chantier, 41 hex
+> étaient disséminés dans 14 composants (`#45423c` seul revenait 14 fois) : le système
+> de tokens fuyait et une retouche de palette demandait 14 éditions. Une couleur qui
+> n'existe pas encore se déclare dans `globals.css`, elle ne s'écrit pas dans le JSX.
+> Les `<svg>` lisent les tokens via `stroke="var(--color-…)"`.
+
+**Chrome de tableau** (`SortableTable`, d'après « Records Table ») — en-tête, première
+colonne et ligne de totaux **collants** dans une zone de défilement plafonnée
+(`maxHeight`, défaut `min(70vh, 760px)`) :
+- le plafond de hauteur est ce qui rend `sticky top-0` utile — sans lui le conteneur ne
+  défile jamais verticalement et l'en-tête ne colle à rien ;
+- `border-collapse: separate` est **obligatoire** : en `collapse`, les bordures des
+  cellules collantes disparaissent au défilement ;
+- empilement : cellule figée 2 · tfoot 4 · thead 5 · coin tfoot 6 · coin thead 7 ;
+- le popover `Info` est rendu **par portail** sur `<body>` — un `th` collant avec
+  z-index ouvre un contexte d'empilement, un `position: fixed` resté dedans passerait
+  sous la colonne figée.
+
+**Totaux** : une colonne peut déclarer `total: (rows) => …`, qui reçoit les lignes
+**visibles** (filtrées + triées) — le pied décrit ce qu'on regarde. Volontairement
+**sans total** : la position (une moyenne inter-pages est le piège n°2 du playbook) et
+la lecture (une médiane de médianes n'est pas une médiane). Le CTR, lui, s'agrège
+correctement : `aggregateCtrPct` = Σ clics / Σ impressions, testé.
+
+**Chips de santé** (`ResourcesTable`, d'après « Filter Table ») : remplacent le `<select>`.
+Les compteurs se calculent sur les lignes filtrées par **tous les autres** critères, donc
+un compteur annonce ce qu'on obtiendra en cliquant ; un seau vide s'affiche mais n'est pas
+cliquable. `santeFromMomentum` étant exclusif, les 5 seaux partitionnent l'ensemble.
+
 ## Développement local
 ```bash
 cp .env.local.example .env.local   # puis remplir les clés

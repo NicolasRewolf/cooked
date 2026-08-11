@@ -22,7 +22,7 @@ import { pct, prettyPath } from "@/lib/format";
 function PaidCell({ r }: { r: ExpertiseRow }) {
   if (r.paid_share_pct == null) return <span className="text-dim">—</span>;
   const p = r.paid_share_pct;
-  const cls = p >= 70 ? "text-warn" : p <= 30 ? "text-up" : "text-[#45423c]";
+  const cls = p >= 70 ? "text-warn" : p <= 30 ? "text-up" : "text-ink-2";
   return (
     <span className={cn("font-mono text-[11.5px] font-medium", cls)}>{pct(p, 0)}</span>
   );

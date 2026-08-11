@@ -97,7 +97,7 @@ export function TrendChart({
 
   return (
     <div className="mt-[18px] border border-line bg-panel">
-      <div className="flex items-center justify-between gap-4 border-b border-[#efefed] px-4 py-3">
+      <div className="flex items-center justify-between gap-4 border-b border-line-soft px-4 py-3">
         <h2 className="text-[12px] font-semibold text-ink">{label}</h2>
         <span className="font-mono text-[10.5px] tabular-nums">
           {hover ? (
@@ -135,17 +135,17 @@ export function TrendChart({
             }}
             onPointerLeave={() => setHover(null)}
           >
-            <line x1="0" x2={w} y1="12" y2="12" stroke="#efefed" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-            <line x1="0" x2={w} y1="84" y2="84" stroke="#efefed" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-            <line x1="0" x2={w} y1="156" y2="156" stroke="#e2e2e0" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+            <line x1="0" x2={w} y1="12" y2="12" stroke="var(--color-line-soft)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+            <line x1="0" x2={w} y1="84" y2="84" stroke="var(--color-line-soft)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+            <line x1="0" x2={w} y1="156" y2="156" stroke="var(--color-line-strong)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
             {[205, 410, 615].map((x) => (
-              <line key={x} x1={x} x2={x} y1="4" y2="156" stroke="#f1f1ef" strokeWidth="1" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
+              <line key={x} x1={x} x2={x} y1="4" y2="156" stroke="var(--color-line-soft)" strokeWidth="1" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
             ))}
             <path d={area} fill="var(--color-accent)" fillOpacity="0.06" />
             {/* Droite de tendance sous le tracé accent : pointillé gris discret pour
                 donner la direction sans voler la vedette à la série brute. */}
             {trPath && (
-              <path d={trPath} fill="none" stroke="#b4b3ae" strokeWidth="1.2" strokeDasharray="5 4" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+              <path d={trPath} fill="none" stroke="var(--color-dim)" strokeWidth="1.2" strokeDasharray="5 4" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
             )}
             <path d={line} fill="none" stroke="var(--color-accent)" strokeWidth="1.4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
             {/* Point = path à cap rond de largeur en pixels-écran (vectorEffect) →
@@ -172,11 +172,11 @@ export function TrendChart({
                   x2={hover.x}
                   y1="4"
                   y2="156"
-                  stroke="#e2e2e0"
+                  stroke="var(--color-line-strong)"
                   strokeWidth="1"
                   vectorEffect="non-scaling-stroke"
                 />
-                <path d={dotPath(hover.x, hover.y)} stroke="#fff" strokeWidth="8" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                <path d={dotPath(hover.x, hover.y)} stroke="var(--color-panel)" strokeWidth="8" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
                 <path d={dotPath(hover.x, hover.y)} stroke="var(--color-accent)" strokeWidth="6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
               </>
             )}
@@ -189,8 +189,8 @@ export function TrendChart({
         ))}
       </div>
       {tr && (
-        <div className="border-t border-[#f2f2f0] px-4 py-1.5 pl-[50px] font-mono text-[9.5px] leading-snug text-dim">
-          <span className="text-[#b4b3ae]">‑ ‑</span> tendance {tr.dir === "up" ? "↗ en hausse" : tr.dir === "down" ? "↘ en baisse" : "→ stable"} sur la région mesurée
+        <div className="border-t border-line-soft px-4 py-1.5 pl-[50px] font-mono text-[9.5px] leading-snug text-dim">
+          <span className="text-dim">‑ ‑</span> tendance {tr.dir === "up" ? "↗ en hausse" : tr.dir === "down" ? "↘ en baisse" : "→ stable"} sur la région mesurée
           {max < 5 ? " · petit volume, à lire avec prudence" : ""}
         </div>
       )}

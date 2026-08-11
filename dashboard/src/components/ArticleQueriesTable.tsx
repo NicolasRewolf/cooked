@@ -22,7 +22,7 @@ const columns: Column<QueryRow>[] = [
     header: "affichages",
     align: "right",
     sortValue: (r) => r.impressions,
-    render: (r) => <span className="font-mono text-[11.5px] text-[#45423c]">{num(r.impressions)}</span>,
+    render: (r) => <span className="font-mono text-[11.5px] text-ink-2">{num(r.impressions)}</span>,
   },
   {
     key: "clicks",
@@ -36,7 +36,7 @@ const columns: Column<QueryRow>[] = [
     header: "pos.",
     align: "right",
     sortValue: (r) => r.position,
-    render: (r) => <span className="font-mono text-[11.5px] text-[#45423c]">{dec(r.position)}</span>,
+    render: (r) => <span className="font-mono text-[11.5px] text-ink-2">{dec(r.position)}</span>,
   },
   {
     key: "volume",

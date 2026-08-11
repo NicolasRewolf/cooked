@@ -60,7 +60,7 @@ function AxisRow({ label, z, good, mid, bad, lever }: { label: string; z: number
         <span className="w-[86px] shrink-0 font-mono text-[10.5px] uppercase tracking-[0.04em] text-faint">
           {label}
         </span>
-        <div className="h-[5px] w-[110px] shrink-0 bg-[#f4f4f2]" />
+        <div className="h-[5px] w-[110px] shrink-0 bg-field" />
         <span className="text-[12px] text-dim">signal indisponible — trop peu de trafic organique pour le mesurer</span>
       </div>
     );
@@ -75,11 +75,11 @@ function AxisRow({ label, z, good, mid, bad, lever }: { label: string; z: number
       <span className="w-[86px] shrink-0 font-mono text-[10.5px] uppercase tracking-[0.04em] text-faint">
         {label}
       </span>
-      <div className="relative h-[5px] w-[110px] shrink-0 bg-[#efefec]" title={`z = ${z.toFixed(1)} (vs pages du même type)`}>
+      <div className="relative h-[5px] w-[110px] shrink-0 bg-field" title={`z = ${z.toFixed(1)} (vs pages du même type)`}>
         <span className="absolute top-[-2px] h-[9px] w-[2px] bg-line-strong" style={{ left: "50%" }} />
         <span className={cn("absolute top-[-2px] h-[9px] w-[9px] rounded-full", dot)} style={{ left: `calc(${pctPos}% - 4px)` }} />
       </div>
-      <span className="text-[12px] text-[#45423c]">
+      <span className="text-[12px] text-ink-2">
         {text} <span className="font-mono text-[10px] text-dim">· {lever}</span>
       </span>
     </div>
@@ -124,7 +124,7 @@ export function CpiHealthPanel({ detail }: { detail: ArticleDetail }) {
       ) : (
         <>
           {c.grade !== 'C' ? (
-            <div className="divide-y divide-[#f2f2f0]">
+            <div className="divide-y divide-line-soft">
               {AXES.map((a) => (
                 <AxisRow key={a.key} label={a.label} z={c[a.key]} good={a.good} mid={a.mid} bad={a.bad} lever={a.lever} />
               ))}

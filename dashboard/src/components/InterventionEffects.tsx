@@ -35,7 +35,7 @@ function EffectLine({ e }: { e: InterventionEffect }) {
   const net = e.effet_net_pct;
   const netCls = net > 0 ? "text-up" : net < 0 ? "text-down" : "text-faint";
   return (
-    <span className="text-[#45423c]">
+    <span className="text-ink-2">
       clics <b className="font-semibold">{signedPct(e.clics_pct)}</b> vs sa trajectoire · marée site{" "}
       {signedPct(e.maree_pct ?? 0)} → effet net{" "}
       <b className={cn("font-semibold", netCls)}>≈ {signedPct(net)}</b>

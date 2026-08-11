@@ -84,14 +84,14 @@ async function Content({ period }: { period: Period }) {
 function Loading() {
   return (
     <div className="space-y-[18px]">
-      <div className="h-9 w-72 animate-pulse bg-line" />
+      <div className="h-9 w-72 skeleton" />
       <div className="grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-3 lg:grid-cols-5">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-28 animate-pulse bg-panel" />
+          <div key={i} className="h-28 skeleton" />
         ))}
       </div>
-      <div className="h-44 animate-pulse border border-line bg-panel" />
-      <div className="h-80 animate-pulse border border-line bg-panel" />
+      <div className="h-44 skeleton border border-line" />
+      <div className="h-80 skeleton border border-line" />
     </div>
   );
 }

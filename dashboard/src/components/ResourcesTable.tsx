@@ -44,6 +44,12 @@ function buildColumns(periodQ: string): Column<ResourceRow>[] {
     header: "article",
     align: "left",
     sortValue: (r) => prettyPath(r.path),
+    total: (rows) => (
+      <span className="font-mono text-[11.5px] text-muted">
+        <span className="font-semibold text-ink-2">{rows.length}</span>{" "}
+        {rows.length > 1 ? "articles" : "article"}
+      </span>
+    ),
     render: (r) => (
       <div className="max-w-[230px]">
         <Link
@@ -110,6 +116,19 @@ function buildColumns(periodQ: string): Column<ResourceRow>[] {
     headerInfo:
       "Contacts (appel ou formulaire) de visiteurs dont la session a COMMENCÉ par cet article — même visite. Le contenu qui a gagné le prospect reçoit le crédit.",
     sortValue: (r) => r.assisted_contacts ?? null,
+    total: (rows) => {
+      const t = rows.reduce((a, r) => a + (r.assisted_contacts ?? 0), 0);
+      return (
+        <span
+          className={cn(
+            "font-mono text-[11.5px] font-semibold",
+            t > 0 ? "text-accent" : "text-dim",
+          )}
+        >
+          {num(t)}
+        </span>
+      );
+    },
     render: (r) => (
       <span
         className={cn(
@@ -168,6 +187,74 @@ function filtersToUrl(f: ResourcesFilters): Record<string, string | null> {
 
 const resourcesFiltersSpec = { init: filtersFromUrl, toUrl: filtersToUrl };
 
+// ── Chips de santé (d'après « Filter Table » de beautiful-ui) ─────────────────
+// Le <select> cachait la distribution : il fallait ouvrir puis choisir pour
+// découvrir qu'aucun article ne ralentit. Les chips l'affichent en permanence —
+// la répartition devient elle-même une information. Angles vifs conservés
+// (identité Cooked) : la référence les veut arrondis, pas nous.
+const SANTE_CHIPS: { key: SanteFilter; label: string; dot?: string; star?: boolean }[] = [
+  { key: "tous", label: "tous" },
+  { key: "monte", label: "monte", dot: "bg-up" },
+  { key: "stable", label: "stable", dot: "bg-faint" },
+  { key: "ralentit", label: "ralentit", dot: "bg-warn" },
+  { key: "opportunite_contact", label: "opportunité de contact", star: true },
+  { key: "nonscore", label: "non scoré", dot: "bg-dim" },
+];
+
+function SanteChips({
+  value,
+  counts,
+  onChange,
+}: {
+  value: SanteFilter;
+  counts: Record<SanteFilter, number>;
+  onChange: (v: SanteFilter) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrer par santé">
+      {SANTE_CHIPS.map((c) => {
+        const active = value === c.key;
+        const n = counts[c.key];
+        // Un seau vide ne mène qu'à un tableau vide : on le montre (l'absence est
+        // une information) mais on ne le rend pas cliquable.
+        const empty = n === 0 && c.key !== "tous";
+        return (
+          <button
+            key={c.key}
+            type="button"
+            aria-pressed={active}
+            disabled={empty}
+            onClick={() => onChange(c.key)}
+            className={cn(
+              "inline-flex items-center gap-1.5 border px-2 py-1 text-[11.5px] transition-colors",
+              active
+                ? "border-accent bg-accent-tint font-medium text-ink"
+                : empty
+                  ? "cursor-not-allowed border-line bg-panel text-dim"
+                  : "border-line bg-panel text-muted hover:border-line-strong hover:text-ink",
+            )}
+          >
+            {c.star ? (
+              <span className={cn("text-[11px]", active || !empty ? "text-accent" : "text-dim")}>★</span>
+            ) : c.dot ? (
+              <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", c.dot)} />
+            ) : null}
+            {c.label}
+            <span
+              className={cn(
+                "px-1 font-mono text-[10px]",
+                active ? "bg-panel text-muted" : "bg-field text-faint",
+              )}
+            >
+              {n}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
   const searchParams = useSearchParams();
   // Période courante → propagée aux liens de fiche (sauf défaut rolling_90).
@@ -188,19 +275,41 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
     [rows],
   );
 
-  const filtered = useMemo(() => {
+  // Base = tous les filtres SAUF la santé. Les compteurs des chips se calculent
+  // sur elle : un compteur doit annoncer ce qu'on obtiendra en cliquant, et non
+  // rester figé sur le jeu complet.
+  const baseRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (recentOnly && !(r.days_live != null && r.days_live <= 60)) return false;
       if (theme !== "tous" && r.theme !== theme) return false;
-      if (sante !== "tous" && santeOf(r) !== sante) return false;
       if (q) {
         const hay = `${prettyPath(r.path)} ${r.path} ${r.best_query ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [rows, recentOnly, search, theme, sante]);
+  }, [rows, recentOnly, search, theme]);
+
+  // santeFromMomentum est EXCLUSIF (opportunité prime sur le momentum) → les 5
+  // seaux partitionnent baseRows et les compteurs somment à baseRows.length.
+  const santeCounts = useMemo(() => {
+    const c: Record<SanteFilter, number> = {
+      tous: baseRows.length,
+      monte: 0,
+      stable: 0,
+      ralentit: 0,
+      opportunite_contact: 0,
+      nonscore: 0,
+    };
+    for (const r of baseRows) c[santeOf(r)] += 1;
+    return c;
+  }, [baseRows]);
+
+  const filtered = useMemo(
+    () => (sante === "tous" ? baseRows : baseRows.filter((r) => santeOf(r) === sante)),
+    [baseRows, sante],
+  );
 
   const selectCls =
     "border border-line bg-panel px-2 py-1 font-mono text-[11px] text-muted focus:border-accent focus:outline-none";
@@ -229,19 +338,6 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
               </option>
             ))}
           </select>
-          <select
-            value={sante}
-            onChange={(e) => setFilter("sante", e.target.value as SanteFilter)}
-            className={selectCls}
-            aria-label="Filtrer par santé"
-          >
-            <option value="tous">Toutes les santés</option>
-            <option value="monte">● monte</option>
-            <option value="stable">● stable</option>
-            <option value="ralentit">● ralentit</option>
-            <option value="opportunite_contact">★ opportunité de contact</option>
-            <option value="nonscore">— non scoré</option>
-          </select>
           <label className="flex w-fit cursor-pointer items-center gap-2 text-[11.5px] text-muted">
             <input
               type="checkbox"
@@ -252,6 +348,13 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
             récents (≤ 60 j d&apos;âge SEO)
           </label>
         </div>
+      </div>
+      <div className="mb-2.5">
+        <SanteChips
+          value={sante}
+          counts={santeCounts}
+          onChange={(v) => setFilter("sante", v)}
+        />
       </div>
       <SortableTable
         columns={columns}

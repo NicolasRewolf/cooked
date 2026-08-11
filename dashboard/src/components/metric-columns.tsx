@@ -28,7 +28,7 @@ export function HealthCell({ r }: { r: ResourceRow }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", dot)} />
-      <span className="text-[11.5px] text-[#45423c]">{word}</span>
+      <span className="text-[11.5px] text-ink-2">{word}</span>
       {opportunite && (
         <span aria-label="opportunité de contact" className="text-[11px] text-accent">
           ★
@@ -43,7 +43,7 @@ export function HealthCell({ r }: { r: ResourceRow }) {
 export function CtrCell({ r }: { r: ResourceRow }) {
   if (r.gsc_ctr_pct == null) return <span className="text-dim">—</span>;
   const exp = r.ctr_expected;
-  let cls = "text-[#45423c]";
+  let cls = "text-ink-2";
   if (exp != null) {
     if (r.gsc_ctr_pct >= exp) cls = "text-up";
     else if (r.gsc_ctr_pct < exp * 0.7) cls = "text-alert";
@@ -54,6 +54,38 @@ export function CtrCell({ r }: { r: ResourceRow }) {
       {exp != null && <span className="font-mono text-[9.5px] text-dim"> / {pct(exp, 0)}</span>}
     </span>
   );
+}
+
+// ── Totaux de pied de tableau ─────────────────────────────────────────────────
+// Reçoivent les lignes VISIBLES (filtre + tri déjà appliqués) : le pied décrit ce
+// qu'on regarde, pas le jeu complet.
+//
+// Ce qu'on NE totalise PAS, volontairement :
+//  · position — une position moyenne inter-pages est le piège n°2 du playbook
+//    (pondérée impressions, elle mélange des requêtes sans rapport) ;
+//  · lecture — une médiane de médianes n'est pas une médiane.
+// Le CTR, lui, s'agrège correctement : Σ clics / Σ impressions.
+/** Somme d'un champ sur les lignes visibles (null / undefined comptent pour 0). */
+export function sumBy(
+  rows: ResourceRow[],
+  f: (r: ResourceRow) => number | null | undefined,
+): number {
+  return rows.reduce((acc, r) => acc + (f(r) ?? 0), 0);
+}
+
+/** CTR agrégé d'un ensemble de pages = Σ clics / Σ impressions (en %).
+ *  Surtout PAS la moyenne des CTR par page : elle pèse pareil une page à
+ *  10 impressions et une page à 10 000. `null` si aucune impression. */
+export function aggregateCtrPct(rows: ResourceRow[]): number | null {
+  const imp = sumBy(rows, (r) => r.gsc_impressions);
+  if (imp === 0) return null;
+  return (sumBy(rows, (r) => r.gsc_clicks) / imp) * 100;
+}
+
+const sum = sumBy;
+
+function Total({ children }: { children: React.ReactNode }) {
+  return <span className="font-mono text-[11.5px] font-semibold text-ink-2">{children}</span>;
 }
 
 // ── Registre des colonnes communes ────────────────────────────────────────────
@@ -74,6 +106,7 @@ export const visitorsColumn: Column<ResourceRow> = {
   header: "visiteurs",
   align: "right",
   sortValue: (r) => r.unique_visitors,
+  total: (rows) => <Total>{num(sum(rows, (r) => r.unique_visitors))}</Total>,
   render: (r) => (
     <div className="flex flex-col items-end leading-tight">
       <span className="font-mono text-[12.5px] font-medium text-ink">{num(r.unique_visitors)}</span>
@@ -91,7 +124,7 @@ export function dwellColumn(headerInfo: string): Column<ResourceRow> {
     align: "right",
     headerInfo,
     sortValue: (r) => r.dwell_median_s,
-    render: (r) => <span className="font-mono text-[11.5px] text-[#45423c]">{seconds(r.dwell_median_s)}</span>,
+    render: (r) => <span className="font-mono text-[11.5px] text-ink-2">{seconds(r.dwell_median_s)}</span>,
   };
 }
 
@@ -100,6 +133,7 @@ export const gscClicksColumn: Column<ResourceRow> = {
   header: "clics",
   align: "right",
   sortValue: (r) => r.gsc_clicks,
+  total: (rows) => <Total>{num(sum(rows, (r) => r.gsc_clicks))}</Total>,
   render: (r) => (
     <div className="flex flex-col items-end leading-tight">
       <span className="font-mono text-[12px] font-medium text-ink">{num(r.gsc_clicks)}</span>
@@ -118,6 +152,10 @@ export const ctrColumn: Column<ResourceRow> = {
   sortValue: (r) =>
     r.gsc_ctr_pct != null && r.ctr_expected != null ? r.gsc_ctr_pct - r.ctr_expected : null,
   render: (r) => <CtrCell r={r} />,
+  total: (rows) => {
+    const ctr = aggregateCtrPct(rows);
+    return ctr == null ? <span className="text-dim">—</span> : <Total>{pct(ctr)}</Total>;
+  },
 };
 
 export const positionColumn: Column<ResourceRow> = {
@@ -127,7 +165,7 @@ export const positionColumn: Column<ResourceRow> = {
   headerInfo: "Position moyenne Google, pondérée par impressions, toutes requêtes confondues.",
   sortValue: (r) => r.gsc_position_avg,
   render: (r) => (
-    <span className="font-mono text-[11.5px] text-[#45423c]">{dec(r.gsc_position_avg)}</span>
+    <span className="font-mono text-[11.5px] text-ink-2">{dec(r.gsc_position_avg)}</span>
   ),
 };
 
@@ -139,7 +177,7 @@ export const bestQueryColumn: Column<ResourceRow> = {
   render: (r) =>
     r.best_query ? (
       <div className="max-w-[180px]">
-        <div className="truncate text-[11.5px] text-[#45423c]">{r.best_query}</div>
+        <div className="truncate text-[11.5px] text-ink-2">{r.best_query}</div>
         <div className="font-mono text-[9.5px] text-dim">
           {r.best_query_volume_fr != null ? `${num(r.best_query_volume_fr)} rech./mois` : "volume n.d."}
         </div>
@@ -157,6 +195,7 @@ export const contactsColumn: Column<ResourceRow> = {
   headerInfo:
     "Appels ou formulaires effectués PENDANT la visite de cette page. C'est l'endroit du geste qui reçoit le crédit.",
   sortValue: (r) => r.contacts,
+  total: (rows) => <Total>{num(sum(rows, (r) => r.contacts))}</Total>,
   render: (r) => (
     <span
       className={cn("font-mono text-[11.5px] font-semibold", r.contacts > 0 ? "text-ink" : "text-dim")}

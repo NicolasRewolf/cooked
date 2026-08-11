@@ -1,11 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 
 // M1 — explication visible à UN CLIC (tactile d'abord, pas au survol). Aucune lib
 // externe : useRef + calcul de position. Fermé par Escape, clic-dehors, scroll.
 // Positionné en `fixed` (et non `absolute`) pour ÉCHAPPER au clipping du conteneur
-// `overflow-x-auto` des tableaux — sinon le popover serait coupé. Props plates
+// `overflow-auto` des tableaux — sinon le popover serait coupé. Rendu par PORTAIL
+// sur <body> : depuis que les en-têtes de tableau sont `sticky` AVEC un z-index,
+// chaque <th> ouvre un contexte d'empilement, et un `fixed` resté à l'intérieur
+// verrait son z-index résolu DANS ce contexte (donc sous la colonne figée, z-7).
+// Le portail le remet à la racine, où son z-index compte vraiment. Props plates
 // (children = texte) : ce composant est client, rendu par un parent client
 // (SortableTable) ou serveur (KpiHeader) avec du texte, jamais une fonction.
 export function Info({ children }: { children: React.ReactNode }) {
@@ -84,16 +89,19 @@ export function Info({ children }: { children: React.ReactNode }) {
       >
         i
       </button>
-      {open ? (
-        <div
-          ref={popRef}
-          role="tooltip"
-          style={style}
-          className="z-40 border border-line-strong bg-panel px-3 py-2.5 text-left font-sans text-[11.5px] font-normal normal-case leading-snug tracking-normal text-muted shadow-[0_2px_12px_rgba(0,0,0,0.08)]"
-        >
-          {children}
-        </div>
-      ) : null}
+      {open
+        ? createPortal(
+            <div
+              ref={popRef}
+              role="tooltip"
+              style={style}
+              className="z-50 bg-panel px-3 py-2.5 text-left font-sans text-[11.5px] font-normal normal-case leading-snug tracking-normal text-muted shadow-overlay"
+            >
+              {children}
+            </div>,
+            document.body,
+          )
+        : null}
     </span>
   );
 }
