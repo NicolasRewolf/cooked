@@ -20,7 +20,7 @@ export function InterventionsTimeline({ items }: { items: Annotation[] }) {
               ▲
             </span>
             <span className="w-10 shrink-0 font-mono text-[10.5px] text-dim">{dayShort(it.day)}</span>
-            <span className="text-[11.5px] text-[#45423c]">{it.label}</span>
+            <span className="text-[11.5px] text-ink-2">{it.label}</span>
           </li>
         ))}
       </ul>

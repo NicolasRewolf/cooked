@@ -45,13 +45,14 @@ export function Badge({
   tone = "neutral",
 }: {
   children: React.ReactNode;
-  tone?: "neutral" | "good" | "warn" | "info";
+  tone?: "neutral" | "good" | "warn" | "info" | "bad";
 }) {
   const tones: Record<string, string> = {
-    neutral: "bg-[#f0f0ee] text-muted",
-    good: "bg-[#e6f0e9] text-up",
-    warn: "bg-[#fbf0e0] text-warn",
-    info: "bg-[#e7eef7] text-info",
+    neutral: "bg-field text-muted",
+    good: "bg-up-tint text-up",
+    warn: "bg-warn-tint text-warn",
+    info: "bg-info-tint text-info",
+    bad: "bg-down-tint text-down",
   };
   return (
     <span

@@ -35,7 +35,7 @@ export function CohortChart({ cohorts }: { cohorts: Cohort[] }) {
 
   return (
     <div className="mt-[18px] border border-line bg-panel">
-      <div className="flex items-center justify-between gap-4 border-b border-[#efefed] px-4 py-3">
+      <div className="flex items-center justify-between gap-4 border-b border-line-soft px-4 py-3">
         <h2 className="text-[12px] font-semibold text-ink">Cohortes du contrat</h2>
         <span className="font-mono text-[10.5px] text-faint">
           clics Google cumulés moyens / article · aligné sur l&apos;âge (J0 = 1re impression)
@@ -53,11 +53,11 @@ export function CohortChart({ cohorts }: { cohorts: Cohort[] }) {
             preserveAspectRatio="none"
             style={{ width: "100%", height: 180, display: "block", overflow: "visible" }}
           >
-            <line x1="0" x2={w} y1={pt} y2={pt} stroke="#efefed" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-            <line x1="0" x2={w} y1={midY} y2={midY} stroke="#efefed" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-            <line x1="0" x2={w} y1={h - pb} y2={h - pb} stroke="#e2e2e0" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+            <line x1="0" x2={w} y1={pt} y2={pt} stroke="var(--color-line-soft)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+            <line x1="0" x2={w} y1={midY} y2={midY} stroke="var(--color-line-soft)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+            <line x1="0" x2={w} y1={h - pb} y2={h - pb} stroke="var(--color-line-strong)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
             {[15, 30, 45].map((a) => (
-              <line key={a} x1={X(a)} x2={X(a)} y1={pt} y2={h - pb} stroke="#f1f1ef" strokeWidth="1" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
+              <line key={a} x1={X(a)} x2={X(a)} y1={pt} y2={h - pb} stroke="var(--color-line-soft)" strokeWidth="1" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
             ))}
             {shown.map((c, i) => {
               const isCur = i === n - 1;
@@ -90,7 +90,7 @@ export function CohortChart({ cohorts }: { cohorts: Cohort[] }) {
         <span>J+45</span>
         <span>J+60</span>
       </div>
-      <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-[#efefed] px-4 py-2.5 font-mono text-[10.5px]">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line-soft px-4 py-2.5 font-mono text-[10.5px]">
         {shown.map((c, i) => {
           const isCur = i === n - 1;
           const color = isCur ? "var(--color-accent)" : greyFor(i, n);

@@ -27,7 +27,7 @@ export function Sparkline({
 
   return (
     <div className="relative mt-3">
-      <div className="absolute inset-x-0 bottom-0 h-px bg-[#ececea]" />
+      <div className="absolute inset-x-0 bottom-0 h-px bg-line" />
       <svg
         viewBox={`0 0 ${w} ${h}`}
         preserveAspectRatio="none"

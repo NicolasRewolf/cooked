@@ -2,40 +2,108 @@
 
 /* ── Cooked · redesign « Instrument » (d'après Dieter Rams) ────────────────
    Thème clair uniquement. Accent = orange rewolf #FF4F04 (≈ orange Braun).
-   Tokens exposés en utilitaires Tailwind v4 : bg-paper, text-ink, border-line,
-   text-muted/faint/dim, text-accent/up/down/warn/info, font-sans/mono.        */
+
+   Architecture des tokens reprise de « Beautiful UI » (beautiful-ui-five.
+   vercel.app) : surfaces en couches, échelle d'encres, filets gradués,
+   sémantique doublée d'une teinte, élévation par ANNEAU (ring + ombre).
+   L'identité Cooked ne bouge pas : angles vifs, orange rewolf, IBM Plex.
+
+   Règle dure : AUCUNE couleur en dur dans les composants. Tout passe par un
+   token ci-dessous (utilitaires Tailwind v4 : bg-*, text-*, border-*).       */
 @theme inline {
   --font-sans: var(--font-ibm-plex-sans);
   --font-mono: var(--font-ibm-plex-mono);
 
+  /* ── Accent (marque rewolf — NE PAS changer) ───────────────────────────── */
   --color-accent: #ff4f04;
-  --color-ink: #141414;
-  --color-paper: #f4f4f2;
-  --color-panel: #ffffff;
-  --color-line: #e7e7e5;
-  --color-line-strong: #e2e2e0;
-  --color-zebra: #fafaf9;
-  --color-muted: #6b6b69;
-  --color-faint: #9a9a98;
-  --color-dim: #b3b3b1;
+  --color-accent-tint: #fdece4; /* fond teinté : chip actif, ligne surlignée */
 
-  --color-up: #2f7a52;     /* hausse / fiable */
-  --color-down: #c0392b;   /* baisse */
-  --color-warn: #c77a1e;   /* ralentit / hors-Google */
-  --color-info: #2f6fb0;   /* source Google / indicatif */
-  --color-alert: #c2410c;  /* CTR sous l'attendu */
+  /* ── Encres, du plus fort au plus discret ──────────────────────────────── */
+  --color-ink: #141414; /* titres, valeurs de tête */
+  --color-ink-2: #45423c; /* valeurs de tableau (chiffres secondaires) */
+  --color-muted: #6b6b69; /* texte courant discret */
+  --color-faint: #9a9a98; /* libellés, en-têtes inactifs */
+  --color-dim: #b3b3b1; /* mentions, axes, « — » */
+
+  /* ── Surfaces, en couches ──────────────────────────────────────────────── */
+  --color-paper: #f4f4f2; /* fond de page */
+  --color-panel: #ffffff; /* carte, tableau */
+  --color-inset: #fafaf9; /* zone en creux : thead, tfoot */
+  --color-hover: #fafaf8; /* survol de ligne */
+  --color-field: #f2f2f0; /* piste de jauge, chip inactif, badge neutre */
+
+  /* ── Filets, trois graduations ─────────────────────────────────────────── */
+  --color-line-soft: #efefed; /* séparateur de ligne (le plus discret) */
+  --color-line: #e7e7e5; /* bordure de carte */
+  --color-line-strong: #e2e2e0; /* bordure structurante, axes */
+
+  /* ── Sémantique + teinte associée ──────────────────────────────────────── */
+  --color-up: #2f7a52; /* hausse / fiable */
+  --color-up-tint: #e6f0e9;
+  --color-down: #c0392b; /* baisse */
+  --color-down-tint: #f9e9e7;
+  --color-warn: #c77a1e; /* ralentit / hors-Google */
+  --color-warn-tint: #fbf0e0;
+  --color-info: #2f6fb0; /* source Google / indicatif */
+  --color-info-tint: #e7eef7;
+  --color-alert: #c2410c; /* CTR sous l'attendu */
+
+  /* ── Élévation par anneau (ring 1px + ombre douce) ─────────────────────── */
+  /* Le dashboard reste PLAT : ces ombres ne servent qu'aux éléments qui
+     flottent réellement au-dessus du plan (popover, colonne figée). Une carte
+     posée dans le flux n'est pas élevée — c'est la logique Rams.             */
+  --shadow-overlay: 0 0 0 1px var(--color-line-strong), 0 8px 28px #00000014;
+  --shadow-sticky: 5px 0 8px -10px #00000099;
+
+  /* ── Courbe d'animation (d'après beautiful-ui) ─────────────────────────── */
+  --ease-out-strong: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html {
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   background: var(--color-paper);
   color: var(--color-ink);
+  /* Chiffres à chasse fixe partout : les colonnes de nombres s'alignent même
+     hors font-mono (KPI, deltas, pourcentages inline). */
+  font-variant-numeric: tabular-nums;
 }
 
 ::selection {
   background: var(--color-accent);
   color: #fff;
+}
+
+/* ── Squelettes de chargement : balayage, pas clignotement ─────────────────
+   `animate-pulse` fait battre tout le bloc ; un balayage lit comme « ça
+   arrive » et non « ça a un problème ». Respecte prefers-reduced-motion.   */
+@keyframes cooked-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-field) 25%,
+    var(--color-inset) 37%,
+    var(--color-field) 63%
+  );
+  background-size: 200% 100%;
+  animation: cooked-shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
 }
