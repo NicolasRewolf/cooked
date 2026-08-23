@@ -75,6 +75,10 @@ BEGIN
         CONTINUE;
       END IF;
 
+      -- Clamp : un dernier point « dans le futur » (horloge client clampée
+      -- ±48 h par l'Edge track) ne doit jamais masquer une panne.
+      v_last := least(v_last, public.paris_today());
+
       v_age := public.paris_today() - v_last;
       v_sev := CASE
         WHEN c.critical_after_days IS NOT NULL AND v_age > c.critical_after_days THEN 'critical'
@@ -97,13 +101,16 @@ BEGIN
       -- Trous à l'intérieur de la série, sur [last_point - fenêtre, last_point].
       IF c.gap_relation IS NOT NULL AND c.gap_day_column IS NOT NULL
          AND c.gap_window_days IS NOT NULL THEN
+        -- Début de série borné au premier jour réellement présent : une
+        -- source plus jeune que la fenêtre ne doit pas compter « manquants »
+        -- les jours d'avant sa naissance (clamp hérité de feu cpi_stale).
         EXECUTE format(
           'SELECT count(*)::int, string_agg(to_char(d.d::date, %L), '', '' ORDER BY d.d) '
-          'FROM generate_series(%L::date, %L::date, interval ''1 day'') d(d) '
+          'FROM generate_series(GREATEST(%L::date, (SELECT min(%I) FROM public.%I)), %L::date, interval ''1 day'') d(d) '
           'LEFT JOIN (SELECT DISTINCT %I AS day FROM public.%I '
           '           WHERE %I BETWEEN %L AND %L) t ON t.day = d.d::date '
           'WHERE t.day IS NULL',
-          'DD/MM', v_last - c.gap_window_days, v_last,
+          'DD/MM', v_last - c.gap_window_days, c.gap_day_column, c.gap_relation, v_last,
           c.gap_day_column, c.gap_relation, c.gap_day_column,
           v_last - c.gap_window_days, v_last
         ) INTO v_missing, v_days;
@@ -140,7 +147,7 @@ SET search_path TO 'public', 'pg_catalog'
 AS $function$
   SELECT a.kind,
          'critical'::text,
-         'Escalade : warn actif depuis ≥ 5 jours sans acquittement — ' || a.detail
+         'Escalade : warn actif depuis ≥ 5 jours sans acquittement — ' || coalesce(a.detail, a.kind)
   FROM (
     SELECT DISTINCT ON (kind) kind, detail
     FROM public.alerts
@@ -336,7 +343,9 @@ VALUES
 
   ('cpi_daily', 'Snapshot CPI quotidien',
    'SELECT max(day) FROM public.cpi_daily',
-   'daily', 1, 1, 2, 'cpi_daily', 'day', 7,
+   -- critical_after=1 : critical dès 2 jours d'âge, iso feu alert_rule_cpi_stale
+   -- (un jour de CPI non calculé est perdu définitivement).
+   'daily', 1, 1, 1, 'cpi_daily', 'day', 7,
    'Vérifier le job pg_cron cooked-cpi-daily-snapshot (07:30 UTC) et cooked_cpi_snapshot().', true),
 
   ('seo_url_snapshot', 'Snapshot SEO nocturne',
@@ -355,7 +364,7 @@ VALUES
    'Vérifier l''automation Wix « ⚠️ Cooked analytics — form → webhook » (supprimée une fois le 11/08/2026 !), puis rejouer la réconciliation (scripts/wix_forms_import.py + backfill events).', true),
 
   ('crm_prospects', 'Prospects (pont SECIB)',
-   'SELECT public.paris_date(max(occurred_at)) FROM public.crm_prospects',
+   'SELECT public.paris_date(max(created_at)) FROM public.crm_prospects',
    'event', 0, 2, 4, NULL, NULL, NULL,
    'Jumeau de form_submit : si form_submit est frais mais pas crm_prospects, la capture prospect du webhook v13 est cassée (logs form-webhook).', true),
 
@@ -385,6 +394,8 @@ BEGIN
   IF jid IS NOT NULL THEN
     PERFORM cron.alter_job(jid,
       command => 'SET statement_timeout = ''300s''; SELECT public.cooked_alerts_refresh();');
+  ELSE
+    RAISE WARNING 'cooked-alerts-hourly introuvable dans cron.job — statement_timeout NON posé';
   END IF;
 END $$;
 

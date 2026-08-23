@@ -36,12 +36,43 @@ Seconde panne du même week-end : le cron GBP en échec reauth ADC depuis le
   run vert) : `gbp_daily` de retour à J-3, 12 jours rebouchés, la fiche n'a
   pas décliné (~175 appels/mois, rythme stable).
 
-### Suite (revue d'architecture du 22/08, programme acté 1→3→2)
-Trois chantiers de résilience : registre déclaratif des contrats de
-fraîcheur (+ règle « Silence » — forms : warn 48 h / critical 4 j, escalade
-générique warn→critical à +5 j), module d'ingestion forms à deux adapters
-(push webhook + pull de réconciliation API Wix), battement d'exécution des
-jobs GitHub + pg_cron.
+### Ajouté — chantier 1/3 : registre des contrats de fraîcheur (ADR-0002)
+Migration `20260823210813` (PR #98), revue adversarialement avant apply
+(1 bloquant procédural + 3 risques corrigés : clamp des trous au 1er jour
+de série, clamp du dernier point à `paris_today()`, sévérité CPI iso).
+- **`freshness_contract`** : le contrat de fraîcheur de chaque source est
+  **une ligne de données** (dernier point, lag normal, seuils warn/critical,
+  fenêtre de trous, geste de réparation). 13 sources sous contrat, dont les
+  invisibles de la panne A : `form_submit` (warn 48 h / critical 4 j —
+  décision Nicolas), `crm_prospects`, `cta_phone_click` ; `secib_dossiers`
+  pré-armé (désactivé jusqu'à la prod SECIB).
+- **`alert_rule_freshness()`** : une règle générique (kinds `<source>_stale`,
+  `<source>_gap`, `<source>_contract_failed`), une horloge (`paris_today()`).
+  Absorbe `gbp_gap`, `gsc_gap`, `gsc_lag` (→ `gsc_ingest_missed`, exécution
+  seule), `dfs_stale`, `cpi_stale`/`cpi_gap`, `dashboard_check_stale` + son
+  cron `dashboard-stale-check` (droppés).
+- **`alert_rule_warn_escalation()`** : un warn ininterrompu ≥ 5 j devient
+  critical (pousse ntfy) — tous kinds. **Acker suspend escalade et re-push** :
+  `acked` redevient porteur de sens.
+- **`raise_cooked_alert`** : dédup par (kind, severity) — le passage
+  warn→critical ne poireaute plus 24 h ; push muet si épisode acké.
+- **`cooked_alerts_refresh`** : découverte dynamique des `alert_rule_*` par
+  catalogue + isolation par règle (une règle qui plante = alerte
+  `<règle>_crashed`, plus jamais un tick entier perdu). Fin des « 4
+  éditions » pour ajouter une règle. `SET statement_timeout='300s'` posé
+  sur `cooked-alerts-hourly` (le watchdog était tuable par le mode de panne
+  de `run_rpc_contract_tests`). REVOKE balayés sur toutes les règles.
+- `scripts/c2_alerts_contract.sql` v2 : découverte par catalogue (ne peut
+  plus décrocher) + assertions de couverture du registre et d'ACL.
+- `CONTEXT.md` : vocabulaire **Source / Lag normal / Retard / Trou /
+  Silence / Escalade** + invariant « toute nouvelle source a sa ligne de
+  contrat ». Premier tick réel : 0 alerte, 0 crash (toutes sources fraîches).
+
+### Suite (programme 1→3→2)
+Chantier 3 : module d'ingestion forms à deux adapters (push webhook + pull
+de réconciliation API Wix). Chantier 2 : battement d'exécution des jobs
+GitHub + pg_cron (+ `refresh_pipeline_health` en projection du registre,
+`identity_stitch` sous surveillance d'exécution).
 
 ## [2026-08-11] — Dashboard : lifting UI (tokens, chrome de tableau collant)
 
