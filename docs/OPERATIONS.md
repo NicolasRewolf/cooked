@@ -693,9 +693,15 @@ the `events` table with the form name, submission ID, page source, and
 the hidden fields `cooked_aid`/`cooked_sid` (Sprint 37, PII stripped since
 Sprint 30).
 
-The webhook bypasses the browser entirely, so it's 100% reliable. The
-trade-off: no browser-session correlation at insert time — attribution is
-resolved at read time by `form_submits_attributed()`.
+The webhook bypasses the browser entirely — but it is only as reliable as
+the Wix Automation that fires it, and that automation lives outside the
+repo, unversioned, deletable by a click. Proven on 11/08/2026: a rework of
+the site's automations silently removed it, and 22 submissions (12–21/08)
+were lost until an audit caught the silence 11 days later (backfilled by
+migration `20260823112541`). Until a pull-reconciliation exists, any
+"reliable" claim about this channel is a belief, not a property. The
+trade-off stands: no browser-session correlation at insert time —
+attribution is resolved at read time by `form_submits_attributed()`.
 
 ---
 
