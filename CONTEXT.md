@@ -95,6 +95,45 @@ mobile, **50 % desktop**), et elle varie de 40 % à 92 % selon la page. En deskt
 laissés ouverts, pas des rebonds.
 _Avoid_ : présenter un dwell médian comme un fait sans sa couverture.
 
+### Sources & fraîcheur (23/08/2026 — ADR-0002)
+
+**Source** :
+Un flux qui alimente Cooked en données : tracker (events), formulaires
+(webhook Wix), GSC, GBP, DataForSEO, snapshots internes (CPI, SEO,
+dashboard), demain SECIB. Chaque source a une ligne dans
+`freshness_contract` — le registre est la liste exhaustive de ce qui est
+surveillé, et son complément est la liste de ce qui ne l'est pas.
+_Avoid_ : « pipeline » pour désigner une source précise (le pipeline est
+l'ensemble).
+
+**Lag normal** :
+Le retard structurel d'une source en jours, dû à son fournisseur — GSC
+consolide à ~J-2/J-3, GBP à ~J-4/J-5, un snapshot nocturne est à J-0/J-1.
+Un âge ≤ lag normal n'est jamais une anomalie.
+
+**Retard** (`<source>_stale`) :
+L'âge du dernier jour de donnée dépasse le lag normal au-delà des seuils du
+contrat (warn puis critical). Se mesure toujours avec `paris_today()`.
+_Avoid_ : « stale » appliqué à une source dont l'âge est dans son lag normal.
+
+**Trou** (`<source>_gap`) :
+Un jour manquant À L'INTÉRIEUR de la série, alors que des jours plus
+récents existent (ex. la fenêtre mois-calendaire GSC qui perdait les fins
+de mois). Un trou ne se voit pas dans l'âge du dernier point.
+
+**Silence** :
+Une source événementielle qui n'émet plus alors que sa cadence historique
+en prévoyait (forms : ~45/mois → warn > 2 j, critical > 4 j). Le Silence
+est le mode de panne des deux incidents d'août 2026 : le système savait
+dire « donnée dégradée », jamais « donnée absente ».
+_Avoid_ : confondre avec le Retard d'un snapshot — le Silence porte sur des
+événements humains, sa normalité dépend de la cadence réelle du site.
+
+**Escalade** :
+Un warn ininterrompu ≥ 5 jours devient critical (et pousse sur ntfy).
+**Acker la dernière alerte du kind suspend l'escalade et le re-push** —
+c'est le sens de `acked` : « vu, je gère ».
+
 ## Invariants
 
 - **Une seule méthode pour l'attribution à l'entrée : la visite recousue.**
@@ -115,3 +154,8 @@ _Avoid_ : présenter un dwell médian comme un fait sans sa couverture.
   médian sans son taux de `page_exit` n'est pas un chiffre livrable — la
   couverture varie de 40 % à 92 % selon la page et elle est corrélée
   négativement (−0,32) au dwell mesuré.
+- **Toute nouvelle source d'ingestion reçoit sa ligne `freshness_contract`
+  dans la migration qui la crée.** Une source sans contrat est invisible du
+  monitoring — c'est le trou par lequel les pannes d'août 2026 sont passées
+  (ADR-0002). `scripts/c2_alerts_contract.sql` vérifie la couverture des
+  sources attendues.
