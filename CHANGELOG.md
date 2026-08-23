@@ -3,6 +3,46 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-08-23] — Panne silencieuse du webhook forms : backfill + réparations
+
+Découvert pendant le bilan mensuel du 22/08 : l'automation Wix « Form
+Submitted → POST form-webhook » a été **supprimée le 11/08** lors d'un
+remaniement des automations du site. Onze jours sans un seul `form_submit`,
+**aucune alerte** (`form_submit_dropped` ne voit que les payloads reçus ;
+aucune règle « zéro form depuis N jours » n'existait). 22 soumissions
+réelles (12–21/08) confirmées côté API Wix et export CSV officiel.
+Seconde panne du même week-end : le cron GBP en échec reauth ADC depuis le
+08/08 (`gbp_gap` a sonné, mais à J+14).
+
+### Réparé
+- **Automation Wix recréée** (22/08, token `FORM_WEBHOOK_SECRET` régénéré) —
+  nommée « ⚠️ Cooked analytics — form → webhook (NE PAS SUPPRIMER) ».
+- **Backfill des 22 `form_submit` perdus** (migration `20260823112541`) :
+  rows iso-format v13 sans PII, `capture_source='wix-backfill'`,
+  `props->>'submission_id'` = empreinte `wiximport-…` **identique** à
+  `crm_prospects.wix_submission_id` (lien events↔crm matérialisé pour ces 22).
+  Contacts macro 01-21/08 : 124 → **143** (vs 156 en juillet, soit −8 % et
+  non −21 %). Annotation posée dans `annotations`.
+- **`crm_prospects` rattrapé** via `wix_forms_import.py` (+29, total 827) ;
+  dédoublonnage des 7 captures webhook du 10-11/08 réimportées par le CSV
+  (migration `20260823112604` — on garde la row au vrai submissionId Wix).
+- **Index `events_form_submit_submission_id_uniq` matérialisé** dans les
+  migrations (existait en prod depuis Sprint 25, absent du repo — drift).
+- **Secret `NTFY_TOPIC` posé côté GitHub** : les steps `notify-failure` des
+  4 workflows d'ingestion étaient inertes depuis toujours (constat Majeur
+  audit 25/07) — les 14 échecs consécutifs du cron GBP n'ont jamais rien
+  poussé. Désormais tout échec CI notifie sur ntfy.
+- **GBP réingéré** (credential ADC renouvelé par Nicolas, secret re-poussé,
+  run vert) : `gbp_daily` de retour à J-3, 12 jours rebouchés, la fiche n'a
+  pas décliné (~175 appels/mois, rythme stable).
+
+### Suite (revue d'architecture du 22/08, programme acté 1→3→2)
+Trois chantiers de résilience : registre déclaratif des contrats de
+fraîcheur (+ règle « Silence » — forms : warn 48 h / critical 4 j, escalade
+générique warn→critical à +5 j), module d'ingestion forms à deux adapters
+(push webhook + pull de réconciliation API Wix), battement d'exécution des
+jobs GitHub + pg_cron.
+
 ## [2026-08-11] — Dashboard : lifting UI (tokens, chrome de tableau collant)
 
 Reprise de l'**architecture** de [beautiful-ui](https://beautiful-ui-five.vercel.app/),
