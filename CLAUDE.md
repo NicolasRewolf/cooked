@@ -934,13 +934,28 @@ La colonne `source` trace la provenance du THEME ; la provenance de
 `category` est toujours `wix_api`.
 
 ⚠️ **Pas de refresh automatique** : un nouvel article publié n'a pas de
-`category` tant qu'on ne rejoue pas la synchro API Wix (ListPosts filtré
-sur la catégorie id `9477320f-5902-40e9-ace3-b0e3b6b8b51f`, site Cabinet
-Plouton `0870235c-b92d-4a69-a2f4-25a976ae5f0c`). Réflexe : si une analyse
-par catégorie montre des posts récents à `category IS NULL`, relancer la
-synchro (même mécanique que la migration). Ne JAMAIS présumer la catégorie
-d'un article à partir de son slug : l'API Wix est la seule référence
-(remplace l'ancien plan « scraper /comprendre-le-droit »).
+`category` tant qu'on ne rejoue pas la synchro API Wix. Endpoint faisant
+autorité : `GET https://www.wixapis.com/blog/v3/posts?categoryIds=…`
+(catégorie « Ressources et notions juridiques » =
+`9477320f-5902-40e9-ace3-b0e3b6b8b51f`, site Cabinet Plouton
+`0870235c-b92d-4a69-a2f4-25a976ae5f0c` ; pagination `paging.limit` /
+`paging.offset`, 100 max par page). Ne JAMAIS présumer la catégorie d'un
+article à partir de son slug : l'API Wix est la seule référence (remplace
+l'ancien plan « scraper /comprendre-le-droit »).
+
+⚠️ **Le mode de défaillance n'est PAS `category IS NULL`** — c'est
+**l'absence totale de ligne**. Les deux mécanismes qui créent des lignes
+(`refresh_page_taxonomy_heuristic()` pour le thème, les synchros Wix
+successives) ne considèrent que les paths déjà vus dans `events_human` :
+un article publié mais pas encore visité n'obtient aucune ligne, et n'est
+jamais rattrapé au tour suivant. Constaté le 30/08/2026 : 12 articles
+manquants dont 5 ressources, certaines publiées en juin — invisibles de
+l'onglet Articles Ressources, de `content_performance` et du suivi du
+contrat éditorial pendant deux mois (migration `20260831090540`). Depuis,
+l'alerte **`page_taxonomy_gap`** (règle `alert_rule_page_taxonomy_gap()`,
+cron horaire via `cooked_alerts_refresh()`) compte les `/post/` avec
+≥ 5 vues/30 j sans catégorie et sonne à partir de 3. Quand elle sonne :
+rejouer la synchro Wix, puis migration nommée pour l'upsert.
 
 ### Contexte business (recueilli auprès de Nicolas le 11/06/2026)
 
