@@ -3,6 +3,50 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-08-31] — page_taxonomy : 12 articles jamais ingérés + alerte de récidive
+
+Question de Nicolas (« tu as ingéré les tout derniers articles de ressources
+et notions juridiques ? ») : **non**. La catégorie Wix Blog n'a pas de cron ;
+dernière synchro le 22/07/2026 (ressource) / 10/07/2026 (classique).
+
+### Diagnostic
+- L'API Wix déclare **433 posts publiés** (62 `ressource` + 371 `classique`) ;
+  `page_taxonomy` n'en connaissait que **426**, dont 58 ressources.
+- Diff exhaustif contre la liste faisant autorité : **421 déjà corrects,
+  12 absents, 0 catégorie erronée**, 5 paths en base qui ne sont plus publiés
+  (dépubliés ou re-sluggés — conservés pour l'historique de trafic).
+- **Cause** : ni `refresh_page_taxonomy_heuristic()` (filtre trafic 90 j) ni les
+  synchros Wix précédentes ne créent de ligne pour un path jamais vu dans
+  `events_human`. Un article publié mais pas encore visité passe à travers —
+  et n'est jamais rattrapé, la passe suivante repartant du même filtre. Les
+  5 ressources manquantes ont toutes démarré leur trafic après le 22/07.
+- Le mode de défaillance n'est donc **pas** `category IS NULL` mais l'absence
+  totale de ligne — ce que le réflexe documenté jusqu'ici ne cherchait pas.
+
+### Réparé
+- **Migration `20260831090540`** : upsert des 12 lignes manquantes (5 ressources
+  — `soumission-chimique`, `fraude-bancaire`, `faute-inexcusable`,
+  `pension-alimentaire`, `changer-d-avocat` — et 7 classiques). Thème calculé
+  par la même heuristique de slug, `source='slug_heuristic'` pour rester
+  maintenables ; `theme`/`source` des lignes existantes préservés.
+  Après : 438 posts, **63 ressources** (62 Wix + 1 vestige 301), 374 classiques.
+- **Alerte `page_taxonomy_gap`** (`alert_rule_page_taxonomy_gap()`, découverte
+  automatiquement par `cooked_alerts_refresh()`) : compte les `/post/` avec
+  ≥ 5 vues/30 j sans catégorie, `warn` à 3, `critical` à 10. Entièrement en SQL,
+  aucun appel Wix. Elle aurait sonné dès juillet.
+- **Migration `20260831090702`** : `revoke execute … from anon, authenticated`
+  — `revoke all … from public` ne suffit pas face aux default privileges
+  Supabase (advisors 0028/0029 levés par la migration précédente, refermés).
+
+### Vérifications
+- Deux méthodes indépendantes donnent le même écart de 12 (diff par empreinte
+  md5 côté client, et requête de détection SQL côté serveur).
+- Comptes réconciliés : 421 + 12 = 433 = total Wix ; 426 + 12 = 438 en base.
+- `alert_rule_page_taxonomy_gap()` → 0 ligne après correctif ;
+  `cooked_alerts_refresh()` → 0 alerte, aucun crash de règle ;
+  `latest_rpc_health()` → 0 KO ; ACL alignée sur les autres règles
+  (`postgres=X | service_role=X`) ; `rpcs.sql` + méta régénérés (121 → 122).
+
 ## [2026-08-23] — Panne silencieuse du webhook forms : backfill + réparations
 
 Découvert pendant le bilan mensuel du 22/08 : l'automation Wix « Form

@@ -351,6 +351,50 @@ END;
 $function$
 
 
+-- ═══ public.alert_rule_page_taxonomy_gap() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_page_taxonomy_gap()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_n  bigint;
+  v_ex text;
+BEGIN
+  WITH vus AS (
+    SELECT e.path, count(*) FILTER (WHERE e.name = 'pageview') AS pv
+    FROM public.events_human e
+    WHERE e.path LIKE '/post/%'
+      AND e.occurred_at > now() - interval '30 days'
+      -- mêmes exclusions structurelles que refresh_page_taxonomy_heuristic (T-19)
+      AND e.path NOT LIKE '%/preview/%'   -- previews Wix avec token
+      AND e.path !~ 'https?://'           -- URLs concaténées par erreur
+      AND e.path !~ '[ÃÂ]'                -- mojibake (double encodage)
+      AND e.path !~ '%'                   -- restes d'URL-encoding
+      AND length(e.path) <= 140
+    GROUP BY e.path
+    HAVING count(*) FILTER (WHERE e.name = 'pageview') >= 5
+  )
+  SELECT count(*), string_agg(v.path, ', ' ORDER BY v.pv DESC)
+    INTO v_n, v_ex
+  FROM vus v
+  LEFT JOIN public.page_taxonomy t ON t.path = v.path
+  WHERE t.path IS NULL OR t.category IS NULL;
+
+  IF v_n >= 3 THEN
+    RETURN QUERY SELECT
+      'page_taxonomy_gap'::text,
+      CASE WHEN v_n >= 10 THEN 'critical' ELSE 'warn' END::text,
+      format(
+        '%s article(s) avec du trafic (≥ 5 vues/30 j) sans catégorie Wix dans page_taxonomy — toute lecture par catégorie (dashboard Articles Ressources, content_performance, contrat éditorial) les ignore. Rejouer la synchro API Wix : GET /blog/v3/posts, site 0870235c-b92d-4a69-a2f4-25a976ae5f0c, catégorie ressource 9477320f-5902-40e9-ace3-b0e3b6b8b51f. Concernés : %s',
+        v_n, left(coalesce(v_ex, ''), 400)
+      );
+  END IF;
+END;
+$function$
+
+
 -- ═══ public.alert_rule_pipeline_dead() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_pipeline_dead()
  RETURNS TABLE(kind text, severity text, detail text)
