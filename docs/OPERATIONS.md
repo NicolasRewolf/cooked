@@ -372,7 +372,7 @@ Même règle partout : **decode → NFC → slash final retiré (sauf `/`)**.
 
 ### Auth
 
-Service Account Google Cloud `gsc-mcp-claude@plouton-472207.iam.gserviceaccount.com`, credentials JSON en `~/.claude/gsc-credentials.json` (NON commité). Ajouté comme utilisateur Restreint sur la propriété GSC `https://www.jplouton-avocat.fr/`.
+Service Account Google Cloud `gsc-cooked@rewolf-507310.iam.gserviceaccount.com` (projet GCP central `rewolf-507310` depuis le 01/09/2026 — l'ancien projet `plouton-472207` et son SA `gsc-mcp-claude@…` ont été supprimés lors du ménage GCP), credentials JSON en `~/.claude/gsc-credentials.json` (NON commité, miroir base64 dans le secret GitHub `GSC_CREDENTIALS_B64`). Ajouté comme utilisateur sur la propriété GSC `https://www.jplouton-avocat.fr/`. ⚠️ Même migration côté GBP : l'approbation de l'API Business Profile étant liée au projet, elle doit être re-demandée pour `rewolf-507310` (quota à 0 sinon — état au 01/09/2026 : demande à déposer, cron `gbp-daily-ingest` en échec attendu d'ici là).
 
 ### Re-ingestion / refresh
 
