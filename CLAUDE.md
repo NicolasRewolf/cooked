@@ -364,7 +364,8 @@ L'agent `cooked` est **propriétaire de bout en bout** du système :
   table `dfs_keyword_volume`, cron `dfs-weekly-sync.yml`)
 - L'ingestion Google Business Profile (`scripts/gbp_ingest.py`, table
   `gbp_daily`, cron `gbp-daily-ingest.yml`) — les appels partis de la fiche
-- L'auth Service Account GSC (`gsc-mcp-claude@plouton-472207...`)
+- L'auth Service Account GSC (`gsc-cooked@rewolf-507310...` — projet GCP
+  central `rewolf-507310` depuis le ménage du 01/09/2026, ex-`plouton-472207`)
   et le fichier `~/.claude/gsc-credentials.json` qui ne doit JAMAIS
   être committé
 
