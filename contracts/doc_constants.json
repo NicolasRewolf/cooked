@@ -1,0 +1,21 @@
+{
+  "project_id": "mxycmjkeotrycyneacje",
+  "rpc_function_count_expected_min": 120,
+  "cron_jobs": [
+    {"jobname": "run_rpc_contract_tests", "schedule": "30 3 * * *"},
+    {"jobname": "purge_old_events_monthly", "schedule": "0 4 1 * *"},
+    {"jobname": "refresh_noise_filters_hourly", "schedule": "5 * * * *"},
+    {"jobname": "cooked-alerts-hourly", "schedule": "15 * * * *"},
+    {"jobname": "refresh_seo_url_snapshot", "schedule": "0 3 * * *"},
+    {"jobname": "cooked-purge-noise-weekly", "schedule": "30 4 * * 0"},
+    {"jobname": "refresh-identity-stitch", "schedule": "40 3 * * *"},
+    {"jobname": "cooked-refresh-after-gsc", "schedule": "0 8-20 * * *"},
+    {"jobname": "math-refresh-snapshots-weekly", "schedule": "10 5 * * 0"}
+  ],
+  "migrations_must_exist": [
+    "20260807224552",
+    "20260902182316",
+    "20260902212045"
+  ],
+  "notes": "T-12 mission 02/09/2026 — liste cron figée depuis prod le 02/09. Les repair_hint freshness_contract qui citent des jobs absents (ex. cooked-cpi-daily-snapshot) sont un constat séparé (T-14)."
+}

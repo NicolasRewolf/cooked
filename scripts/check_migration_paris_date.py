@@ -46,6 +46,9 @@ ALLOW_LINE = re.compile(
 HISTORICAL_ALLOWLIST = {
     "20260604150000_paris_date_seam.sql",
     "20260525170000_events_paris_date_index.sql",
+    # T-12 : miroir exact d'une migration prod du 08/08 (casts Paris d'époque).
+    # Ne pas « moderniser » le fichier — ça casserait la parité statements.
+    "20260807224552_weekly_conversion_pages_routine.sql",
 }
 
 
