@@ -30,4 +30,8 @@ jobs:
       - name: T-12 — drift prod ↔ repo
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_RO }}
-        run: python3 scripts/check_prod_drift.py
+        run: |
+          python3 scripts/check_prod_drift.py || {
+            echo "::error::Si Network unreachable / IPv6 : DATABASE_URL_RO doit utiliser le pooler Session (IPv4), ex. postgresql://cooked_ci_ro.<PROJECT_REF>:…@aws-0-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require"
+            exit 1
+          }
