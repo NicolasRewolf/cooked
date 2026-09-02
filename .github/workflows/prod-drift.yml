@@ -1,0 +1,33 @@
+name: Prod drift (T-12)
+
+# Compare la prod à la prod via le rôle lecture seule cooked_ci_ro.
+# Secret requis : DATABASE_URL_RO (GitHub → Settings → Secrets).
+
+on:
+  schedule:
+    - cron: '20 6 * * *' # 06:20 UTC ≈ 08:20 Paris
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/rpcs.sql'
+      - 'contracts/rpc_snapshot_meta.json'
+      - 'contracts/doc_constants.json'
+      - 'scripts/check_prod_drift.py'
+      - 'scripts/generate_rpcs_sql.py'
+      - '.github/workflows/prod-drift.yml'
+  workflow_dispatch:
+
+jobs:
+  prod-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install psycopg2
+        run: pip install psycopg2-binary
+      - name: T-12 — drift prod ↔ repo
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_RO }}
+        run: python3 scripts/check_prod_drift.py

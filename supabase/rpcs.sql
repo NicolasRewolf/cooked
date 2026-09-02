@@ -7,7 +7,7 @@
 -- Ce fichier = instantané lisible pour humains et agents (Arch #5, 10/07/2026).
 --
 -- Régénérer : python3 scripts/generate_rpcs_sql.py  (DATABASE_URL requis)
--- Généré le 10/08/2026 — projet mxycmjkeotrycyneacje.
+-- Généré le 03/09/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
 -- ═══ public.alert_rule_cpi_drop() ═══
@@ -59,63 +59,6 @@ END;
 $function$
 
 
--- ═══ public.alert_rule_cpi_stale() ═══
-CREATE OR REPLACE FUNCTION public.alert_rule_cpi_stale()
- RETURNS TABLE(kind text, severity text, detail text)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_last    date;
-  v_lag     int;
-  v_debut   date;
-  v_fin     date;
-  v_trous   date[];
-  v_premier date;
-BEGIN
-  SELECT max(day), min(day) INTO v_last, v_premier FROM public.cpi_daily;
-
-  IF v_last IS NULL THEN
-    RETURN QUERY SELECT 'cpi_stale'::text, 'critical'::text,
-      'cpi_daily est vide — le snapshot CPI n a jamais tourné.'::text;
-    RETURN;
-  END IF;
-
-  v_lag := public.paris_today() - v_last;  -- foyer unique, cf. contrat C6
-
-  IF v_lag >= 2 THEN
-    RETURN QUERY SELECT
-      'cpi_stale'::text,
-      'critical'::text,
-      ('cpi_daily s arrête au ' || to_char(v_last, 'DD/MM/YYYY') || ' (' || v_lag
-       || ' jours de retard) — un jour de CPI non calculé est perdu définitivement.')::text;
-  END IF;
-
-  -- Trous au milieu de la série : invisibles au test de retard ci-dessus.
-  v_debut := greatest(v_premier, public.paris_today() - 7);
-  v_fin   := public.paris_today() - 1;
-
-  SELECT array_agg(s.d ORDER BY s.d) INTO v_trous
-  FROM (
-    SELECT (v_debut + i)::date AS d
-    FROM generate_series(0, greatest(v_fin - v_debut, -1)) AS i
-  ) s
-  WHERE NOT EXISTS (SELECT 1 FROM public.cpi_daily c WHERE c.day = s.d);
-
-  IF v_trous IS NOT NULL AND cardinality(v_trous) > 0 THEN
-    RETURN QUERY SELECT
-      'cpi_gap'::text,
-      'warn'::text,
-      ('cpi_daily : ' || cardinality(v_trous) || ' jour(s) manquant(s) sur les 7 derniers — '
-       || (SELECT string_agg(to_char(d, 'DD/MM'), ', ') FROM unnest(v_trous) d)
-       || '. Jours perdus définitivement ; cpi_movers compare contre un snapshot '
-       || 'plus ancien que prévu sur ces dates. Vérifier cron.job_run_details.')::text;
-  END IF;
-END;
-$function$
-
-
 -- ═══ public.alert_rule_cron_failed() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_cron_failed()
  RETURNS TABLE(kind text, severity text, detail text)
@@ -155,29 +98,6 @@ END;
 $function$
 
 
--- ═══ public.alert_rule_dfs_stale() ═══
-CREATE OR REPLACE FUNCTION public.alert_rule_dfs_stale()
- RETURNS TABLE(kind text, severity text, detail text)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE v_ts timestamptz;
-BEGIN
-  SELECT max(last_synced_at) INTO v_ts FROM public.dfs_keyword_volume;
-  IF v_ts IS NULL OR v_ts < now() - interval '10 days' THEN
-    RETURN QUERY SELECT
-      'dfs_stale'::text,
-      'warn'::text,
-      format(
-        'DataForSEO pas syncé depuis %s — cron dfs-weekly-sync en panne ?',
-        coalesce(to_char(v_ts AT TIME ZONE 'Europe/Paris', 'DD/MM/YYYY'), 'jamais')
-      );
-  END IF;
-END;
-$function$
-
-
 -- ═══ public.alert_rule_double_embed_suspect() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_double_embed_suspect()
  RETURNS TABLE(kind text, severity text, detail text)
@@ -204,6 +124,53 @@ BEGIN
         '%s sessions avec pageview/web_vitals dupliqués même-seconde sur 24h (fond normal ~8) — snippet tracker probablement en double dans Wix Custom Code',
         v_n
       );
+  END IF;
+END;
+$function$
+
+
+-- ═══ public.alert_rule_exposure() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_exposure()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_fn text;
+  v_vw text;
+BEGIN
+  SELECT string_agg(p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')', ', ' ORDER BY p.proname)
+    INTO v_fn
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.prosecdef
+    AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+         OR has_function_privilege('authenticated', p.oid, 'EXECUTE'));
+
+  SELECT string_agg(c.relname, ', ' ORDER BY c.relname)
+    INTO v_vw
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relkind = 'v'
+    AND NOT coalesce((SELECT bool_or(opt = 'security_invoker=true') FROM unnest(c.reloptions) AS opt), false)
+    AND (has_table_privilege('anon', c.oid, 'SELECT')
+         OR has_table_privilege('authenticated', c.oid, 'SELECT'));
+
+  IF v_fn IS NOT NULL THEN
+    kind := 'exposure_function'; severity := 'critical';
+    detail := 'Fonction(s) SECURITY DEFINER exécutable(s) par anon/authenticated : ' || v_fn
+              || ' — REVOKE ALL ON FUNCTION … FROM PUBLIC, anon, authenticated (règle I1, mission 02/09/2026).';
+    RETURN NEXT;
+  END IF;
+
+  IF v_vw IS NOT NULL THEN
+    kind := 'exposure_view'; severity := 'critical';
+    detail := 'Vue(s) sans security_invoker lisible(s) par anon/authenticated : ' || v_vw
+              || ' — ALTER VIEW … SET (security_invoker = true) + REVOKE (règle I1, mission 02/09/2026).';
+    RETURN NEXT;
   END IF;
 END;
 $function$
@@ -239,113 +206,115 @@ END;
 $function$
 
 
--- ═══ public.alert_rule_gbp_gap() ═══
-CREATE OR REPLACE FUNCTION public.alert_rule_gbp_gap()
+-- ═══ public.alert_rule_freshness() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_freshness()
  RETURNS TABLE(kind text, severity text, detail text)
  LANGUAGE plpgsql
- SECURITY DEFINER
+ STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-declare
-  v_last date := null;
-  v_age  int;
-begin
-  select max(day) into v_last from public.gbp_daily;
-  if v_last is null then
-    return query select 'gbp_gap'::text, 'warn'::text,
-      'gbp_daily est vide — ingestion GBP jamais passée ?'::text;
-    return;
-  end if;
-  v_age := public.paris_today() - v_last;
-  if v_age > 14 then
-    return query select 'gbp_gap'::text, 'critical'::text,
-      format('gbp_daily : dernier jour %s (J-%s) — cron GitHub gbp-daily-ingest mort ? Reauth ADC probable (voir scripts/gbp_ingest.py).',
-             to_char(v_last, 'DD/MM/YYYY'), v_age);
-  elsif v_age > 7 then
-    return query select 'gbp_gap'::text, 'warn'::text,
-      format('gbp_daily : dernier jour %s (J-%s, normal ≈ J-4/5) — vérifier le cron gbp-daily-ingest (reauth ADC ?).',
-             to_char(v_last, 'DD/MM/YYYY'), v_age);
-  end if;
-end;
-$function$
-
-
--- ═══ public.alert_rule_gsc_gap() ═══
-CREATE OR REPLACE FUNCTION public.alert_rule_gsc_gap()
- RETURNS TABLE(kind text, severity text, detail text)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE v_n bigint; v_detail text;
+DECLARE
+  c         record;
+  v_last    date;
+  v_age     int;
+  v_sev     text;
+  v_missing int;
+  v_days    text;
 BEGIN
-  BEGIN
-    SELECT count(*), string_agg(to_char(d, 'DD/MM/YYYY'), ', ' ORDER BY d)
-      INTO v_n, v_detail
-    FROM (
-      SELECT generate_series(
-               public.gsc_last_data_day() - 90,
-               public.gsc_last_data_day(),
-               interval '1 day'
-             )::date AS d
-      EXCEPT
-      SELECT DISTINCT day
-      FROM public.gsc_path_daily
-      WHERE day >= public.gsc_last_data_day() - 90
-    ) miss;
-    IF v_n >= 1 THEN
-      RETURN QUERY SELECT
-        'gsc_gap'::text,
-        'warn'::text,
-        format(
-          '%s jour(s) GSC manquant(s) sur 90j couverts : %s — backfill via scripts/gsc_ingest.py',
-          v_n, v_detail
-        );
-    END IF;
-  EXCEPTION WHEN OTHERS THEN
-    RETURN QUERY SELECT
-      'gsc_gap_check_failed'::text,
-      'critical'::text,
-      SQLERRM;
-  END;
+  FOR c IN SELECT * FROM public.freshness_contract WHERE enabled ORDER BY source LOOP
+    BEGIN
+      EXECUTE c.last_point_sql INTO v_last;
+
+      IF v_last IS NULL THEN
+        kind := c.source || '_stale'; severity := 'critical';
+        detail := format('%s : aucune donnée (table vide ?). %s',
+                         c.label, coalesce(c.repair_hint, ''));
+        RETURN NEXT;
+        CONTINUE;
+      END IF;
+
+      -- Clamp : un dernier point « dans le futur » (horloge client clampée
+      -- ±48 h par l'Edge track) ne doit jamais masquer une panne.
+      v_last := least(v_last, public.paris_today());
+
+      v_age := public.paris_today() - v_last;
+      v_sev := CASE
+        WHEN c.critical_after_days IS NOT NULL AND v_age > c.critical_after_days THEN 'critical'
+        WHEN v_age > c.warn_after_days THEN 'warn'
+        ELSE NULL
+      END;
+
+      IF v_sev IS NOT NULL THEN
+        kind := c.source || '_stale'; severity := v_sev;
+        detail := format(
+          '%s : dernier jour de donnée %s (J-%s ; lag normal ~J-%s, warn > %s j%s). %s',
+          c.label, to_char(v_last, 'DD/MM/YYYY'), v_age, c.normal_lag_days,
+          c.warn_after_days,
+          CASE WHEN c.critical_after_days IS NOT NULL
+               THEN ', critical > ' || c.critical_after_days || ' j' ELSE '' END,
+          coalesce(c.repair_hint, ''));
+        RETURN NEXT;
+      END IF;
+
+      -- Trous à l'intérieur de la série, sur [last_point - fenêtre, last_point].
+      IF c.gap_relation IS NOT NULL AND c.gap_day_column IS NOT NULL
+         AND c.gap_window_days IS NOT NULL THEN
+        -- Début de série borné au premier jour réellement présent : une
+        -- source plus jeune que la fenêtre ne doit pas compter « manquants »
+        -- les jours d'avant sa naissance (clamp hérité de feu cpi_stale).
+        EXECUTE format(
+          'SELECT count(*)::int, string_agg(to_char(d.d::date, %L), '', '' ORDER BY d.d) '
+          'FROM generate_series(GREATEST(%L::date, (SELECT min(%I) FROM public.%I)), %L::date, interval ''1 day'') d(d) '
+          'LEFT JOIN (SELECT DISTINCT %I AS day FROM public.%I '
+          '           WHERE %I BETWEEN %L AND %L) t ON t.day = d.d::date '
+          'WHERE t.day IS NULL',
+          'DD/MM', v_last - c.gap_window_days, c.gap_day_column, c.gap_relation, v_last,
+          c.gap_day_column, c.gap_relation, c.gap_day_column,
+          v_last - c.gap_window_days, v_last
+        ) INTO v_missing, v_days;
+        IF v_missing > 0 THEN
+          kind := c.source || '_gap'; severity := 'warn';
+          detail := format('%s : %s jour(s) manquant(s) entre le %s et le %s : %s',
+                           c.label, v_missing,
+                           to_char(v_last - c.gap_window_days, 'DD/MM'),
+                           to_char(v_last, 'DD/MM'), left(v_days, 300));
+          RETURN NEXT;
+        END IF;
+      END IF;
+
+    EXCEPTION WHEN others THEN
+      kind := c.source || '_contract_failed'; severity := 'critical';
+      detail := format('Contrat de fraîcheur « %s » en échec : %s',
+                       c.source, left(SQLERRM, 300));
+      RETURN NEXT;
+    END;
+  END LOOP;
 END;
 $function$
 
 
--- ═══ public.alert_rule_gsc_lag() ═══
-CREATE OR REPLACE FUNCTION public.alert_rule_gsc_lag()
+-- ═══ public.alert_rule_gsc_ingest_missed() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_gsc_ingest_missed()
  RETURNS TABLE(kind text, severity text, detail text)
  LANGUAGE plpgsql
- SECURITY DEFINER
+ STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  v_now_paris   timestamp := now() AT TIME ZONE 'Europe/Paris';
-  v_last_ingest timestamptz;
-  v_lag         int;
+  v_last_ingest date;
 BEGIN
-  -- Avant 13:00 Paris, l'ingestion du jour n'est pas garantie passée
-  -- (GitHub Actions atterrit entre 09:40 et 11:30 Paris) : ne rien conclure.
-  IF v_now_paris::time < time '13:00' THEN
+  -- Le cron GSC tourne à 06:00 UTC ; on ne juge qu'après 13:00 Paris.
+  IF (now() AT TIME ZONE 'Europe/Paris')::time < time '13:00' THEN  -- garde HORAIRE Paris : paris_today() ne porte pas l'heure (C6 ok)
     RETURN;
   END IF;
-
-  SELECT max(ingested_at) INTO v_last_ingest FROM public.gsc_path_daily;
-  v_lag := v_now_paris::date - public.gsc_last_data_day();
-
-  IF v_last_ingest IS NULL
-     OR (v_last_ingest AT TIME ZONE 'Europe/Paris')::date < v_now_paris::date THEN
-    RETURN QUERY SELECT
-      'gsc_lag'::text,
-      'warn'::text,
-      format('Ingestion GSC pas passée aujourd''hui (dernier run : %s) — workflow GitHub Actions en panne ?',
-             COALESCE(to_char(v_last_ingest AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'), 'jamais'));
-  ELSIF v_lag > 3 THEN
-    RETURN QUERY SELECT
-      'gsc_lag'::text,
-      'warn'::text,
-      format('Ingestion OK ce matin, mais Google ne publie que J-%s (dernier jour : %s) — retard côté Google.',
-             v_lag, to_char(public.gsc_last_data_day(), 'DD/MM/YYYY'));
+  SELECT public.paris_date(max(ingested_at)) INTO v_last_ingest
+  FROM public.gsc_path_daily;
+  IF v_last_ingest IS DISTINCT FROM public.paris_today() THEN
+    kind := 'gsc_ingest_missed'; severity := 'warn';
+    detail := format(
+      'Ingestion GSC absente aujourd''hui (dernière : %s) — vérifier le workflow gsc-daily-ingest.',
+      coalesce(to_char(v_last_ingest, 'DD/MM/YYYY'), 'jamais'));
+    RETURN NEXT;
   END IF;
 END;
 $function$
@@ -488,6 +457,40 @@ BEGIN
     END IF;
   END IF;
 END;
+$function$
+
+
+-- ═══ public.alert_rule_warn_escalation() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_warn_escalation()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT a.kind,
+         'critical'::text,
+         'Escalade : warn actif depuis ≥ 5 jours sans acquittement — ' || coalesce(a.detail, a.kind)
+  FROM (
+    SELECT DISTINCT ON (kind) kind, detail
+    FROM public.alerts
+    WHERE severity = 'warn' AND created_at > now() - interval '26 hours'
+    ORDER BY kind, created_at DESC
+  ) a
+  WHERE EXISTS (
+      SELECT 1 FROM public.alerts w
+      WHERE w.kind = a.kind AND w.severity = 'warn'
+        AND w.created_at BETWEEN now() - interval '6 days' AND now() - interval '5 days')
+    AND (SELECT count(*) FROM public.alerts w
+         WHERE w.kind = a.kind AND w.severity = 'warn'
+           AND w.created_at > now() - interval '5 days') >= 4
+    AND NOT EXISTS (
+      SELECT 1 FROM public.alerts c
+      WHERE c.kind = a.kind AND c.severity = 'critical'
+        AND c.created_at > now() - interval '26 hours')
+    AND NOT EXISTS (
+      SELECT 1 FROM public.alerts k
+      WHERE k.kind = a.kind AND k.acked
+        AND k.created_at > now() - interval '5 days');
 $function$
 
 
@@ -829,6 +832,37 @@ AS $function$
 $function$
 
 
+-- ═══ public.conversions_leaderboard(p_since date) ═══
+CREATE OR REPLACE FUNCTION public.conversions_leaderboard(p_since date DEFAULT NULL::date)
+ RETURNS TABLE(page text, conversions_sur_la_page bigint, appels bigint, formulaires bigint, conversions_attribuees_entree bigint, semaines_actives bigint, premiere_semaine date, derniere_semaine date)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  WITH base AS (
+    SELECT week_start, COALESCE(contact_path, '(page inconnue)') AS page,
+           'sur'::text AS role, contact_kind
+    FROM public.conversion_weekly
+    WHERE week_start >= COALESCE(p_since, '-infinity'::date)
+    UNION ALL
+    SELECT week_start, COALESCE(entry_path, '(entree inconnue)'),
+           'entree', contact_kind
+    FROM public.conversion_weekly
+    WHERE week_start >= COALESCE(p_since, '-infinity'::date)
+  )
+  SELECT page,
+         count(*) FILTER (WHERE role = 'sur'),
+         count(*) FILTER (WHERE role = 'sur' AND contact_kind = 'phone'),
+         count(*) FILTER (WHERE role = 'sur' AND contact_kind = 'form'),
+         count(*) FILTER (WHERE role = 'entree'),
+         count(DISTINCT week_start),
+         min(week_start), max(week_start)
+  FROM base
+  GROUP BY 1
+  ORDER BY 2 DESC, 5 DESC, 1;
+$function$
+
+
 -- ═══ public.cooked_alerts_refresh() ═══
 CREATE OR REPLACE FUNCTION public.cooked_alerts_refresh()
  RETURNS integer
@@ -837,27 +871,44 @@ CREATE OR REPLACE FUNCTION public.cooked_alerts_refresh()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  r record;
+  p       record;
+  r       record;
   v_added int := 0;
 BEGIN
-  FOR r IN
-    SELECT * FROM public.alert_rule_pipeline_dead()
-    UNION ALL SELECT * FROM public.alert_rule_cron_failed()
-    UNION ALL SELECT * FROM public.alert_rule_cpi_stale()
-    UNION ALL SELECT * FROM public.alert_rule_double_embed_suspect()
-    UNION ALL SELECT * FROM public.alert_rule_rpc_health()
-    UNION ALL SELECT * FROM public.alert_rule_form_attribution_degraded()
-    UNION ALL SELECT * FROM public.alert_rule_gsc_lag()
-    UNION ALL SELECT * FROM public.alert_rule_gsc_gap()
-    UNION ALL SELECT * FROM public.alert_rule_gbp_gap()
-    UNION ALL SELECT * FROM public.alert_rule_cpi_drop()
-    UNION ALL SELECT * FROM public.alert_rule_dfs_stale()
-    UNION ALL SELECT * FROM public.alert_rule_tracker_drift()
+  FOR p IN
+    SELECT pr.proname
+    FROM pg_proc pr
+    JOIN pg_namespace n ON n.oid = pr.pronamespace
+    WHERE n.nspname = 'public'
+      AND pr.proname LIKE 'alert\_rule\_%'
+      AND pr.pronargs = 0
+    ORDER BY pr.proname
   LOOP
-    v_added := v_added + public.raise_cooked_alert(r.kind, r.severity, r.detail);
+    BEGIN
+      FOR r IN EXECUTE format('SELECT kind, severity, detail FROM public.%I()', p.proname) LOOP
+        v_added := v_added + public.raise_cooked_alert(r.kind, r.severity, r.detail);
+      END LOOP;
+    EXCEPTION WHEN others THEN
+      v_added := v_added + public.raise_cooked_alert(
+        p.proname || '_crashed', 'critical',
+        format('La règle %s a levé une exception : %s', p.proname, left(SQLERRM, 300)));
+    END;
   END LOOP;
   RETURN v_added;
 END;
+$function$
+
+
+-- ═══ public.cooked_ci_cron_jobs() ═══
+CREATE OR REPLACE FUNCTION public.cooked_ci_cron_jobs()
+ RETURNS TABLE(jobname text, schedule text, active boolean)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'cron', 'public', 'pg_catalog'
+AS $function$
+  SELECT j.jobname::text, j.schedule::text, j.active
+  FROM cron.job j
+  ORDER BY 1;
 $function$
 
 
@@ -1626,6 +1677,50 @@ END;
 $procedure$
 
 
+-- ═══ public.cooked_weekly_conversions_snapshot(p_week_start date) ═══
+CREATE OR REPLACE FUNCTION public.cooked_weekly_conversions_snapshot(p_week_start date DEFAULT NULL::date)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+ SET statement_timeout TO '300s'
+AS $function$
+DECLARE
+  v_today date := (now() AT TIME ZONE 'Europe/Paris')::date;
+  v_week  date;
+  v_days  integer;
+  v_rows  integer;
+BEGIN
+  -- defaut : la derniere semaine COMPLETE (lundi -> dimanche revolus)
+  v_week := date_trunc('week',
+              COALESCE(p_week_start::timestamp,
+                       date_trunc('week', v_today::timestamp) - interval '7 days'))::date;
+
+  IF v_week + 6 >= v_today THEN
+    RAISE EXCEPTION 'semaine non terminee (% -> %), rien de fige', v_week, v_week + 6;
+  END IF;
+
+  -- fenetre a couvrir depuis maintenant, + 1 jour de marge
+  v_days := (v_today - v_week) + 2;
+
+  DELETE FROM public.conversion_weekly WHERE week_start = v_week;
+
+  INSERT INTO public.conversion_weekly (
+    week_start, occurred_at, contact_kind, contact_path, entry_path,
+    entry_channel, objet, device_type, attribution_method, anonymous_id,
+    pages_count, journey)
+  SELECT v_week, j.occurred_at, j.contact_kind, j.contact_path, j.entry_path,
+         j.entry_channel, j.objet, j.device_type, j.attribution_method,
+         j.anonymous_id, j.pages_count, j.journey
+  FROM public.conversion_journeys(v_days) j
+  WHERE date_trunc('week', (j.occurred_at AT TIME ZONE 'Europe/Paris'))::date = v_week;
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows;
+END;
+$function$
+
+
 -- ═══ public.cpi_compose(zc numeric, zr numeric, zl numeric, zv numeric, mm numeric, gg numeric, exclude_conversion boolean) ═══
 CREATE OR REPLACE FUNCTION public.cpi_compose(zc numeric, zr numeric, zl numeric, zv numeric DEFAULT 0, mm numeric DEFAULT 1, gg numeric DEFAULT 1, exclude_conversion boolean DEFAULT false)
  RETURNS numeric
@@ -1815,28 +1910,6 @@ BEGIN
   );
 END;
 $function$
-
-
--- ═══ public.dashboard_check_stale() ═══
-CREATE OR REPLACE FUNCTION public.dashboard_check_stale()
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE last_refresh timestamptz;
-BEGIN
-  SELECT max(refreshed_at) INTO last_refresh FROM public.dashboard_resources_snapshot;
-  IF last_refresh IS NULL OR last_refresh < now() - interval '36 hours' THEN
-    IF NOT EXISTS (SELECT 1 FROM public.alerts WHERE kind='dashboard_stale' AND NOT acked AND created_at > now() - interval '24 hours') THEN
-      INSERT INTO public.alerts (kind, severity, detail) VALUES (
-        'dashboard_stale', 'warn',
-        'Snapshot dashboard périmé : dernier refresh ' ||
-        COALESCE(to_char(last_refresh AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'),'jamais') ||
-        ' — le cron refresh-dashboard-snapshots a peut-être échoué.');
-    END IF;
-  END IF;
-END $function$
 
 
 -- ═══ public.dashboard_expertises_kpis(period_kind text) ═══
@@ -3641,19 +3714,33 @@ CREATE OR REPLACE FUNCTION public.raise_cooked_alert(p_kind text, p_sev text, p_
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 declare
-  v_topic text;
+  v_topic      text;
+  v_last_acked boolean;
 begin
+  -- Dédup par (kind, severity) — et non plus par kind seul : le passage
+  -- warn→critical d'un même kind s'insère (et pousse) immédiatement au lieu
+  -- d'attendre jusqu'à 24 h l'expiration de la fenêtre du warn.
   if exists (
     select 1 from public.alerts
     where kind = p_kind
+      and severity = p_sev
       and created_at > now() - interval '24 hours'
   ) then
     return 0;
   end if;
 
+  -- La dernière alerte du kind est-elle acquittée ? (à lire AVANT l'insert)
+  select a.acked into v_last_acked
+  from public.alerts a
+  where a.kind = p_kind
+  order by a.created_at desc
+  limit 1;
+
   insert into public.alerts (kind, severity, detail) values (p_kind, p_sev, p_detail);
 
-  if p_sev = 'critical' then
+  -- Push ntfy : critical uniquement, et pas si l'épisode est acquitté
+  -- (l'insert a toujours lieu — seule la notification se tait).
+  if p_sev = 'critical' and coalesce(v_last_acked, false) = false then
     begin
       select nullif(btrim(value), '') into v_topic
       from public.cooked_config where key = 'ntfy_topic';
@@ -5621,5 +5708,31 @@ exception
   when others then
     return input;
 end;
+$function$
+
+
+-- ═══ public.weekly_conversions_report(p_week_start date) ═══
+CREATE OR REPLACE FUNCTION public.weekly_conversions_report(p_week_start date DEFAULT NULL::date)
+ RETURNS TABLE(semaine date, page_entree text, page_conversion text, appels bigint, formulaires bigint, conversions bigint, canaux text)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  WITH w AS (
+    SELECT date_trunc('week',
+             COALESCE(p_week_start::timestamp,
+                      date_trunc('week', (now() AT TIME ZONE 'Europe/Paris')) - interval '7 days'))::date AS ws
+  )
+  SELECT c.week_start,
+         COALESCE(c.entry_path,   '(entree inconnue)'),
+         COALESCE(c.contact_path, '(page inconnue)'),
+         count(*) FILTER (WHERE c.contact_kind = 'phone'),
+         count(*) FILTER (WHERE c.contact_kind = 'form'),
+         count(*),
+         string_agg(DISTINCT COALESCE(c.entry_channel, 'inconnu'), ', ')
+  FROM public.conversion_weekly c, w
+  WHERE c.week_start = w.ws
+  GROUP BY 1, 2, 3
+  ORDER BY 6 DESC, 2, 3;
 $function$
 
