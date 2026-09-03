@@ -215,7 +215,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
 - **Validation** : simulation : ingestion à 21:00 UTC → séquence à 22:00 ; `refresh_runs` renseignée à chaque run.
 - **Qui** : moi. **Estimation** : 1 h 30.
 
-## T‑13 · Dashboard : contrats depuis la prod, RPC sous contract‑test, Zod nullable, OTP
+## T‑13 · Dashboard : contrats depuis la prod, RPC sous contract‑test, Zod nullable, OTP — **FAIT 03/09 23:20** (migration `20260903211121`, journal)
 
 - **Problème** : g‑01, g‑04, g‑06, g‑08.
 - **Changement** : `generate_dashboard_contracts.py` (15 RPC, depuis la prod) + check en CI (T‑12) ; les 15

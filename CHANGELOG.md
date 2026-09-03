@@ -3,6 +3,42 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-13 : le dashboard est sous contrat avec la prod
+
+Mission du 02/09/2026, ticket T-13 (#114), constats g-01 (P1), g-04, g-06, g-08. Invariant I8.
+Migration `20260903211121`.
+
+### Ajouté
+- **`scripts/generate_dashboard_contracts.py`** : `contracts/dashboard_rpc_columns.json` est écrit
+  **depuis la prod** pour les 16 RPC `dashboard_*` (colonnes `TABLE(...)`, colonnes et NOT NULL des
+  `SETOF <table>`, clés d'un appel réel pour les `jsonb`). `--check` en CI (`prod-drift.yml`, rôle
+  `cooked_ci_ro`) : le JSON commité doit être égal au JSON régénéré ; `--samples` écrit un appel réel
+  par RPC.
+- **`dashboard/src/data/rpc-contract.test.ts`** : chaque schéma Zod a exactement les clés publiées
+  (optionnelles tolérées), un champ Zod non nullable est une colonne NOT NULL, et — en CI prod-drift —
+  chaque réponse prod réelle passe son schéma. C'est le test qui aurait attrapé l'incident `/seo` du
+  25/07/2026 (16 colonnes prod / 20 Zod, page morte 15 jours). Remplace
+  `scripts/check_dashboard_contracts.py` (2 RPC sur 16, deux fichiers du repo comparés entre eux).
+- Contract-test **`dashboard_rpc_budget`** dans `run_rpc_contract_tests` : durée des RPC dashboard du
+  run courant sous budget (20 s `article_detail`, 15 s `honoraires_funnel`, 8 s `seo_by_query`, 5 s les
+  autres). Mesures du 03/09 23:00 : 1,2 s / 1,6 s / 2,8 s ; `article_detail` en `rolling_90` 0,7 s et
+  9 ms (34 s max le 25/07).
+- `cooked_ci_ro` peut exécuter les 16 `dashboard_*` (agrégats, sans PII) pour l'échantillonnage.
+
+### Corrigé
+- **Tables snapshot dashboard** : `NOT NULL` (+ `DEFAULT 0` / `false` / `'C'`) sur les 65 colonnes que
+  les schémas Zod exigent non nulles (0 NULL observé sur 158 lignes ; le contrat tenait par la
+  discipline du refresher). Un refresher qui produirait un NULL échoue désormais à l'écriture
+  (`refresh_step_failed_*`, T-11) au lieu de faire tomber la page à la lecture.
+- **`signInWithOtp` sans `shouldCreateUser:false`** depuis le 25/07 : corrigé (`dashboard/src/lib/otp.ts`,
+  testé). Un e-mail hors allowlist ne crée plus de compte `auth.users` ni ne consomme le quota d'e-mails.
+
+### Constaté (sans changement)
+- g-08 : la fiche article n'est plus lente (0,7-1,2 s contre 34 s le 25/07) — `periods.ts` garde
+  `rolling_90` par défaut ; le budget nocturne surveille la re-dérive.
+- g-01 : les 5 RPC de la home restent dans un `Promise.all` sans `catch` par RPC ; le contrat depuis la
+  prod traite la cause (une RPC qui change sans son Zod ne passe plus la CI), pas le symptôme.
+
 ## [2026-09-03] — T-10 : la fraîcheur se mesure sur la donnée, la couture est horodatée
 
 Mission du 02/09/2026, ticket T-10 (#111), constats g-03 (P1), c-02 (P1), c-04, e-06. Invariant I7.

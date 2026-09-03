@@ -5686,6 +5686,20 @@ BEGIN
           where key = 'identity_stitch_refreshed_at'
             and value::timestamptz > now() - interval '30 hours'$q$,
        NULL, 1)
+      ,
+      -- I8 (T-13, 03/09/2026) : budget de durée des RPC dashboard (mesuré sur ce même run —
+      -- rpc_health est alimentée au fil des tests). 03/09 : article_detail 1,2 s (34 s max le 25/07),
+      -- honoraires_funnel 1,6 s (12 s max mesuré en juillet), seo_by_query 2,8 s, les autres < 0,1 s.
+      ('dashboard_rpc_budget',
+       $q$select count(*) from public.rpc_health h
+          where h.checked_at > now() - interval '30 minutes'
+            and h.rpc_name like 'dashboard\_%'
+            and h.duration_ms > case h.rpc_name
+                                  when 'dashboard_article_detail'   then 20000
+                                  when 'dashboard_honoraires_funnel' then 15000
+                                  when 'dashboard_seo_by_query'      then 8000
+                                  else 5000 end$q$,
+       NULL, 0)
     ) AS v(nom, requete, min_rows, exact_rows)
   LOOP
     PERFORM public.rpc_contract_check(t.nom, t.requete, t.min_rows, t.exact_rows);

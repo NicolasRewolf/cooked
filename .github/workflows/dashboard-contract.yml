@@ -1,11 +1,14 @@
 name: Dashboard contracts
 
 # C9 + C4 — vitest lib/ + schémas Zod data/.
+# T-13 — src/data/rpc-contract.test.ts confronte les schémas Zod à contracts/dashboard_rpc_columns.json
+# (colonnes et nullabilité publiées par la prod).
 
 on:
   pull_request:
     paths:
       - 'dashboard/**'
+      - 'contracts/dashboard_rpc_columns.json'
       - '.github/workflows/dashboard-contract.yml'
   push:
     branches: [main]
@@ -13,6 +16,7 @@ on:
       - 'dashboard/src/data/**'
       - 'dashboard/src/lib/**'
       - 'dashboard/src/components/**'
+      - 'contracts/dashboard_rpc_columns.json'
       - '.github/workflows/dashboard-contract.yml'
 
 jobs:

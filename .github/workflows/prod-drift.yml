@@ -13,6 +13,10 @@ on:
       - 'contracts/rpc_snapshot_meta.json'
       - 'contracts/doc_constants.json'
       - 'scripts/check_prod_drift.py'
+      - 'scripts/generate_dashboard_contracts.py'
+      - 'contracts/dashboard_rpc_columns.json'
+      - 'dashboard/src/data/rpc-schemas.ts'
+      - 'dashboard/src/data/rpc-contract.test.ts'
       - 'scripts/generate_rpcs_sql.py'
       - '.github/workflows/prod-drift.yml'
   workflow_dispatch:
@@ -35,3 +39,17 @@ jobs:
             echo "::error::Si Network unreachable / IPv6 : DATABASE_URL_RO doit utiliser le pooler Session (IPv4), ex. postgresql://cooked_ci_ro.<PROJECT_REF>:…@aws-0-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require"
             exit 1
           }
+      - name: T-13 — contrat RPC dashboard régénéré depuis la prod + échantillons réels
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_RO }}
+        run: python3 scripts/generate_dashboard_contracts.py --check --samples /tmp/dashboard_rpc_samples.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: T-13 — les réponses prod réelles passent les schémas Zod
+        working-directory: dashboard
+        env:
+          DASHBOARD_RPC_SAMPLES: /tmp/dashboard_rpc_samples.json
+        run: npm ci && npx vitest run src/data/rpc-contract.test.ts

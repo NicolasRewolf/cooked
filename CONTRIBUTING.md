@@ -65,7 +65,7 @@ Docs : synchro arch 10/07 + rpcs.sql
 | `branded_query_vectors.json` | Arch #3 — `gsc_is_branded` |
 | `recruitment_objet_vectors.json` | D4 — filtrage macro `form_submit` |
 | `rpc_snapshot_meta.json` | Arch #5 — hash de `supabase/rpcs.sql` |
-| `dashboard_rpc_columns.json` | Arch #6 — colonnes RPC dashboard ↔ Zod (`rpc-schemas.ts`) |
+| `dashboard_rpc_columns.json` | T-13 (ex-Arch #6) — contrat des 16 RPC dashboard généré DEPUIS LA PROD (`scripts/generate_dashboard_contracts.py`, `--check` en CI prod-drift) ↔ Zod (`rpc-contract.test.ts`) |
 
 ## Contrats CI (ne pas casser)
 
