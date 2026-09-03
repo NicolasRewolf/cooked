@@ -9,7 +9,7 @@
     {"jobname": "refresh_seo_url_snapshot", "schedule": "0 3 * * *"},
     {"jobname": "cooked-purge-noise-weekly", "schedule": "30 4 * * 0"},
     {"jobname": "refresh-identity-stitch", "schedule": "40 3 * * *"},
-    {"jobname": "cooked-refresh-after-gsc", "schedule": "0 8-20 * * *"},
+    {"jobname": "cooked-refresh-after-gsc", "schedule": "0 6-21 * * *"},
     {"jobname": "math-refresh-snapshots-weekly", "schedule": "10 5 * * 0"}
   ],
   "migrations_must_exist": [
