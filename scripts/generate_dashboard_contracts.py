@@ -24,6 +24,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -128,8 +130,18 @@ def canonical(contract: dict[str, dict]) -> dict[str, dict]:
     }
 
 
+def _json_default(o):
+    # psycopg2 rend numeric en Decimal et date/timestamptz en objets ; PostgREST (ce que le
+    # dashboard reçoit) rend des nombres JSON et des chaînes ISO — on reproduit cette forme.
+    if isinstance(o, Decimal):
+        return float(o)
+    if isinstance(o, (date, datetime)):
+        return o.isoformat()
+    return str(o)
+
+
 def dumps(obj) -> str:
-    return json.dumps(obj, ensure_ascii=False, indent=2, default=str) + "\n"
+    return json.dumps(obj, ensure_ascii=False, indent=2, default=_json_default) + "\n"
 
 
 def main() -> int:
