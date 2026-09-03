@@ -1,0 +1,42 @@
+name: Régénérer rpcs.sql depuis la prod
+
+# Arch #5 / T-12 — le miroir supabase/rpcs.sql doit hasher exactement comme le
+# dump prod (pg_get_functiondef). Une session locale n'a pas DATABASE_URL_RO :
+# ce workflow régénère le fichier avec le rôle lecture seule cooked_ci_ro et
+# pousse un commit sur la branche demandée. Lancer :
+#   gh workflow run rpcs-regenerate.yml --ref <branche>
+# puis `git pull` sur la branche.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install psycopg2
+        run: pip install psycopg2-binary
+      - name: Générer supabase/rpcs.sql + contracts/rpc_snapshot_meta.json
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_RO }}
+        run: python3 scripts/generate_rpcs_sql.py
+      - name: Commit si changement
+        run: |
+          if git diff --quiet -- supabase/rpcs.sql contracts/rpc_snapshot_meta.json; then
+            echo "rpcs.sql déjà aligné sur la prod — rien à committer"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/rpcs.sql contracts/rpc_snapshot_meta.json
+          git commit -m "chore(rpcs): régénéré depuis la prod (Arch #5)"
+          git push
