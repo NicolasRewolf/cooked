@@ -2,20 +2,105 @@
   "project_id": "mxycmjkeotrycyneacje",
   "rpc_function_count_expected_min": 120,
   "cron_jobs": [
-    {"jobname": "run_rpc_contract_tests", "schedule": "30 3 * * *"},
-    {"jobname": "purge_old_events_monthly", "schedule": "0 4 1 * *"},
-    {"jobname": "refresh_noise_filters_hourly", "schedule": "5 * * * *"},
-    {"jobname": "cooked-alerts-hourly", "schedule": "15 * * * *"},
-    {"jobname": "refresh_seo_url_snapshot", "schedule": "0 3 * * *"},
-    {"jobname": "cooked-purge-noise-weekly", "schedule": "30 4 * * 0"},
-    {"jobname": "refresh-identity-stitch", "schedule": "40 3 * * *"},
-    {"jobname": "cooked-refresh-after-gsc", "schedule": "0 6-21 * * *"},
-    {"jobname": "math-refresh-snapshots-weekly", "schedule": "10 5 * * 0"}
+    {
+      "jobname": "run_rpc_contract_tests",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "jobname": "purge_old_events_monthly",
+      "schedule": "0 4 1 * *"
+    },
+    {
+      "jobname": "refresh_noise_filters_hourly",
+      "schedule": "5 * * * *"
+    },
+    {
+      "jobname": "cooked-alerts-hourly",
+      "schedule": "15 * * * *"
+    },
+    {
+      "jobname": "refresh_seo_url_snapshot",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "jobname": "cooked-purge-noise-weekly",
+      "schedule": "30 4 * * 0"
+    },
+    {
+      "jobname": "refresh-identity-stitch",
+      "schedule": "40 3 * * *"
+    },
+    {
+      "jobname": "cooked-refresh-after-gsc",
+      "schedule": "0 6-21 * * *"
+    },
+    {
+      "jobname": "math-refresh-snapshots-weekly",
+      "schedule": "10 5 * * 0"
+    }
   ],
   "migrations_must_exist": [
     "20260807224552",
     "20260902182316",
     "20260902212045"
   ],
-  "notes": "T-12 mission 02/09/2026 — liste cron figée depuis prod le 02/09. Les repair_hint freshness_contract qui citent des jobs absents (ex. cooked-cpi-daily-snapshot) sont un constat séparé (T-14)."
+  "notes": "T-12 (02/09/2026) : liste cron figée depuis prod. T-14 (03/09/2026) : compteurs et versions mesurés en prod (check_prod_drift.py les compare chaque matin), bloc docs consommé par scripts/check_docs_constants.py (I13).",
+  "measured_at": "2026-09-03",
+  "routines_pg_proc": 134,
+  "routines_cooked": 130,
+  "routines_note": "134 objets pg_proc dans public (f+p) = 130 routines Cooked + 4 fonctions de l'extension unaccent. Mesuré le 03/09/2026 23:30 Paris après T-13.",
+  "alert_rules": 17,
+  "dashboard_rpcs": 16,
+  "views": 11,
+  "freshness_sources": 14,
+  "cron_jobs_count": 9,
+  "versions": {
+    "tracker": "sprint41",
+    "edge_track": 28,
+    "edge_form_webhook": 14,
+    "cpi_model": "v2.2"
+  },
+  "docs": {
+    "living_docs": [
+      "README.md",
+      "AGENTS.md",
+      "CLAUDE.md",
+      "CONTRIBUTING.md",
+      "SECURITY.md",
+      "CONTEXT.md",
+      "docs/README.md",
+      "docs/OPERATIONS.md",
+      "docs/ROADMAP.md",
+      "docs/PLAYBOOK-analyse-seo.md",
+      "docs/cpi-cooked-page-index.md",
+      "docs/cpi-modele-mathematique.md",
+      "docs/rgpd-pont-secib.md",
+      "dashboard/README.md",
+      "dashboard/CLAUDE.md",
+      "docs/agents/domain.md"
+    ],
+    "index_docs": [
+      "docs/README.md",
+      "AGENTS.md",
+      "CLAUDE.md"
+    ],
+    "orphan_check_exclude_prefixes": [
+      "docs/mission-2026-09-02/annexes/",
+      "docs/mission-2026-09-02/journal",
+      "docs/adr/"
+    ],
+    "forbidden_in_living_docs": [
+      "dashboard_check_stale",
+      "refresh-dashboard-snapshots",
+      "refresh-dashboard-expertises",
+      "refresh-dashboard-assisted",
+      "cooked-cpi-daily-snapshot",
+      "dashboard-stale-check",
+      "alert_rule_gbp_gap",
+      "alert_rule_gsc_lag",
+      "alert_rule_cpi_stale",
+      "alert_rule_dfs_stale",
+      "check_dashboard_contracts.py"
+    ]
+  }
 }

@@ -8,7 +8,7 @@
 --
 -- Ce fichier est un INSTANTANÉ LISIBLE de l'état prod (projet
 -- mxycmjkeotrycyneacje) — signatures/vues ; **corps RPC → supabase/rpcs.sql**
--- (régénéré 10/08/2026, 121 fonctions, gate CI Arch #5).
+-- (régénéré depuis la prod en CI ; compte dans contracts/doc_constants.json, gate CI Arch #5).
 --
 -- Régénérer (MCP Supabase execute_sql, ou psql) : voir les 2 requêtes en bas.
 -- ============================================================================
@@ -339,5 +339,5 @@ CREATE OR REPLACE VIEW public.pont_prospects_dossiers AS
 --
 -- Pour le CORPS d'une fonction : supabase/rpcs.sql (généré, Arch #5)
 -- ou : SELECT pg_get_functiondef('public.<nom>(<args>)'::regprocedure);
--- Généré le 10/08/2026 — corps RPC : supabase/rpcs.sql (régénéré 10/08/2026, 121 fonctions).
+-- Généré le 10/08/2026 — corps RPC : supabase/rpcs.sql (régénéré depuis la prod en CI, compte dans contracts/doc_constants.json).
 -- ============================================================================

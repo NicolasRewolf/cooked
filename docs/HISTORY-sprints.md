@@ -34,6 +34,10 @@ docs/audits. Les sprints non listés n'ont pas laissé de trace durable.
 | 28/07 | **appels depuis la fiche mesurés** | API Google Business Profile approuvée → table `gbp_daily` (backfill 18 mois, 4 842 lignes), cron `gbp-daily-ingest` 05:30 UTC : **~162 clics d'appel/28 j**, l'angle mort B3 est fermé. Vue `cpi_capture_perdue` (clics perdus + fiabilité du chiffre). Numéro traçable sur la fiche **décliné** par Nicolas |
 | 29-31/07 | **framework mathématique** | PR #91 : `scripts/advanced_math_analytics.py` (Markov, graphe de navigation, Shapley, inférence causale, STL/Kalman) sur les RPC `math_visit_sequences` / `math_internal_edges` + snapshots `math_*_snapshot` ; EXECUTE public révoqué (advisors 0028/0029). Limites de conclusion : docs/analyse-mathematique-avancee-2026-07-29.md |
 | 30/07→05/08 | **incident cron GBP** | Le cron GBP échoue **en silence** 6 jours (reauth Google exigée sur le credential ADC utilisateur) — aucune alerte, `gbp_gap` n'existe pas. Réparé le 05/08 (re-login gcloud, secret `GBP_CREDENTIALS_B64` re-poussé, trou rebouché par la fenêtre 30 j). Sonde **search keywords** de la fiche : quasi invisible sur l'indemnisation (≤75 impressions/12 mois vs ~2 100 pénal) → levier = le nom de la fiche. Swagger **API SECIB** lu, ticket d'accès envoyé à Septeo |
+| 22-23/08 | **résilience ingestion — registre** | Panne muette des formulaires (automation Wix supprimée le 11/08, 22 `form_submit` backfillés) → registre `freshness_contract` + `alert_rule_freshness()` (ADR-0002) : kinds `<source>_stale` / `<source>_gap` remplacent `gsc_lag`, `gsc_gap`, `dfs_stale`, `gbp_gap`, `dashboard_stale` ; secret `NTFY_TOPIC` en CI |
+| 30-31/08 | **taxonomie** | 12 articles jamais ingérés dans `page_taxonomy` (dont 5 ressources publiées en juin) : synchro Wix rejouée (63 ressources / 374 classiques), alerte `page_taxonomy_gap` ; issues #19 et #45 fermées en lot |
+| 01/09 | **migration GCP** | Tout centralisé sur `rewolf-507310` : nouveau service account GSC (réparé, vérifié), accès Business Profile à redemander (cron GBP en échec attendu, série arrêtée au 20/08) |
+| 02-03/09 | **mission précision / fiabilité / hygiène** | Prompt de mission (Claude Fable 5.1) : baseline 35 requêtes, audit 86 constats (81 réfutés fail-closed, 7 causes racines, 13 invariants), 22 tickets (#102-#123). Exécutés le 02-03/09 : T-01 (exposition `anon` fermée), T-03 (`bounce_rate` ×100, contrat d'unités I5), T-04 (bot Baidu « pc » droppé, `track` v28), T-05/T-06 (28 j GSC clos à `gsc_last_data_day()`, momentum sur `gsc_path_daily`), T-07 (alertes v4), T-08 (assistés non attribuables, snapshot trimestre), T-09 (une seule fenêtre 28 j — 191 contacts partout, C6c), T-10 (fraîcheur sur `cooked_end`, couture horodatée), T-11 (orchestrateur gardé par marqueur, `refresh_runs`), T-12 (CI prod ↔ prod, rôle `cooked_ci_ro`), T-13 (contrat dashboard depuis la prod, 65 colonnes NOT NULL, OTP), T-14 (docs : `doc_constants.json` + `check_docs_constants.py`, `SECURITY.md` réécrit). Trois restatements CPI annotés le 03/09. Détail : `docs/mission-2026-09-02/` |
 | 10/08 | **pont SECIB (pivot PII)** | Décision produit : rapprochement prospects web ↔ dossiers SECIB **en clair**. Livré le jour même (PR #93) : `crm_prospects` + `secib_dossiers` (RLS deny-all) + vue `pont_prospects_dossiers`, **form-webhook v13** déployé (extraction identité vérifiée sur un form réel), backfill 795 prospects Wix (03/2025→08/2026), `secib_ingest.py` validé sur le bac à sable Septeo. Prod SECIB = signature devis SECIB+ (120 €HT/mois). Rangement : drop `cpi_pre_restatement_*`, VACUUM FULL annuel désarmé, alerte `gbp_gap` créée |
 
 ## Constantes du projet
@@ -41,11 +45,11 @@ docs/audits. Les sprints non listés n'ont pas laissé de trace durable.
 - Projet Supabase : `mxycmjkeotrycyneacje` — site : `https://www.jplouton-avocat.fr`
 - Tracker navigateur : **`sprint41`** (déployé le 12/07/2026 ~22:20 — ids auto-réparants)
 - Edge Functions : `track` **v27** (25/07/2026 — gate `x-cooked-key` ; v26 = filtre
-  bots à l'ingestion), `form-webhook` **v13** (10/08/2026 — Pont SECIB) —
-  prod alignée avec le repo (vérifié le 10/08/2026 sur le code déployé)
-- **121 routines** publiées (119 fonctions + 2 procédures) — miroir lecture
-  `supabase/rpcs.sql` (régénéré 10/08/2026)
+  bots à l'ingestion ; **v28** 03/09/2026 : bot Baidu droppé), `form-webhook` **v14** (03/09/2026 —
+  `form_submit_dropped` via `raise_cooked_alert` ; v13 10/08 : Pont SECIB) — prod = repo au 03/09/2026
+- **134 routines** `pg_proc` (130 Cooked + 4 `unaccent`, 03/09/2026 — `contracts/doc_constants.json`) — miroir lecture
+  `supabase/rpcs.sql` (régénéré depuis la prod en CI)
 - pg_cron (à recompter en prod : `SELECT jobname FROM cron.job`) + **10 workflows**
   GitHub Actions (cf. docs/OPERATIONS.md) ; GSC ingéré à 06:00 UTC, fenêtre
-  `--months 2`, lag J-2/J-3 ; GBP à 05:30 UTC, lag ~J-4
+  `--months 2`, lag J-3 (registre 3/6/10) ; GBP à 05:30 UTC, lag ~J-4
 - Le client final des chiffres : Me Plouton (+ Adrien, Nomad Marketing)

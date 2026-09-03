@@ -123,7 +123,7 @@ Constaté sur `/mentions-legales` le 10/08/2026 :
 
 ## 4. Actions ouvertes
 
-| # | Action | Qui | Statut au 10/08/2026 |
+| # | Action | Qui | Statut au 10/08/2026 — **inchangé au 03/09/2026** (`crm_prospects` : 858 lignes, dernier ajout 03/09 13:28) |
 |---|---|---|---|
 | 1 | Publier le bloc §1 + corriger les 3 points §2 | Nicolas, après relecture de Julien | à faire |
 | 2 | Ajouter la fiche §3 au registre du cabinet | Cabinet | à faire |

@@ -108,7 +108,7 @@ l'ensemble).
 
 **Lag normal** :
 Le retard structurel d'une source en jours, dû à son fournisseur — GSC
-consolide à ~J-2/J-3, GBP à ~J-4/J-5, un snapshot nocturne est à J-0/J-1.
+consolide à ~J-3 (registre `freshness_contract` : normal 3, warn > 6, critical > 10), GBP à ~J-4/J-5, un snapshot nocturne est à J-0/J-1.
 Un âge ≤ lag normal n'est jamais une anomalie.
 
 **Retard** (`<source>_stale`) :

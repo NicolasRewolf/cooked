@@ -1,22 +1,36 @@
 # Roadmap Cooked — reste à faire courant
 
-État des lieux au **10/08/2026** (post-pivot SECIB : fondations du pont
-prospects ↔ dossiers livrées, PII en clair confinée, rangement post-audit).
-Court par construction : une ligne de contexte par item.
-Les décisions produit restent chez **Nicolas** — ce fichier liste, il ne
-décide pas. Historique : [ROADMAP-sprint38-handoff.md](ROADMAP-sprint38-handoff.md)
-(archive) et [HISTORY-sprints.md](HISTORY-sprints.md).
+État des lieux au **03/09/2026 soir** (mission précision/fiabilité/hygiène du 02/09/2026 :
+Phases 0-2 livrées le 02/09, Phase 3 en cours — T-01, T-03→T-13 faits ; suite dans
+[mission-2026-09-02/02-plan.md](mission-2026-09-02/02-plan.md) et les issues `mission-2026-09-02`).
+Court par construction : une ligne de contexte par item. Les décisions produit restent chez
+**Nicolas** — ce fichier liste, il ne décide pas. Historique :
+[ROADMAP-sprint38-handoff.md](ROADMAP-sprint38-handoff.md) (archive) et [HISTORY-sprints.md](HISTORY-sprints.md).
+
+## Mission 02/09/2026 — tickets encore ouverts
+
+| Ticket | Quoi | Qui | Contexte (une ligne) |
+|---|---|---|---|
+| [T-02](https://github.com/NicolasRewolf/cooked/issues/103) | Relecture des journaux + rotation de la clé publishable | **Nicolas** | Décision : l'exposition `anon` (h-01) a été fermée le 02/09 (T-01) ; la clé legacy `anon` reste à désactiver dans la console Supabase, les 24 h de logs ont été relues. |
+| [T-15](https://github.com/NicolasRewolf/cooked/issues/116) | `page_taxonomy` : synchro Wix Blog automatisée + filtres de l'alerte | agent | Aujourd'hui : synchro manuelle via MCP Wix, alerte `page_taxonomy_gap` (seuil 3) et registre (warn 21 j sans ligne touchée, T-10). 19 lignes sans catégorie au 03/09. |
+| [T-16](https://github.com/NicolasRewolf/cooked/issues/117) | Pont SECIB : garde-fous avant le premier chiffre | agent | À faire **avant** la signature du devis : couverture des clés `email_norm`/`tel_norm`, statut `non_converti` fourre-tout, CI des scripts d'ingestion. |
+| [T-17](https://github.com/NicolasRewolf/cooked/issues/118) | Tracker : filet CI, tests des correctifs, CLS explicite, debug off, puis loader | agent + collage Wix Nicolas | 14 760 / 15 000 chars minifiés : plus la place d'un correctif sans le loader first-party (décision §7.1 : oui, après la vague 1). |
+| [T-18](https://github.com/NicolasRewolf/cooked/issues/119) | Edge / formulaires : `page_source` partout, alertes routées, gate `x-cooked-key` fail-fast | agent + champs cachés Wix Nicolas | 8,7 % des `form_submit` (180 j) sans `page_source` → invisibles par page ; l'Edge est fail-open si `COOKED_INGEST_KEY` est vide. |
+| [T-19](https://github.com/NicolasRewolf/cooked/issues/120) | Budget de complexité : dépréciations, bloat, vestiges, `country`, `url`/`title` | agent, **DROP = validation Nicolas** | Décisions déjà prises (tri du 03/09) : amputer `events.country` ; cesser `title`, tronquer `url` aux paramètres de campagne, rétention 400 j (CNIL 13 mois à confirmer). Photo `cpi_pre_restatement_20260903` à supprimer. |
+| [T-20](https://github.com/NicolasRewolf/cooked/issues/121) | Restatements passés : annotations manquantes + version du CPI dans `cpi_daily` | agent | Les restatements du 02/07 et du 25/07 n'ont pas de ligne `annotations` ; ceux du 03/09 (T-05/06/08/09) en ont. |
+
+## Chantiers hors mission
 
 | # | Quoi | Échéance | Contexte (une ligne) |
 |---|---|---|---|
-| 1 | Harmonisation UI des deux compteurs contacts | — | Le tableau affiche les contacts « sur la page », la fiche les « assistés » — afficher les deux, étiquetés, pour lever l'ambiguïté. |
-| 2 | ~~Drop des tables d'audit `cpi_pre_restatement_*`~~ | **fait 10/08/2026** | Supprimées par la migration `rangement_post_pivot_secib` (qui désarme aussi le VACUUM FULL annuel du 26/07). |
-| 3 | Re-test diagnostic CPI 56 j | 05/08/2026 | Suite de la validation J+28 du 11/07/2026 (VALIDÉE — « score de priorisation ») sur fenêtre doublée. Pas encore lancé. |
-| 4 | Issue GitHub [#19](https://github.com/NicolasRewolf/cooked/issues/19) — biais de taille CPI | ouverte | Limite connue actée lors de la validation J+28 ; à traiter ou documenter, pas urgent. |
-| 5 | Cron GBP : reauth ADC + client OAuth dédié | **action Nicolas** | L'alerte `gbp_gap` existe depuis le 10/08/2026 (warn > 7 j, critical > 14 j → ntfy). Mais le cron est RETOMBÉ en panne reauth du 06 au 10/08 (5 échecs) : re-login gcloud (les DEUX scopes) + re-pousser `GBP_CREDENTIALS_B64`. Parade durable : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`). |
-| 6 | Ingestion mensuelle `gbp_search_keywords` | go de Nicolas | Sonde du 05/08/2026 : la fiche est quasi invisible sur l'indemnisation (≤75 impressions/12 mois vs ~2 100 pénal) alors que la demande locale existe ; lag de publication ≈ 1 mois → cadence mensuelle, pas quotidienne. |
-| 7 | Renommage de la fiche Google Business | décision Julien/Nicolas | Catégories, services et description sont déjà bons (lecture API 05/08/2026) : le seul signal encore 100 % pénal est le **nom** (« Avocats en Droit Pénal à Bordeaux »). Ne pas toucher la catégorie principale. Annotation à poser le jour du changement. |
-| 8 | Boucle 3 — Google Ads | à lancer | MCP connecté depuis le 01/07/2026 : coût par campagne → coût par contact macro, puis coût par dossier signé quand SECIB sera branché. ~71 % du trafic des pages expertise est paid. |
-| 9 | SECIB — passage en prod | signature devis (~17/08) | Étape 0 **validée le 10/08/2026** sur le bac à sable (token, dossiers, matières, ExportFinancier) ; fondations du pont livrées (PR #93). Après signature du devis SECIB+ (120 €HT/mois) : swap credentials, `secib_ingest.py ingest --secib-env prod`, cron GitHub Actions (patron gsc/gbp), cartographie matières réelles → `page_taxonomy`. Question ouverte à Septeo : lecture API des `InfoComplementaire` (écriture seule dans le swagger 8.6.0) + demande d'accès d'évaluation temporaire envoyée le 10/08. |
-| 10 | RGPD du pont SECIB | **cette semaine (Nicolas)** | La capture PII en clair est ACTIVE depuis le 10/08/2026. **Textes prêts à publier, registre et arbitrages : [rgpd-pont-secib.md](rgpd-pont-secib.md)** — reste à faire relire par Julien, publier, et trancher 3 points (contrat de sous-traitance REWOLF art. 28, durée de conservation, champ « objet de la demande »). |
-| 11 | Pont téléphone (3CX ↔ SECIB ↔ Cooked) | chantier Easylia en cours | Easylia travaille sur l'API 3CX et son intégration SECIB (10/08/2026). Côté Cooked : le jour où le journal d'appels (numéro + horodatage) est accessible, matcher avec `secib_dossiers` et corréler avec `cta_phone_click` — les appels sont le ~50 % du contact que le pont formulaires ne voit pas. |
+| 1 | Harmonisation UI des deux compteurs contacts (fiche article) | — | L'issue #45 a été fermée le 30/08 sans action (constat g-05) : la fiche n'affiche que les « assistés », le tableau les « sur la page ». Commentaire posé sur #45 le 03/09 ; à rouvrir si Nicolas le décide. |
+| 3 | Re-test diagnostic CPI 56 j | échéance **05/08/2026 dépassée** — à replanifier | Suite de la validation J+28 du 11/07 (VALIDÉE). Depuis, trois restatements CPI le 03/09 (fenêtres, momentum, contacts) : refaire la grille sur `cpi_daily` ≥ 04/09. |
+| 4 | ~~Issue #19 — biais de taille CPI~~ | fermée le 30/08/2026 | Limite connue, documentée dans `cpi-cooked-page-index.md` ; pas de v2.3 (décision 18/06 et 11/07). |
+| 5 | Cron GBP : accès API après la migration GCP + client OAuth dédié | **action Nicolas** — verdict Google ≈ 10-15/09 | `gbp_daily` s'arrête au **20/08/2026** (13 j au 03/09) : le projet Google a migré vers `rewolf-507310` le 01/09, l'approbation Business Profile est redemandée (n° 2-9425000042353). L'alerte `gbp_daily_stale` (registre : warn > 7 j, critical > 14 j) sonne depuis le 28/08 — échec attendu jusqu'au verdict, plan B « projet plouton » avant le 19/09. |
+| 6 | Ingestion mensuelle `gbp_search_keywords` | go de Nicolas | Sonde du 05/08 : fiche quasi invisible sur l'indemnisation (≤75 impressions/12 mois vs ~2 100 pénal) ; lag ≈ 1 mois → cadence mensuelle. Conditionné au #5. |
+| 7 | Renommage de la fiche Google Business | décision Julien/Nicolas | Seul signal encore 100 % pénal : le nom. Ne pas toucher la catégorie principale. Annotation à poser le jour J. |
+| 8 | Boucle 3 — Google Ads | à lancer (hors mission) | MCP connecté (01/07) mais sans developer token en session : coût par campagne → coût par contact macro. ~71 % du trafic expertise est paid. |
+| 9 | SECIB — passage en prod | **devis non signé au 03/09** (valable ~17/08, à renégocier) | 49 dossiers `env = 'test'`, dernière synchro 10/08 ; fondations livrées (PR #93). Après signature : T-16 d'abord, puis swap credentials, `secib_ingest.py ingest --secib-env prod`, cron GitHub Actions. |
+| 10 | RGPD du pont SECIB | **en retard** (annoncé « cette semaine » le 10/08) | `crm_prospects` = **858** lignes au 03/09 (796 le 10/08), dernier ajout 03/09 13:28. Textes prêts : [rgpd-pont-secib.md](rgpd-pont-secib.md) — relecture Julien, publication, 3 arbitrages (art. 28, durée de conservation, champ « objet »). |
+| 11 | Pont téléphone (3CX ↔ SECIB ↔ Cooked) | chantier Easylia en cours | Le jour où le journal d'appels est accessible : matcher avec `secib_dossiers`, corréler avec `cta_phone_click` (les appels ≈ 50 % du contact que les formulaires ne voient pas). |
+| 12 | Chute de ~40 % des clics GSC depuis fin juillet | à instruire | 2 155 → ~1 350 clics/semaine depuis le 27/07, portée par les ressources à impressions constantes (CTR 2,14 → 1,14 %) : la SERP bouge (AI Overview ?), pas le classement. Lecture du 03/09 dans l'onglet Lab. |

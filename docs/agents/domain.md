@@ -9,7 +9,7 @@ How the engineering skills should consume this repo's domain documentation when 
 
 If any of these files don't exist yet, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The producer skill (`/grill-with-docs`) creates them lazily when terms or decisions actually get resolved.
 
-> Note: as of this setup, neither `CONTEXT.md` nor `docs/adr/` exists yet — that's expected. Much of the domain language already lives informally in `CLAUDE.md` and `README.md`; treat those as the interim glossary until `CONTEXT.md` is created.
+> Both exist since 2026: `CONTEXT.md` (13/07/2026 — conversions, attribution, lecture, fraîcheur, invariants) and `docs/adr/` (ADR-0001 28/07/2026, ADR-0002 23/08/2026). Read them first; `CLAUDE.md` carries the operating rules, `CONTEXT.md` the vocabulary.
 
 ## File structure (single-context)
 

@@ -175,7 +175,7 @@ The browser-side `tracker.html` emits these events. Anything else is rejected by
 | `cta_booking_click` | Click on any `<a>` pointing to `/honoraires-rendez-vous` | `anchor`, `placement` (header / footer / sticky / body), `target_path`, `href` |
 | `click_internal` (Sprint 36) | Click on any internal `<a>` to **another** page (except `/honoraires-rendez-vous` → that stays `cta_booking_click`). Captures *which* UI element drives each page-to-page hop (the journey itself is already in the `pageview` sequence; this adds element attribution). Self-links (same path, no `#`/`data-anchor`) skipped. | `target_path`, `anchor`, `placement` (header / footer / sticky / body), `href` |
 | `cta_anchor_click` (Sprint 19) | Click on an in-page anchor: classic `href="#x"`, Wix anchor-menu (`<a href=current data-anchor="anchors-xxx">`), or any interactive element inside a sticky container. **Sprint 35**: UI chrome is excluded — the Cookiebot consent banner (`#CybotCookiebotDialog`), the mobile burger toggle, and plain nav links (no `#hash`/`data-anchor`) no longer count. | `target_section` (slugified label or hash), `anchor`, `placement` (header / footer / sticky / body), `source` (`click` / `hashchange` / `sticky-fallback`), `data_anchor` (Wix internal ID, optional) |
-| `form_submit` (Sprint 18) | Wix Form successfully submitted — fired **server-side** by the `form-webhook` Edge Function, triggered by a Wix Automation on form submission. **Sprint 38**: Wix Forms V2 ne rendant pas les champs cachés dans le DOM, le tracker expose `cooked_aid`/`cooked_sid` en query params (`replaceState`) et `wix/masterpage-cooked.js` (Velo) les écrit dans les champs cachés via `setFieldValues()` ; webhook v10 les stocke dans `props` → attribution via `form_submits_attributed()` (hidden_field > temporal_unique > unresolved). Première attribution hidden_field : 11/06/2026 08:53 | `form_id`, `submission_id`, `page_source`, `cooked_aid`, `cooked_sid`, `capture_source: 'wix-webhook'` |
+| `form_submit` (Sprint 18) | Wix Form successfully submitted — fired **server-side** by the `form-webhook` Edge Function, triggered by a Wix Automation on form submission. **Sprint 38**: Wix Forms V2 ne rendant pas les champs cachés dans le DOM, le tracker expose `cooked_aid`/`cooked_sid` en query params (`replaceState`) et `wix/masterpage-cooked.js` (Velo) les écrit dans les champs cachés via `setFieldValues()` ; le webhook (v10, prod v14 depuis le 03/09/2026) les stocke dans `props` → attribution via `form_submits_attributed()` (hidden_field > temporal_unique > unresolved). Première attribution hidden_field : 11/06/2026 08:53 | `form_id`, `submission_id`, `page_source`, `cooked_aid`, `cooked_sid`, `capture_source: 'wix-webhook'` |
 
 ### Anchor capture convention (depuis le 10/05/2026)
 
@@ -246,7 +246,7 @@ cooked/
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS (référence)
 │   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets des 121 routines (généré, lecture seule)
+│   ├── rpcs.sql                       — corps complets des 134 routines (généré depuis la prod en CI, lecture seule)
 │   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
@@ -509,7 +509,8 @@ et comparée à la prod par la gate `prod-drift` (T-12) : 9 jobs. Source de vér
 | `refresh_noise_filters_hourly` | `5 * * * *` | Bot fingerprints + noise sessions, **incrémental 48 h depuis T-08 (02/07)** : ~4 s/run (155 s avant ; fingerprints historiques conservés, noise = delete-récent + réinsertion) |
 | `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — v4 (T-07, 03/09/2026) : voir § Alertes ci-dessous. Les `critical` **poussent sur ntfy** (≤ 2 par épisode, topic dans `cooked_config`) |
 | `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien **planifié** 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) — **départ réel +4 à +12 h** depuis le 27/08/2026 (ordonnanceur GitHub) : l'aval `cooked-refresh-after-gsc` suit seul jusqu'à 21:00 UTC, l'alerte `gsc_ingest_missed` sonne à 12:00 UTC (T-11) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
-| `gbp-daily-ingest` | GitHub Actions | Google Business Profile quotidien 05:30 UTC, fenêtre 30 j (lag ~J-4, la queue rembourrée à zéro est coupée par le script) → `gbp_daily`. Notifie ntfy en échec. ⚠️ **Le credential est un ADC utilisateur : Google exige une reauth périodique** — panne silencieuse de 6 jours du 30/07 au 04/08/2026, réparée le 05/08 (`gcloud auth application-default login --scopes=…business.manage,…cloud-platform` puis secret `GBP_CREDENTIALS_B64` re-poussé). **Aucune alerte `gbp_gap` n'existe encore** : jusqu'à sa création, contrôler `max(day)` de `gbp_daily` avant de livrer un chiffre GBP. Parade durable : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`) |
+| `gbp-daily-ingest` | GitHub Actions | Google Business Profile quotidien 05:30 UTC, fenêtre 30 j (lag ~J-4, la queue rembourrée à zéro est coupée par le script) → `gbp_daily`. Notifie ntfy en échec. ⚠️ **Le credential est un ADC utilisateur : Google exige une reauth périodique** — panne silencieuse de 6 jours du 30/07 au 04/08/2026, réparée le 05/08 (`gcloud auth application-default login --scopes=…business.manage,…cloud-platform` puis secret `GBP_CREDENTIALS_B64` re-poussé). Alerte de fraîcheur **`gbp_daily_stale`** (registre `freshness_contract` : normal J-4, warn > 7 j, critical > 14 j → ntfy). **Depuis le 21/08/2026 la série s'arrête au 20/08** : migration du projet Google vers `rewolf-507310` (01/09), approbation Business Profile redemandée — échec attendu jusqu'au verdict (~10-15/09). Parade durable : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`) |
+| `math-refresh-snapshots-weekly` | `10 5 * * 0` (07:10 Paris, dimanche) | `math_refresh_snapshots(28)` — snapshots `math_*_snapshot` du framework d'analyse mathématique (PR #91, 29/07/2026) ; registre `math_visit_sequences_snapshot` (warn > 9 j) |
 | `backup-weekly.yml` | GitHub Actions | **Schedule désactivé** (backup externe décliné le 02/07/2026, risque assumé — ne pas re-proposer) — déclenchable manuellement via `workflow_dispatch` uniquement |
 
 ⚠️ **Piège `statement_timeout`** : un `SET statement_timeout` posé *dans*
@@ -580,6 +581,27 @@ Chaque seuil a une distribution mesurée le 03/09. Acquittement : `SELECT public
 | `page_taxonomy_stale` (registre) | **T-10** : `max(updated_at)` > 21 j (aucune synchro Wix Blog) | dernière synchro 31/08 11:05 | warn |
 
 Le stock du 03/09 (55 non acquittées) n'est **pas** vidé par la migration — ack = décision Nicolas.
+
+### Registre de fraîcheur `freshness_contract` (ADR-0002, 23/08/2026) — seuils au 03/09/2026
+
+Une ligne par source ; `alert_rule_freshness()` (cron horaire) lit `last_point_sql`, compare à
+`paris_today()` et sonne `<source>_stale` (warn / critical) ou `<source>_gap` (trous dans la série).
+Le `repair_hint` de chaque ligne est la consigne de réparation embarquée dans l'alerte.
+
+| Source | Dernier point mesuré sur | Lag normal | warn > | critical > | Note |
+|---|---|---|---|---|---|
+| `gsc_path_daily` (+ `_query_daily`, `_query_page_daily`) | `max(day)` | 3 j | 6 j | 10 j (12 j pour les deux tables requêtes) | trous sur 90 j → `gsc_path_daily_gap` |
+| `gbp_daily` | `max(day)` | 4 j | 7 j | 14 j | en échec attendu depuis le 21/08 (voir cron GBP) |
+| `dfs_keyword_volume` | `max(last_synced_at)` | 7 j | 10 j | 21 j | hebdo |
+| `cpi_daily` | `max(day)` | 1 j | 1 j | 1 j | trous sur 7 j → `cpi_daily_gap` |
+| `dashboard_resources_snapshot` | **`max(cooked_end)`** (fin des données, T-10) | 1 j | 2 j | 4 j | J-2 le matin est normal ; le grain horaire est aux alertes T-11 |
+| `seo_url_snapshot` | `max(refreshed_at)` | 1 j | 1 j | 2 j | |
+| `form_submit`, `cta_phone_click`, `crm_prospects` | dernier événement | 0 | 2 j | 4 j | cadence événementielle |
+| `math_visit_sequences_snapshot` | `max(computed_at)` | 7 j | 9 j | 16 j | hebdo |
+| `page_taxonomy` | `max(updated_at)` (T-10) | 7 j | 21 j | — | synchro Wix Blog manuelle jusqu'à T-15 |
+| `secib_dossiers` | `max(synced_at)` | 1 j | 3 j | 7 j | **désactivée** (`enabled = false`) tant que le devis SECIB+ n'est pas signé |
+
+`identity_stitch` n'est pas au registre (grain jour) : règle dédiée `alert_rule_identity_stitch()` (T-10).
 
 ### Restatements des séries (lire l'historique sans conclure à tort)
 
@@ -657,7 +679,7 @@ canonique d'une base fraîche.
 
 | Fichier | Contenu | Régénération |
 |---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 121 routines publiques — 119 fonctions + 2 procédures (régénéré le 10/08/2026) | `python3 scripts/generate_rpcs_sql.py` (`DATABASE_URL`) ; gate CI si migration touche une RPC |
+| `supabase/rpcs.sql` | **Corps complets** des 134 routines `pg_proc` de `public` (130 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
 | `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
 | `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
 
@@ -780,7 +802,7 @@ Defense-in-depth on the Supabase side:
 
 - **`events`, `seo_url_snapshot`, `bot_fingerprints` (etc.) have RLS enabled with no policies — by design.** This is the deny-all-to-clients pattern: only `service_role` bypasses RLS. The "RLS enabled, no policies" INFO-level advisor flag is expected and acceptable.
 - **`rls_auto_enable()` event trigger** auto-enables RLS on every newly-created table in `public` — belt-and-suspenders against forgetting the `enable row level security` in a future migration.
-- **All RPCs are granted to `service_role` only**. `public`, `anon`, `authenticated` have no EXECUTE on any of them.
+- **All RPCs are granted to `service_role` only** — `REVOKE … FROM PUBLIC, anon, authenticated` on every function (`FROM public` alone is defeated by Supabase default privileges : regressions on 25/07 and 31/08/2026). **Invariant I1** (T-01, 02/09/2026) : `alert_rule_exposure()` hourly + `check_prod_drift.py` in CI list any SECURITY DEFINER function or view readable by `anon`/`authenticated`. Exception : `cooked_ci_ro` (CI read-only role) may EXECUTE the 16 `dashboard_*` RPCs (T-13). Full picture : [SECURITY.md](../SECURITY.md).
 - **`SECURITY DEFINER` functions pin `search_path`** to prevent search_path injection.
 - **`security_invoker = true`** on views (`events_human`, `cpi_movers`, …) — enforces caller's RLS, not creator's.
 - Invariant de sortie de sprint : **advisors security = 0 WARN**.
