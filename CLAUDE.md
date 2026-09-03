@@ -102,8 +102,9 @@ recalibrée sur les sessions réellement dupliquées, seuil 30).
   0,25×bookings), momentum log-symétrique **relatif au site**, gate LCP.
   Grades de confiance A/B/C. Spec complète et grille de lecture :
   `docs/cpi-cooked-page-index.md`.
-- Snapshot quotidien `cpi_daily` (cron `30 7 * * *`, 90 min après
-  l'ingest GSC) → trajectoire du score lui-même = alerte decay précoce.
+- Snapshot quotidien `cpi_daily` (étape 1 de `cooked_refresh_after_gsc`,
+  cron horaire `0 6-21 * * *` UTC déclenché par l'ingestion GSC — T-11, 03/09/2026 ;
+  durées dans `refresh_runs`) → trajectoire du score lui-même = alerte decay précoce.
 - Premier snapshot 10/06/2026 : 192 pages, CPI pondéré trafic 32,
   446 clics perdus/28j.
 - Reprise 10/06 après-midi : vue `cpi_movers` (dérivée ~7j du CPI, delta_z
@@ -354,6 +355,7 @@ Avant toute analyse, dans cet ordre (30 secondes) :
 SELECT * FROM alerts WHERE NOT acked;          -- 1. rien d'anormal ?
 SELECT * FROM refresh_pipeline_health();       -- 2. pipeline healthy ?
 SELECT gsc_last_data_day();                    -- 3. fraîcheur GSC (lag J-2/J-3 normal)
+SELECT * FROM cooked_refresh_after_gsc_pending(); -- 4. l'aval (CPI + dashboard) a-t-il suivi l'ingestion ? (T-11)
 ```
 
 Si une alerte est active : la traiter ou l'expliquer AVANT de produire des

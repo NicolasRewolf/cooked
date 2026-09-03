@@ -413,8 +413,11 @@ DDL : `supabase/migrations/20260522120000_gsc_tables.sql` (à rejouer sur fresh 
 
 GitHub Actions workflow `.github/workflows/gsc-daily-ingest.yml` lance
 `python3 scripts/gsc_ingest.py path-query --months 1` puis `query-page --months 1`
-tous les jours à 06:00 UTC (≈08:00 Paris en été). Upsert idempotent —
-re-ingère le dernier mois pour capturer les refinements GSC.
+tous les jours à 06:00 UTC (≈08:00 Paris en été) — heure **planifiée** : depuis le
+27/08/2026 l'ordonnanceur GitHub retarde le run de 4 à 12 h (27/08 17:15, 28/08 18:07,
+03/09 10:35 UTC). Upsert idempotent — re-ingère les 2 derniers mois pour capturer
+les refinements GSC. L'aval (`cooked-refresh-after-gsc`, tick horaire 6-21 h UTC) repart
+dès que `max(ingested_at)` dépasse le marqueur du dernier refresh complet (T-11).
 
 **Secrets à configurer une fois** dans le repo GitHub (Settings → Secrets and variables → Actions) :
 
@@ -423,8 +426,10 @@ re-ingère le dernier mois pour capturer les refinements GSC.
 | `GSC_CREDENTIALS_B64` | base64 du JSON service account (`base64 -w0 < ~/.claude/gsc-credentials.json`) |
 | `SUPABASE_SECRET_KEY` | clé `sb_secret_*` du projet Cooked |
 
-Run manuel via le bouton **"Run workflow"** sur l'onglet Actions. Monitoring via
-`refresh_pipeline_health()` axe GSC (gsc_data_age_days, gsc_ingest_age_hours).
+Run manuel via le bouton **"Run workflow"** sur l'onglet Actions (ou `gh workflow run
+gsc-daily-ingest.yml`). Monitoring via `refresh_pipeline_health()` axe GSC
+(gsc_data_age_days, gsc_ingest_age_hours), `cooked_refresh_after_gsc_pending()` (l'aval
+a-t-il suivi ?) et `refresh_runs` (durée par étape).
 
 ---
 
@@ -479,26 +484,22 @@ ALL RPCs + snapshot read from events_human
 
 **Detection rule** : `anonymous_id` with > 20 pageviews/day AND 0 scroll events = crawler. Catches the nightly Ahrefs audit crawler and similar bots.
 
-**pg_cron jobs + 4 GitHub Actions planifiés** (état 05/08/2026 ; horaires UTC —
-Paris = UTC+2 l'été). Le décompte pg_cron n'est plus figé ici : il a bougé
-depuis le 12/07 (snapshots `math_*` hebdo, migration `20260728221518`) —
-la source de vérité est `SELECT jobname, schedule FROM cron.job` en prod.
+**pg_cron jobs + 4 GitHub Actions planifiés** (état 03/09/2026 ; horaires UTC —
+Paris = UTC+2 l'été). La liste pg_cron est **figée dans `contracts/doc_constants.json`**
+et comparée à la prod par la gate `prod-drift` (T-12) : 9 jobs. Source de vérité
+= `SELECT jobname, schedule FROM cron.job` en prod.
 
 | Job | Schedule (UTC) | What |
 |---|---|---|
 | `refresh_seo_url_snapshot` | `0 3 * * *` (05:00 Paris) | Rebuild nocturne de `seo_url_snapshot` · `SET statement_timeout='600s'` — rebuild ≈ 230 s depuis la matérialisation d'`events_human` en temp table (30/06) |
 | `run_rpc_contract_tests` | `30 3 * * *` (05:30 Paris) | Contract-tests nocturnes des RPCs publiées → `rpc_health` (Sprint 27) |
 | `refresh-identity-stitch` | `40 3 * * *` (05:40 Paris) | `refresh_identity_stitch(90)` — reconstruit la table `identity_stitch` (couture d'identité, 90 j glissants) |
-| `refresh-dashboard-snapshots` | `0 4 * * *` (06:00 Paris) | Snapshots dashboard articles (fenêtres ancrées J-1 Paris, T-16) |
+| `cooked-refresh-after-gsc` | `0 6-21 * * *` (tick horaire, 08:00→23:00 Paris l'été) | **Orchestrateur aval de l'ingestion GSC** (T-11, 03/09/2026) : `cooked_refresh_after_gsc()` enchaîne `cooked_cpi_snapshot` → `refresh_dashboard_snapshots` → `refresh_dashboard_expertises_snapshots` → `refresh_dashboard_resources_assisted` → `refresh_dashboard_assisted_quarter` · budget `SET statement_timeout='2400s'` dans la commande (clé `cooked_config.refresh_after_gsc_budget_s`) · **garde** : ne tourne que si `max(gsc_path_daily.ingested_at)` > marqueur `last_full_refresh_after_gsc_at` (`cooked_refresh_after_gsc_pending()`), quelle que soit l'heure d'arrivée de l'ingestion — le cron GitHub dérive de +4 à +12 h depuis le 27/08 · **durée par étape dans `refresh_runs`** (une ligne par étape + `_total`) · 21 h UTC = dernier tick qui reste dans le jour Paris (`cpi_daily.day = paris_today()`) · séquence ≈ 1 350-1 650 s (p50 30 j ≈ 1 600 s) |
 | `purge_old_events_monthly` | `0 4 1 * *` (06:00 Paris, 1er du mois) | Rétention : supprime les events > 400 j (⚠️ destruction d'historique RÉEL — re-poser la question du backup à Nicolas ~juin 2027 avant le 1er run utile) |
-| `refresh-dashboard-expertises` | `12 4 * * *` (06:12 Paris) | Snapshots onglet Expertises (T-20) — scope = liste business des 14 pages, canal = 1er pageview GLOBAL · timeout 590 s |
-| `refresh-dashboard-assisted` | `16 4 * * *` (06:16 Paris) | Snapshot « contacts assistés » par article — **v2 depuis le 12/07/2026** : attribution sur la visite recousue (`identity_stitch`) · timeout 590 s |
 | `cooked-purge-noise-weekly` | `30 4 * * 0` (06:30 Paris, dimanche) | **T-09 (03/07)** : `purge_cooked_noise(28)` — supprime le bruit bot/noise > 28 j + TTL 90 j sur `noise_sessions`. Ne change AUCUN résultat (lignes déjà hors `events_human` à toute fenêtre). 1er run : 41 589 lignes |
-| `cooked-cpi-daily-snapshot` | `30 7 * * *` (09:30 Paris) | `cooked_cpi_snapshot()` → `cpi_daily` · `SET statement_timeout='600s'` · run à froid ≈ 322 s au 03/07 (croît avec `events` ; la purge hebdo le contient) |
 | `refresh_noise_filters_hourly` | `5 * * * *` | Bot fingerprints + noise sessions, **incrémental 48 h depuis T-08 (02/07)** : ~4 s/run (155 s avant ; fingerprints historiques conservés, noise = delete-récent + réinsertion) |
 | `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — v4 (T-07, 03/09/2026) : voir § Alertes ci-dessous. Les `critical` **poussent sur ntfy** (≤ 2 par épisode, topic dans `cooked_config`) |
-| `dashboard-stale-check` | `30 * * * *` | Alerte `dashboard_stale` si snapshot dashboard > 36 h (29/06) |
-| `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
+| `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien **planifié** 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) — **départ réel +4 à +12 h** depuis le 27/08/2026 (ordonnanceur GitHub) : l'aval `cooked-refresh-after-gsc` suit seul jusqu'à 21:00 UTC, l'alerte `gsc_ingest_missed` sonne à 12:00 UTC (T-11) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
 | `gbp-daily-ingest` | GitHub Actions | Google Business Profile quotidien 05:30 UTC, fenêtre 30 j (lag ~J-4, la queue rembourrée à zéro est coupée par le script) → `gbp_daily`. Notifie ntfy en échec. ⚠️ **Le credential est un ADC utilisateur : Google exige une reauth périodique** — panne silencieuse de 6 jours du 30/07 au 04/08/2026, réparée le 05/08 (`gcloud auth application-default login --scopes=…business.manage,…cloud-platform` puis secret `GBP_CREDENTIALS_B64` re-poussé). **Aucune alerte `gbp_gap` n'existe encore** : jusqu'à sa création, contrôler `max(day)` de `gbp_daily` avant de livrer un chiffre GBP. Parade durable : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`) |
 | `backup-weekly.yml` | GitHub Actions | **Schedule désactivé** (backup externe décliné le 02/07/2026, risque assumé — ne pas re-proposer) — déclenchable manuellement via `workflow_dispatch` uniquement |
 
@@ -560,6 +561,9 @@ Chaque seuil a une distribution mesurée le 03/09. Acquittement : `SELECT public
 | `warn_escalation` | warn ≥ 5 j non acquitté, hors kinds éditoriaux (`cpi_drop`) | avant : 9 escalades cpi_drop en 9 j | critical, cap 2 / épisode |
 | `volume_floor` | heure Paris précédente (9-18 h), pageviews < 50 % de la médiane 7 j, médiane ≥ 30 | 7 j heures bureau : 2 horaires auraient sonné (med ≥ 30) ; 0 si med ≥ 40 | warn |
 | `form_submit_dropped` | insert form échoué → `raise_cooked_alert` (Edge v14) | 0 ligne historique (jamais passé par raise) | critical, cap 2 |
+| `gsc_ingest_missed` | **T-11** : dès 12:00 UTC, aucune ingestion GSC datée du jour Paris (attendue 06:00 UTC) | 27/08, 28/08, 31/08 : 3 retards de +6 à +12 h, tous rattrapés le jour même | warn |
+| `refresh_after_gsc_stale` | **T-11** : `cooked_refresh_after_gsc_pending()` = true et ingestion > 3 h, entre 8 h et 23 h UTC, sans `refresh_step_failed_*` dans les 6 h | 0 cas historique reconstituable (la garde « ingestion du jour » masquait le cas) | critical, cap 2 |
+| `refresh_budget` | **T-11** : dernier `_total` de `refresh_runs` (48 h) ≥ 80 % de `refresh_after_gsc_budget_s` (2 400 s) | 30 j : p50 ≈ 1 600 s (67 %), max 2 166 s le 05/08 (90 % — aurait sonné), 26/07 : 7 runs à 100 % | warn |
 
 Le stock du 03/09 (55 non acquittées) n'est **pas** vidé par la migration — ack = décision Nicolas.
 

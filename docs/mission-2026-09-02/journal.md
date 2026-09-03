@@ -453,3 +453,37 @@
   momentum < 0,90 ; escalade hors `cpi_drop` ; cap 2 pushs ; `volume_floor` ; `ack_alerts` ; `cooked_paris_hour`.
 - 14:33 `[M]` Règles à chaud : pipeline / cpi / volume / escalade = **0 ligne** (v4 silencieuse à 14:33).
 - Reste : ack des 55 (décision Nicolas) ; deploy `form-webhook` v14 ; PR.
+
+### T-11 — refresh aval robuste à la dérive du cron GitHub (03/09/2026, 16:30 →)
+- 16:30 `[F]` Relecture #112, e-02/h-05 (annexes e-refute/h-refute), corps prod de `cooked_refresh_after_gsc`
+  (garde « `paris_date(max(ingested_at)) < paris_today()` → skip » + marqueur), `cron.job` (46 : `0 8-20 * * *`,
+  2400 s), `cooked_config` (4 clés), `alert_rule_gsc_ingest_missed` (juge après 13:00 Paris), registre
+  `freshness_contract` (13 sources ; hints `cpi_daily` / `dashboard_resources_snapshot` citent des jobs fantômes).
+- 16:35 `[R]` **Mesure avant.** `gsc_path_daily.ingested_at` : 01/09 11:55 UTC, 03/09 10:35 UTC (planifié 06:00).
+  `cron.job_run_details` (jobid 46, runs > 60 s, 45 j) : la séquence part à l'heure qui suit l'ingestion —
+  27/08 18:00, 28/08 **19:00** (dernier tick avant fermeture à 20:00), 29/08 13:00, 30/08 12:00, 31/08 13:00,
+  01/09 12:00, 02/09 11:00, 03/09 11:00 UTC ; durées 1 343-1 621 s ces 8 jours, p50 ≈ 1 600 s / 30 j, max 2 166 s
+  (05/08), **7 runs à 2 400 s le 26/07** (timeout). `return_message` = « 1 row » partout : aucune durée par étape.
+  Alertes `gsc_ingest_missed` : 27/08, 28/08, 31/08 (= les 3 retards > 13:00 Paris).
+- 16:40 `[D]` Fenêtre **`0 6-21`** et non `0 6-23` (plan) : `cooked_cpi_snapshot` date le snapshot avec
+  `paris_today()` ; un tick à 22 ou 23 h UTC (00:00-01:00 Paris l'été) écrirait la ligne au lendemain et le jour
+  courant manquerait. 21 h UTC = 23 h Paris = dernier tick sûr. L'ingestion la plus tardive observée : 18:07 UTC.
+- 16:45 `[D]` Pas de nouvelle alerte « GSC après 12:00 UTC » : `gsc_ingest_missed` existait déjà (13:00 Paris) —
+  recalée sur **12:00 UTC** (heure du cron), libellé « en retard » + commande de relance. Ajout de
+  `refresh_after_gsc_stale` (critical : ingestion > 3 h non suivie, fenêtre 8-23 h UTC, muette si un
+  `refresh_step_failed_*` a déjà sonné) et `refresh_budget` (warn ≥ 80 % de `refresh_after_gsc_budget_s`).
+- 16:52 `[A]` `apply_migration` **`20260903145256_t11_refresh_after_gsc_robuste`** : table `refresh_runs`
+  (RLS deny-all, service_role), clé `refresh_after_gsc_budget_s` = 2400, `cooked_refresh_after_gsc_pending()`,
+  orchestrateur réécrit (garde par marqueur, une ligne `refresh_runs` par étape + `_total`, marqueur = `now()` début
+  de transaction pour rejouer une ingestion arrivée pendant la séquence), cron `0 6-21 * * *`, 3 règles d'alerte,
+  2 hints du registre, `run_rpc_contract_tests` + 2 contrats I9. C6/C6b/C6c OK en local.
+- 16:53 `[R]` Vérifs à chaud : `pending()` = false (« séquence complète 13:00 après ingestion 12:35 » Paris) ;
+  appel direct → `skip:` ; `cron.job` = `0 6-21 * * *` actif ; 3 règles → 0 ligne ; ACL anon/authenticated = false
+  sur les 5 fonctions.
+- 16:54 `[A]` `apply_migration` **`20260903145344_t11_validation_rerun`** : marqueur reculé à 10:00 UTC (< ingestion
+  10:35) → `pending()` = **true** (« ingestion du 12:35 non suivie… dernier complet 12:00 » Paris). Attendu : le tick
+  de 15:00 UTC (17:00 Paris) rejoue la séquence et remplit `refresh_runs` (6 lignes).
+- 16:58 `[W]` Miroirs des 2 migrations, `doc_constants.json` (`0 6-21`), OPERATIONS (table crons : 5 jobs fantômes
+  remplacés par l'orchestrateur ; § GSC ; table alertes +3), CLAUDE.md (réflexe n° 4 `pending()`, cron CPI),
+  CHANGELOG, workflow **`rpcs-regenerate.yml`** (régénère `rpcs.sql` en CI avec `DATABASE_URL_RO` — une session
+  locale ne l'a pas ; Cursor a dû l'avoir).

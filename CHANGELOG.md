@@ -3,6 +3,24 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-11 : l'aval de l'ingestion GSC suit l'ingestion, pas l'horloge
+
+Mission du 02/09/2026, ticket T-11 (#112), constats e-02 (P1) et h-05 (P2). Invariant I9. Migration `20260903145256`.
+
+### Corrigé
+- **Le cron GitHub `gsc-daily-ingest` dérive de +4 à +12 h depuis le 27/08** (planifié 06:00 UTC, parti à 17:15 le 27/08, 18:07 le 28/08, 10:35 le 03/09). L'aval `cooked_refresh_after_gsc` (`0 8-20 * * *`) était gardé par « ingestion datée du jour Paris » : le 28/08 il restait un tick avant de perdre le jour de `cpi_daily`. Désormais la garde est **« ingestion plus récente que le dernier refresh complet »** (`cooked_refresh_after_gsc_pending()`, marqueur `last_full_refresh_after_gsc_at`) et la fenêtre est **`0 6-21 * * *` UTC** — 21 h UTC = 23 h Paris l'été, dernier tick qui reste dans le jour Paris (22 ou 23 UTC daterait le snapshot au lendemain).
+- **Aucune durée par étape** (pg_cron ne garde que « 1 row » ; p50 ≈ 1 600 s pour 2 400 s de budget, 7 timeouts le 26/07). Table **`refresh_runs`** : une ligne par étape + une ligne `_total` par run (durée, ok, sqlstate, ingestion déclenchante). Rétention 400 j.
+
+### Alertes (cron horaire)
+- `gsc_ingest_missed` : « en retard » dès **12:00 UTC** (avant : 13:00 Paris, libellé « absente ») avec la commande de relance.
+- `refresh_after_gsc_stale` (critical) : une ingestion de plus de 3 h sans refresh complet derrière, entre 8 h et 23 h UTC.
+- `refresh_budget` (warn) : dernier run ≥ 80 % de `cooked_config.refresh_after_gsc_budget_s` (2 400 s), avec le détail par étape.
+- Les `repair_hint` de `freshness_contract` pour `cpi_daily` et `dashboard_resources_snapshot` citent l'orchestrateur réel (fini les jobs fantômes `cooked-cpi-daily-snapshot` / `refresh-dashboard-*`).
+
+### Invariant livré (I9)
+- `refresh_runs_after_ingest` (≥ 1 run `_total` ok sur 36 h) et `refresh_after_gsc_not_pending` (0 ingestion > 6 h non suivie) dans `run_rpc_contract_tests`.
+- Workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`) : régénère `supabase/rpcs.sql` depuis la prod avec le rôle CI lecture seule — une session locale n'a pas `DATABASE_URL_RO`.
+
 ## [2026-09-03] — T-07 : les alertes ne crient plus pour rien
 
 Mission du 02/09/2026, ticket T-07 (#108). Mesure avant : **55** alertes ouvertes, **11** critical en 10 j (dont des escalades `cpi_drop` quotidiennes).
