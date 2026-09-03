@@ -497,3 +497,8 @@
   `refresh_after_gsc_not_pending` tournent à 03:30 UTC (`run_rpc_contract_tests`) et l'alerte
   `refresh_after_gsc_stale` sonne à 15 h Paris si l'ingestion de demain n'est pas suivie. À lire demain 04/09 :
   `SELECT * FROM refresh_runs ORDER BY started_at DESC;` puis cocher la validation dans #134.
+- 17:35 `[R]` **Rejeu lu** (une requête, après l'arrêt de l'attente) : `refresh_runs` = 6 lignes, run 17:00:00 Paris,
+  `_total` **1 620 s** ok (cpi 60 s · dashboard 173 s · expertises 138 s · **assisted 1 021 s** · quarter 226 s) ;
+  marqueur ré-avancé à 17:00 ; `pending()` = false ; 0 alerte ouverte. Contrats I9 passés à la main
+  (`rpc_contract_check`) → `latest_rpc_health()`. **T-11 terminé au sens §3.9 du prompt** (PR #134 mergée, miroirs,
+  `rpcs.sql` régénéré, effet montré, docs). Constat neuf pour T-10/T-13 : l'étape assistés = 63 % de la séquence.
