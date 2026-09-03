@@ -273,6 +273,14 @@ fenêtre reculée de 3 jours). Contract-tests I4 : `contacts_28j_une_fenetre`,
 `current_date` / `now() - make_interval` interdits dans les migrations. Pour
 comparer deux RPC de contacts, comparer leurs `window_start`/`window_end` d'abord.
 
+⚠️ **Restatement contacts assistés du 03/09/2026** (T-08, migration `20260903114751`) :
+les formulaires sans identifiant (`cooked_sid`/`cooked_aid`) et les contacts sans visite
+appariée apparaissent sur la ligne **`(non attribuable)`** de `assisted_contacts_by_entry_path`.
+Le total site ne change pas (191 = 191 le 03/09, dont 12 non attribuables). Ces 12 **ne
+rentrent pas** dans le compteur « Contacts nourris par les articles » (ressources seulement).
+`dashboard_assisted_quarter` lit un snapshot nocturne (fenêtre trimestre close à J-1), plus
+de calcul à l'affichage. Pas d'objectif trimestriel pour l'instant (décision Nicolas 03/09).
+
 ⚠️ **Restatement CPI du 03/09/2026 — momentum** (T-06, migration `20260903101652`,
 décision Nicolas option (b)) : le momentum lit **`gsc_path_daily` (tous les clics)
 moins les clics brandés révélés** — plus la seule traîne de requêtes révélées
@@ -573,6 +581,12 @@ RPCs attribution & santé (Sprint 37-38 ; fenêtres closes depuis T-09, 03/09/20
   via `identity_stitch` (priorité sid > aid > fallback session brute). Même
   fenêtre que `site_macro_counts` / `macro_contacts_by_path` (contract-test
   `contacts_28j_une_fenetre`)
+- `assisted_contacts_by_entry_path(p_start, p_end)` — contacts macro par page d'entrée
+  (visite recousue). Forms sans identifiant et contacts sans visite → ligne
+  **`(non attribuable)`**. Σ = `site_macro_counts` (I4, T-08). Le dashboard ressources
+  ignore cette ligne (JOIN `page_taxonomy`).
+- `dashboard_assisted_quarter()` — lit le snapshot trimestre (ressources, close à J-1) ;
+  `refresh_dashboard_assisted_quarter` = 5ᵉ étape de `cooked_refresh_after_gsc`.
 - `content_performance(days)` — perf par page_type × theme
 - `seo_to_contact_funnel(days_back, p_end DEFAULT NULL)` — GSC clics → entrées
   organiques (visite recousue) → contacts par landing, **une seule fenêtre**

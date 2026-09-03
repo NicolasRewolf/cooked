@@ -551,11 +551,11 @@ CREATE OR REPLACE FUNCTION public.assisted_contacts_by_entry_path(p_start date, 
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public'
- SET statement_timeout TO '120s'
+ SET statement_timeout TO '300s'
 AS $function$
 DECLARE
-  t0 timestamptz := (p_start::timestamp AT TIME ZONE 'Europe/Paris');
-  t1 timestamptz := ((p_end + 1)::timestamp AT TIME ZONE 'Europe/Paris');
+  t0 timestamptz := public.cooked_paris_ts_start(p_start);
+  t1 timestamptz := public.cooked_paris_ts_end_exclusive(p_end);
 BEGIN
   DROP TABLE IF EXISTS _pvk;
   CREATE TEMP TABLE _pvk ON COMMIT DROP AS
@@ -596,22 +596,28 @@ BEGIN
     WHERE e.name = 'cta_phone_click'
       AND e.occurred_at >= t0 AND e.occurred_at < t1
     UNION ALL
+    -- T-08 (c-03) : les forms sans cooked_sid/aid entraient jamais dans _ct (12/28 j le 03/09).
+    -- On les garde avec une clé unresolved qui ne matchera aucune visite → (non attribuable).
     SELECT e.occurred_at,
-           COALESCE(sts.visitor_key, sta.visitor_key, 'sid:' || (e.props->>'cooked_sid'))
+           COALESCE(sts.visitor_key, sta.visitor_key,
+             CASE
+               WHEN nullif(e.props->>'cooked_sid', '') IS NOT NULL THEN 'sid:' || (e.props->>'cooked_sid')
+               WHEN nullif(e.props->>'cooked_aid', '') IS NOT NULL THEN 'aid:' || (e.props->>'cooked_aid')
+               ELSE 'unresolved:' || e.session_id
+             END)
     FROM public.events_human e
     LEFT JOIN public.identity_stitch sts ON sts.kind = 'sid' AND sts.key = e.props->>'cooked_sid'
     LEFT JOIN public.identity_stitch sta ON sta.kind = 'aid' AND sta.key = e.props->>'cooked_aid'
     WHERE e.name = 'form_submit'
       AND public.form_submit_counts_as_macro(e.props)
-      AND e.occurred_at >= t0 AND e.occurred_at < t1
-      AND COALESCE(e.props->>'cooked_sid', e.props->>'cooked_aid') IS NOT NULL;
+      AND e.occurred_at >= t0 AND e.occurred_at < t1;
   ANALYZE _ct;
 
   DROP TABLE IF EXISTS _ce;
   CREATE TEMP TABLE _ce ON COMMIT DROP AS
-    SELECT COALESCE(v.entry_path, '(non rattaché)') AS entry_path
+    SELECT COALESCE(v.entry_path, '(non attribuable)') AS entry_path
     FROM _ct c
-    JOIN LATERAL (
+    LEFT JOIN LATERAL (
       SELECT s.vk, s.visit_n
       FROM _pvseg s
       WHERE s.vk = c.vk AND s.t <= c.t AND c.t - s.t <= interval '6 hours'
@@ -1636,7 +1642,8 @@ DECLARE
     'cooked_cpi_snapshot',
     'refresh_dashboard_snapshots',
     'refresh_dashboard_expertises_snapshots',
-    'refresh_dashboard_resources_assisted'
+    'refresh_dashboard_resources_assisted',
+    'refresh_dashboard_assisted_quarter'
   ];
   v_step     text;
   v_i        integer;
@@ -1708,10 +1715,10 @@ BEGIN
   END LOOP;
 
   IF cardinality(v_failures) = 0 THEN
-    -- Marqueur de fin : écrit uniquement si les 4 étapes ont abouti — l'heure
+    -- Marqueur de fin : écrit uniquement si les 5 étapes ont abouti — l'heure
     -- suivante rejoue donc la séquence complète tant qu'une étape échoue.
     -- Blindé : un raté du marqueur vaut un simple rejeu idempotent, pas
-    -- l'annulation des 4 étapes.
+    -- l'annulation des 5 étapes.
     BEGIN
       INSERT INTO public.cooked_config (key, value, updated_at)
       VALUES ('last_full_refresh_after_gsc_at', now()::text, now())
@@ -1984,32 +1991,22 @@ END $function$
 -- ═══ public.dashboard_assisted_quarter() ═══
 CREATE OR REPLACE FUNCTION public.dashboard_assisted_quarter()
  RETURNS jsonb
- LANGUAGE plpgsql
+ LANGUAGE sql
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
- SET statement_timeout TO '30s'
+ SET statement_timeout TO '5s'
 AS $function$
-DECLARE
-  q_start date := date_trunc('quarter', public.paris_today())::date;
-  q_end   date := public.paris_today();
-  q_label text := 'T' || extract(quarter FROM q_start)::int || ' ' || extract(year FROM q_start)::int;
-  v_value int;
-  v_target int;
-BEGIN
-  SELECT coalesce(sum(a.contacts), 0)::int INTO v_value
-  FROM public.assisted_contacts_by_entry_path(q_start, q_end) a
-  JOIN public.page_taxonomy pt ON pt.path = a.entry_path AND pt.category = 'ressource';
-
-  SELECT NULLIF(btrim(value), '')::int INTO v_target
-  FROM public.cooked_config WHERE key = 'objectif_assistes_trimestre';
-
-  RETURN jsonb_build_object(
-    'quarter', q_label,
-    'quarter_start', q_start,
-    'value', COALESCE(v_value, 0),
-    'target', v_target
-  );
-END;
+  SELECT jsonb_build_object(
+    'quarter', coalesce(s.quarter,
+      'T' || extract(quarter FROM public.paris_today())::int || ' ' || extract(year FROM public.paris_today())::int),
+    'quarter_start', coalesce(s.quarter_start, date_trunc('quarter', public.paris_today())::date),
+    'value', coalesce(s.value, 0),
+    'target', s.target
+  )
+  FROM (SELECT 1) dummy
+  LEFT JOIN public.dashboard_assisted_quarter_snapshot s
+    ON s.quarter = 'T' || extract(quarter FROM public.paris_today())::int
+                 || ' ' || extract(year FROM public.paris_today())::int;
 $function$
 
 
@@ -3937,6 +3934,46 @@ end;
 $function$
 
 
+-- ═══ public.refresh_dashboard_assisted_quarter() ═══
+CREATE OR REPLACE FUNCTION public.refresh_dashboard_assisted_quarter()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '600s'
+AS $function$
+DECLARE
+  q_start date := date_trunc('quarter', public.paris_today())::date;
+  q_end   date := public.paris_today() - 1;
+  q_label text := 'T' || extract(quarter FROM q_start)::int || ' ' || extract(year FROM q_start)::int;
+  v_value int;
+  v_target int;
+BEGIN
+  -- T-08 (c-04) : J-1, le jour en cours n'est pas cousu avant 05:40 UTC.
+  IF q_end < q_start THEN
+    v_value := 0;
+  ELSE
+    SELECT coalesce(sum(a.contacts), 0)::int INTO v_value
+    FROM public.assisted_contacts_by_entry_path(q_start, q_end) a
+    JOIN public.page_taxonomy pt ON pt.path = a.entry_path AND pt.category = 'ressource';
+  END IF;
+
+  SELECT NULLIF(btrim(value), '')::int INTO v_target
+  FROM public.cooked_config WHERE key = 'objectif_assistes_trimestre';
+
+  INSERT INTO public.dashboard_assisted_quarter_snapshot
+    (quarter, quarter_start, quarter_end, value, target, refreshed_at)
+  VALUES (q_label, q_start, q_end, v_value, v_target, now())
+  ON CONFLICT (quarter) DO UPDATE SET
+    quarter_start = excluded.quarter_start,
+    quarter_end   = excluded.quarter_end,
+    value         = excluded.value,
+    target        = excluded.target,
+    refreshed_at  = excluded.refreshed_at;
+END;
+$function$
+
+
 -- ═══ public.refresh_dashboard_expertises_snapshots(p_window text) ═══
 CREATE OR REPLACE FUNCTION public.refresh_dashboard_expertises_snapshots(p_window text DEFAULT NULL::text)
  RETURNS void
@@ -5214,7 +5251,65 @@ BEGIN
       ('potentiel_sans_momentum_gate',
        $q$select count(*) from public.cpi_opportunite_contact o
           where o.potentiel is distinct from round(public.cpi_compose(o.zc, o.zr, o.zl, 0, 1, 1, true))::int$q$,
-       NULL, 0)
+       NULL, 0),
+
+      -- T-08 (mission 02/09/2026, invariant I4) : Σ assistés + (non attribuable) = site_macro_counts
+      -- sur la même fenêtre live_j1. Écart attendu 0 (avant T-08 : 191 − 179 = 12, les forms sans id).
+      ('assistes_plus_non_attribuables_eq_site',
+       $q$with b as (select n_start, n_end from public.cooked_period_bounds('rolling_28', 'live_j1')),
+               s as (select sm.macro_conversions as n from b, public.site_macro_counts(b.n_start, b.n_end) sm),
+               a as (select coalesce(sum(contacts), 0) as n
+                     from public.assisted_contacts_by_entry_path((select n_start from b), (select n_end from b)))
+          select abs((select n from s) - (select n from a))$q$,
+       NULL, 0),
+
+      -- T-08 (I8) : les 15 RPC dashboard_* sont sous contrat (durée enregistrée dans rpc_health).
+      -- La plupart lisent un snapshot ; budget implicite = le timeout de run_rpc_contract_tests (900 s).
+      ('dashboard_annotations',
+       $q$select count(*) from public.dashboard_annotations('rolling_28')$q$,
+       NULL, NULL),
+      ('dashboard_article_detail',
+       $q$select count(*) from (select public.dashboard_article_detail('/post/abandon-de-poste-quels-risques', 'rolling_28') v) s where s.v ? 'path'$q$,
+       NULL, 1),
+      ('dashboard_assisted_quarter',
+       $q$select count(*) from (select public.dashboard_assisted_quarter() v) s where (s.v->>'value') is not null$q$,
+       NULL, 1),
+      ('dashboard_expertises_kpis',
+       $q$select count(*) from public.dashboard_expertises_kpis('rolling_28')$q$,
+       NULL, NULL),
+      ('dashboard_expertises_overview',
+       $q$select count(*) from public.dashboard_expertises_overview('rolling_28', 20)$q$,
+       NULL, NULL),
+      ('dashboard_expertises_trend',
+       $q$select count(*) from public.dashboard_expertises_trend('rolling_28')$q$,
+       NULL, NULL),
+      ('dashboard_honoraires_funnel',
+       $q$select count(*) from public.dashboard_honoraires_funnel('rolling_28')$q$,
+       NULL, NULL),
+      ('dashboard_intervention_effect',
+       $q$select count(*) from (select public.dashboard_intervention_effect('/', date '2026-09-01') v) s$q$,
+       NULL, NULL),
+      ('dashboard_resources_assisted',
+       $q$select count(*) from public.dashboard_resources_assisted('rolling_28')$q$,
+       NULL, NULL),
+      ('dashboard_resources_cohorts',
+       $q$select count(*) from (select public.dashboard_resources_cohorts() v) s where s.v is not null$q$,
+       NULL, 1),
+      ('dashboard_resources_kpis',
+       $q$select count(*) from public.dashboard_resources_kpis('rolling_28')$q$,
+       NULL, NULL),
+      ('dashboard_resources_overview',
+       $q$select count(*) from public.dashboard_resources_overview('rolling_28', 20)$q$,
+       NULL, NULL),
+      ('dashboard_resources_trend',
+       $q$select count(*) from public.dashboard_resources_trend('rolling_28')$q$,
+       NULL, NULL),
+      ('dashboard_seo_by_query',
+       $q$select count(*) from public.dashboard_seo_by_query('rolling_28', 'ressource', 0, 20)$q$,
+       NULL, NULL),
+      ('dashboard_seo_kpis',
+       $q$select count(*) from public.dashboard_seo_kpis('rolling_28', 'ressource')$q$,
+       NULL, NULL)
     ) AS v(nom, requete, min_rows, exact_rows)
   LOOP
     PERFORM public.rpc_contract_check(t.nom, t.requete, t.min_rows, t.exact_rows);

@@ -1,0 +1,3 @@
+-- T-08 (mission 02/09/2026, #109) — étape no-op (commentaire seul, appliquée par erreur
+-- via MCP avant le corps). Le travail réel est dans 20260903114751 et suivantes.
+-- Conservée pour la parité schema_migrations.

@@ -135,7 +135,13 @@ inconnus entre eux.
   première pageview de la **visite recousue** (segmentation à trous
   > 30 min, rattachement à la dernière pageview ≤ 6 h avant le contact),
   fallback session brute. Effet mesuré : contacts assistés « ressource »
-  28 j **16 → 37**.
+  28 j **16 → 37**. Depuis T-08 : `assisted_contacts_by_entry_path` compte aussi
+  les forms sans identifiant sur la ligne `(non attribuable)` (Σ = totaux site) ;
+  cette ligne n'entre pas dans le snapshot ressources.
+- `refresh_dashboard_assisted_quarter` (T-08) : 5ᵉ étape de `cooked_refresh_after_gsc`
+  (timeout 600 s) → table `dashboard_assisted_quarter_snapshot`. La RPC
+  `dashboard_assisted_quarter()` lit ce snapshot (< 1 s). Trimestre clos à J-1.
+  Pas d'objectif (`objectif_assistes_trimestre` absent).
 - `conversion_journeys` **v2** : parcours sur le visiteur recousu
   (`visitor_key`, priorité sid > aid > fallback session brute) ; journey =
   pageviews de la visite [t−6h, t+3min], chaîne sans trou > 30 min.
@@ -559,6 +565,7 @@ Un « avant/après » qui enjambe une de ces dates n'est **pas** un signal
 | 27/07/2026 | `classify_channel` v3 — GMB sort d'`organic_google` | home : n_org 305→164, grade S→A ; CPI/journeys/funnel restatés (annotation posée) |
 | 03/09/2026 (T-09) | Contacts : `conversion_journeys` / `form_submits_attributed` / `macro_contacts_by_path` sur N jours clos à J-1 ; funnel sur une fenêtre GSC unique au grain recousu ; `classify_channel` v5 (gclid ⇒ paid) ; CPI zv sur la fenêtre du score | « contacts 28 j » **191 partout** (avant 183 / 189 / 195) ; funnel 5 860 entrées, 55 contacts, 0,94 % ; CPI : seul zv bouge, delta moyen +0,3, **0 changement de grade**, 6 movers ≥ 15 pts (annotation posée) |
 | 03/09/2026 (T-06) | CPI : momentum sur `gsc_path_daily` moins brandé révélé (option (b), décision Nicolas) au lieu de `gsc_query_page_daily` non brandé (16-28 % des clics) ; `cpi_opportunite_contact.potentiel` hors momentum/gate ; `cpi_drop` ignore une page dont les clics réels montent | seul le momentum bouge (132 pages), delta moyen +3,7, médiane \|Δ\| 4, **0 changement de grade**, 8 movers fiables ≥ 15 pts ; contrefactuel : 0 page fiable en direction inverse (avant 15/47) ; CPI pondéré 45,7 → 45,9 (annotation posée) |
+| 03/09/2026 (T-08) | Contacts assistés : forms sans identifiant + contacts sans visite → ligne `(non attribuable)` ; `dashboard_assisted_quarter` lit un snapshot (plus de calcul à l'affichage) | Σ assistés = totaux site (191 = 191 le 03/09, dont 12 non attribuables). Le compteur « articles » du dashboard **ne prend pas** ces 12. Pas d'objectif trimestriel (décision Nicolas). |
 
 Les restatements des 12/07, 27/07 et 03/09/2026 sont annotés dans la table
 `annotations` : la consulter avant d'interpréter un mouvement dans

@@ -56,9 +56,9 @@ async function Content({ period }: { period: Period }) {
     getAnnotations(period),
     getResourcesCohorts(),
     // Résilience (incident 03/07 22:57 : 2 timeouts RPC → la home plantait) :
-    // la ligne d'objectif est décorative, elle se masque au lieu de tout casser.
+    // la ligne reste visible (« objectif indisponible ») au lieu de tout cacher.
     getAssistedQuarter().catch((e) => {
-      console.error("dashboard_assisted_quarter KO — ligne objectif masquée:", e);
+      console.error("dashboard_assisted_quarter KO — objectif indisponible:", e);
       return null;
     }),
   ]);
@@ -73,7 +73,7 @@ async function Content({ period }: { period: Period }) {
 
   return (
     <div className="space-y-[18px]">
-      {quarter && <ObjectiveLine q={quarter} />}
+      <ObjectiveLine q={quarter} />
       {kpis && (
         <FreshnessBanner
           cookedEnd={kpis.cooked_end}
