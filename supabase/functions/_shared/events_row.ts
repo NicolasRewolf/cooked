@@ -69,7 +69,6 @@ export interface CookedEventRow {
   browser: string | null;
   viewport_width: number | null;
   viewport_height: number | null;
-  country?: string | null;
   props: Record<string, unknown>;
   occurred_at: string;
   received_at: string;

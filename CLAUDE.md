@@ -211,7 +211,7 @@ après C1–C9 ; tue les fuites SQL restantes :
   `contracts/branded_query_vectors.json`).
 - **`cooked_snapshot_window(w, grain)`** : driver bornes `live_j1` + GSC +
   `cooked_events_window` pour les 3 refreshers dashboard.
-- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 138 routines au
+- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 136 routines au
   03/09/2026, régénéré depuis la prod par le workflow `rpcs-regenerate`) ; gate CI
   `check_rpcs_sql_fresh.py` si migration redéfinit une RPC + prod-drift (sha = prod).
 
@@ -382,7 +382,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (138 routines au 03/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
+| Corps complets des RPC (136 routines au 03/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
 | Glossaire de domaine et invariants (conversions, attribution, lecture, fraîcheur) | `CONTEXT.md` |
 | Décisions d'architecture | `docs/adr/` |
 | PII, secrets, surface d'attaque, invariant I1 | `SECURITY.md` |
@@ -666,7 +666,10 @@ Paris (première ingestion réelle).
   migration `UPDATE cooked_config SET value='sprint42' WHERE key='expected_tracker_version'`.
   sprint41 = ids auto-réparants (fin de la rotation aid/sid sur wipe de storage, ~22 % des
   sessions), vérifié J+1 le 13/07/2026.
-- Edge `track` : **v29** (03/09/2026 — T-18 : gate `x-cooked-key` **fail-fast** — sans
+- Edge `track` : **v30** (04/09/2026 — T-19/T-22 : `url` réduite à origine + chemin + paramètres
+  de campagne/attribution (utm_*, gclid & co, cooked_aid/sid), `title` plus écrit (colonne conservée,
+  NULL), `ingest_drops` agrégés (1 appel / 100 drops ou / minute au lieu d'1 par requête de bot) ;
+  v29 = 03/09/2026 — T-18 : gate `x-cooked-key` **fail-fast** — sans
   `COOKED_INGEST_KEY` le boot échoue au lieu d'ouvrir la porte, `_shared/ingest_gate.ts` testé ;
   v28 = 03/09/2026 — T-04 : UA littéral « pc » (bot Baidu,
   13,8 % des pageviews d'`events_human` pendant 4 mois) et SEBot-WA droppés à
@@ -685,7 +688,7 @@ Paris (première ingestion réelle).
   Déployée le 03/09/2026 16:30 Paris (version Supabase 22).
 
 Prod peut lagger : vérifier la version déployée avant d'annoncer un changement
-Edge. Dernier contrôle le 03/09/2026 23:59 Paris : `track` **v29** + `form-webhook` **v15**
+Edge. Dernier contrôle le 04/09/2026 00:35 Paris : `track` **v30** + `form-webhook` **v15**
 (déployées par la CLI, sondes 405/401 relues) — prod = repo.
 
 **Couture d'identité (12/07/2026)** : table `identity_stitch` (sid|aid →

@@ -274,7 +274,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
 
 # VAGUE 4 — Hygiène et décisions
 
-## T‑19 · Budget de complexité : dépréciations, bloat, vestiges
+## T‑19 · Budget de complexité : dépréciations, bloat, vestiges — **FAIT 04/09 00:40** (migrations `20260903220532`, `20260903220712` ; track v30 ; reste : DROP photo T-05 après J+1, overloads après le 01/10, CNIL)
 - **Problème** : d‑08, h‑07, h‑08, b‑07. **Changement** (⛔ DROP = validation citée) : `DROP` `page_reads` ×2 (après
   T‑01), `gsc_path_metrics_28d`, overload `macro_contacts_by_path(days_back)` remplacé par `period_kind` (avec
   période de grâce), `gsc_top_queries_for_path(days_back)` idem ; `REINDEX` `identity_stitch` + `autovacuum` réglé

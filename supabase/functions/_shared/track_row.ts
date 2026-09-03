@@ -198,7 +198,10 @@ export function buildEventRow(e: any, ctx: TrackRowContext): TrackRowResult {
     props.active_ms = 60000;
   }
 
-  const eventUrl = s(e.url, 2048);
+  // T-19 / T-22 (décision Nicolas 03/09/2026) : `url` ne garde que l'origine, le chemin et les paramètres
+  // de campagne / d'attribution (utm_*, gclid & co, cooked_aid/sid) ; `title` n'est plus écrit (98,8 % NULL
+  // sur pageview, jamais lu par une RPC). ≈ 213 + 60 MB sur 90 j le 02/09.
+  const eventUrl = campaignOnlyUrl(s(e.url, 2048));
   const eventHost = hostnameOf(eventUrl);
   if (eventHost === "outremer.jplouton-avocat.fr") {
     props.cooked_site = "outremer";
@@ -213,7 +216,7 @@ export function buildEventRow(e: any, ctx: TrackRowContext): TrackRowResult {
       url: eventUrl,
       path: canonicalPath(s(e.path, 2048)),
       hostname: eventHost,
-      title: s(e.title, 500),
+      title: null,
       referrer: s(e.referrer, 2048),
       referrer_hostname: hostnameOf(s(e.referrer, 2048)),
       utm_source: s(e.utm_source, 100),
@@ -232,4 +235,28 @@ export function buildEventRow(e: any, ctx: TrackRowContext): TrackRowResult {
       received_at: ctx.now,
     },
   };
+}
+
+// T-22 — paramètres de query conservés dans events.url : campagnes (classify_channel v5 lit gclid/
+// gbraid/wbraid dans `url`), attribution formulaire (cooked_aid/sid exposés par le tracker sprint38).
+export const URL_KEEP_PARAMS = new Set([
+  "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+  "gclid", "gbraid", "wbraid", "dclid", "fbclid", "msclkid", "ttclid",
+  "cooked_aid", "cooked_sid",
+]);
+
+/** Ne garde de l'URL que origine + chemin + paramètres de campagne/attribution ; sans fragment. */
+export function campaignOnlyUrl(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const kept = new URLSearchParams();
+    for (const [k, v] of u.searchParams) {
+      if (URL_KEEP_PARAMS.has(k.toLowerCase())) kept.append(k, v);
+    }
+    const q = kept.toString();
+    return u.origin + u.pathname + (q ? "?" + q : "");
+  } catch {
+    return raw.split("#")[0].slice(0, 2048);
+  }
 }
