@@ -43,7 +43,7 @@ SELECT gsc_last_data_day();
 | `branded_query_vectors.json` | `gsc_is_branded(query)` (Arch #3) |
 | `recruitment_objet_vectors.json` | Filtrage macro `form_submit` (D4) |
 | `rpc_snapshot_meta.json` | Hash + count de `supabase/rpcs.sql` (Arch #5) |
-| `dashboard_rpc_columns.json` | Colonnes RPC dashboard ↔ schémas Zod `rpc-schemas.ts` (Arch #6) |
+| `dashboard_rpc_columns.json` | Contrat des 16 RPC dashboard **généré depuis la prod** (`scripts/generate_dashboard_contracts.py`) : colonnes, NOT NULL, appel d'échantillon ; confronté aux schémas Zod par `dashboard/src/data/rpc-contract.test.ts` (Arch #6 → T-13) |
 
 ## Versions canoniques (repo `main`)
 

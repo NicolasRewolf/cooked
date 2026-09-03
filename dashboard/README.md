@@ -220,5 +220,16 @@ re-vérifie via `requireUser()` (`src/lib/auth.ts`). Côté Supabase (projet `mx
   `src/lib/types.ts` ne fait que ré-exporter les types inférés (+ types UI purs). Si
   une signature RPC change : migration + régénération de `../supabase/rpcs.sql`, puis mise à jour
   du schéma zod correspondant.
+- **Contrat depuis la prod (T-13, 03/09/2026)** : `../contracts/dashboard_rpc_columns.json` est
+  généré par `../scripts/generate_dashboard_contracts.py` (catalogue Postgres : colonnes, NOT NULL,
+  clés jsonb d'un appel réel). `src/data/rpc-contract.test.ts` vérifie que chaque schéma zod a les
+  mêmes clés et qu'un champ zod non nullable est une colonne NOT NULL ; en CI `prod-drift.yml`
+  régénère le JSON depuis la prod (`--check`) et parse un appel réel par RPC avec les schémas zod
+  (`DASHBOARD_RPC_SAMPLES`). Une RPC qui change en prod sans son zod → CI rouge, plus une page morte
+  15 jours (incident `/seo` du 25/07/2026). Budget de durée nocturne : `dashboard_rpc_budget`
+  (`run_rpc_contract_tests`).
+- **Magic-link** : `signInWithOtp` reçoit `shouldCreateUser: false` (`src/lib/otp.ts`) — un e-mail
+  hors allowlist ne crée pas de compte et ne consomme pas le quota d'e-mails, quel que soit le
+  réglage console.
 - Le bandeau de fraîcheur affiche le décalage Google (lag J-2 normal) — le dashboard dit toujours à
   quel point il est à jour.

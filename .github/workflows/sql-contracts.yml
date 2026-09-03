@@ -3,6 +3,8 @@ name: SQL contracts
 # C6 — bloque les casts Paris bruts dans les nouvelles migrations.
 # C6c — bloque current_date / now() - make_interval (bornes d'horloge) dans les migrations ≥ T-09 (03/09/2026).
 # Arch #5 — rpcs.sql régénéré si une RPC change dans les migrations.
+# (Arch #6 / T-13 — le contrat RPC dashboard ↔ Zod vit dans dashboard-contract.yml (vitest) et
+#  prod-drift.yml (contrat régénéré depuis la prod + échantillons réels).)
 # (Le contrat cooked_events_window — scripts/cooked_events_window_contract.sql —
 #  est un contrat MANUEL, exécuté hors CI : voir docs/OPERATIONS.md.)
 
@@ -12,10 +14,8 @@ on:
       - 'supabase/migrations/**'
       - 'supabase/rpcs.sql'
       - 'contracts/rpc_snapshot_meta.json'
-      - 'contracts/dashboard_rpc_columns.json'
       - 'scripts/check_migration_paris_date.py'
       - 'scripts/check_rpcs_sql_fresh.py'
-      - 'scripts/check_dashboard_contracts.py'
       - 'scripts/check_schema_migrations.py'
       - '.github/workflows/sql-contracts.yml'
   push:
@@ -44,13 +44,6 @@ jobs:
           fetch-depth: 0
       - name: Arch #5 — rpcs.sql régénéré si une RPC change dans les migrations
         run: python3 scripts/check_rpcs_sql_fresh.py
-
-  dashboard-rpc-columns:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Arch #6 — colonnes RPC dashboard = schémas Zod
-        run: python3 scripts/check_dashboard_contracts.py
 
   schema-migrations-local:
     runs-on: ubuntu-latest

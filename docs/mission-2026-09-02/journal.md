@@ -542,3 +542,37 @@
   seul (20/08, retard GBP connu) ; registre : `dashboard_resources_snapshot` sur `max(cooked_end)` (1/2/4),
   `page_taxonomy` (7/21/—). Contrats via `rpc_contract_check` : `identity_stitch_couvre_j2` **ok** (0 ligne,
   123 ms), `identity_stitch_horodatee` **ok** (1). Routines : 134.
+- 23:13 `[W]` PR #138 (T-10) : CI verte après régénération de `rpcs.sql` (workflow `rpcs-regenerate`, commit
+  bot non exécuté par GitHub → commit vide de relance, comme pour #136) ; **mergée 23:13**.
+
+### T-13 — dashboard sous contrat avec la prod (03/09/2026, 23:05 → 23:25)
+- 23:05 `[F]` Relecture #114, g-01/g-04/g-06/g-08 (annexes/agents/g-audit.md), `check_dashboard_contracts.py`
+  (2 RPC mappées, regex sur `rpc-schemas.ts`, aucune connexion prod), `rpc-schemas.ts` (335 lignes, zod 4),
+  `call-rpc.ts`, `dashboard.ts`, `login/page.tsx:23-26`, workflows `dashboard-contract.yml` / `prod-drift.yml` /
+  `sql-contracts.yml`, rôle `cooked_ci_ro` (migrations T-12 : catalogue + 4 tables, 0 EXECUTE, `statement_timeout`
+  30 s, `default_transaction_read_only`).
+- 23:07 `[R]` **Mesure avant.** 16 RPC `dashboard_*` en prod (15 + `dashboard_lab_gsc_weekly` du 03/09) ;
+  `latest_rpc_health()` = 23 RPC (les 16 dashboard y sont depuis T-08 mais n'ont jamais tourné en nocturne —
+  `rpc_health` 30 j : `dashboard_assisted_quarter` seule, 1 ligne) ; nullabilité : `dashboard_resources_snapshot`
+  3/34 NOT NULL, `dashboard_kpis_snapshot` 2/22 ; 0 NULL sur 126 + 28 + 2 + 2 lignes. Durées (`rpc_contract_check`) :
+  `article_detail` 1 184 ms (rolling_28), 694 ms / 9 ms (rolling_90 : abandon-de-poste, garde-à-vue) ;
+  `honoraires_funnel` 1 595 ms ; `seo_by_query` 2 823 ms ; `resources_overview` 2 ms.
+- 23:10 `[D]` Le contrat vient du catalogue Postgres (TABLE / SETOF + `attnotnull`) et, pour les 5 RPC jsonb, des
+  clés d'un appel réel → `cooked_ci_ro` reçoit EXECUTE sur les 16 `dashboard_*` (agrégats sans PII ; le rôle reste
+  read-only, 30 s). Le contrôle Zod ↔ JSON passe de Python (regex, 2 RPC) à vitest (introspection zod v4, 16 RPC,
+  + nullabilité + échantillons prod) ; `check_dashboard_contracts.py` supprimé, job `dashboard-rpc-columns`
+  retiré de `sql-contracts.yml`, `prod-drift.yml` régénère le contrat (`--check`) et parse les échantillons.
+  Nullabilité : option (a) du constat — NOT NULL en base (le schéma garantit ce que le refresher promettait),
+  Zod inchangé ; le test vitest rend l'écart impossible dans les deux sens.
+- 23:12 `[W]` `generate_dashboard_contracts.py`, `contracts/dashboard_rpc_columns.json` (16 RPC, format
+  kind/columns/not_null/relation/sample_call), `rpc-contract.test.ts` (33 tests + 16 sur échantillons, ignorés
+  sans fichier), `lib/otp.ts` + test, `login/page.tsx` (`shouldCreateUser:false`), migration T-13 (65 colonnes
+  NOT NULL, 16 GRANT, `dashboard_rpc_budget`). vitest 143/143, tsc, eslint, C6/C6b/C6c OK.
+- 23:16 `[W-PROD]` `apply_migration` → version **`20260903211121`**.
+- 23:18 `[R]` **Après.** NOT NULL : `dashboard_resources_snapshot` 16/34, `dashboard_expertises_snapshot` 16/35,
+  `dashboard_kpis_snapshot` 20/22, `dashboard_expertises_kpis_snapshot` 23/25 = le JSON commité ;
+  `cooked_ci_ro` EXECUTE = 16/16 ; anon = false sur `run_rpc_contract_tests` et `dashboard_seo_kpis` ;
+  `rpc_contract_check('dashboard_rpc_budget')` **ok** (0 dépassement, 3 ms). La preuve « échantillons prod parsés
+  par Zod » et « JSON = prod » se lit dans la CI prod-drift de la PR (secret `DATABASE_URL_RO`, absent en local).
+  Validation « 27 RPC dans `latest_rpc_health()` » : à lire après la nuit du 04/09 (03:30 UTC) — attendu 23 + 16
+  dashboard + 2 I7 + 1 budget = 42 lignes.

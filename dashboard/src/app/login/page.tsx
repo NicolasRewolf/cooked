@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createBrowserClient } from "@supabase/ssr";
+import { otpSignInPayload } from "@/lib/otp";
 import { safeNext } from "@/lib/redirect";
 
 export default function LoginPage() {
@@ -20,10 +21,8 @@ export default function LoginPage() {
     // Anti open-redirect : on ne propage qu'un chemin interne dans le lien de retour.
     const next = safeNext(new URLSearchParams(window.location.search).get("next"));
     const redirect = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo: redirect },
-    });
+    // shouldCreateUser: false (g-06) — un e-mail hors allowlist ne crée pas de compte.
+    const { error } = await supabase.auth.signInWithOtp(otpSignInPayload(email, redirect));
     if (error) {
       setStatus("error");
       setMessage(error.message);
