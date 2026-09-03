@@ -1,4 +1,5 @@
-// COOKED — track Edge Function (v27 — 25/07/2026 : x-cooked-key ingest gate, audit n°3)
+// COOKED — track Edge Function (v28 — 03/09/2026 : bot UA « pc »/SEBot droppés à l'ingestion, T-04 mission 02/09 ;
+// v27 — 25/07/2026 : x-cooked-key ingest gate, audit n°3)
 // POST /functions/v1/track
 // Auth: this function does NOT verify a JWT. Authorization is via the Velo proxy
 // which holds the Supabase secret key server-side and forwards it as `apikey`.

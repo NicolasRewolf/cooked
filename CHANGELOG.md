@@ -3,6 +3,37 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-04 : le bot Baidu sort d'`events_human` (à la source et rétroactivement)
+
+Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-04 (#105), constats a-01 (P0), a-02, c-06, d-05.
+
+### Corrigé
+- **Un robot (user-agent littéral `pc`, referrer `m.baidu.com`) vivait dans `events_human` depuis le 07/05/2026** :
+  85 985 lignes / 7 252 sessions, soit sur 28 j **13,6 % des pageviews et 16,9 % des sessions** de la vue de base.
+  Aucun motif de la taxonomie `ua_bot` ne matchait `pc`, et la règle heuristique de bruit exige « sans referrer »
+  — il avait un referrer et 10 ticks par session. Les RPC publiées et le CPI le filtraient déjà
+  (`cooked_is_spam_referrer`) ; toute requête ad hoc sur `events_human` sur-comptait. Récidive du constat
+  « Majeur » du 25/07/2026.
+- **Edge `track` v28** : motifs `^pc$` (ancré, insensible à la casse) et `sebot` (SEBot-WA, 554 lignes) dans
+  `BOT_UA_RE` → droppés à l'ingestion (`ingest_drops.bot_ua`). 3 tests Deno ajoutés (42 verts).
+- **Migration `20260903075011`** : mêmes motifs dans la taxonomie `ua_bot` de `refresh_noise_sessions` ; nouvelle
+  règle `spam_referrer` (session entière) ; **rattrapage historique par masquage** — 7 338 sessions insérées dans
+  `noise_sessions` (aucun DELETE dans `events` : « T-04 sans purge », validation Nicolas du 02/09/2026) ;
+  **`classify_channel` v4** renvoie `spam` pour un referrer spam (94 % du canal `referral` était ce robot).
+
+### Invariant livré (I3)
+- `alert_rule_spam_in_events_human()` (warn, fenêtre 24 h, seuil 1 % des pageviews) — découverte automatiquement par
+  `cooked_alerts_refresh()`, 0,13 s.
+- Deux contrats dans `run_rpc_contract_tests` : `spam_share_events_human` (part < 1 % sur 7 j) et
+  `classify_channel_spam` (`m.baidu.com`, `baidu.com` → `spam`). 0 violation le 03/09/2026.
+
+### Restatement (annotation du 03/09/2026, migration `20260903075234`)
+- Sur 28 j (06/08 → 02/09) : pageviews 13 823 → 11 914 (−13,8 %), sessions 11 110 → 9 201 (−17,2 %), canal
+  `referral` 1 995 → 120 pageviews. **Couverture `page_exit` : 75,6 % → 89,1 %** (desktop 94,6 %, mobile 86,5 %) —
+  le « déficit desktop » de la baseline était un artefact du robot (100 % desktop, 0 `page_exit`).
+  Phrase : « correction de mesure (retrait d'un robot), pas une baisse de trafic ». RPC publiées, dashboard et CPI
+  inchangés.
+
 ## [2026-09-03] — T-03 : taux de rebond ×100, une unité par nom de colonne, contrat d'unités
 
 Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-03 (#104), constats d-01 (P0) et d-04 (P1).

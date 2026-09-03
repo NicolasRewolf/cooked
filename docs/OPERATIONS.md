@@ -576,8 +576,10 @@ supabase functions deploy track --no-verify-jwt
 supabase functions deploy form-webhook --no-verify-jwt
 ```
 
-Versions (25/07/2026, **prod alignée avec le repo** — contrôlé le 05/08/2026
-sur le code déployé) : **track v27** (gate `x-cooked-key` à l'ingestion ;
+Versions (03/09/2026, **prod alignée avec le repo**) : **track v28** (T-04 :
+UA littéral « pc » — bot Baidu — et SEBot-WA droppés à l'ingestion, motifs
+miroir dans la taxonomie `ua_bot` de `refresh_noise_sessions` + règle
+`spam_referrer` ; v27 = gate `x-cooked-key` à l'ingestion ;
 v26 = filtre bots à l'ingestion — taxonomie ua_bot appliquée avant l'INSERT,
 drops comptés dans `ingest_drops` ; D4 `track_row`), **form-webhook v13**
 (10/08/2026 — Pont SECIB : identité prospect en clair → `crm_prospects` ;

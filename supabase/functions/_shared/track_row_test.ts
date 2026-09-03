@@ -458,3 +458,19 @@ Deno.test("isBotUa — humains : Chrome desktop, iPhone Safari, Android = false"
 Deno.test("isBotUa — UA vide = false (iso-comportement : jamais classé ua_bot en SQL)", () => {
   assert(!isBotUa(""));
 });
+
+// T-04 (mission 02/09/2026, constat a-01) — le bot Baidu à UA littéral « pc » et SEBot-WA sont droppés à l'ingestion ;
+// un UA légitime contenant « pc » en sous-chaîne ne l'est pas (motif ancré).
+Deno.test("isBotUa — UA littéral 'pc' (bot Baidu) = bot", () => {
+  assertEquals(isBotUa("pc"), true);
+  assertEquals(isBotUa("PC"), true);
+});
+
+Deno.test("isBotUa — SEBot-WA = bot", () => {
+  assertEquals(isBotUa("SEBot-WA"), true);
+});
+
+Deno.test("isBotUa — 'pc' en sous-chaîne d'un UA légitime ≠ bot", () => {
+  assertEquals(isBotUa("Mozilla/5.0 (Linux; Android 13; PC-T1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"), false);
+  assertEquals(isBotUa("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"), false);
+});

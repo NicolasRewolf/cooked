@@ -50,7 +50,7 @@ SELECT gsc_last_data_day();
 | Composant | Version repo | Déploiement prod |
 |---|---|---|
 | Tracker | `sprint41` (ids auto-réparants) | Wix Custom Code (minify) — déployé 12/07/2026 |
-| Edge `track` | v27 (gate `x-cooked-key` ; v26 = filtre bots à l'ingestion) | `supabase functions deploy track` — v27 déployée (vérifié 05/08/2026) |
+| Edge `track` | v28 (T-04 : UA « pc » / SEBot droppés ; v27 = gate `x-cooked-key` ; v26 = filtre bots à l'ingestion) | `supabase functions deploy track` — v28 déployée le 03/09/2026 |
 | Edge `form-webhook` | v13 (Pont SECIB → crm_prospects ; v12 = D4) | `supabase functions deploy form-webhook` — v13 déployée (vérifié 10/08/2026) |
 | RPC Postgres | 121 routines (119 fonctions + 2 procédures) | migrations Supabase |
 

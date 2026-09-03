@@ -57,12 +57,16 @@ export async function hashAnonymous(
 }
 
 // n°5 (audit 25/07/2026, R2) — taxonomie ua_bot de refresh_noise_sessions,
-// répliquée à l'identique (39 motifs, même ordre que le SQL). Un event
+// répliquée à l'identique (39 motifs + 2 du T-04, même ordre que le SQL). Un event
 // droppé ici aurait été exclu d'events_human de toute façon : mesuré le
 // 25/07/2026 sur 48 h, 90,2 % des écritures matchaient, et 0 event bot-UA
 // de plus de 90 minutes restait visible dans events_human.
 const BOT_UA_RE = new RegExp(
   [
+    // T-04 (mission 02/09/2026, a-01) : bot à UA littéral « pc » (referrer m.baidu.com, 13,8 % des pageviews
+    // d'events_human sur 28 j) — ancré pour ne pas matcher une sous-chaîne d'UA légitime ; « sebot » = SEBot-WA.
+    "^pc$",
+    "sebot",
     "headless",
     "googlebot",
     "bingbot",
