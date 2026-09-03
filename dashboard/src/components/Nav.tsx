@@ -8,6 +8,7 @@ const links = [
   { href: "/", label: "Articles Ressources" },
   { href: "/expertises", label: "Expertises" },
   { href: "/seo", label: "SEO · requêtes" },
+  { href: "/lab", label: "Lab" },
 ];
 
 // M2 — la Nav ne propage QUE `period` d'un onglet à l'autre (sauf défaut rolling_90).

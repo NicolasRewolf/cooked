@@ -179,6 +179,29 @@ export const annotationSchema = z.object({
 });
 export type Annotation = z.infer<typeof annotationSchema>;
 
+// Lab — clics/impressions GSC par semaine ISO close et par type de page (RPC dashboard_lab_gsc_weekly).
+export const labGscWeekSchema = z.object({
+  week_start: isoDate,
+  c_ressource: num,
+  c_classique: num,
+  c_expertise: num,
+  c_divers: num,
+  i_ressource: num,
+  i_classique: num,
+  i_expertise: num,
+  i_divers: num,
+});
+export type LabGscWeek = z.infer<typeof labGscWeekSchema>;
+
+export const labGscWeeklySchema = z.object({
+  gsc_end: isoDate,
+  window_start: isoDate,
+  window_end: isoDate,
+  weeks: z.array(labGscWeekSchema),
+  annotations: z.array(annotationSchema),
+});
+export type LabGscWeekly = z.infer<typeof labGscWeeklySchema>;
+
 export const interventionEffectSchema = z.object({
   path: z.string(),
   day: isoDate,
