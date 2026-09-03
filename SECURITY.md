@@ -40,7 +40,7 @@ rejouer les déploiements qui portent la valeur (Edge, Velo, GitHub Actions, Ver
 | Secret | Protège | Emplacement |
 |---|---|---|
 | `SUPABASE_SECRET_KEY` (clé service `sb_secret_*`) | toutes les lectures/écritures métier | Vercel (dashboard, serveur seulement), GitHub Actions, Edge Functions, `.env` local des scripts |
-| `COOKED_INGEST_KEY` | gate `x-cooked-key` de l'Edge `track` (v27+) — un appel sans la clé est rejeté 401 | Supabase Edge secrets ; Wix Velo Secrets Manager (`wix/http-functions.js`, `getSecret('COOKED_INGEST_KEY')`). ⚠️ l'Edge est **fail-open si la variable est vide** (T-18 : gate fail-fast) |
+| `COOKED_INGEST_KEY` | gate `x-cooked-key` de l'Edge `track` (v27+) — un appel sans la clé est rejeté 401 ; **fail-fast depuis v29 (T-18)** : le boot échoue si le secret manque, la gate ne tourne jamais ouverte ; le proxy Velo répond `ingest_key_missing` (500) plutôt que d'envoyer sans clé | Supabase Edge secrets ; Wix Velo Secrets Manager (`wix/http-functions.js`, `getSecret('COOKED_INGEST_KEY')`) |
 | `ANON_SALT` | hachage IP+UA → `anonymous_id` de repli | Supabase Edge secrets (`track`) |
 | `ALLOWED_ORIGIN` | garde d'origine du proxy Velo → Edge | Supabase Edge secrets (`track`) |
 | `FORM_WEBHOOK_SECRET` | token `?token=` de l'Edge `form-webhook` (Wix Automation) | Supabase Edge secrets ; Wix Automation (URL du webhook) |

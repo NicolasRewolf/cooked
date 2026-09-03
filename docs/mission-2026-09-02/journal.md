@@ -614,80 +614,106 @@
 - 23:32 `[R]` T-14 — PR #140 : `docs-constants` vert (3 s), `prod-drift` vert (compteurs = prod), `dashboard-unit`
   vert. **Mergée 23:33.**
 
-### T-15 — page_taxonomy suit la liste publiée du blog (03/09/2026 23:35 → 04/09 00:15)
-- 23:35 `[F]` Relecture #116, e-06/e-07 (annexes e-audit), migration `20260831090540` (rattrapage manuel, cause
+### T-15 — page_taxonomy suit la liste publiée du blog (03/09/2026, 23:20 → 23:40)
+- 23:20 `[F]` Relecture #116, e-06/e-07 (annexes e-audit), migration `20260831090540` (rattrapage manuel, cause
   racine énoncée), `refresh_page_taxonomy_heuristic`, `alert_rule_page_taxonomy_gap`, patrons `gbp_ingest.py` /
   `gbp-daily-ingest.yml`, `cooked_store.py`, `canonical_path`. `gh secret list` : aucune clé Wix ;
   `wix_forms_import.py` ne parle pas à l'API (export CSV).
-- 23:40 `[R]` **Mesure avant.** API Wix (MCP, 5 pages) : **434 posts publiés, 62 ressources** ; `page_taxonomy` :
+- 23:25 `[R]` **Mesure avant.** API Wix (MCP, 5 pages) : **434 posts publiés, 62 ressources** ; `page_taxonomy` :
   438 lignes `/post/` (63 ressources, 1 sans catégorie `/post/accident-médical-oniam`, vestige). `/post/` vus
   30 j sans ligne : 17 paths dont **1 article** (`histoire-artan…`, publié 18/08, 6 vues) et 16 non-articles
   (8 `fp_0.50_0.50/<image>`, 3 previews, 3 mojibake/URL-encodés, base64, parenthèse). Paths ≥ 100 chars en
   base (106) = slugs Wix tronqués à 100 par Wix (identiques à l'API) — rien à corriger.
-- 23:45 `[W]` Fixture `tests/fixtures/wix_blog_posts_2026-09-03.txt` (434 lignes, transcrite de l'API) ;
+- 23:30 `[W]` Fixture `tests/fixtures/wix_blog_posts_2026-09-03.txt` (434 lignes, transcrite de l'API) ;
   `scripts/wix_taxonomy_sync.py` (API → RPC ; `--from-file`, `--dry-run` ; refus < 300 posts) ; 3 tests ;
   workflow `wix-taxonomy-sync.yml` (lundi 05:00 UTC, sort sans écrire sans `WIX_API_KEY`) ; migration
   (helper thème unique, `page_taxonomy_sync_wix`, alerte : filtres e-07 + seuil 1 après 8 j). C6/C6b/C6c OK.
-- 23:37 `[W-PROD]` `apply_migration` → version **`20260903213503`**.
+- 23:35 `[W-PROD]` `apply_migration` → version **`20260903213503`**.
 - 23:38 `[W-PROD]` **Première synchro** via la RPC (liste = fixture, `p_dry_run=false`) : `inserted=1`
   (`/post/histoire-artan-engagement-grands-traumatises`, classique, theme NULL, source wix_api), `updated=0`,
   `unpublished=5` (les 5 vestiges déjà connus, conservés). = le diff attendu.
 - 23:40 `[R]` **Après.** `alert_rule_page_taxonomy_gap()` = 0 ligne ; `/post/` = 439 lignes, 63 ressources ;
   ACL anon = false sur les 4 fonctions ; routines = 136 (→ `doc_constants.json`, docs « 136 routines »).
-- 00:10 `[D]` Action Nicolas : créer la clé API Wix (manage.wix.com → API Keys, permission Blog lecture) et la
+- 23:40 `[D]` Action Nicolas : créer la clé API Wix (manage.wix.com → API Keys, permission Blog lecture) et la
   poser en secret `WIX_API_KEY` ; contrôle après : `gh workflow run wix-taxonomy-sync.yml -f dry_run=true`
   puis lire le log (« insérés : 0 »). D'ici là : synchro à la main (`--dry-run` puis sans).
-- 00:18 `[R]` T-15 — PR #141 : CI verte (docs-constants, prod-drift à 136 routines, python-ingest-contract,
-  SQL contracts). **Mergée 00:19.**
+- 23:42 `[R]` T-15 — PR #141 : CI verte (docs-constants, prod-drift à 136 routines, python-ingest-contract,
+  SQL contracts). **Mergée 23:42.**
 
-### T-16 — pont SECIB : garde-fous avant le premier chiffre (04/09/2026, 00:20 → 00:45)
-- 00:20 `[F]` Relecture #117, e-01/e-03/e-04/e-05/e-08/c-07/c-08, `secib_ingest.py` (normalisation l.76-97,
+### T-16 — pont SECIB : garde-fous avant le premier chiffre (03/09/2026, 23:42 → 23:52)
+- 23:42 `[F]` Relecture #117, e-01/e-03/e-04/e-05/e-08/c-07/c-08, `secib_ingest.py` (normalisation l.76-97,
   `dossier_row`), `wix_forms_import.py` (`build_row`, `clean_*`, insertion : dédup sur `wiximport-%` seulement),
   `gbp_ingest.py` (`_trim_unconsolidated`, `_to_store_rows`), corps prod `cooked_normalize_*`, `pg_get_viewdef`
   du pont, index de `crm_prospects`, `python-ingest-contract.yml` (paths sans les 3 scripts).
-- 00:25 `[R]` **Mesure avant** (agrégats seuls, aucune valeur individuelle) : `crm_prospects` 858 (0 sans clé,
+- 23:43 `[R]` **Mesure avant** (agrégats seuls, aucune valeur individuelle) : `crm_prospects` 858 (0 sans clé,
   765 personnes distinctes, **2 doublons (email, minute)**, 0 téléphone non normalisé) ; `secib_dossiers` 49,
   100 % `env='test'`, 41/49 sans clé ; pont : 858/858 `non_converti` ; `cooked_normalize_phone_fr('+33 (0)6…')`
   → `+33061…` (faux, miroir Python identique).
-- 00:28 `[D]` Index unique fonctionnel du plan : impossible sans supprimer les 2 doublons (DELETE = Nicolas) →
+- 23:44 `[D]` Index unique fonctionnel du plan : impossible sans supprimer les 2 doublons (DELETE = Nicolas) →
   remplacé par un contrat « pas de nouveau doublon » + dédup dans l'import. Sandbox jamais rapproché des
   vrais prospects (vue = prod) ; `pont_prospects_dossiers_env('test')` pour le bac à sable.
-- 00:32 `[W]` `contracts/normalize_vectors.json` (14 vecteurs), `check_normalize_vectors.py`, `secib_ingest.py`
+- 23:44 `[W]` `contracts/normalize_vectors.json` (14 vecteurs), `check_normalize_vectors.py`, `secib_ingest.py`
   v2, `wix_forms_import.py` (`already_captured`, lecture des lignes webhook), 3 fichiers de tests (11 tests verts),
   workflows (`scripts/**.py`, requirements gbp+secib, vecteurs SQL dans prod-drift). Migration pont + migration
   contract-tests. C6/C6b/C6c OK.
-- 00:35 `[W-PROD]` `apply_migration` → **`20260903214532`** (pont) puis **`20260903214711`** (contrats).
-- 00:38 `[R]` **Après.** Vue prod : 858 `non_converti` (0 dossier prod) ; `pont_prospects_dossiers_env('test')` :
+- 23:45 `[W-PROD]` `apply_migration` → **`20260903214532`** (pont) puis 23:47 **`20260903214711`** (contrats).
+- 23:48 `[R]` **Après.** Vue prod : 858 `non_converti` (0 dossier prod) ; `pont_prospects_dossiers_env('test')` :
   858 `non_converti`, 0 dossier apparié (le bac à sable ne contient aucun des 858 prospects) ; `rang_personne=1`
   = 765 ; `pont_couverture` : prod 0 dossier → « aucun taux publiable », test 8/49 = 16,3 % → « plancher » ;
   vecteurs `(0)` → `+33612345678` en SQL ; anon = false sur la vue, `pont_couverture` et la fonction ;
   `alert_rule_exposure()` = 0 ; `cooked_ci_ro` EXECUTE sur les 2 normalisations ; routines 137, vues 12.
   Contrats via `rpc_contract_check` : `pont_test_jamais_dans_prod` ok, `normalize_phone_vecteurs` ok,
   `crm_prospects_doublons_email_minute` ok.
-- 00:50 `[R]` T-16 — PR #142 : prod-drift rouge au 1er essai (`check_normalize_vectors.py` importe `secib_ingest`
-  → `requests` absent du job) ; corrigé (`pip install psycopg2-binary requests`) ; **vert, mergée 01:00**.
+- 23:52 `[R]` T-16 — PR #142 : prod-drift rouge au 1er essai (`check_normalize_vectors.py` importe `secib_ingest`
+  → `requests` absent du job) ; corrigé (`pip install psycopg2-binary requests`) ; **vert, mergée 23:53**.
 
-### T-17 — tracker : filet CI, tests des correctifs, CLS explicite, debug off (04/09/2026, 01:00 → 01:25)
-- 01:00 `[F]` Relecture #118, a-03/a-04/a-05/a-07/a-08, `tests/tracker.test.js` (14 assertions, jsdom),
+### T-17 — tracker : filet CI, tests des correctifs, CLS explicite, debug off (03/09/2026, 23:50 → 23:58)
+- 23:50 `[F]` Relecture #118, a-03/a-04/a-05/a-07/a-08, `tests/tracker.test.js` (14 assertions, jsdom),
   `tracker.html` (storage/healAid 236-345, isAN 665-700, vitals 950-1050, page_exit 1070-1090, send/flush
   395-445), `minify-tracker.py`, `tracker-test.yml` (paths sans les fichiers Velo), `masterpage-cooked.js:22`
   (`COOKED_DEBUG = true`).
-- 01:05 `[R]` **Mesure avant.** Minifié sprint41 = 14 760 / 15 000. Contacts sans amont (events_human 28 j, hors
+- 23:51 `[R]` **Mesure avant.** Minifié sprint41 = 14 760 / 15 000. Contacts sans amont (events_human 28 j, hors
   server) : `cta_phone_click` 0/128, `cta_booking_click` 4/331. Suite jsdom : 14 assertions, aucune sur
   sprint41/40/35, PerformanceObserver mocké à `undefined` (CLS jamais exercé).
-- 01:08 `[D]` CLS explicite tient dans la marge (+60 chars → 14 820) : fait dans sprint42, sans attendre le loader.
+- 23:52 `[D]` CLS explicite tient dans la marge (+60 chars → 14 820) : fait dans sprint42, sans attendre le loader.
   a-04 (reprise sur échec + id client) reste hors monolithe → décision loader §7.1 ; détection livrée à la place
   (alerte `contact_sans_amont`, plancher `volume_floor` T-07). Cliquet CI plutôt que « rouge sous 14 500 » (le
   ticket) : un workflow rouge en permanence jusqu'à la décision loader serait un « rouge en silence » de plus ;
   le cliquet refuse tout AJOUT net au-dessus de 14 500, ce qui est l'invariant recherché.
-- 01:12 `[W]` `tracker.html` sprint42 (`clsOn`, `if (vitals.cls || clsOn)`, arrondi 3 décimales, en-tête) ;
+- 23:53 `[W]` `tracker.html` sprint42 (`clsOn`, `if (vitals.cls || clsOn)`, arrondi 3 décimales, en-tête) ;
   `tracker.test.js` +6 assertions (validées d'abord sur une copie en scratch : 20/20 source + minifié) ;
   `minify-tracker.py` cliquet (`contracts/doc_constants.json` → `tracker.min_chars_baseline` 14 820,
   `soft_limit_chars` 14 500, exit 3) ; `masterpage-cooked.js` debug off ; `tracker-test.yml` (`wix/**`, grep
   `COOKED_DEBUG = true`) ; PLAYBOOK piège n° 16 (CWV : dénominateur + périmètre navigateur) ; migration
   `alert_rule_contact_sans_amont` (≥ 3 / 24 h warn, ≥ 10 critical).
-- 01:15 `[W-PROD]` `apply_migration` → **`20260903215424`**. `alert_rule_contact_sans_amont()` = 0 ligne ;
+- 23:54 `[W-PROD]` `apply_migration` → **`20260903215424`**. `alert_rule_contact_sans_amont()` = 0 ligne ;
   anon = false ; routines 138, règles d'alerte 18 → `doc_constants.json`, docs « 138 routines ».
-- 01:20 `[R]` Suite locale : **20/20 source, 20/20 minifié**, minifié 14 820 (⚠ marge, cliquet armé),
+- 23:56 `[R]` Suite locale : **20/20 source, 20/20 minifié**, minifié 14 820 (⚠ marge, cliquet armé),
   `COOKED_DEBUG` grep vide, C6/C6c OK, I13 OK. `expected_tracker_version` reste `sprint41` (prod) jusqu'au
   collage — bump = migration après contrôle J+1 (bloc « À faire par Nicolas » dans la PR).
+- 23:58 `[R]` T-17 — PR #143 : CI verte (Tracker Test 20/20 source + minifié, cliquet armé, prod-drift, docs).
+  **Mergée 23:58.** Horodatages des sections T-15→T-17 recalés sur les versions de migration (heure UTC
+  prod) : mes heures « 00:xx / 01:xx » étaient en avance sur l'horloge réelle.
+
+### T-18 — Edge / formulaires : page_source partout, gate fail-fast (03/09/2026 23:58 → 04/09 00:10)
+- 23:58 `[F]` Relecture #119, b-01/b-02/b-04/b-05 (b-04 : déjà clos par T-07 — `raise_cooked_alert` dans
+  form-webhook v14, 0 alerte `form_submit_dropped`), `form_row.ts` (`resolvePageSource` sans canonicalisation,
+  `formId` non trimé), `track/index.ts` (`COOKED_INGEST_KEY ?? ""` + `if (COOKED_INGEST_KEY)`),
+  `http-functions.js:90` (`...(ingestKey ? {…} : {})`), `masterpage-cooked.js` (seed aid/sid seulement),
+  `alert_rule_form_attribution_degraded` (cooked_aid seulement, 7 j), tests Deno et workflow.
+- 23:59 `[R]` **Mesure avant** (events_human, form_submit, 180 j) : `form_id` « Prise de contact site-web »
+  **avec espace final** 230 (17 sans page_source, 29 sans objet, 90 sans aid) + sans espace 22 (1/1/4) ;
+  « Formulaire Divorce » 3 (3/3/1) ; « Demande dossier en cours » 1 (1/1/1). Gate : 401 sans clé (armée).
+- 00:00 `[W]` `_shared/ingest_gate.ts` + tests ; `track/index.ts` v29 (fail-fast, `ingestKeyMatches`) ;
+  `form_row.ts` (`canonicalPath` sur `page_source`, `form_id` trimé) + 2 tests Deno ; `form-webhook` v15 ;
+  `edge-shared-helpers.yml` (+ `ingest_gate_test.ts`) ; `masterpage-cooked.js` (seed `page_source`) ;
+  `http-functions.js` (`ingest_key_missing` 500, `x-cooked-key` toujours envoyé). Deno absent en local :
+  les tests tournent en CI.
+- 23:59 `[W-PROD]` `apply_migration` → **`20260903215921`** (`alert_rule_form_attribution_degraded` v2 :
+  `form_fields_missing`). Règle à chaud : **1 warn** (`form_fields_missing`) — attendu, action Nicolas.
+- 23:59 `[W-PROD]` `npx supabase functions deploy track --no-verify-jwt` (version Supabase 38 → **39** = v29) ;
+  `form-webhook` (22 → **23** = v15). Sondes : `GET track` → 405 (boot OK, fail-fast non déclenché : la clé est
+  là) ; `POST track` sans clé → 401 `unauthorized` ; `form-webhook?token=x` → 401.
+- 00:05 `[D]` Reste Nicolas : collage Velo (`http-functions.js`, `masterpage-cooked.js`), champs `page_source` +
+  « Objet » sur les 2 formulaires. L'alerte `form_fields_missing` restera warn (escalade critical à 5 j, T-07)
+  jusqu'au câblage — c'est le but.

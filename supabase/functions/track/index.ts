@@ -1,4 +1,5 @@
-// COOKED — track Edge Function (v28 — 03/09/2026 : bot UA « pc »/SEBot droppés à l'ingestion, T-04 mission 02/09 ;
+// COOKED — track Edge Function (v29 — 04/09/2026 : gate x-cooked-key fail-fast, T-18 mission 02/09 —
+// COOKED_INGEST_KEY absent ⇒ le boot échoue au lieu d'ouvrir la porte ; v28 — 03/09/2026 : bot UA « pc »/SEBot droppés à l'ingestion, T-04 mission 02/09 ;
 // v27 — 25/07/2026 : x-cooked-key ingest gate, audit n°3)
 // POST /functions/v1/track
 // Auth: this function does NOT verify a JWT. Authorization is via the Velo proxy
@@ -10,6 +11,7 @@
 // parsing du batch, appel du builder, INSERT, réponse.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { ingestKeyMatches, requireIngestKey } from "../_shared/ingest_gate.ts";
 import {
   buildEventRow,
   clientIp,
@@ -46,7 +48,8 @@ if (!ANON_SALT || ANON_SALT === "cooked-default-salt-CHANGE-ME-IN-DASHBOARD") {
 }
 const ALLOWED_ORIGIN =
   Deno.env.get("ALLOWED_ORIGIN") ?? "https://www.jplouton-avocat.fr";
-const COOKED_INGEST_KEY = Deno.env.get("COOKED_INGEST_KEY") ?? "";
+// T-18 (b-02) — fail-fast : la gate ne tourne jamais ouverte (_shared/ingest_gate.ts, testé).
+const COOKED_INGEST_KEY = requireIngestKey(Deno.env.get("COOKED_INGEST_KEY"));
 
 const supabase = createClient(SUPABASE_URL, SECRET_KEY, {
   auth: { persistSession: false },
@@ -85,11 +88,8 @@ Deno.serve(async (req) => {
     return jsonError(405, "method_not_allowed");
   }
 
-  if (COOKED_INGEST_KEY) {
-    const key = req.headers.get("x-cooked-key") ?? "";
-    if (key !== COOKED_INGEST_KEY) {
-      return jsonError(401, "unauthorized");
-    }
+  if (!ingestKeyMatches(COOKED_INGEST_KEY, req.headers.get("x-cooked-key"))) {
+    return jsonError(401, "unauthorized");
   }
 
   let body: any;

@@ -62,6 +62,15 @@ export async function post_track(request) {
       getSecret('COOKED_INGEST_KEY'),
     ]);
 
+    // T-18 (b-02) — miroir du fail-fast de l'Edge : sans clé, on n'envoie pas « sans clé »
+    // (l'Edge répondrait 401 et l'event serait perdu en silence) — on le dit.
+    if (!ingestKey) {
+      return serverError({
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ok: false, error: 'ingest_key_missing' }),
+      });
+    }
+
     const body = await request.body.text();
     if (!body || body.length > 60_000) {
       return badRequest({
@@ -87,7 +96,7 @@ export async function post_track(request) {
         'authorization': `Bearer ${supabaseKey}`,
         'x-forwarded-for': fwd,
         'user-agent': ua,
-        ...(ingestKey ? { 'x-cooked-key': ingestKey } : {}),
+        'x-cooked-key': ingestKey,
       },
       body,
     });

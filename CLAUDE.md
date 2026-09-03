@@ -666,7 +666,9 @@ Paris (première ingestion réelle).
   migration `UPDATE cooked_config SET value='sprint42' WHERE key='expected_tracker_version'`.
   sprint41 = ids auto-réparants (fin de la rotation aid/sid sur wipe de storage, ~22 % des
   sessions), vérifié J+1 le 13/07/2026.
-- Edge `track` : **v28** (03/09/2026 — T-04 : UA littéral « pc » (bot Baidu,
+- Edge `track` : **v29** (03/09/2026 — T-18 : gate `x-cooked-key` **fail-fast** — sans
+  `COOKED_INGEST_KEY` le boot échoue au lieu d'ouvrir la porte, `_shared/ingest_gate.ts` testé ;
+  v28 = 03/09/2026 — T-04 : UA littéral « pc » (bot Baidu,
   13,8 % des pageviews d'`events_human` pendant 4 mois) et SEBot-WA droppés à
   l'ingestion, miroir SQL dans `refresh_noise_sessions` + règle
   `spam_referrer`, `classify_channel` v4 renvoie `spam` ; v27 = 25/07/2026 —
@@ -676,13 +678,15 @@ Paris (première ingestion réelle).
   comptés dans `ingest_drops` ; v25 = D4 `track_row` + C5 `events_row` ;
   clamp horloge v23). Détail des constats :
   `docs/audit-architecture-2026-07-25.md`.
-- Edge `form-webhook` : **v14** (03/09/2026 — T-07 : `form_submit_dropped` via
+- Edge `form-webhook` : **v15** (03/09/2026 — T-18 : `page_source` canonicalisé (decode → NFC),
+  `form_id` trimé — Wix envoyait « Prise de contact site-web » avec un espace final ;
+  v14 = 03/09/2026 — T-07 : `form_submit_dropped` via
   `raise_cooked_alert` ; v13 = Pont SECIB ; v12 = D4 ; v11 = drop alert).
   Déployée le 03/09/2026 16:30 Paris (version Supabase 22).
 
 Prod peut lagger : vérifier la version déployée avant d'annoncer un changement
-Edge. Dernier contrôle le 03/09/2026 23:30 Paris : `track` **v28** (déployée 09:51) +
-`form-webhook` **v14** (déployée 16:30) — prod = repo.
+Edge. Dernier contrôle le 03/09/2026 23:59 Paris : `track` **v29** + `form-webhook` **v15**
+(déployées par la CLI, sondes 405/401 relues) — prod = repo.
 
 **Couture d'identité (12/07/2026)** : table `identity_stitch` (sid|aid →
 `visitor_key`, composantes connexes du graphe aid↔sid, cron nocturne 03:40 UTC,

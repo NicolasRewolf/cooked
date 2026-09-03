@@ -56,8 +56,8 @@
   "cron_jobs_count": 9,
   "versions": {
     "tracker": "sprint42",
-    "edge_track": 28,
-    "edge_form_webhook": 14,
+    "edge_track": 29,
+    "edge_form_webhook": 15,
     "cpi_model": "v2.2"
   },
   "docs": {
