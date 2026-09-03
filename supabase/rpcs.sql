@@ -629,8 +629,8 @@ AS $function$
   SELECT b.path, b.sessions,
     coalesce(round(pp.pages_per_session, 2), 0),
     coalesce(round(pp.avg_session_seconds, 0), 0),
-    coalesce(round(b.bounce_rate / 100.0, 4), 0),
-    coalesce(round(b.bounce_rate, 2), 0),
+    coalesce(round(b.bounce_rate, 4), 0),      -- T-03 (d-01) : fraction 0-1 déjà produite par seo_pages_overview
+    coalesce(round(b.bounce_rate_pct, 2), 0),  -- T-03 (d-01) : pourcentage 0-100
     b.scroll_avg, b.scroll_complete_pct,
     cwv.lcp_p75, cwv.inp_p75, cwv.cls_p75, cwv.ttfb_p75,
     coalesce(oc.clicks, 0)::bigint
@@ -2605,7 +2605,7 @@ AS $function$
     coalesce(cooked.sessions, 0),
     coalesce(cooked.views, 0),
     coalesce(cooked.unique_visitors, 0),
-    cooked.bounce_rate,
+    cooked.bounce_rate_pct,   -- T-03 (d-04) : même unité (0-100) que pages_overview_unified et seo_url_snapshot
     cooked.avg_dwell_seconds,
     cooked.scroll_median,
     coalesce(mc.phone_clicks, 0),
@@ -3458,7 +3458,7 @@ BEGIN
     g.ctr_pct,
     coalesce(c.sessions, 0),
     c.avg_dwell_seconds,
-    c.bounce_rate,
+    c.bounce_rate_pct,   -- T-03 (d-04) : chemin lent aligné sur le chemin rapide (0-100)
     coalesce(mc.phone_clicks, 0),
     coalesce(mc.form_submits, 0),
     coalesce(mc.contacts, 0),
@@ -4968,7 +4968,38 @@ BEGIN
       -- reconstruction engagement_tick n'est pas decidee et annotee.
       ('page_reads',
        $q$select count(*) from public.page_reads(7) where source = 'page_exit'$q$,
-       1, NULL)
+       1, NULL),
+
+      -- T-03 (mission 02/09/2026, invariant I5) : contrat d'unités — *_rate ∈ [0,1], *_pct ∈ [0,100],
+      -- et un même nom de colonne = une même unité. exact_rows = 0 : aucune ligne ne doit violer.
+      ('units_behavior_pages_for_period',
+       $q$select count(*) from public.behavior_pages_for_period(now() - interval '7 days', now())
+          where bounce_rate > 1 or bounce_rate_pct > 100 or abs(bounce_rate * 100 - bounce_rate_pct) > 0.02$q$,
+       NULL, 0),
+
+      ('units_seo_pages_overview',
+       $q$select count(*) from public.seo_pages_overview(now() - interval '7 days', now())
+          where bounce_rate > 1 or bounce_rate_pct > 100 or abs(bounce_rate * 100 - bounce_rate_pct) > 0.02$q$,
+       NULL, 0),
+
+      ('units_cooked_bounce_rate_range',
+       $q$select count(*) from (
+            select cooked_bounce_rate from public.gsc_page_performance('/', 'rolling_28')
+            union all
+            select cooked_bounce_rate from public.pages_overview_unified('rolling_28', 50)
+            union all
+            select cooked_bounce_rate from public.pages_overview_unified('rolling_7', 50)
+          ) u where cooked_bounce_rate > 100 or cooked_bounce_rate < 0$q$,
+       NULL, 0),
+
+      -- Un lot de ≥ 20 pages dont le max ≤ 1 = une fraction 0-1 publiée sous un nom en pourcentage.
+      ('units_cooked_bounce_rate_unit',
+       $q$select case when count(*) >= 20 and max(cooked_bounce_rate) <= 1 then 1 else 0 end from (
+            select cooked_bounce_rate from public.pages_overview_unified('rolling_28', 50)
+            union all
+            select cooked_bounce_rate from public.pages_overview_unified('rolling_7', 50)
+          ) u$q$,
+       NULL, 0)
     ) AS v(nom, requete, min_rows, exact_rows)
   LOOP
     PERFORM public.rpc_contract_check(t.nom, t.requete, t.min_rows, t.exact_rows);
@@ -4990,6 +5021,9 @@ AS $function$
   WITH we AS (
     SELECT * FROM public.events_human
     WHERE occurred_at >= date_from AND occurred_at < date_to
+      -- T-03 (d-04) : les sessions à referrer spam (bot Baidu, UA 'pc') sortaient déjà de pv mais pas de ss :
+      -- 99 entrées sur 152 pour /honoraires-rendez-vous étaient le bot (03/09/2026), d'où 21,7 % vs 32,1 % de rebond.
+      AND NOT public.cooked_is_spam_referrer(referrer_hostname)
   ),
   pv AS (
     SELECT path,

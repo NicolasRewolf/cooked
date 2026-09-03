@@ -3,6 +3,28 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-03 : taux de rebond ×100, une unité par nom de colonne, contrat d'unités
+
+Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-03 (#104), constats d-01 (P0) et d-04 (P1).
+
+### Corrigé
+- **`behavior_pages_for_period` renvoyait un rebond 100× trop faible** (0,23 pour 23,28) depuis le 26/07/2026 :
+  le correctif du défaut « deux unités » avait redivisé par 100 une fraction déjà 0‑1 et mis la fraction dans
+  `bounce_rate_pct`. Migration `20260903053754`.
+- **`cooked_bounce_rate` unifié en pourcentage 0‑100** dans `gsc_page_performance` (était une fraction) et dans le
+  chemin lent de `pages_overview_unified` (idem) — même unité que le chemin rapide et `seo_url_snapshot`.
+- **`seo_pages_overview` : les sessions à referrer spam sortent du dénominateur du rebond.** Le bot Baidu (UA `pc`)
+  faisait 99 des 152 entrées de `/honoraires-rendez-vous` sans jamais « rebondir » (1 pageview + ticks ≥ 10 s) :
+  21,7 % au lieu de 32,1 %. C'était l'écart résiduel non expliqué de d-04.
+
+### Invariant livré (I5)
+- Quatre contrats d'unités dans `run_rpc_contract_tests` (`units_*`, 0 ligne en violation attendue) : `*_rate` ∈ [0,1],
+  `*_pct` ∈ [0,100], et un lot de `cooked_bounce_rate` dont le max ≤ 1 est refusé.
+
+### Restatement (annotation du 03/09/2026)
+- Lecteurs de `behavior_pages_for_period` (contract-tests, ad-hoc) : ×100. `gsc_page_performance` : ×100 et hors bot.
+  Le dashboard (snapshot) ne bouge pas. Phrase : « correction d'unité et de mesure, pas un changement de comportement ».
+
 ## [2026-08-31] — page_taxonomy : 12 articles jamais ingérés + alerte de récidive
 
 Question de Nicolas (« tu as ingéré les tout derniers articles de ressources
