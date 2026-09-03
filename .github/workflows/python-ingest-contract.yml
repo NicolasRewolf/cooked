@@ -12,6 +12,9 @@ on:
       - 'tests/test_gsc_common.py'
       - 'tests/test_dfs_common.py'
       - 'tests/test_cooked_store.py'
+      - 'scripts/wix_taxonomy_sync.py'
+      - 'tests/test_wix_taxonomy_sync.py'
+      - 'tests/fixtures/wix_blog_posts_*.txt'
       - '.github/workflows/python-ingest-contract.yml'
   push:
     branches: [main]
@@ -40,4 +43,5 @@ jobs:
             tests/test_gsc_common.py \
             tests/test_dfs_common.py \
             tests/test_cooked_store.py \
+            tests/test_wix_taxonomy_sync.py \
             -q

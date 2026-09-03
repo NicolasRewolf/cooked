@@ -240,7 +240,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
 
 # VAGUE 3 — P2 à valeur
 
-## T‑15 · `page_taxonomy` : synchro Wix automatisée, filtres de l'alerte
+## T‑15 · `page_taxonomy` : synchro Wix automatisée, filtres de l'alerte — **FAIT 04/09 00:15** (migration `20260903213503`, secret Wix = Nicolas)
 - **Problème** : e‑06, e‑07. **Changement** : `scripts/wix_taxonomy_sync.py` (patron gsc) + cron GitHub
   hebdomadaire, source = liste publiée de l'API Wix ; exclusion `fp_[0-9.]+_[0-9.]+/` et règle « slug d'article »
   dans `alert_rule_page_taxonomy_gap` ; `page_taxonomy` au registre (T‑10) ; correction du path tronqué (105 chars).

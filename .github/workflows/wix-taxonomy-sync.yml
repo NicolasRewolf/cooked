@@ -1,0 +1,63 @@
+name: Wix taxonomy sync
+
+# T-15 (mission 02/09/2026) — page_taxonomy suit la liste PUBLIÉE du blog Wix, pas le trafic.
+# scripts/wix_taxonomy_sync.py lit l'API Wix Blog et appelle la RPC page_taxonomy_sync_wix.
+#
+# Secrets GitHub (Settings → Secrets and variables → Actions) :
+#   WIX_API_KEY          : clé API du compte Wix (manage.wix.com → API Keys), permission Blog (lecture)
+#   SUPABASE_SECRET_KEY  : déjà posé pour les autres ingestions
+# Tant que WIX_API_KEY est absent, le job se termine sans écrire (exit 0 + avertissement) :
+# le filet est le registre freshness_contract.page_taxonomy (warn après 21 j sans ligne touchée)
+# et l'alerte page_taxonomy_gap.
+
+on:
+  schedule:
+    - cron: "0 5 * * 1" # lundi 05:00 UTC — avant l'ingestion GSC de 06:00
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = afficher le diff sans écrire"
+        required: false
+        default: "false"
+
+concurrency:
+  group: wix-taxonomy-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "scripts/requirements-wix.txt"
+      - run: pip install -r scripts/requirements-wix.txt
+      - name: Sync page_taxonomy depuis la liste publiée Wix
+        env:
+          WIX_API_KEY: ${{ secrets.WIX_API_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          if [ -z "$WIX_API_KEY" ]; then
+            echo "::warning::WIX_API_KEY absent — synchro non exécutée (action Nicolas : créer la clé API Wix, permission Blog lecture, puis la poser en secret)."
+            exit 0
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python3 scripts/wix_taxonomy_sync.py --dry-run
+          else
+            python3 scripts/wix_taxonomy_sync.py
+          fi
+      - name: notify-failure
+        if: failure()
+        run: |
+          if [ -n "${{ secrets.NTFY_TOPIC }}" ]; then
+            curl -s -H "Title: Cooked CI en échec" -H "Priority: high" -H "Tags: warning" \
+              -d "Workflow « ${{ github.workflow }} » en échec (run #${{ github.run_number }}) — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "https://ntfy.sh/${{ secrets.NTFY_TOPIC }}" || true
+          fi
