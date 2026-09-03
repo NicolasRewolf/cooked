@@ -246,7 +246,7 @@ cooked/
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS (référence)
 │   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets des 134 routines (généré depuis la prod en CI, lecture seule)
+│   ├── rpcs.sql                       — corps complets des 136 routines (généré depuis la prod en CI, lecture seule)
 │   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
@@ -511,6 +511,7 @@ et comparée à la prod par la gate `prod-drift` (T-12) : 9 jobs. Source de vér
 | `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien **planifié** 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) — **départ réel +4 à +12 h** depuis le 27/08/2026 (ordonnanceur GitHub) : l'aval `cooked-refresh-after-gsc` suit seul jusqu'à 21:00 UTC, l'alerte `gsc_ingest_missed` sonne à 12:00 UTC (T-11) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
 | `gbp-daily-ingest` | GitHub Actions | Google Business Profile quotidien 05:30 UTC, fenêtre 30 j (lag ~J-4, la queue rembourrée à zéro est coupée par le script) → `gbp_daily`. Notifie ntfy en échec. ⚠️ **Le credential est un ADC utilisateur : Google exige une reauth périodique** — panne silencieuse de 6 jours du 30/07 au 04/08/2026, réparée le 05/08 (`gcloud auth application-default login --scopes=…business.manage,…cloud-platform` puis secret `GBP_CREDENTIALS_B64` re-poussé). Alerte de fraîcheur **`gbp_daily_stale`** (registre `freshness_contract` : normal J-4, warn > 7 j, critical > 14 j → ntfy). **Depuis le 21/08/2026 la série s'arrête au 20/08** : migration du projet Google vers `rewolf-507310` (01/09), approbation Business Profile redemandée — échec attendu jusqu'au verdict (~10-15/09). Parade durable : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`) |
 | `math-refresh-snapshots-weekly` | `10 5 * * 0` (07:10 Paris, dimanche) | `math_refresh_snapshots(28)` — snapshots `math_*_snapshot` du framework d'analyse mathématique (PR #91, 29/07/2026) ; registre `math_visit_sequences_snapshot` (warn > 9 j) |
+| `wix-taxonomy-sync` | GitHub Actions | **T-15 (03/09/2026)** : lundi 05:00 UTC, `scripts/wix_taxonomy_sync.py` lit la liste **publiée** du blog (API Wix, secret `WIX_API_KEY`) et appelle `page_taxonomy_sync_wix(jsonb)` — insère les articles absents (category + theme, source `wix_api`), corrige `category` seule, ne supprime jamais. Sans secret : sort sans écrire (avertissement) ; filets : registre `page_taxonomy` (warn 21 j) + alerte `page_taxonomy_gap` (dès 1 article vu > 8 j) |
 | `backup-weekly.yml` | GitHub Actions | **Schedule désactivé** (backup externe décliné le 02/07/2026, risque assumé — ne pas re-proposer) — déclenchable manuellement via `workflow_dispatch` uniquement |
 
 ⚠️ **Piège `statement_timeout`** : un `SET statement_timeout` posé *dans*
@@ -679,7 +680,7 @@ canonique d'une base fraîche.
 
 | Fichier | Contenu | Régénération |
 |---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 134 routines `pg_proc` de `public` (130 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
+| `supabase/rpcs.sql` | **Corps complets** des 136 routines `pg_proc` de `public` (132 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
 | `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
 | `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
 

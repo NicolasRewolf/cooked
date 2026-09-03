@@ -611,3 +611,29 @@
 - 23:50 `[D]` Non fait dans T-14, volontairement : CLAUDE.md n'est pas dégonflé (le prompt interdit d'y
   ajouter du récit, pas d'en retirer — chantier à part, décision Nicolas) ; l'issue #45 reçoit un
   commentaire, pas une réouverture (décision produit).
+- 23:32 `[R]` T-14 — PR #140 : `docs-constants` vert (3 s), `prod-drift` vert (compteurs = prod), `dashboard-unit`
+  vert. **Mergée 23:33.**
+
+### T-15 — page_taxonomy suit la liste publiée du blog (03/09/2026 23:35 → 04/09 00:15)
+- 23:35 `[F]` Relecture #116, e-06/e-07 (annexes e-audit), migration `20260831090540` (rattrapage manuel, cause
+  racine énoncée), `refresh_page_taxonomy_heuristic`, `alert_rule_page_taxonomy_gap`, patrons `gbp_ingest.py` /
+  `gbp-daily-ingest.yml`, `cooked_store.py`, `canonical_path`. `gh secret list` : aucune clé Wix ;
+  `wix_forms_import.py` ne parle pas à l'API (export CSV).
+- 23:40 `[R]` **Mesure avant.** API Wix (MCP, 5 pages) : **434 posts publiés, 62 ressources** ; `page_taxonomy` :
+  438 lignes `/post/` (63 ressources, 1 sans catégorie `/post/accident-médical-oniam`, vestige). `/post/` vus
+  30 j sans ligne : 17 paths dont **1 article** (`histoire-artan…`, publié 18/08, 6 vues) et 16 non-articles
+  (8 `fp_0.50_0.50/<image>`, 3 previews, 3 mojibake/URL-encodés, base64, parenthèse). Paths ≥ 100 chars en
+  base (106) = slugs Wix tronqués à 100 par Wix (identiques à l'API) — rien à corriger.
+- 23:45 `[W]` Fixture `tests/fixtures/wix_blog_posts_2026-09-03.txt` (434 lignes, transcrite de l'API) ;
+  `scripts/wix_taxonomy_sync.py` (API → RPC ; `--from-file`, `--dry-run` ; refus < 300 posts) ; 3 tests ;
+  workflow `wix-taxonomy-sync.yml` (lundi 05:00 UTC, sort sans écrire sans `WIX_API_KEY`) ; migration
+  (helper thème unique, `page_taxonomy_sync_wix`, alerte : filtres e-07 + seuil 1 après 8 j). C6/C6b/C6c OK.
+- 23:37 `[W-PROD]` `apply_migration` → version **`20260903213503`**.
+- 23:38 `[W-PROD]` **Première synchro** via la RPC (liste = fixture, `p_dry_run=false`) : `inserted=1`
+  (`/post/histoire-artan-engagement-grands-traumatises`, classique, theme NULL, source wix_api), `updated=0`,
+  `unpublished=5` (les 5 vestiges déjà connus, conservés). = le diff attendu.
+- 23:40 `[R]` **Après.** `alert_rule_page_taxonomy_gap()` = 0 ligne ; `/post/` = 439 lignes, 63 ressources ;
+  ACL anon = false sur les 4 fonctions ; routines = 136 (→ `doc_constants.json`, docs « 136 routines »).
+- 00:10 `[D]` Action Nicolas : créer la clé API Wix (manage.wix.com → API Keys, permission Blog lecture) et la
+  poser en secret `WIX_API_KEY` ; contrôle après : `gh workflow run wix-taxonomy-sync.yml -f dry_run=true`
+  puis lire le log (« insérés : 0 »). D'ici là : synchro à la main (`--dry-run` puis sans).

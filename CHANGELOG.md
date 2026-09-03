@@ -3,14 +3,40 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-04] — T-15 : `page_taxonomy` suit la liste publiée du blog, plus le trafic
+
+Mission du 02/09/2026, ticket T-15 (#116), constats e-06 (P2), e-07 (P3). Migration `20260903213503`.
+
+### Ajouté
+- **`scripts/wix_taxonomy_sync.py`** + workflow **`wix-taxonomy-sync`** (lundi 05:00 UTC) : lit la liste
+  **publiée** de l'API Wix Blog (434 posts le 03/09) et appelle **`page_taxonomy_sync_wix(jsonb, dry_run)`**
+  — insère les `/post/<slug>` absents (category + theme, source `wix_api`), corrige `category` seule sur
+  les lignes existantes, compte les paths dépubliés sans jamais les supprimer, refuse une liste < 300.
+  Secret **`WIX_API_KEY` à créer par Nicolas** (permission Blog lecture) ; sans lui le workflow sort sans
+  écrire. Fixture `tests/fixtures/wix_blog_posts_2026-09-03.txt` + 3 tests (CI python-ingest-contract).
+- `page_taxonomy_theme_from_slug(path)` : l'heuristique de thème n'existe plus qu'une fois
+  (`refresh_page_taxonomy_heuristic` l'appelle).
+
+### Corrigé
+- **Rechute e-06** : `/post/histoire-artan-engagement-grands-traumatises` (publié 18/08, 6 vues/30 j) inséré
+  par la première synchro (03/09 23:38 Paris) — 1 inséré, 0 catégorie corrigée, 5 paths dépubliés conservés.
+  Après : 439 lignes `/post/`, 0 article publié sans ligne.
+- **`alert_rule_page_taxonomy_gap`** : exclut les URL de recadrage d'image (`/fp_0.50_0.50/…`), les slugs à
+  parenthèse ou à segments multiples (e-07 : 11 non-articles passaient) ; sonne dès **1** article vu
+  depuis plus de 8 jours (seuil 3 avant — muette sur la rechute).
+
+### Constaté (sans changement)
+- « Path tronqué à 105 caractères » (e-06) : le slug Wix lui-même est tronqué à 100 caractères
+  (`application-de-la-responsabilité-…-usage-profe` est le slug de l'API) — rien à corriger côté Cooked.
+
 ## [2026-09-03] — T-14 : les docs suivent la prod, et la CI le vérifie
 
 Mission du 02/09/2026, ticket T-14 (#115), constats i-01 (P1), i-02 (P1), i-03…i-08, f-06, h-06,
 g-05, g-07, o-12. Invariant I13. Pas de migration.
 
 ### Ajouté
-- **`contracts/doc_constants.json`** étendu (compteurs prod mesurés le 03/09 : 134 routines `pg_proc`
-  = 130 Cooked + 4 `unaccent`, 17 règles d'alerte, 16 RPC dashboard, 11 vues, 14 sources au registre,
+- **`contracts/doc_constants.json`** étendu (compteurs prod mesurés le 03/09 : 136 routines `pg_proc`
+  = 132 Cooked + 4 `unaccent`, 17 règles d'alerte, 16 RPC dashboard, 11 vues, 14 sources au registre,
   9 crons ; versions `sprint41` / `track` v28 / `form-webhook` v14 ; liste des docs vivants, objets
   fantômes interdits, exclusions de l'orphan-check). `check_prod_drift.py` compare désormais ces
   compteurs à la prod (chaque matin + chaque PR SQL).

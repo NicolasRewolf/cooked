@@ -211,7 +211,7 @@ après C1–C9 ; tue les fuites SQL restantes :
   `contracts/branded_query_vectors.json`).
 - **`cooked_snapshot_window(w, grain)`** : driver bornes `live_j1` + GSC +
   `cooked_events_window` pour les 3 refreshers dashboard.
-- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 134 routines au
+- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 136 routines au
   03/09/2026, régénéré depuis la prod par le workflow `rpcs-regenerate`) ; gate CI
   `check_rpcs_sql_fresh.py` si migration redéfinit une RPC + prod-drift (sha = prod).
 
@@ -374,7 +374,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (134 routines au 03/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
+| Corps complets des RPC (136 routines au 03/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
 | Glossaire de domaine et invariants (conversions, attribution, lecture, fraîcheur) | `CONTEXT.md` |
 | Décisions d'architecture | `docs/adr/` |
 | PII, secrets, surface d'attaque, invariant I1 | `SECURITY.md` |
@@ -1036,8 +1036,11 @@ multi-catégories qui contient « Ressources et notions juridiques » est
 La colonne `source` trace la provenance du THEME ; la provenance de
 `category` est toujours `wix_api`.
 
-⚠️ **Pas de refresh automatique** : un nouvel article publié n'a pas de
-`category` tant qu'on ne rejoue pas la synchro API Wix. Endpoint faisant
+⚠️ **Synchro hebdomadaire depuis le 03/09/2026 (T-15)** : `scripts/wix_taxonomy_sync.py`
+(cron GitHub `wix-taxonomy-sync`, lundi 05:00 UTC, secret `WIX_API_KEY` **à poser par
+Nicolas** — sans lui le workflow sort sans écrire) lit la liste publiée et appelle
+`page_taxonomy_sync_wix(jsonb)` (insère les absents, corrige `category` seule, ne
+supprime jamais) ; à la main : `python3 scripts/wix_taxonomy_sync.py --dry-run`. Endpoint faisant
 autorité : `GET https://www.wixapis.com/blog/v3/posts?categoryIds=…`
 (catégorie « Ressources et notions juridiques » =
 `9477320f-5902-40e9-ace3-b0e3b6b8b51f`, site Cabinet Plouton
@@ -1056,9 +1059,10 @@ manquants dont 5 ressources, certaines publiées en juin — invisibles de
 l'onglet Articles Ressources, de `content_performance` et du suivi du
 contrat éditorial pendant deux mois (migration `20260831090540`). Depuis,
 l'alerte **`page_taxonomy_gap`** (règle `alert_rule_page_taxonomy_gap()`,
-cron horaire via `cooked_alerts_refresh()`) compte les `/post/` avec
-≥ 5 vues/30 j sans catégorie et sonne à partir de 3. Quand elle sonne :
-rejouer la synchro Wix, puis migration nommée pour l'upsert.
+cron horaire via `cooked_alerts_refresh()`) compte les `/post/<slug>` (un seul segment,
+hors URL de recadrage d'image `fp_x_y/`) avec ≥ 5 vues/30 j, vus depuis plus de 8 jours,
+sans catégorie — et sonne dès 1 (T-15 ; seuil 3 avant). Quand elle sonne : la synchro
+hebdo n'a pas tourné (secret absent ?) → `python3 scripts/wix_taxonomy_sync.py`.
 
 ### Contexte business (recueilli auprès de Nicolas le 11/06/2026)
 
