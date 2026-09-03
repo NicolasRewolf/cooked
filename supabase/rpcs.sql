@@ -29,6 +29,46 @@ END;
 $function$
 
 
+-- ═══ public.alert_rule_contact_sans_amont() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_contact_sans_amont()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_n     bigint;
+  v_tot   bigint;
+  v_paths text;
+BEGIN
+  WITH c AS (
+    SELECT e.session_id, e.occurred_at, e.name, e.path
+    FROM public.events_human e
+    WHERE e.name IN ('cta_phone_click', 'cta_booking_click')
+      AND e.occurred_at > now() - interval '24 hours'
+      AND e.device_type IS DISTINCT FROM 'server'
+  ), j AS (
+    SELECT c.*,
+           EXISTS (SELECT 1 FROM public.events_human p
+                   WHERE p.session_id = c.session_id AND p.name = 'pageview'
+                     AND p.occurred_at <= c.occurred_at) AS amont
+    FROM c
+  )
+  SELECT count(*), count(*) FILTER (WHERE NOT amont),
+         string_agg(DISTINCT name || ' ' || coalesce(path, '?'), ', ') FILTER (WHERE NOT amont)
+    INTO v_tot, v_n, v_paths
+  FROM j;
+
+  IF v_n >= 3 THEN
+    kind := 'contact_sans_amont';
+    severity := CASE WHEN v_n >= 10 THEN 'critical' ELSE 'warn' END;
+    detail := format('%s contact(s) macro sur %s en 24 h sans pageview antérieure dans la même session (28 j : 0/128 phone, 4/331 booking). Injection possible via /_functions/track (garde d''origine forgeable, T-17) ou tracker cassé (pageview non émise) : vérifier user_agent / referrer des sessions concernées avant de livrer un chiffre de contacts. Concernés : %s',
+                     v_n, v_tot, left(coalesce(v_paths, ''), 300));
+    RETURN NEXT;
+  END IF;
+END $function$
+
+
 -- ═══ public.alert_rule_cpi_drop() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_cpi_drop()
  RETURNS TABLE(kind text, severity text, detail text)
