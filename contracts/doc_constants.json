@@ -46,16 +46,16 @@
   ],
   "notes": "T-12 (02/09/2026) : liste cron figée depuis prod. T-14 (03/09/2026) : compteurs et versions mesurés en prod (check_prod_drift.py les compare chaque matin), bloc docs consommé par scripts/check_docs_constants.py (I13).",
   "measured_at": "2026-09-04",
-  "routines_pg_proc": 137,
-  "routines_cooked": 133,
-  "routines_note": "137 objets pg_proc dans public (f+p) = 133 routines Cooked + 4 fonctions de l'extension unaccent. Mesuré le 04/09/2026 00:35 Paris après T-16.",
-  "alert_rules": 17,
+  "routines_pg_proc": 138,
+  "routines_cooked": 134,
+  "routines_note": "138 objets pg_proc dans public (f+p) = 134 routines Cooked + 4 fonctions de l'extension unaccent. Mesuré le 04/09/2026 01:15 Paris après T-17.",
+  "alert_rules": 18,
   "dashboard_rpcs": 16,
   "views": 12,
   "freshness_sources": 14,
   "cron_jobs_count": 9,
   "versions": {
-    "tracker": "sprint41",
+    "tracker": "sprint42",
     "edge_track": 28,
     "edge_form_webhook": 14,
     "cpi_model": "v2.2"
@@ -102,5 +102,10 @@
       "alert_rule_dfs_stale",
       "check_dashboard_contracts.py"
     ]
+  },
+  "tracker": {
+    "min_chars_baseline": 14820,
+    "soft_limit_chars": 14500,
+    "note": "T-17 : cliquet de minify-tracker.py — au-dessus de soft_limit_chars, la CI refuse tout ajout net (size > baseline). sprint42 = 14 820 (sprint41 : 14 760)."
   }
 }

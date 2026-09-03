@@ -11,6 +11,10 @@
 //   4. localStorage bloqué → aid stable via sessionStorage
 //   5. batching : format {events:[…]}, critiques immédiats, gain réseau,
 //      exactitude active_ms / duration (horloge simulée 120 s)
+//   6. T-17 (mission 02/09/2026) — les trois correctifs mesurés en prod ont
+//      leur assertion : wipe de storage en cours de page (sprint41), page_exit
+//      ré-armé au retour d'onglet (sprint40), chrome Cookiebot hors anchor
+//      (sprint35) ; et CLS = 0 émis quand l'observer est attaché (sprint42)
 const { JSDOM, VirtualConsole } = require('jsdom');
 const fs = require('fs');
 const path = require('path');
@@ -24,11 +28,15 @@ function makeDom(opts = {}) {
     <a id="bkg" href="/honoraires-rendez-vous">R</a>
     <a id="int" href="/autre-page">I</a>
     <a id="out" href="https://example.com/x">O</a>
+    <div id="CybotCookiebotDialog"><a id="cb" href="#accept">Tout accepter</a></div>
+    <a id="anc" href="#formulaire">Demander un RDV</a>
   </body>`, { url: 'https://www.jplouton-avocat.fr/article-test', pretendToBeVisual: true, runScripts: 'dangerously', virtualConsole: vc });
   const w = dom.window;
   w.eval(`window.__SENT=[];navigator.sendBeacon=undefined;
     window.fetch=function(u,o){window.__SENT.push(JSON.parse(o.body));return Promise.resolve({ok:true});};
     window.PerformanceObserver=undefined;`);
+  if (opts.vitals)
+    w.eval(`window.PerformanceObserver=function(cb){this.observe=function(o){if(o.type!=='layout-shift')throw new Error('unsupported');};this.disconnect=function(){};};`);
   if (opts.blockLocalStorage)
     w.eval(`Object.defineProperty(window,'localStorage',{get(){throw new Error('blocked');}});`);
   if (opts.mockClock)
@@ -95,6 +103,52 @@ async function suite(label, js) {
   ok(ticks.reduce((a,t)=>a+t.props.active_ms,0) === 120000, 'active_ms exact (120 000 ms)');
   ok(exit && exit.props.duration_seconds === 120, 'page_exit duration exact (120 s)');
   ok(w.__SENT.length < ev.length, `batching effectif (${w.__SENT.length} POST pour ${ev.length} events)`);
+
+  // 6a : sprint41 — wipe de storage EN COURS de page : sid et aid survivent (auto-réparation)
+  w = makeDom();
+  w.eval(js);
+  w.document.getElementById('tel').dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true }));
+  await wait(80);
+  const before = events(w).find(e => e.name === 'cta_phone_click');
+  w.localStorage.clear();
+  w.document.getElementById('tel').dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true }));
+  await wait(80);
+  const after = events(w).filter(e => e.name === 'cta_phone_click')[1];
+  ok(after && after.session_id === before.session_id, 'sprint41 : wipe de storage → même sid (blob ré-écrit, pas re-minté)');
+  ok(after && after.anonymous_id === before.anonymous_id
+    && w.localStorage.getItem('_ckd_aid') === before.anonymous_id, 'sprint41 : wipe de storage → aid conservé et ré-écrit (healAid)');
+
+  // 6b : sprint40 — page_exit ré-armé au retour d'onglet (masquer / revenir / masquer → 2 page_exit)
+  w = makeDom();
+  w.eval(js);
+  w.eval(`window.__hidden=false;Object.defineProperty(document,'hidden',{get:function(){return window.__hidden;},configurable:true});`);
+  w.eval(`window.__hidden=true;document.dispatchEvent(new Event('visibilitychange'));
+    window.__hidden=false;document.dispatchEvent(new Event('visibilitychange'));
+    window.__hidden=true;document.dispatchEvent(new Event('visibilitychange'));`);
+  await wait(80);
+  ok(events(w).filter(e => e.name === 'page_exit').length === 2, 'sprint40 : page_exit ré-armé au retour d\'onglet (2 page_exit)');
+
+  // 6c : sprint35 — un clic dans le dialog Cookiebot n'est pas un cta_anchor_click ; une vraie ancre l'est
+  w = makeDom();
+  w.eval(js);
+  ['cb','anc'].forEach(id =>
+    w.document.getElementById(id).dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true })));
+  await wait(80);
+  const anchors = events(w).filter(e => e.name === 'cta_anchor_click');
+  ok(anchors.length === 1 && anchors[0].props.target_section === 'formulaire', 'sprint35 : chrome Cookiebot exclu, ancre réelle comptée');
+
+  // 6d : sprint42 — CLS = 0 émis quand l'observer layout-shift est attaché ; rien sans observer
+  w = makeDom({ vitals: true });
+  w.eval(js);
+  w.eval(`window.dispatchEvent(new Event('pagehide'));`);
+  await wait(80);
+  const cls = events(w).filter(e => e.name === 'web_vitals' && e.props.metric === 'CLS');
+  ok(cls.length === 1 && cls[0].props.value === 0, 'sprint42 : CLS = 0 émis explicitement (observer attaché)');
+  w = makeDom();
+  w.eval(js);
+  w.eval(`window.dispatchEvent(new Event('pagehide'));`);
+  await wait(80);
+  ok(events(w).filter(e => e.name === 'web_vitals' && e.props.metric === 'CLS').length === 0, 'sans PerformanceObserver : aucun CLS (métrique Chromium-only, jamais un faux 0)');
 }
 
 (async () => {

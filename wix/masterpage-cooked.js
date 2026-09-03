@@ -19,7 +19,7 @@
 // ============================================================================
 import wixLocation from 'wix-location';
 
-const COOKED_DEBUG = true; // passer à false une fois la chaîne vérifiée
+const COOKED_DEBUG = false; // chaîne vérifiée le 11/06/2026 (1re attribution hidden_field) — T-17 : off ; la CI refuse `= true`
 
 $w.onReady(() => {
   seedCookedIds();

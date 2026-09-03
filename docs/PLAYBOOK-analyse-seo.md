@@ -249,6 +249,17 @@ timeout MCP. Préférer lire le dernier snapshot :
     ~2 100 sur le pénal) — donc un « le local ne marche pas en indemnisation »
     lu dans Cooked peut n'être que l'ombre de ce déséquilibre de fiche.
 
+### 16. Web Vitals : le CLS est Chromium-only, et un percentile sans dénominateur ment (T-17, 04/09/2026)
+
+`web_vitals` n'existe que là où le navigateur mesure : Safari et Firefox n'émettent **jamais** de CLS
+(38 % des chargements porteurs d'un LCP au 02/09/2026, l'essentiel du mobile iOS). Jusqu'au tracker
+`sprint42`, un chargement Chrome sans layout shift n'émettait rien non plus : « absent » et « zéro »
+étaient indiscernables, le p75 Chrome était surestimé de 33 % (0,160 vs 0,120). Règles : (1) toute
+agrégation CWV porte son **n** (chargements observés) et son **périmètre navigateur** ; (2) pas de
+percentile sous n = 30 (un « p75 Safari 0,480 » calculé sur 8 observations est lisible en base) ;
+(3) un p75 CLS « site » n'existe pas — dire « p75 CLS Chromium ». LCP (72-84 % de couverture) et INP
+(censuré sous 40 ms) obéissent à la même logique, moins violemment.
+
 ## 6. Livraison à Nicolas
 
 - Dates **JJ/MM/AAAA**, heures Paris, fenêtres explicites (« 28j au

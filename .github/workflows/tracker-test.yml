@@ -14,15 +14,17 @@ name: Tracker Test
 on:
   push:
     paths:
-      - 'wix/tracker.html'
+      - 'wix/**'
       - 'tests/tracker.test.js'
       - 'scripts/minify-tracker.py'
+      - 'contracts/doc_constants.json'
       - '.github/workflows/tracker-test.yml'
   pull_request:
     paths:
-      - 'wix/tracker.html'
+      - 'wix/**'
       - 'tests/tracker.test.js'
       - 'scripts/minify-tracker.py'
+      - 'contracts/doc_constants.json'
 
 jobs:
   tracker-test:
@@ -34,8 +36,12 @@ jobs:
           python-version: '3.12'
       - name: Installer jsmin
         run: pip install jsmin
-      - name: Régénérer le minifié (gitignoré)
+      - name: Régénérer le minifié (gitignoré) — cliquet T-17 (pas d'ajout net au-dessus de 14 500)
         run: python3 scripts/minify-tracker.py
+      - name: T-17 — pas de COOKED_DEBUG = true sur les fichiers Velo (a-08)
+        run: |
+          if grep -nE 'COOKED_DEBUG\s*=\s*true' wix/*.js; then echo '::error::COOKED_DEBUG = true dans un fichier Velo' ; exit 1; fi
+          echo 'COOKED_DEBUG off'
       - uses: actions/setup-node@v4
         with:
           node-version: '20'

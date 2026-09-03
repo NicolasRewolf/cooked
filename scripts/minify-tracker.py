@@ -18,7 +18,7 @@ Requires:
 Outputs:
   wix/tracker.min.html   (gitignored — regenerate before each deploy)
 """
-import os, re, subprocess, sys
+import json, os, re, subprocess, sys
 from pathlib import Path
 
 try:
@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC  = ROOT / "wix" / "tracker.html"
 DST  = ROOT / "wix" / "tracker.min.html"
 WIX_LIMIT = 15_000
+CONSTANTS = ROOT / "contracts" / "doc_constants.json"
 
 def main(copy_to_clipboard: bool):
     html = SRC.read_text(encoding="utf-8")
@@ -65,6 +66,24 @@ def main(copy_to_clipboard: bool):
         print("The minified tracker exceeds Wix Custom Code's 15 000 char limit.", file=sys.stderr)
         print("Trim a comment or factor out a helper before redeploying.", file=sys.stderr)
         sys.exit(2)
+
+    # T-17 (mission 02/09/2026, a-05) — cliquet : au-dessus de la marge de sécurité, la CI refuse
+    # tout AJOUT net. Le monolithe est à 98 % de la limite ; sans le loader first-party (décision
+    # §7.1 de la mission) il ne reste pas la place d'un sprint. Réduire passe, grossir non.
+    try:
+        constants = json.loads(CONSTANTS.read_text(encoding="utf-8"))
+        soft = int(constants.get("tracker", {}).get("soft_limit_chars", 14_500))
+        baseline = int(constants.get("tracker", {}).get("min_chars_baseline", size))
+    except (OSError, ValueError):
+        soft, baseline = 14_500, size
+    if size > soft and size > baseline:
+        print()
+        print(f"T-17 : minifié {size:,} > baseline {baseline:,} au-dessus de la marge de sécurité ({soft:,}).", file=sys.stderr)
+        print("Pas d'ajout net sans le loader first-party (décision Nicolas §7.1) : réduire ailleurs, ou", file=sys.stderr)
+        print("mettre à jour contracts/doc_constants.json → tracker.min_chars_baseline dans la même PR, en le disant.", file=sys.stderr)
+        sys.exit(3)
+    if size > soft:
+        print(f"⚠ {size:,} > marge de sécurité {soft:,} : aucun ajout net possible sans loader (baseline {baseline:,}).")
 
     if copy_to_clipboard:
         if sys.platform == "darwin":

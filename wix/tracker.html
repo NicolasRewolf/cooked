@@ -1,5 +1,8 @@
 <!--
   COOKED — first-party SEO tracker (cookieless, RGPD-exempt)
+  Version: sprint42 (04/09/2026, mission T-17) — CLS explicite : un chargement
+    sans layout shift émet CLS = 0 quand l'observer est attaché (Chromium) ;
+    CLS arrondi à 3 décimales. Aucun autre changement de comportement.
   Version: sprint41 (12/07/2026) — identifiants auto-réparants. Un wipe/
     transition de storage en cours de page faisait tourner le sid (relu à
     chaque event) puis l'aid (jamais ré-écrit → tournait à la navigation
@@ -85,7 +88,7 @@
   // version label never appears after a Wix republish, the paste
   // failed or was truncated. Bump this string on every meaningful
   // tracker change.
-  var COOKED_VERSION       = 'sprint41';
+  var COOKED_VERSION       = 'sprint42';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -957,7 +960,9 @@
   function emitVital(metric, value) {
     if (vitEm[metric]) return;
     vitEm[metric] = true;
-    send('web_vitals', { metric: metric, value: Math.round(value * 100) / 100 });
+    // sprint42 — CLS à 3 décimales (seuil « bon » 0,1 : 0,01 = 1/10 du seuil)
+    var k = metric === 'CLS' ? 1000 : 100;
+    send('web_vitals', { metric: metric, value: Math.round(value * k) / k });
   }
 
   // TTFB (one-shot, not observer-based)
@@ -977,6 +982,7 @@
   var lcpObs = null, clsObs = null, inpObs = null;
   var clsSV   = 0;
   var clsSE = [];
+  var clsOn = false; // sprint42 — observer layout-shift attaché : un CLS nul est un vrai 0
 
   function attachVO() {
     if (typeof PerformanceObserver === 'undefined') return;
@@ -1014,6 +1020,7 @@
         });
       });
       clsObs.observe({ type: 'layout-shift', buffered: true });
+      clsOn = true;
     } catch (e) {}
 
     // INP — Sprint 30 : durationThreshold raised from 16 to 40 (spec).
@@ -1041,7 +1048,10 @@
 
   function flushVitals() {
     if (vitals.lcp)  emitVital('LCP', vitals.lcp);
-    if (vitals.cls)  emitVital('CLS', vitals.cls);
+    // sprint42 (T-17, a-03) — un chargement sans layout shift émet CLS = 0
+    // (avant : « absent » et « zéro » indiscernables, p75 Chrome surestimé de 33 %).
+    // Sans observer (Safari/Firefox) rien n'est émis : la métrique reste Chromium-only.
+    if (vitals.cls || clsOn) emitVital('CLS', vitals.cls);
     if (vitals.inp)  emitVital('INP', vitals.inp);
   }
 
