@@ -487,3 +487,13 @@
   remplacés par l'orchestrateur ; § GSC ; table alertes +3), CLAUDE.md (réflexe n° 4 `pending()`, cron CPI),
   CHANGELOG, workflow **`rpcs-regenerate.yml`** (régénère `rpcs.sql` en CI avec `DATABASE_URL_RO` — une session
   locale ne l'a pas ; Cursor a dû l'avoir).
+- 17:00 `[R]` Tick 15:00 UTC : la séquence est partie (pid actif, `CREATE TEMP TABLE _cooked_ev…`), preuve que la
+  garde par marqueur déclenche hors de l'ancienne condition « ingestion du jour ». Rejeu ≈ 25 min, une seule
+  transaction : `refresh_runs` ne se remplit qu'à la fin.
+- 17:06 `[W]` PR #134 mergée par Nicolas (CI prod-drift + SQL contracts vertes) ; #133 (workflow `rpcs-regenerate`)
+  mergée avant. `rpcs.sql` régénéré en CI : 132 fonctions, sha aligné prod.
+- 17:15 `[D]` **Nicolas arrête l'attente** (« ça prend trop de temps »). Non lu à la main : les 6 lignes `refresh_runs`
+  du rejeu et le marqueur ré-avancé. **Filet** : les contrats `refresh_runs_after_ingest` et
+  `refresh_after_gsc_not_pending` tournent à 03:30 UTC (`run_rpc_contract_tests`) et l'alerte
+  `refresh_after_gsc_stale` sonne à 15 h Paris si l'ingestion de demain n'est pas suivie. À lire demain 04/09 :
+  `SELECT * FROM refresh_runs ORDER BY started_at DESC;` puis cocher la validation dans #134.
