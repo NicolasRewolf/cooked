@@ -685,6 +685,15 @@ le 28 mai".
 
 ---
 
+## 🚨 RÈGLE ABSOLUE — Une colonne = une unité (contrat I5, 03/09/2026)
+
+Toute colonne `*_pct` est un pourcentage **0‑100**, toute colonne `*_rate` une fraction **0‑1**, et un même nom de
+colonne a la même unité dans toutes les RPC publiées. Quatre contract‑tests `units_*` (`run_rpc_contract_tests`) le
+vérifient chaque nuit. **Pourquoi :** le 26/07/2026 le correctif du défaut « bounce_rate en deux unités » a divisé
+par 100 une fraction déjà 0‑1 ; `behavior_pages_for_period` a publié un rebond 100× trop faible pendant 38 jours
+avec un contract‑test « ok » (mission 02/09/2026, constat d‑01). Exception documentée : les colonnes historiques
+`bounce_rate_7d/28d/90d/365d` de `seo_url_snapshot` sont en pourcentage.
+
 ## 🚨 RÈGLE ABSOLUE — Toujours requêter `events_human`, jamais `events`
 
 **Pour TOUTE requête ad-hoc demandée par Nicolas, je tape `FROM events_human`,

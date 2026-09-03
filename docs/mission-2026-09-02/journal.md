@@ -219,3 +219,19 @@
   voir (mémoire « canal de travail unique ») — à signaler à Nicolas, pas à re-litiger.
 - 03/09/2026 07:20 `[W]` Rebase de la branche de mission sur `origin/main` ; bandeaux « ne pas publier » remplacés
   par l'état vérifié de T-01 ; PR ouverte.
+- 03/09/2026 07:35 `[W]` PR #125 (dossier de mission + miroir `20260903050701`) : CI verte (prod-drift, paris-date,
+  rpcs-sql-fresh, dashboard-rpc-columns, schema-migrations) → **mergée sur main**, branche supprimée. Fin de session.
+
+### T-03 (#104) — 03/09/2026
+- 07:2x `[R]` Lecture des corps (rpcs.sql régénéré = prod) : `behavior_pages_for_period` (÷100 sur une fraction, pct
+  reçoit la fraction), `seo_pages_overview` (`we` sans filtre spam → sessions du bot dans `ss`/`entry_exit`),
+  `gsc_page_performance` (`cooked.bounce_rate` = fraction), `pages_overview_unified` (chemin lent = fraction, chemin
+  rapide = snapshot en %). « Avant » 07:32 : `/honoraires-rendez-vous` rebond 21,71 % avec bot (99 entrées bot / 152)
+  vs **32,08 % sans bot = snapshot 32,08** → l'écart résiduel de d-04 est le bot ; `bpfp` max 0,0100 / 1,00 ;
+  `gsc_page_performance` 0,2298 ; chemin lent max 1,0000 (fraction) vs rapide 100,00.
+- 07:38 `[W-PROD]` `apply_migration` `t03_bounce_rate_unites_et_contrat` (version `20260903053754`) : 5 fonctions
+  (générées depuis les corps prod par substitutions ciblées, C6 vérifié : aucun cast Paris brut).
+- 07:40 `[R]` « Après » : `bpfp` max **1,0000 / 100,00** ; `/honoraires-rendez-vous` **0,3208 / 32,08** = snapshot ;
+  `gsc_page_performance` **36,92** (fenêtre GSC J‑3, en %) ; chemin lent max **44,44** (%) ; 4 contrats d'unités :
+  **0 violation**. Sha du dump prod = `53c5ee52…` = `rpcs.sql` reconstruit depuis le fichier de migration (5 md5
+  identiques). `apply_migration` `t03_annotation_restatement_bounce` : ligne `annotations` du 03/09/2026 posée.
