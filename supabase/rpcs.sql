@@ -1490,9 +1490,12 @@ CREATE OR REPLACE FUNCTION public.cooked_normalize_phone_fr(raw text)
 AS $function$
   select case
     when d = '' then null
-    when d like '0033%' and length(d) = 13 then '+33' || substr(d, 5)
-    when d like '33%'   and length(d) = 11 then '+' || d
-    when d like '0%'    and length(d) = 10 then '+33' || substr(d, 2)
+    -- T-16 (e-05) : « +33 (0)6 … » / « 00 33 (0)6 … » — le (0) après l'indicatif
+    when d like '00330%' and length(d) = 14 then '+33' || substr(d, 6)
+    when d like '330%'   and length(d) = 12 then '+33' || substr(d, 4)
+    when d like '0033%'  and length(d) = 13 then '+33' || substr(d, 5)
+    when d like '33%'    and length(d) = 11 then '+' || d
+    when d like '0%'     and length(d) = 10 then '+33' || substr(d, 2)
     when length(d) between 8 and 15 then '+' || d
     else null
   end
@@ -4175,6 +4178,58 @@ AS $function$
 $function$
 
 
+-- ═══ public.pont_prospects_dossiers_env(p_env text) ═══
+CREATE OR REPLACE FUNCTION public.pont_prospects_dossiers_env(p_env text DEFAULT 'prod'::text)
+ RETURNS TABLE(prospect_id bigint, prospect_le timestamp with time zone, source text, form_id text, objet text, page_source_path text, cooked_aid text, cooked_sid text, nom text, prenom text, email text, telephone text, secib_env text, dossier_id integer, dossier_code text, dossier_cree_le timestamp with time zone, matiere_libelle text, etat_facturable text, facture_total_ht numeric, statut text, delai_jours numeric, cle_match text, personne_key text, rang_personne integer, rang_dossier integer)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  WITH base AS (
+    SELECT p.id AS prospect_id, p.occurred_at AS prospect_le, p.source, p.form_id, p.objet, p.page_source_path,
+           p.cooked_aid, p.cooked_sid, p.nom, p.prenom, p.email, p.telephone,
+           p.email_norm, p.tel_norm,
+           d.env AS secib_env, d.dossier_id, d.code AS dossier_code, d.date_creation AS dossier_cree_le,
+           d.matiere_libelle, d.etat_facturable, d.facture_total_ht,
+           d.cle_match
+    FROM public.crm_prospects p
+    LEFT JOIN LATERAL (
+      SELECT dd.env, dd.dossier_id, dd.code, dd.date_creation, dd.matiere_libelle, dd.etat_facturable,
+             dd.facture_total_ht,
+             CASE WHEN p.email_norm IS NOT NULL AND p.email_norm = ANY (dd.client_emails_norm) THEN 'email'
+                  ELSE 'telephone' END AS cle_match
+      FROM public.secib_dossiers dd
+      WHERE dd.env = p_env
+        AND ((p.email_norm IS NOT NULL AND p.email_norm = ANY (dd.client_emails_norm))
+          OR (p.tel_norm IS NOT NULL AND p.tel_norm = ANY (dd.client_tels_norm)))
+      -- priorité : email > téléphone, puis le dossier le plus proche dans le temps
+      ORDER BY (p.email_norm IS NOT NULL AND p.email_norm = ANY (dd.client_emails_norm)) DESC,
+               abs(extract(epoch FROM dd.date_creation - p.occurred_at))
+      LIMIT 1
+    ) d ON true
+  )
+  SELECT b.prospect_id, b.prospect_le, b.source, b.form_id, b.objet, b.page_source_path, b.cooked_aid, b.cooked_sid,
+         b.nom, b.prenom, b.email, b.telephone, b.secib_env, b.dossier_id, b.dossier_code, b.dossier_cree_le,
+         b.matiere_libelle, b.etat_facturable, b.facture_total_ht,
+         CASE
+           WHEN b.email_norm IS NULL AND b.tel_norm IS NULL THEN 'non_rapprochable'
+           WHEN b.dossier_id IS NULL THEN 'non_converti'
+           WHEN b.dossier_cree_le <  b.prospect_le - interval '7 days'   THEN 'client_existant'
+           WHEN b.dossier_cree_le <= b.prospect_le + interval '180 days' THEN 'converti'
+           ELSE 'dossier_ulterieur'
+         END AS statut,
+         CASE WHEN b.dossier_id IS NOT NULL
+              THEN round(extract(epoch FROM b.dossier_cree_le - b.prospect_le) / 86400.0, 1) END AS delai_jours,
+         CASE WHEN b.dossier_id IS NOT NULL THEN b.cle_match END AS cle_match,
+         coalesce(b.email_norm, b.tel_norm) AS personne_key,
+         row_number() OVER (PARTITION BY coalesce(b.email_norm, b.tel_norm) ORDER BY b.prospect_le, b.prospect_id)::int AS rang_personne,
+         CASE WHEN b.dossier_id IS NOT NULL
+              THEN row_number() OVER (PARTITION BY b.dossier_id ORDER BY abs(extract(epoch FROM b.dossier_cree_le - b.prospect_le)), b.prospect_id)::int
+         END AS rang_dossier
+  FROM base b
+$function$
+
+
 -- ═══ public.pulse_quadrant(gsc_dir text, cooked_dir text) ═══
 CREATE OR REPLACE FUNCTION public.pulse_quadrant(gsc_dir text, cooked_dir text)
  RETURNS text
@@ -5770,6 +5825,22 @@ BEGIN
                                   when 'dashboard_honoraires_funnel' then 15000
                                   when 'dashboard_seo_by_query'      then 8000
                                   else 5000 end$q$,
+       NULL, 0)
+      ,
+      -- I12 (T-16, 04/09/2026) : pont SECIB — la vue prod ne voit jamais le bac à sable ; le miroir de
+      -- normalisation tient sur les vecteurs « (0) » ; pas de nouveau doublon prospect (2 connus le 03/09,
+      -- nettoyage = décision Nicolas).
+      ('pont_test_jamais_dans_prod',
+       $q$select count(*) from public.pont_prospects_dossiers where secib_env is distinct from 'prod' and secib_env is not null$q$,
+       NULL, 0),
+      ('normalize_phone_vecteurs',
+       $q$select count(*) from (values
+            ('+33 (0)6 12 34 56 78', '+33612345678'), ('00 33 (0)6 12 34 56 78', '+33612345678'),
+            ('06.12.34.56.78', '+33612345678'), ('+41 79 123 45 67', '+41791234567'), ('12345', null)) v(i, o)
+          where public.cooked_normalize_phone_fr(v.i) is distinct from v.o$q$,
+       NULL, 0),
+      ('crm_prospects_doublons_email_minute',
+       $q$select case when (select doublons_email_minute from public.pont_couverture where env = 'prod') > 2 then 1 else 0 end$q$,
        NULL, 0)
     ) AS v(nom, requete, min_rows, exact_rows)
   LOOP
