@@ -4,6 +4,21 @@ Score de santé 0-100 par page, calculé sur 28 jours glissants. Croise GSC
 (capture) et Cooked (rétention, lecture, conversion), avec momentum relatif
 au site et gate technique LCP.
 
+> **Fenêtres (depuis le 03/09/2026, ticket T-05 de la mission du 02/09)** —
+> une seule fenêtre pour tout le score : **28 jours calendaires clos à
+> `gsc_last_data_day()`** (le dernier jour livré par Google, lag J-3/J-4).
+> Côté GSC : capture, courbe CTR (90 j) et momentum (`c1` = ces 28 jours,
+> `c0` = les 28 précédents — mêmes durées). Côté Cooked : entrées organiques,
+> pageviews, `page_exit`, LCP sur **les mêmes jours Paris**
+> (`cooked_paris_ts_start` / `_end_exclusive`). Le score d'un `day` donné est
+> donc reproductible ; le snapshot `cpi_daily` du jour J décrit les 28 jours
+> qui se terminent à `gsc_last_data_day()`, pas « hier ». Avant : la moitié GSC
+> était bornée par la date serveur (24-25 jours de données réelles sur 28
+> nominaux) et la moitié Cooked par l'heure du run (deux snapshots consécutifs
+> séparés de 18 à 34 h). Reste sur l'horloge du run jusqu'au ticket T-09 : le
+> terme conversion (`conversion_journeys(28)`). Invariant : contract-test
+> `cpi_sans_horloge` (0 borne d'horloge dans le corps de `cooked_page_index`).
+
 > **v2.2 (16/06/2026)** — deux raffinements adoptés après revue mathématique
 > externe (corr 0,9855 avec v2.1, aucun verdict fiable A/B déplacé de ≥5 pts) :
 > momentum à **transition continue** (fin de la bascule discrète à 20 clics) et
@@ -160,7 +175,7 @@ inchangé, horizon doublé, non-gating) : à lancer le **05/08/2026**.
 
 ## Ruptures de série `cpi_daily` (restatements)
 
-Trois corrections de mesure ont restaté le snapshot du jour. **Comparer un
+Quatre corrections de mesure ont restaté le snapshot du jour. **Comparer un
 CPI d'avant/après ces dates revient à comparer deux définitions**, pas une
 évolution de la page. Annotations posées dans la table `annotations`.
 
@@ -187,8 +202,20 @@ CPI d'avant/après ces dates revient à comparer deux définitions**, pas une
   Écart de performance que la moyenne masquait : GMB **3,68 %** de taux de
   contact contre **0,57 %** pour le SEO organique réel — 6,5×.
 
-Tables d'audit : `cpi_pre_restatement_20260712` (à supprimer ~19/07/2026),
-`cpi_pre_restatement_20260727` (à supprimer ~03/08/2026).
+- **03/09/2026 — fenêtres alignées sur les données GSC** (ticket T-05 de la
+  mission du 02/09, migration `20260903085351`). Avant : la moitié GSC du score
+  ne couvrait que 24 jours de données sur 28 nominaux (lag Google) et la
+  moitié Cooked glissait avec l'heure du run. Photo avant/après **du même
+  jour, sur les mêmes données** : 175 pages → 175 (6 entrées / 6 sorties,
+  toutes grade C au seuil `n_org` 5), delta moyen **−1,3 pt**, médiane |Δ| 3 ;
+  46 pages fiables S/A/B : médiane |Δ| 2, **1 seul mover ≥ 15 pts**
+  (assurance-perte-exploitation 21→41, terme conversion), 2 changements de
+  grade (1 B→C, 1 C→B). `clics_perdus` 1 138 → 1 284 (+13 % : 28 jours de
+  capture au lieu de 24). CPI pondéré trafic 48,5 → 45,6. Le momentum du
+  03/09 se compare à un `c1` enfin de même durée que `c0`.
+
+Tables d'audit : `cpi_pre_restatement_20260712` et `_20260727` (supprimées le
+10/08/2026), `cpi_pre_restatement_20260903` (à supprimer au ticket T-19).
 
 ## v2.2 — analyses d'impact (instruites le 10/06/2026, AVANT tout code)
 

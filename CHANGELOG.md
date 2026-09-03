@@ -3,6 +3,40 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-05 : « 28 jours » = 28 jours de données GSC, une seule fenêtre dans le CPI
+
+Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-05 (#106), constats d-03 (P1), d-07 (P2), f-04 (P2).
+
+### Corrigé
+- **`gsc_pages_overview.gsc_clicks_28d` ne couvrait que 24 jours de données** : borne `paris_today() - 27` sans
+  alignement sur le lag Google (J-3/J-4). Le 03/09/2026 : 4 474 clics affichés pour 5 358 réels sur 28 jours
+  (−16,5 %). Désormais bornée par `cooked_period_bounds('rolling_28','gsc')` — 28 jours clos à
+  `gsc_last_data_day()`. L'overload `period_kind` que la doc promettait n'a jamais existé (doc corrigée).
+  Récidive : l'off-by-one du 24/05/2026 avait été corrigé, l'alignement GSC jamais fait.
+- **`cooked_page_index` : une seule fenêtre pour tout le score.** Côté GSC (capture, courbe CTR 90 j, momentum
+  `c1`/`c0` désormais de même durée), `p_days` jours clos à `gsc_last_data_day()` ; côté Cooked (entrées
+  organiques, lectures, `page_exit`, LCP), **les mêmes jours Paris** via `cooked_paris_ts_start/_end_exclusive`.
+  Avant : 24 jours de GSC composés avec 28 × 24 h de comportement, et deux snapshots « quotidiens » séparés de 18 à
+  34 h. Le score d'un jour est reproductible. Effet de bord : le calcul passe de ~5 min à ~1 min (bornes fixes).
+  Reste sur l'horloge du run : le terme conversion (`conversion_journeys(p_days)`) → ticket T-09.
+  Migration `20260903085351`.
+
+### Invariant livré (I4)
+- Deux contrats dans `run_rpc_contract_tests` : `gsc_pages_overview_28d_alignes` (Σ `gsc_clicks_28d` = Σ
+  `gsc_path_daily` sur les bornes `rolling_28`/`gsc`, écart 0) et `cpi_sans_horloge` (0 occurrence de
+  `now()`/`current_date`/… dans le corps de `cooked_page_index`). 0 violation le 03/09/2026.
+
+### Restatement (annotation du 03/09/2026, migration `20260903090225`)
+- Photo « avant » (`cpi_pre_restatement_20260903`, 10:22 Paris, migrations `20260903081257`/`081927`) et « après »
+  (`cpi_daily` du 03/09, 10:58, migration `20260903085657`) calculées le **même jour sur les mêmes données GSC**
+  (dernier jour 30/08) : 175 pages → 175 (6 entrées / 6 sorties, toutes grade C au seuil `n_org` 5), delta CPI moyen
+  **−1,3 pt** (médiane |Δ| 3) ; 46 pages fiables S/A/B : médiane |Δ| 2, **1 seul mover ≥ 15 pts**
+  (assurance-perte-exploitation 21→41, terme conversion) ; 2 changements de grade (1 B→C, 1 C→B) ; `clics_perdus`
+  1 138 → 1 284 (+13 % : 28 jours de capture au lieu de 24) ; CPI pondéré trafic 48,5 → 45,6.
+  Phrase : « alignement des fenêtres sur les données réellement livrées par Google — +12 à +20 % de clics affichés
+  sur 28 j, santé des pages inchangée ; correction de mesure, pas un changement de trafic ». La table
+  `cpi_pre_restatement_20260903` est à supprimer au ticket T-19.
+
 ## [2026-09-03] — T-04 : le bot Baidu sort d'`events_human` (à la source et rétroactivement)
 
 Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-04 (#105), constats a-01 (P0), a-02, c-06, d-05.

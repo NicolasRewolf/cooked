@@ -1244,33 +1244,44 @@ CREATE OR REPLACE FUNCTION public.cooked_page_index(p_days integer DEFAULT 28)
  STABLE
  SET search_path TO 'public', 'pg_temp'
 AS $function$
-WITH fit AS (
+-- T-05 (mission 02/09/2026, #106 — d-03/d-07/f-04) : UNE fenêtre pour tout le score. Côté GSC : p_days jours clos à
+-- gsc_last_data_day() (avant : borne sur la date serveur, soit 24 jours de données réelles sur 28 nominaux, lag Google J-4).
+-- Côté Cooked : les MÊMES jours Paris, bornés par cooked_paris_ts_start/_end_exclusive (avant : 28 × 24 h glissantes, borne
+-- qui glissait avec l'heure du run — deux snapshots consécutifs étaient séparés de 18 à 34 h). Le score d'un jour donné
+-- est désormais reproductible. Reste hors fenêtre (T-09) : conversion_journeys(p_days), encore sur l'horloge du run.
+WITH w AS (
+  SELECT g.g_end,
+         public.cooked_paris_ts_start(g.g_end - (p_days - 1)) AS t0,
+         public.cooked_paris_ts_end_exclusive(g.g_end)        AS t1
+  FROM (SELECT public.gsc_last_data_day() AS g_end) g
+),
+fit AS (
   SELECT regr_slope(ln(ctr), ln(pos)) AS pente, regr_intercept(ln(ctr), ln(pos)) AS icept
   FROM (SELECT round(position)::int pos, (sum(clicks)+1.0)/(sum(impressions)+20.0) ctr
-        FROM public.gsc_query_page_daily WHERE day > current_date - 90 AND NOT public.gsc_is_branded(query)
+        FROM public.gsc_query_page_daily WHERE day > (SELECT g_end FROM w) - 90 AND NOT public.gsc_is_branded(query)
         GROUP BY 1 HAVING round(position)::int BETWEEN 1 AND 20 AND sum(impressions) >= 200) b
 ),
 capq AS (SELECT g.path, sum(g.impressions) i_qpd,
     sum(g.impressions * least(greatest(exp(f.icept + f.pente*ln(greatest(g.position,1.0))),0.0005),0.5)) e_qpd
-  FROM public.gsc_query_page_daily g, fit f WHERE g.day > current_date - p_days AND NOT public.gsc_is_branded(g.query) GROUP BY g.path),
+  FROM public.gsc_query_page_daily g, fit f WHERE g.day > (SELECT g_end FROM w) - p_days AND NOT public.gsc_is_branded(g.query) GROUP BY g.path),
 capb AS (SELECT path, sum(clicks) o_b, sum(impressions) i_b FROM public.gsc_query_page_daily
-  WHERE day > current_date - p_days AND public.gsc_is_branded(query) GROUP BY path),
-capp AS (SELECT path, sum(clicks) o_full, sum(impressions) i_full FROM public.gsc_path_daily WHERE day > current_date - p_days GROUP BY path),
+  WHERE day > (SELECT g_end FROM w) - p_days AND public.gsc_is_branded(query) GROUP BY path),
+capp AS (SELECT path, sum(clicks) o_full, sum(impressions) i_full FROM public.gsc_path_daily WHERE day > (SELECT g_end FROM w) - p_days GROUP BY path),
 cap AS (SELECT p.path, greatest(p.o_full - coalesce(b.o_b,0),0)::numeric AS o,
     CASE WHEN coalesce(q.i_qpd,0)>0 THEN q.e_qpd*(greatest(p.i_full-coalesce(b.i_b,0),0)::numeric/q.i_qpd) ELSE NULL END AS e,
     q.i_qpd, greatest(p.i_full-coalesce(b.i_b,0),0) AS i_nb
   FROM capp p LEFT JOIN capq q ON q.path=p.path LEFT JOIN capb b ON b.path=p.path),
 firstpv AS (SELECT DISTINCT ON (session_id) session_id, eh.path,
     public.classify_channel(referrer_hostname, utm_source, utm_medium,'www.jplouton-avocat.fr') chan
-  FROM public.events_human eh WHERE name='pageview' AND occurred_at > now() - make_interval(days => p_days) ORDER BY session_id, occurred_at),
+  FROM public.events_human eh WHERE name='pageview' AND occurred_at >= (SELECT t0 FROM w) AND occurred_at < (SELECT t1 FROM w) ORDER BY session_id, occurred_at),
 orge AS (SELECT session_id, firstpv.path FROM firstpv WHERE chan LIKE 'organic%'),
 norg AS (SELECT orge.path, count(*) n_org FROM orge GROUP BY orge.path),
-spv AS (SELECT session_id, count(*) pv FROM public.events_human WHERE name='pageview' AND occurred_at > now() - make_interval(days => p_days) GROUP BY session_id),
+spv AS (SELECT session_id, count(*) pv FROM public.events_human WHERE name='pageview' AND occurred_at >= (SELECT t0 FROM w) AND occurred_at < (SELECT t1 FROM w) GROUP BY session_id),
 pex AS (SELECT e.session_id, e.path,
     max((e.props->>'duration_seconds')::numeric) d,
     max(coalesce((e.props->>'max_scroll')::numeric,0)) s
   FROM public.events_human e
-  WHERE e.name='page_exit' AND e.occurred_at > now() - make_interval(days => p_days)
+  WHERE e.name='page_exit' AND e.occurred_at >= (SELECT t0 FROM w) AND occurred_at < (SELECT t1 FROM w)
   GROUP BY e.session_id, e.path),
 ex2 AS (SELECT o.path, public.cooked_page_type(o.path) ptype, px.d,
     coalesce(px.s,0) s,
@@ -1320,17 +1331,17 @@ madg AS (SELECT greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(
   greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_lec-g.ml)),0.15) sl,
   greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_conv-g.mv)),0.15) sv FROM xs x, medg g),
 mom AS (SELECT g.path,
-    coalesce(sum(clicks) FILTER (WHERE day > current_date - p_days),0) c1,
-    coalesce(sum(clicks) FILTER (WHERE day BETWEEN current_date - 2*p_days AND current_date - p_days - 1),0) c0,
-    avg(position) FILTER (WHERE day > current_date - p_days) p1,
-    avg(position) FILTER (WHERE day BETWEEN current_date - 2*p_days AND current_date - p_days - 1) p0
+    coalesce(sum(clicks) FILTER (WHERE day > (SELECT g_end FROM w) - p_days),0) c1,
+    coalesce(sum(clicks) FILTER (WHERE day <= (SELECT g_end FROM w) - p_days),0) c0,
+    avg(position) FILTER (WHERE day > (SELECT g_end FROM w) - p_days) p1,
+    avg(position) FILTER (WHERE day <= (SELECT g_end FROM w) - p_days) p0
   FROM public.gsc_query_page_daily g
-  WHERE g.day > current_date - 2*p_days AND NOT public.gsc_is_branded(g.query)
+  WHERE g.day > (SELECT g_end FROM w) - 2*p_days AND NOT public.gsc_is_branded(g.query)
   GROUP BY g.path),
 site AS (SELECT sum(c1) s1, sum(c0) s0 FROM mom),
 lcp AS (SELECT eh.path, percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric) lcp75
   FROM public.events_human eh WHERE name='web_vitals' AND props->>'metric'='LCP' AND device_type='mobile'
-    AND occurred_at > now() - make_interval(days => p_days) GROUP BY eh.path),
+    AND occurred_at >= (SELECT t0 FROM w) AND occurred_at < (SELECT t1 FROM w) GROUP BY eh.path),
 scored AS (
   SELECT x.path, x.ptype, x.n_org, round(greatest(coalesce(x.e,0)-x.o,0))::int clics_perdus,
     CASE WHEN coalesce(x.i_nb,0)>0 THEN round(100.0*x.i_qpd/x.i_nb)::int ELSE 0 END couv,
@@ -2736,7 +2747,14 @@ CREATE OR REPLACE FUNCTION public.gsc_pages_overview(max_rows integer DEFAULT 30
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  WITH g AS (
+  -- T-05 (mission 02/09/2026, #106 — d-03) : « 28 j » = 28 jours GSC clos à gsc_last_data_day() (lens 'gsc'), plus la
+  -- fenêtre brute `paris_today() - 27` qui ne contenait que 24-25 jours de données (lag Google J-3/J-4 : −12 à −17 %
+  -- de clics selon le jour). Récidive du 24/05/2026 (off-by-one corrigé, alignement GSC jamais fait). Les colonnes
+  -- Cooked (seo_url_snapshot, macro_contacts_by_path(28)) gardent leur fenêtre propre — unification au ticket T-09.
+  WITH b AS (
+    SELECT n_start, n_end FROM public.cooked_period_bounds('rolling_28', 'gsc') LIMIT 1
+  ),
+  g AS (
     SELECT path,
       SUM(impressions)::bigint AS impressions_total,
       SUM(clicks)::bigint AS clicks_total,
@@ -2747,7 +2765,7 @@ AS $function$
            THEN ROUND((100.0 * SUM(clicks) / SUM(impressions))::numeric, 2)
            ELSE NULL END AS ctr_pct
     FROM gsc_path_daily
-    WHERE day >= (now() AT TIME ZONE 'Europe/Paris')::date - 27
+    WHERE day BETWEEN (SELECT n_start FROM b) AND (SELECT n_end FROM b)
     GROUP BY path
   )
   SELECT
@@ -2766,8 +2784,8 @@ AS $function$
     s.pogo_rate_28d,
     (s.path IS NOT NULL)
   FROM g
-    LEFT JOIN seo_url_snapshot s ON s.path = g.path
-    LEFT JOIN macro_contacts_by_path(28) mc ON mc.path = g.path
+  LEFT JOIN seo_url_snapshot s ON s.path = g.path
+  LEFT JOIN macro_contacts_by_path(28) mc ON mc.path = g.path
   ORDER BY g.clicks_total DESC, g.impressions_total DESC
   LIMIT max_rows;
 $function$
@@ -5076,6 +5094,22 @@ BEGIN
       ('classify_channel_spam',
        $q$select count(*) from (values ('m.baidu.com'), ('baidu.com')) v(h)
           where public.classify_channel(v.h, null, null, 'www.jplouton-avocat.fr') <> 'spam'$q$,
+       NULL, 0),
+
+      -- T-05 (mission 02/09/2026, invariant I4) : « 28 j » GSC = 28 jours clos à gsc_last_data_day(). Écart attendu 0.
+      ('gsc_pages_overview_28d_alignes',
+       $q$select abs(coalesce((select sum(gsc_clicks_28d) from public.gsc_pages_overview(100000)), 0)
+                 - coalesce((select sum(g.clicks) from public.gsc_path_daily g,
+                               public.cooked_period_bounds('rolling_28', 'gsc') b
+                             where g.day between b.n_start and b.n_end), 0))$q$,
+       NULL, 0),
+
+      -- T-05 (invariants I4/I10) : aucune borne d'horloge dans le CPI — ses fenêtres sont closes à gsc_last_data_day()
+      -- et le score d'un jour est reproductible. 0 occurrence attendue de now()/current_date/… dans le corps.
+      ('cpi_sans_horloge',
+       $q$select count(*) from regexp_matches(
+            pg_get_functiondef('public.cooked_page_index(integer)'::regprocedure),
+            'now\(\)|current_date|current_timestamp|localtimestamp', 'gi')$q$,
        NULL, 0)
     ) AS v(nom, requete, min_rows, exact_rows)
   LOOP
