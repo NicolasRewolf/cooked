@@ -10,6 +10,8 @@ export type {
   ExpertiseRow,
   HonorairesFunnel,
   InterventionEffect,
+  LabGscWeek,
+  LabGscWeekly,
   Period,
   ResourceKpis,
   ResourceRow,

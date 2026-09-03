@@ -119,6 +119,24 @@ gagne des colonnes, `dashboard_resources_overview` (SETOF) les expose sans chang
 Composant `Trend` partagé dans `components/ui.tsx`. Le contrat typé de ces colonnes vit dans
 `lib/types.ts` (`ResourceRow`, `SeoQueryRow`).
 
+### Lab (`/lab`, 03/09/2026)
+
+Onglet de **graphes éditoriaux** hors sélecteur de période : la fenêtre est celle des données
+Google (semaines ISO closes, dimanche ≤ `gsc_last_data_day()`). Grammaire empruntée au skill
+[lieflat-charts](https://github.com/larashero3-dotcom/lieflat-charts) (une conclusion par graphe,
+unités réelles, monochrome où la luminosité = l'importance, notes de marge) mais **recodée sur les
+tokens Cooked** — aucun code du dépôt Lieflat n'est embarqué (licence PolyForm Noncommercial), IBM
+Plex et non Inter, orange rewolf réservé aux annotations.
+
+- RPC `dashboard_lab_gsc_weekly(p_weeks)` → `src/data/dashboard.ts#getLabGscWeekly` →
+  `src/data/lab-view-models.ts#buildLabGscView` (pur, testé) → `src/components/StreamRibbon.tsx`
+  (client, props plates) ; géométrie dans `src/lib/stream-geometry.ts` (pur, testé).
+- Graphe n°1 : **Stream Ribbon** (Lieflat F16) des clics `gsc_path_daily` par type de page
+  (ressource / classique / expertise / divers). Bandes triées par largeur actuelle (la plus large
+  = `ink`), coutures couleur panneau, plancher code-barres mensuel, triangles = `annotations`.
+- Pour ajouter un graphe : une RPC `dashboard_lab_*` (service_role only, fenêtre close, C6c), un
+  view-model pur testé, un composant client sans couleur en dur.
+
 ## Système visuel (tokens + chrome de tableau)
 
 Identité inchangée : **angles vifs, orange rewolf `#FF4F04`, IBM Plex**, thème clair.

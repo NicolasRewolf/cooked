@@ -3,6 +3,38 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — Lab : un onglet de graphes éditoriaux sur data.rewolf.studio
+
+Décision Nicolas (03/09/2026) : ajouter un onglet **Lab** au dashboard pour des graphes « de fou »,
+inspirés du skill [lieflat-charts](https://github.com/larashero3-dotcom/lieflat-charts) (PolyForm
+Noncommercial — usage personnel de Nicolas, risque de qualification commerciale connu et assumé).
+Le skill est une grammaire (Lupi / Glance / Basics), pas une librairie : les modèles sont recodés en
+composants React sur les tokens Cooked (IBM Plex, encres `ink › muted › faint › dim`, orange rewolf
+réservé aux annotations). Migrations `20260903151638` → `20260903152332`.
+
+### Ajouté
+- **RPC `dashboard_lab_gsc_weekly(p_weeks)`** (service_role only) : clics et impressions
+  `gsc_path_daily` par **semaine ISO close** (dimanche ≤ `gsc_last_data_day()`) et par type de page —
+  `ressource` / `classique` (posts, via `page_taxonomy.category`) / `expertise` / `divers` (cabinet, hubs,
+  blog-nav, posts sans ligne de taxonomie) — plus les annotations de la fenêtre. Aucune borne d'horloge
+  (C6c). Vérifié : Σ clics et Σ impressions = brut `gsc_path_daily` sur la fenêtre (154 988 / 7 314 832).
+  v2 typait les chemins distincts, v3 matérialise les CTE (sans ça le planificateur ré-évaluait
+  `cooked_page_type()` par ligne jointe → timeout 2 min ; 346 ms après).
+- **Onglet `/lab`** : premier graphe = **Stream Ribbon** (Lieflat F16) « Seize mois de clics Google, par
+  type de page » — rivière silhouette (largeur = clics/semaine, la rivière = le total), bande la plus
+  large aujourd'hui la plus noire, plancher code-barres mensuel, triangles d'annotations, survol =
+  lecture dans la barre de titre. Notes de marge par bande : moyenne des 4 dernières semaines closes vs
+  le bloc de 4 semaines 8 semaines plus tôt, CTR sur les mêmes blocs, pic hebdo.
+- `dashboard/src/lib/stream-geometry.ts` (empilement silhouette, lissage, repères de mois — module pur,
+  13 tests) et `dashboard/src/data/lab-view-models.ts` (7 tests).
+
+### Lu sur le premier rendu (03/09/2026, semaines closes 28/04/2025 → 30/08/2026)
+- La chute de ~40 % des clics de mi-juillet 2026 est **portée par les articles ressources** :
+  874 clics/sem. sur les 4 dernières semaines contre 1 941 huit semaines plus tôt (−55 %), à
+  **impressions constantes** (CTR 1,14 % vs 2,14 %). Les classiques reculent aussi (390 vs 704, CTR
+  3,28 % vs 4,55 %) ; expertises et cabinet sont stables en volume. Clics en baisse à position/impressions
+  constantes = la SERP bouge (piège n°4), pas le classement — reste à instruire (AI Overview ?).
+
 ## [2026-09-03] — T-11 : l'aval de l'ingestion GSC suit l'ingestion, pas l'horloge
 
 Mission du 02/09/2026, ticket T-11 (#112), constats e-02 (P1) et h-05 (P2). Invariant I9. Migration `20260903145256`.

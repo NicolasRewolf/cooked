@@ -11,6 +11,7 @@ import {
   expertiseRowsSchema,
   honorairesFunnelSchema,
   interventionEffectSchema,
+  labGscWeeklySchema,
   resourceKpisSchema,
   resourceRowsSchema,
   seoKpisSchema,
@@ -24,6 +25,7 @@ import {
   type ExpertiseRow,
   type HonorairesFunnel,
   type InterventionEffect,
+  type LabGscWeekly,
   type Period,
   type ResourceKpis,
   type ResourceRow,
@@ -115,4 +117,9 @@ export async function getResourcesCohorts(): Promise<CohortsResult> {
 
 export async function getAssistedQuarter(): Promise<AssistedQuarter> {
   return callRpc("dashboard_assisted_quarter", undefined, assistedQuarterSchema);
+}
+
+/** Lab — 70 semaines ISO closes (≈ 16 mois) de clics GSC par type de page + annotations. */
+export async function getLabGscWeekly(weeks = 70): Promise<LabGscWeekly> {
+  return callRpc("dashboard_lab_gsc_weekly", { p_weeks: weeks }, labGscWeeklySchema);
 }
