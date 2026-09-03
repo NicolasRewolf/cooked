@@ -474,3 +474,28 @@ Deno.test("isBotUa — 'pc' en sous-chaîne d'un UA légitime ≠ bot", () => {
   assertEquals(isBotUa("Mozilla/5.0 (Linux; Android 13; PC-T1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"), false);
   assertEquals(isBotUa("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"), false);
 });
+
+
+// ------------------------------------------- T-19 / T-22 — url réduite aux paramètres de campagne, title non écrit
+import { campaignOnlyUrl } from "./track_row.ts";
+
+Deno.test("campaignOnlyUrl — garde utm/gclid/cooked_*, jette le reste et le fragment", () => {
+  assertEquals(
+    campaignOnlyUrl("https://www.jplouton-avocat.fr/post/x?utm_source=gmb&fbclid=1&foo=bar&cooked_aid=abc123&gclid=g#sec"),
+    "https://www.jplouton-avocat.fr/post/x?utm_source=gmb&fbclid=1&cooked_aid=abc123&gclid=g",
+  );
+  assertEquals(campaignOnlyUrl("https://www.jplouton-avocat.fr/"), "https://www.jplouton-avocat.fr/");
+  assertEquals(campaignOnlyUrl(null), null);
+});
+
+Deno.test("buildEventRow — title jamais écrit, url réduite", () => {
+  const built = buildEventRow(
+    { name: "pageview", url: "https://www.jplouton-avocat.fr/p?foo=1&utm_medium=cpc", path: "/p", title: "Titre", anonymous_id: "a1b2c3d4e5f6a1b2", session_id: "s1s1s1s1s1s1s1s1", occurred_at: NOW },
+    ctx(),
+  );
+  assert(built.ok);
+  if (built.ok) {
+    assertEquals(built.row.title, null);
+    assertEquals(built.row.url, "https://www.jplouton-avocat.fr/p?utm_medium=cpc");
+  }
+});

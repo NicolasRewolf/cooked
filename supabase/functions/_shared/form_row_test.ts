@@ -228,7 +228,6 @@ Deno.test("buildFormSubmitRow — payload Wix complet : row iso au handler v12",
     browser: null,
     viewport_width: null,
     viewport_height: null,
-    country: null,
     props: {
       form_id: "Formulaire Contact",
       submission_id: "sub-123",

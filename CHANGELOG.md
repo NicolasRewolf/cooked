@@ -3,6 +3,44 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-04] — T-19 : budget de complexité — `country` amputée, vestiges supprimés, `url`/`title` réduits, bloat
+
+Mission du 02/09/2026, ticket T-19 (#120, absorbe #122 et #123), constats d-08, h-07, h-08, b-07.
+Autorisation citée : commentaire de Nicolas sur #120 (03/09/2026 16:41 Paris) — « Décision §7.4 donnée
+le 02/09 : dépréciations de T-19 autorisées », « décision : amputer `events.country` », « cesser d'écrire
+`title`, tronquer `url` aux paramètres de campagne, rétention 400 j ». Migrations `20260903220532`
+(country) et `20260903220712` (vestiges) ; Edge **`track` v30** déployée le 04/09/2026 00:35 Paris.
+
+### Supprimé
+- **`events.country`** (capture morte depuis le 02/06/2026, 0 consommateur) : colonne droppée, les 5 vues
+  `events_main` / `events_no_bots` / `events_human` / `events_outremer` / `events_human_outremer` recréées
+  à l'identique sans elle (`security_invoker`, commentaires) — et **nettoyées** : `events_human` portait
+  des GRANT INSERT/UPDATE/DELETE/TRUNCATE pour `anon` et `authenticated` (default privileges) → SELECT à
+  `service_role` seul. `CookedEventRow` sans `country`.
+- **`page_reads(integer)`, `page_reads(timestamptz, timestamptz)`** (0 appelant ; l'une des deux fonctions
+  exposées à `anon` avant T-01) et son contract-test ; **vue `gsc_path_metrics_28d`** (0 dépendant).
+  136 routines `pg_proc` (138 avant), 11 vues.
+- `cooked_config.events_vacuum_full_scheduled` (vestige du VACUUM FULL désarmé le 10/08).
+
+### Modifié
+- **`track` v30** : `events.url` ne garde que origine + chemin + paramètres de campagne/attribution
+  (`utm_*`, `gclid`/`gbraid`/`wbraid`/`dclid`/`fbclid`/`msclkid`/`ttclid`, `cooked_aid`/`cooked_sid` —
+  `classify_channel` v5 et l'attribution formulaire continuent de lire `url`) ; `title` n'est plus écrit
+  (colonne conservée, NULL) ; **`ingest_drops` agrégés** côté Edge (`_shared/ingest_drops.ts`, testé) :
+  un appel `record_ingest_drop` par ≥ 100 drops ou par minute, au lieu d'un par requête de bot
+  (3,6 M appels / 28 j — b-07).
+- Overloads `macro_contacts_by_path(days_back)` et `gsc_top_queries_for_path(…, days_back, …)` :
+  **dépréciés** (COMMENT), période de grâce jusqu'au 01/10/2026 (4 appelants RPC à migrer d'abord).
+- `identity_stitch` : **REINDEX CONCURRENTLY** — index 124 MB → 10 MB pour 12 MB de heap (DELETE+INSERT
+  quotidien sans réindexation) ; autovacuum resserré sur `gsc_path_daily` / `gsc_query_daily` /
+  `gsc_query_page_daily` (vacuum à 2 % de tuples morts, analyze à 1 % — 10-11 % de morts avant).
+- `supabase/views.sql` retouché (5 vues, vue supprimée).
+
+### Non fait (décisions Nicolas)
+- DROP `cpi_pre_restatement_20260903` — après lecture de la vérification J+1 du 04/09 (condition posée
+  dans #120) ; DROP des 2 overloads après la grâce ; rétention **CNIL 13 mois à confirmer** avant de
+  figer la politique (400 j aujourd'hui) ; 2 doublons `crm_prospects`.
+
 ## [2026-09-04] — T-18 : formulaires et Edge — `page_source` canonique, gate fail-fast, champs surveillés
 
 Mission du 02/09/2026, ticket T-18 (#119), constats b-01 (P1), b-02, b-05, b-06 (b-04 était déjà clos
@@ -136,8 +174,8 @@ Mission du 02/09/2026, ticket T-14 (#115), constats i-01 (P1), i-02 (P1), i-03�
 g-05, g-07, o-12. Invariant I13. Pas de migration.
 
 ### Ajouté
-- **`contracts/doc_constants.json`** étendu (compteurs prod mesurés le 03/09 : 138 routines `pg_proc`
-  = 134 Cooked + 4 `unaccent`, 17 règles d'alerte, 16 RPC dashboard, 11 vues, 14 sources au registre,
+- **`contracts/doc_constants.json`** étendu (compteurs prod mesurés le 03/09 : 136 routines `pg_proc`
+  = 132 Cooked + 4 `unaccent`, 17 règles d'alerte, 16 RPC dashboard, 11 vues, 14 sources au registre,
   9 crons ; versions `sprint41` / `track` v28 / `form-webhook` v14 ; liste des docs vivants, objets
   fantômes interdits, exclusions de l'orphan-check). `check_prod_drift.py` compare désormais ces
   compteurs à la prod (chaque matin + chaque PR SQL).

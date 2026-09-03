@@ -1,4 +1,5 @@
-// COOKED — track Edge Function (v29 — 04/09/2026 : gate x-cooked-key fail-fast, T-18 mission 02/09 —
+// COOKED — track Edge Function (v30 — 04/09/2026 : T-19/T-22 — url réduite aux paramètres de campagne,
+// title plus écrit, ingest_drops agrégés (1 appel / 100 drops ou / minute) ; v29 — 04/09/2026 : gate x-cooked-key fail-fast, T-18 mission 02/09 —
 // COOKED_INGEST_KEY absent ⇒ le boot échoue au lieu d'ouvrir la porte ; v28 — 03/09/2026 : bot UA « pc »/SEBot droppés à l'ingestion, T-04 mission 02/09 ;
 // v27 — 25/07/2026 : x-cooked-key ingest gate, audit n°3)
 // POST /functions/v1/track
@@ -12,6 +13,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { ingestKeyMatches, requireIngestKey } from "../_shared/ingest_gate.ts";
+import { IngestDropBuffer } from "../_shared/ingest_drops.ts";
 import {
   buildEventRow,
   clientIp,
@@ -53,6 +55,13 @@ const COOKED_INGEST_KEY = requireIngestKey(Deno.env.get("COOKED_INGEST_KEY"));
 
 const supabase = createClient(SUPABASE_URL, SECRET_KEY, {
   auth: { persistSession: false },
+});
+
+// T-19 (b-07) — drops agrégés : un appel record_ingest_drop par ≥ 100 drops ou par minute,
+// au lieu d'un par requête de bot (3,6 M appels / 28 j).
+const dropBuffer = new IngestDropBuffer(async (reason, n) => {
+  const { error } = await supabase.rpc("record_ingest_drop", { p_reason: reason, p_n: n });
+  if (error) console.error("[track] record_ingest_drop error:", error.message);
 });
 
 function corsHeaders(origin: string): Record<string, string> {
@@ -117,11 +126,7 @@ Deno.serve(async (req) => {
   // appliquait après coup (90 % des writes). Compteur ingest_drops pour
   // l'audit ; réponse 200 pour ne rien révéler au bot (et éviter tout retry).
   if (isBotUa(ua)) {
-    const { error } = await supabase.rpc("record_ingest_drop", {
-      p_reason: "bot_ua",
-      p_n: events.length,
-    });
-    if (error) console.error("[track] record_ingest_drop error:", error.message);
+    await dropBuffer.add("bot_ua", events.length);
     return new Response(JSON.stringify({ ok: true, inserted: 0 }), {
       status: 200,
       headers: { ...cors, "content-type": "application/json" },
@@ -156,13 +161,7 @@ Deno.serve(async (req) => {
       ["missing_fields", droppedMissingFields],
       ["disallowed_name", droppedDisallowedName],
     ] as const) {
-      if (cnt > 0) {
-        const { error } = await supabase.rpc("record_ingest_drop", {
-          p_reason: reason,
-          p_n: cnt,
-        });
-        if (error) console.error("[track] record_ingest_drop error:", error.message);
-      }
+      if (cnt > 0) await dropBuffer.add(reason, cnt);
     }
   }
 

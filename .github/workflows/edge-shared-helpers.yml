@@ -38,3 +38,4 @@ jobs:
           deno test supabase/functions/_shared/track_row_test.ts
           deno test supabase/functions/_shared/form_row_test.ts
           deno test supabase/functions/_shared/ingest_gate_test.ts
+          deno test supabase/functions/_shared/ingest_drops_test.ts

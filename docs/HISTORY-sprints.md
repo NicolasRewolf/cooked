@@ -47,7 +47,7 @@ docs/audits. Les sprints non listés n'ont pas laissé de trace durable.
 - Edge Functions : `track` **v27** (25/07/2026 — gate `x-cooked-key` ; v26 = filtre
   bots à l'ingestion ; **v28** 03/09/2026 : bot Baidu droppé), `form-webhook` **v14** (03/09/2026 —
   `form_submit_dropped` via `raise_cooked_alert` ; v13 10/08 : Pont SECIB) — prod = repo au 03/09/2026
-- **138 routines** `pg_proc` (134 Cooked + 4 `unaccent`, 03/09/2026 — `contracts/doc_constants.json`) — miroir lecture
+- **136 routines** `pg_proc` (132 Cooked + 4 `unaccent`, 03/09/2026 — `contracts/doc_constants.json`) — miroir lecture
   `supabase/rpcs.sql` (régénéré depuis la prod en CI)
 - pg_cron (à recompter en prod : `SELECT jobname FROM cron.job`) + **10 workflows**
   GitHub Actions (cf. docs/OPERATIONS.md) ; GSC ingéré à 06:00 UTC, fenêtre

@@ -130,7 +130,7 @@ CREATE OR REPLACE VIEW public.cpi_movers AS
 CREATE OR REPLACE VIEW public.events_human AS
  SELECT id, anonymous_id, session_id, name, url, path, hostname, title, referrer,
     referrer_hostname, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-    user_agent, device_type, os, browser, viewport_width, viewport_height, country,
+    user_agent, device_type, os, browser, viewport_width, viewport_height,
     props, occurred_at, received_at
    FROM events_no_bots e
   WHERE NOT (EXISTS ( SELECT 1
@@ -152,7 +152,7 @@ CREATE OR REPLACE VIEW public.events_human AS
 CREATE OR REPLACE VIEW public.events_main AS
  SELECT id, anonymous_id, session_id, name, url, path, hostname, title, referrer,
     referrer_hostname, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-    user_agent, device_type, os, browser, viewport_width, viewport_height, country,
+    user_agent, device_type, os, browser, viewport_width, viewport_height,
     props, occurred_at, received_at
    FROM events e
   WHERE cooked_is_main_site(hostname, props);
@@ -163,7 +163,7 @@ CREATE OR REPLACE VIEW public.events_main AS
 CREATE OR REPLACE VIEW public.events_no_bots AS
  SELECT id, anonymous_id, session_id, name, url, path, hostname, title, referrer,
     referrer_hostname, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-    user_agent, device_type, os, browser, viewport_width, viewport_height, country,
+    user_agent, device_type, os, browser, viewport_width, viewport_height,
     props, occurred_at, received_at
    FROM events_main e
   WHERE NOT (EXISTS ( SELECT 1
@@ -176,7 +176,7 @@ CREATE OR REPLACE VIEW public.events_no_bots AS
 CREATE OR REPLACE VIEW public.events_outremer AS
  SELECT id, anonymous_id, session_id, name, url, path, hostname, title, referrer,
     referrer_hostname, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-    user_agent, device_type, os, browser, viewport_width, viewport_height, country,
+    user_agent, device_type, os, browser, viewport_width, viewport_height,
     props, occurred_at, received_at
    FROM events e
   WHERE cooked_site_scope(hostname, props) = 'outremer'::text;
@@ -187,7 +187,7 @@ CREATE OR REPLACE VIEW public.events_outremer AS
 CREATE OR REPLACE VIEW public.events_human_outremer AS
  SELECT id, anonymous_id, session_id, name, url, path, hostname, title, referrer,
     referrer_hostname, utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-    user_agent, device_type, os, browser, viewport_width, viewport_height, country,
+    user_agent, device_type, os, browser, viewport_width, viewport_height,
     props, occurred_at, received_at
    FROM events_outremer e
   WHERE NOT (EXISTS ( SELECT 1
@@ -198,11 +198,7 @@ CREATE OR REPLACE VIEW public.events_human_outremer AS
           WHERE n.session_id = e.session_id))
     AND NOT (name = 'cta_anchor_click'::text AND cooked_is_chrome_anchor(props));
 
--- VIEW public.gsc_path_metrics_28d
---   Raccourci 28j glissants sur gsc_path_metrics (fenêtre Paris).
-CREATE OR REPLACE VIEW public.gsc_path_metrics_28d AS
- SELECT path, impressions_total, clicks_total, position_avg, ctr_pct
-   FROM gsc_path_metrics(((now() AT TIME ZONE 'Europe/Paris'::text)::date - '28 days'::interval)::date, (now() AT TIME ZONE 'Europe/Paris'::text)::date) gsc_path_metrics(path, impressions_total, clicks_total, position_avg, ctr_pct);
+-- VIEW public.gsc_path_metrics_28d : SUPPRIMÉE le 04/09/2026 (T-19, vestige sans dépendant).
 
 -- VIEW public.pont_prospects_dossiers
 --   Pont SECIB (10/08/2026) : chaque prospect web (crm_prospects) avec son
@@ -339,5 +335,5 @@ CREATE OR REPLACE VIEW public.pont_prospects_dossiers AS
 --
 -- Pour le CORPS d'une fonction : supabase/rpcs.sql (généré, Arch #5)
 -- ou : SELECT pg_get_functiondef('public.<nom>(<args>)'::regprocedure);
--- Généré le 10/08/2026 — corps RPC : supabase/rpcs.sql (régénéré depuis la prod en CI, compte dans contracts/doc_constants.json).
+-- Généré le 10/08/2026, retouché le 04/09/2026 (T-19 : colonne events.country amputée des 5 vues events_*, vue gsc_path_metrics_28d supprimée) — corps RPC : supabase/rpcs.sql (régénéré depuis la prod en CI, compte dans contracts/doc_constants.json).
 -- ============================================================================

@@ -717,3 +717,34 @@
 - 00:05 `[D]` Reste Nicolas : collage Velo (`http-functions.js`, `masterpage-cooked.js`), champs `page_source` +
   « Objet » sur les 2 formulaires. L'alerte `form_fields_missing` restera warn (escalade critical à 5 j, T-07)
   jusqu'au câblage — c'est le but.
+- 00:10 `[R]` T-18 — PR #144 : CI verte (Edge shared helpers : tests Deno `ingest_gate` + `form_row` OK). **Mergée 00:12.**
+
+### T-19 — budget de complexité (04/09/2026, 00:12 → 00:40)
+- 00:12 `[F]` Relecture #120 + commentaire de Nicolas (03/09 16:41 Paris : dépréciations autorisées, `country`
+  à amputer, `title`/`url` à réduire, DROP de la photo T-05 **après** la vérif J+1 du 04/09), plan T-19/T-21/T-22,
+  `annexes/routine_usage.md`, `track_row.ts` (url/title), `track/index.ts` (2 appels `record_ingest_drop` par
+  requête), `events_row.ts` (`country`), `views.sql`.
+- 00:15 `[R]` **Mesure avant.** `country` : 0 fonction la référence, 5 vues la projettent ; `events_human` : GRANT
+  INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER à `anon` et `authenticated` (default privileges — hors
+  radar de `alert_rule_exposure`, qui teste SELECT). `page_reads` ×2 : 0 appelant hors contract-test ;
+  `gsc_path_metrics_28d` : 0 dépendant. `identity_stitch` : heap 12 MB / index **124 MB** (pkey 81, visitor 42).
+  GSC : 10,4 / 10,5 / 10,9 % de tuples morts, autovacuum 17-23/08. `ingest_drops` : 60 % de morts.
+  `run_rpc_contract_tests` disque = prod (md5 `1debe37a…`).
+- 00:18 `[D]` Overloads `days_back` : COMMENT « déprécié » + grâce au 01/10 (4 appelants RPC), pas de DROP.
+  Photo T-05 : condition de Nicolas (J+1 du 04/09) non remplie → pas touchée. `REINDEX CONCURRENTLY` hors
+  migration (non transactionnel). `title` : colonne conservée, plus écrite ; `url` : liste blanche de
+  paramètres (classify_channel v5 lit `gclid` dans `url`, l'attribution forms lit `cooked_aid/sid`).
+- 00:20 `[W-PROD]` `apply_migration` **`20260903220532`** (DROP des 5 vues → DROP COLUMN → recréation sans
+  `country`, `lock_timeout` 15 s, REVOKE anon/authenticated) ; `REINDEX TABLE CONCURRENTLY identity_stitch`
+  (`execute_sql`) ; `apply_migration` **`20260903220712`** (DROP `page_reads` ×2 + vue, COMMENT dépréciation,
+  autovacuum GSC 0,02/0,01, DELETE clé vestige, contract-tests sans `page_reads`).
+- 00:25 `[R]` **Après.** `country` : 0 colonne ; `events_human` répond (94 events / 1 h) ; 5 vues
+  `security_invoker`, 0 GRANT anon/authenticated ; `identity_stitch` index **10 MB** (124 avant) ;
+  `page_reads` 0, `gsc_path_metrics_28d` 0, clé vestige 0 ; routines **136**, vues **11** ;
+  `gsc_query_page_daily` reloptions posées ; `alert_rule_exposure()` = 0.
+- 00:30 `[W]` Edge : `track_row.ts` (`campaignOnlyUrl`, `title: null`) + 2 tests ; `_shared/ingest_drops.ts`
+  (`IngestDropBuffer`, 3 tests) ; `track/index.ts` v30 ; `events_row.ts` / `form_row_test.ts` sans `country` ;
+  `views.sql` retouché ; constantes (136 routines, 11 vues, track v30, tokens interdits `gsc_path_metrics_28d`,
+  `page_reads(`).
+- 00:35 `[W-PROD]` `npx supabase functions deploy track --no-verify-jwt` → **v30** (Supabase 40). Sondes :
+  GET → 405, POST sans clé → 401. Tests Deno : en CI (deno absent en local).

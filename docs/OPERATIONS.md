@@ -246,7 +246,7 @@ cooked/
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS (référence)
 │   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets des 138 routines (généré depuis la prod en CI, lecture seule)
+│   ├── rpcs.sql                       — corps complets des 136 routines (généré depuis la prod en CI, lecture seule)
 │   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
@@ -658,8 +658,9 @@ supabase functions deploy track --no-verify-jwt
 supabase functions deploy form-webhook --no-verify-jwt
 ```
 
-Versions (03/09/2026 23:59, **prod alignée avec le repo**) : **track v29** (T-18 : gate `x-cooked-key`
-fail-fast — `requireIngestKey`, le boot échoue sans secret ; v28 = T-04 :
+Versions (04/09/2026 00:35, **prod alignée avec le repo**) : **track v30** (T-19/T-22 : `url` réduite aux
+paramètres de campagne, `title` plus écrit, `ingest_drops` agrégés côté Edge ; v29 = T-18 : gate
+`x-cooked-key` fail-fast — `requireIngestKey`, le boot échoue sans secret ; v28 = T-04 :
 UA littéral « pc » — bot Baidu — et SEBot-WA droppés à l'ingestion, motifs
 miroir dans la taxonomie `ua_bot` de `refresh_noise_sessions` + règle
 `spam_referrer` ; v27 = gate `x-cooked-key` à l'ingestion ;
@@ -684,7 +685,7 @@ canonique d'une base fraîche.
 
 | Fichier | Contenu | Régénération |
 |---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 138 routines `pg_proc` de `public` (134 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
+| `supabase/rpcs.sql` | **Corps complets** des 136 routines `pg_proc` de `public` (132 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
 | `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
 | `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
 
