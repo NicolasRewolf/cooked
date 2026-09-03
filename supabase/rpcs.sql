@@ -430,7 +430,7 @@ DECLARE
   v_ex text;
 BEGIN
   WITH vus AS (
-    SELECT e.path, count(*) FILTER (WHERE e.name = 'pageview') AS pv
+    SELECT e.path, count(*) FILTER (WHERE e.name = 'pageview') AS pv, min(e.occurred_at) AS first_seen
     FROM public.events_human e
     WHERE e.path LIKE '/post/%'
       AND e.occurred_at > now() - interval '30 days'
@@ -440,6 +440,10 @@ BEGIN
       AND e.path !~ '[ÃÂ]'                -- mojibake (double encodage)
       AND e.path !~ '%'                   -- restes d'URL-encoding
       AND length(e.path) <= 140
+      -- T-15 (e-07) : un article = /post/<un seul segment de slug>, sans parenthèse ;
+      -- exclut les URL de point focal d'image Wix (/post/fp_0.50_0.50/<hex>~mv2.png)
+      AND e.path ~ '^/post/[^/()]+$'
+      AND e.path !~ '/fp_[0-9.]+_[0-9.]+/'
     GROUP BY e.path
     HAVING count(*) FILTER (WHERE e.name = 'pageview') >= 5
   )
@@ -447,14 +451,16 @@ BEGIN
     INTO v_n, v_ex
   FROM vus v
   LEFT JOIN public.page_taxonomy t ON t.path = v.path
-  WHERE t.path IS NULL OR t.category IS NULL;
+  WHERE (t.path IS NULL OR t.category IS NULL)
+    -- la synchro hebdomadaire (wix-taxonomy-sync) a eu au moins une occasion de passer
+    AND v.first_seen < now() - interval '8 days';
 
-  IF v_n >= 3 THEN
+  IF v_n >= 1 THEN
     RETURN QUERY SELECT
       'page_taxonomy_gap'::text,
       CASE WHEN v_n >= 10 THEN 'critical' ELSE 'warn' END::text,
       format(
-        '%s article(s) avec du trafic (≥ 5 vues/30 j) sans catégorie Wix dans page_taxonomy — toute lecture par catégorie (dashboard Articles Ressources, content_performance, contrat éditorial) les ignore. Rejouer la synchro API Wix : GET /blog/v3/posts, site 0870235c-b92d-4a69-a2f4-25a976ae5f0c, catégorie ressource 9477320f-5902-40e9-ace3-b0e3b6b8b51f. Concernés : %s',
+        '%s article(s) avec du trafic (≥ 5 vues/30 j, vus depuis > 8 j) sans catégorie Wix dans page_taxonomy — toute lecture par catégorie (dashboard Articles Ressources, content_performance, contrat éditorial) les ignore. La synchro hebdomadaire wix-taxonomy-sync (GitHub Actions, lundi 05:00 UTC) n''a pas tourné ou le secret WIX_API_KEY manque : relancer `python3 scripts/wix_taxonomy_sync.py`. Concernés : %s',
         v_n, left(coalesce(v_ex, ''), 400)
       );
   END IF;
@@ -3812,6 +3818,83 @@ AS $function$
 $function$
 
 
+-- ═══ public.page_taxonomy_sync_wix(p_posts jsonb, p_dry_run boolean) ═══
+CREATE OR REPLACE FUNCTION public.page_taxonomy_sync_wix(p_posts jsonb, p_dry_run boolean DEFAULT false)
+ RETURNS TABLE(inserted integer, updated integer, unpublished integer, inserted_paths text[], updated_paths text[])
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_n int;
+BEGIN
+  IF p_posts IS NULL OR jsonb_typeof(p_posts) <> 'array' OR jsonb_array_length(p_posts) < 300 THEN
+    RAISE EXCEPTION 'page_taxonomy_sync_wix : liste publiée suspecte (% éléments, attendu ≥ 300) — rien n''est écrit',
+      coalesce(jsonb_array_length(p_posts), 0);
+  END IF;
+
+  CREATE TEMP TABLE _wix_posts ON COMMIT DROP AS
+    SELECT DISTINCT public.canonical_path('/post/' || (e->>'slug')) AS path,
+           CASE WHEN e->>'category' = 'ressource' THEN 'ressource' ELSE 'classique' END AS category
+    FROM jsonb_array_elements(p_posts) e
+    WHERE coalesce(e->>'slug', '') <> '';
+
+  SELECT count(*) INTO v_n FROM _wix_posts;
+  IF v_n < 300 THEN
+    RAISE EXCEPTION 'page_taxonomy_sync_wix : % paths après canonicalisation (attendu ≥ 300)', v_n;
+  END IF;
+
+  SELECT coalesce(array_agg(w.path ORDER BY w.path), '{}') INTO inserted_paths
+  FROM _wix_posts w LEFT JOIN public.page_taxonomy t ON t.path = w.path WHERE t.path IS NULL;
+  SELECT coalesce(array_agg(w.path ORDER BY w.path), '{}') INTO updated_paths
+  FROM _wix_posts w JOIN public.page_taxonomy t ON t.path = w.path
+  WHERE t.category IS DISTINCT FROM w.category;
+  SELECT count(*) INTO unpublished
+  FROM public.page_taxonomy t WHERE t.path LIKE '/post/%'
+    AND NOT EXISTS (SELECT 1 FROM _wix_posts w WHERE w.path = t.path);
+  inserted := coalesce(array_length(inserted_paths, 1), 0);
+  updated  := coalesce(array_length(updated_paths, 1), 0);
+
+  IF NOT p_dry_run THEN
+    INSERT INTO public.page_taxonomy (path, category, theme, source)
+    SELECT w.path, w.category, public.page_taxonomy_theme_from_slug(w.path), 'wix_api'
+    FROM _wix_posts w
+    WHERE w.path = ANY (inserted_paths);
+
+    -- Lignes existantes : seule `category` bouge (theme/source préservés — garde-fou
+    -- `source = 'slug_heuristic'` de refresh_page_taxonomy_heuristic).
+    UPDATE public.page_taxonomy t
+       SET category = w.category, updated_at = now()
+      FROM _wix_posts w
+     WHERE w.path = t.path AND t.path = ANY (updated_paths);
+  END IF;
+
+  RETURN NEXT;
+END $function$
+
+
+-- ═══ public.page_taxonomy_theme_from_slug(p_path text) ═══
+CREATE OR REPLACE FUNCTION public.page_taxonomy_theme_from_slug(p_path text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select case
+    when p_path ~* 'garde-.?-vue|gav' then 'garde à vue'
+    when p_path ~* 'violence|f.minicide|conjugal|harc.lement|contr.le-coercitif' then 'violences & harcèlement'
+    when p_path ~* 'indemnis|victime|civi|sarvi|pr.judice|dommage' then 'indemnisation victimes'
+    when p_path ~* 'accident|erreur-m.dicale|route|travail' then 'accidents & réparation'
+    when p_path ~* 'stup.fiant|trafic|drogue' then 'stupéfiants'
+    when p_path ~* 'd.tention|prison|peine|sursis|bracelet|ddse|suret.|am.nagement' then 'peines & détention'
+    when p_path ~* 'affaires|fraude|abus-de|escroquerie|blanchiment|corruption|fiscal' then 'pénal des affaires'
+    when p_path ~* 'famille|divorce|filiation|succession|contrat' then 'famille & contrats'
+    when p_path ~* 'instruction|proc.dure|comparution|tribunal|cour-d|assises|appel|mise-en-examen|t.moin|pr.venu|accus|perquisition|audition' then 'procédure pénale'
+    when p_path ~* 'diffamation|injure|r.putation|presse' then 'réputation & presse'
+    else null
+  end
+$function$
+
+
 -- ═══ public.pages_overview_unified(period_kind text, max_rows integer) ═══
 CREATE OR REPLACE FUNCTION public.pages_overview_unified(period_kind text DEFAULT 'rolling_28'::text, max_rows integer DEFAULT 1000)
  RETURNS TABLE(path text, gsc_clicks bigint, gsc_impressions bigint, gsc_position_avg numeric, gsc_ctr_pct numeric, cooked_sessions bigint, cooked_dwell_avg_s numeric, cooked_bounce_rate numeric, cooked_phone_clicks bigint, cooked_form_submits bigint, cooked_contacts bigint, cooked_booking_intent bigint, cooked_pogo_rate numeric, has_cooked_data boolean)
@@ -4987,20 +5070,8 @@ begin
       and path !~ '[ÃÂ]'                -- mojibake (double encodage)
       and length(path) <= 140           -- tokens/concaténations aberrantes
   ), themed as (
-    select path,
-      case
-        when path ~* 'garde-.?-vue|gav' then 'garde à vue'
-        when path ~* 'violence|f.minicide|conjugal|harc.lement|contr.le-coercitif' then 'violences & harcèlement'
-        when path ~* 'indemnis|victime|civi|sarvi|pr.judice|dommage' then 'indemnisation victimes'
-        when path ~* 'accident|erreur-m.dicale|route|travail' then 'accidents & réparation'
-        when path ~* 'stup.fiant|trafic|drogue' then 'stupéfiants'
-        when path ~* 'd.tention|prison|peine|sursis|bracelet|ddse|suret.|am.nagement' then 'peines & détention'
-        when path ~* 'affaires|fraude|abus-de|escroquerie|blanchiment|corruption|fiscal' then 'pénal des affaires'
-        when path ~* 'famille|divorce|filiation|succession|contrat' then 'famille & contrats'
-        when path ~* 'instruction|proc.dure|comparution|tribunal|cour-d|assises|appel|mise-en-examen|t.moin|pr.venu|accus|perquisition|audition' then 'procédure pénale'
-        when path ~* 'diffamation|injure|r.putation|presse' then 'réputation & presse'
-        else null
-      end as theme
+    -- T-15 : heuristique partagée avec page_taxonomy_sync_wix
+    select path, public.page_taxonomy_theme_from_slug(path) as theme
     from paths
   )
   insert into public.page_taxonomy (path, theme, source)
