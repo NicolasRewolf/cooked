@@ -129,8 +129,8 @@ recalibrée sur les sessions réellement dupliquées, seuil 30).
   vérifier à la première soumission).
 - Reprise 11/06 après-midi : table `annotations` (événements hors-site,
   migration `20260611201942`) ; **catégorie Wix Blog renseignée dans
-  `page_taxonomy`** via l'API Wix MCP (56 `ressource` / 328 `classique`,
-  migration `20260611202556`) ; constat P1 `click_internal.target_path`
+  `page_taxonomy`** via l'API Wix MCP (56 `ressource` / 328 `classique` le 11/06 ;
+  **63 / 374 + 19 sans catégorie au 03/09/2026**, migration `20260611202556` puis synchros) ; constat P1 `click_internal.target_path`
   URL-encodé (101/391 sur 28j) — **RÉSOLU au Sprint 39** (voir ci-dessous).
 
 **Sprint 39 (15-18/06/2026) — consolidation & passage en prod opérationnelle :**
@@ -167,7 +167,7 @@ recalibrée sur les sessions réellement dupliquées, seuil 30).
   Verdict — **l'outil est suffisant, on ne le complexifie pas** : le benchmark
   a montré que « réparer » zv en continu est une impasse vu la rareté des
   contacts (~10/mois **attribuables par page en organique** — le site fait
-  ~170 contacts macro/28 j toutes sources). Le levier est l'**action sur les
+  ~191 contacts macro/28 j toutes sources au 03/09/2026). Le levier est l'**action sur les
   opportunités de contact**, pas une
   v2.3. **On passe en prod opérationnelle : focus site (conversion), plus
   l'outil.**
@@ -211,8 +211,9 @@ après C1–C9 ; tue les fuites SQL restantes :
   `contracts/branded_query_vectors.json`).
 - **`cooked_snapshot_window(w, grain)`** : driver bornes `live_j1` + GSC +
   `cooked_events_window` pour les 3 refreshers dashboard.
-- **`supabase/rpcs.sql`** : miroir lecture des 105 corps RPC (`pg_get_functiondef`) ;
-  gate CI `check_rpcs_sql_fresh.py` si migration redéfinit une RPC.
+- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 134 routines au
+  03/09/2026, régénéré depuis la prod par le workflow `rpcs-regenerate`) ; gate CI
+  `check_rpcs_sql_fresh.py` si migration redéfinit une RPC + prod-drift (sha = prod).
 
 **Revue architecture D4–D9 (10/07 soir, PRs #57–#65)** — chantiers opportunistes
 mergés sur `main` :
@@ -249,7 +250,8 @@ home : n_org 305→164, grade S→A, zv en baisse. Annotation posée dans
 
 Tables d'audit `cpi_pre_restatement_20260712` / `_20260727` : **supprimées le
 10/08/2026** (migration `20260810093206_rangement_post_pivot_secib` — qui
-désarme aussi le VACUUM FULL annuel du 26/07 et crée l'alerte `gbp_gap`).
+désarme aussi le VACUUM FULL annuel du 26/07 et crée l'alerte GBP — kind `gbp_daily_stale`
+depuis le registre du 23/08/2026).
 
 ⚠️ **Restatement CPI du 03/09/2026** (T-05, migration `20260903085351`) : le CPI
 et `gsc_pages_overview` lisent **28 jours clos à `gsc_last_data_day()`** — plus
@@ -354,7 +356,7 @@ Avant toute analyse, dans cet ordre (30 secondes) :
 ```sql
 SELECT * FROM alerts WHERE NOT acked;          -- 1. rien d'anormal ?
 SELECT * FROM refresh_pipeline_health();       -- 2. pipeline healthy ?
-SELECT gsc_last_data_day();                    -- 3. fraîcheur GSC (lag J-2/J-3 normal)
+SELECT gsc_last_data_day();                    -- 3. fraîcheur GSC (lag J-3 normal, warn > 6 j)
 SELECT * FROM cooked_refresh_after_gsc_pending(); -- 4. l'aval (CPI + dashboard) a-t-il suivi l'ingestion ? (T-11)
 ```
 
@@ -372,7 +374,12 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (121 routines au 10/08/2026 — régénéré par `scripts/generate_rpcs_sql.py`) | `supabase/rpcs.sql` |
+| Corps complets des RPC (134 routines au 03/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
+| Glossaire de domaine et invariants (conversions, attribution, lecture, fraîcheur) | `CONTEXT.md` |
+| Décisions d'architecture | `docs/adr/` |
+| PII, secrets, surface d'attaque, invariant I1 | `SECURITY.md` |
+| Mission précision/fiabilité/hygiène du 02/09/2026 (baseline, audit, plan, journal, passation) | `docs/mission-2026-09-02/` |
+| Constantes chiffrées citées par les docs (routines, versions, crons — gardées en CI) | `contracts/doc_constants.json` |
 | Ce qui reste à faire | `docs/ROADMAP.md` |
 | RGPD du pont SECIB (textes à publier, registre, arbitrages ouverts) | `docs/rgpd-pont-secib.md` |
 | État de fiabilité des données (audits) | `docs/audit-fable5-2026-07-02.md` (historique : `docs/data-quality-audit-2026-06-10.md`) |
@@ -659,12 +666,11 @@ Paris (première ingestion réelle).
   `docs/audit-architecture-2026-07-25.md`.
 - Edge `form-webhook` : **v14** (03/09/2026 — T-07 : `form_submit_dropped` via
   `raise_cooked_alert` ; v13 = Pont SECIB ; v12 = D4 ; v11 = drop alert).
-  **Repo à jour, prod encore v13** tant que `supabase functions deploy form-webhook`
-  n'est pas passé.
+  Déployée le 03/09/2026 16:30 Paris (version Supabase 22).
 
 Prod peut lagger : vérifier la version déployée avant d'annoncer un changement
-Edge. Dernier contrôle le 03/09/2026 : `track` **v28** + `form-webhook`
-**v13 en prod** (v14 dans le repo, T-07, pas encore déployée).
+Edge. Dernier contrôle le 03/09/2026 23:30 Paris : `track` **v28** (déployée 09:51) +
+`form-webhook` **v14** (déployée 16:30) — prod = repo.
 
 **Couture d'identité (12/07/2026)** : table `identity_stitch` (sid|aid →
 `visitor_key`, composantes connexes du graphe aid↔sid, cron nocturne 03:40 UTC,
@@ -762,13 +768,32 @@ par 100 une fraction déjà 0‑1 ; `behavior_pages_for_period` a publié un reb
 avec un contract‑test « ok » (mission 02/09/2026, constat d‑01). Exception documentée : les colonnes historiques
 `bounce_rate_7d/28d/90d/365d` de `seo_url_snapshot` sont en pourcentage.
 
+## 🚨 RÈGLE ABSOLUE — Privilèges et constantes (invariants I1 / I13, 03/09/2026)
+
+1. **Toute fonction créée ou remplacée par une migration se termine par**
+   `REVOKE ALL ON FUNCTION … FROM PUBLIC, anon, authenticated; GRANT EXECUTE … TO service_role;`
+   — `FROM public` seul ne suffit pas (default privileges Supabase : récidives du 25/07 et du
+   31/08/2026). `alert_rule_exposure()` (horaire) et `check_prod_drift.py` (CI) listent toute
+   fonction ou vue lisible par `anon`/`authenticated` : une ligne = incident, pas un WARN à justifier.
+2. **Aucune constante chiffrée de doc n'est écrite à la main** (nombre de routines, versions
+   tracker/Edge, crons, règles d'alerte, RPC dashboard) : elle vit dans
+   `contracts/doc_constants.json`, comparé à la prod chaque matin (prod-drift) et aux docs vivants
+   à chaque PR (`scripts/check_docs_constants.py`). Un objet supprimé (fonction, cron, kind
+   d'alerte) sort des docs vivants dans la même PR que sa suppression.
+
+**Pourquoi :** l'audit du 02/09/2026 a compté 4 valeurs différentes pour « nombre de routines »,
+5 crons fantômes documentés avec horaires, un `SECURITY.md` qui affirmait « pas de PII » trois
+semaines après le pivot SECIB, et deux fonctions `SECURITY DEFINER` exécutables par `anon`
+(déjà corrigé le 25/07, revenu le 31/08).
+
 ## 🚨 RÈGLE ABSOLUE — Toujours requêter `events_human`, jamais `events`
 
 **Pour TOUTE requête ad-hoc demandée par Nicolas, je tape `FROM events_human`,
 pas `FROM events`.**
 
 - `events` (table brute) contient les bots et le bruit non filtré → comptes
-  gonflés de ~17 % (parfois plus selon les périodes).
+  gonflés (≈ 17 % en 05/2026 ; 3,7 % le 02/09/2026 après le filtre bots à l'ingestion,
+  15 % le 03/09 le temps que la purge hebdo évacue le bot Baidu sorti par T-04).
 - `events_human` (vue) = `events` − `bot_fingerprints` − `noise_sessions`.
   C'est la base canonique de toutes les analyses business.
 - Toutes les RPCs publiées (`snapshot_pages_export`, `cta_breakdown_for_path`,
@@ -790,7 +815,7 @@ peut me le rappeler avec un simple "events_human" et je dois corriger
 immédiatement la requête.
 
 **Pourquoi cette règle existe :** Nicolas remonte les chiffres à Me Plouton
-(le client) et à Adrien (Nomad Marketing). Un chiffre gonflé de 17 % par
+(le client) et à Adrien (Nomad Marketing). Un chiffre gonflé de 4 à 17 % par
 des bots = une décision business fausse. Le filet anti-bruit a été construit
 exprès pour produire des chiffres propres ; il faut que je le respecte
 systématiquement.
@@ -1107,11 +1132,12 @@ rejouer la synchro Wix, puis migration nommée pour l'upsert.
     `gcloud auth application-default login --scopes=…business.manage,…cloud-platform`
     (les DEUX scopes sont obligatoires, gcloud refuse `business.manage` seul),
     puis secret `GBP_CREDENTIALS_B64` re-poussé ; la fenêtre 30 j du script a
-    rebouché le trou toute seule. **L'alerte de fraîcheur `gbp_gap` n'existe
-    pas encore** (contrairement à `gsc_gap`) — donc les réflexes de démarrage
-    de session ne détectent PAS un pipeline GBP mort : jusqu'à sa création,
-    vérifier `max(day)` de `gbp_daily` avant de livrer un chiffre GBP. Parade
-    durable à la reauth : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`).
+    rebouché le trou toute seule. L'alerte de fraîcheur existe depuis le 10/08
+    (kind **`gbp_daily_stale`** depuis le registre du 23/08 : warn > 7 j, critical
+    > 14 j → ntfy) et sonne depuis le 28/08/2026 : la série s'arrête au **20/08**
+    (migration du projet Google, approbation API redemandée, verdict ~10-15/09).
+    Un chiffre GBP livré aujourd'hui porte sur une série arrêtée — le dire.
+    Parade durable à la reauth : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`).
   - **Requêtes de recherche de la fiche** (sonde du 05/08/2026, endpoint
     `searchkeywords/impressions/monthly`, 12 mois) : 839 mots-clés,
     ~18 100 impressions exactes (+ ~11 000 sous seuil — Google masque les

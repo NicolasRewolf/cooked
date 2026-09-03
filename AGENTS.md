@@ -22,7 +22,11 @@ SELECT gsc_last_data_day();
 
 | Besoin | Fichier |
 |---|---|
-| Corps complets des RPC (121 routines) | [supabase/rpcs.sql](supabase/rpcs.sql) |
+| Corps complets des RPC (134 routines `pg_proc` = 130 Cooked + 4 `unaccent`, régénéré depuis la prod en CI) | [supabase/rpcs.sql](supabase/rpcs.sql) |
+| Glossaire de domaine (conversions, attribution, lecture, fraîcheur, invariants) | [CONTEXT.md](CONTEXT.md) |
+| Décisions d'architecture (ADR) | [docs/adr/](docs/adr/) |
+| Sécurité : PII, secrets, surface d'attaque, invariant I1 | [SECURITY.md](SECURITY.md) |
+| Mission précision/fiabilité/hygiène (02/09/2026) : baseline, audit, plan, journal | [docs/mission-2026-09-02/](docs/mission-2026-09-02/) |
 | Signatures + vues | [supabase/views.sql](supabase/views.sql) |
 | DDL déploiement | [supabase/migrations/](supabase/migrations/) |
 | Couture d'identité (`identity_stitch` : table, `refresh_identity_stitch(90)`, garde-fou aid 32-hex) | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
@@ -51,8 +55,8 @@ SELECT gsc_last_data_day();
 |---|---|---|
 | Tracker | `sprint41` (ids auto-réparants) | Wix Custom Code (minify) — déployé 12/07/2026 |
 | Edge `track` | v28 (T-04 : UA « pc » / SEBot droppés ; v27 = gate `x-cooked-key` ; v26 = filtre bots à l'ingestion) | `supabase functions deploy track` — v28 déployée le 03/09/2026 |
-| Edge `form-webhook` | `v14` (T-07 : `form_submit_dropped` via `raise_cooked_alert`) | repo à jour — **prod encore v13** tant que non redéployé |
-| RPC Postgres | 121 routines (119 fonctions + 2 procédures) | migrations Supabase |
+| Edge `form-webhook` | `v14` (T-07 : `form_submit_dropped` via `raise_cooked_alert`) | déployée le 03/09/2026 16:30 Paris (version Supabase 22) |
+| RPC Postgres | 134 routines `pg_proc` (130 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`, comparé à la prod chaque matin) | migrations Supabase |
 
 **Repo et prod peuvent diverger** tant que Edge / tracker ne sont pas redéployés.
 Toujours vérifier : `props->>'_v'` sur events récents + version commentée en tête

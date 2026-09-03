@@ -12,7 +12,7 @@ AVANT la première analyse d'une session.
 ```sql
 SELECT * FROM alerts WHERE NOT acked;     -- incident en cours ?
 SELECT * FROM refresh_pipeline_health();  -- healthy / issues[]
-SELECT gsc_last_data_day();               -- lag J-2 = normal
+SELECT gsc_last_data_day();               -- lag J-3 = normal (registre : warn > 6 j)
 ```
 
 Un chiffre produit pendant un incident pipeline est un chiffre faux.

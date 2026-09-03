@@ -39,7 +39,7 @@ Format libre, en français ou anglais, **impératif court + contexte** :
 
 ```
 fix(C6): cooked_period_bounds utilise paris_today()
-Arch #5: rpcs.sql miroir des 104 RPC + gate CI fraîcheur
+Arch #5: rpcs.sql régénéré depuis la prod + gate CI fraîcheur
 Docs : synchro arch 10/07 + rpcs.sql
 ```
 
@@ -74,7 +74,9 @@ Docs : synchro arch 10/07 + rpcs.sql
 | `sql-contracts` | C6 pas de cast Paris brut ; C6c pas de `current_date` / `now() - make_interval` (migrations ≥ 20260903093320) ; Arch #5 rpcs.sql à jour |
 | `canonical-path-contract` | SQL / Edge / Python alignés |
 | `python-ingest-contract` | Tests GSC/DFS |
-| `dashboard-contract` | Vitest dashboard (85 tests) |
+| `dashboard-contract` | Vitest dashboard (≈ 145 tests ; + contrat RPC ↔ Zod `rpc-contract.test.ts`, T-13) |
+| `prod-drift` | T-12 : migrations, `rpcs.sql`, crons, exposition anon = prod ; T-13 : contrat dashboard régénéré depuis la prod + échantillons réels parsés par Zod ; T-14 : compteurs de `doc_constants.json` = prod |
+| `docs-check` | T-14 / I13 : constantes, versions, objets fantômes et orphelins des docs vivants (`scripts/check_docs_constants.py`) |
 | `tracker-test` | Suite jsdom tracker |
 | `edge-shared-helpers` | Deno tests `_shared/` (events_row, track_row, form_row) |
 | `gsc-daily-ingest` / `dfs-weekly-sync` / `gbp-daily-ingest` | Crons ingestion (GitHub Actions) |

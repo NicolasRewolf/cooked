@@ -168,6 +168,36 @@ def main() -> int:
             if exposed_fn:
                 failures.append(f"fonctions SECURITY DEFINER exécutables par anon/auth : {exposed_fn}")
 
+            # T-14 / I13 — les compteurs de contracts/doc_constants.json (que les docs vivants
+            # citent, gardés par check_docs_constants.py) sont ceux de la prod.
+            cur.execute(
+                """
+                SELECT
+                  (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = 'public' AND p.prokind IN ('f', 'p')),
+                  (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = 'public' AND p.prokind IN ('f', 'p') AND p.proname NOT LIKE 'unaccent%'),
+                  (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = 'public' AND p.proname LIKE 'alert\\_rule\\_%' AND p.pronargs = 0),
+                  (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = 'public' AND p.proname LIKE 'dashboard\\_%'),
+                  (SELECT count(*) FROM pg_views WHERE schemaname = 'public'),
+                  (SELECT count(*) FROM public.freshness_contract),
+                  (SELECT count(*) FROM public.cooked_ci_cron_jobs() WHERE active)
+                """
+            )
+            live_counts = cur.fetchone()
+            for key, live in zip(
+                ("routines_pg_proc", "routines_cooked", "alert_rules", "dashboard_rpcs",
+                 "views", "freshness_sources", "cron_jobs_count"),
+                live_counts,
+            ):
+                if key in constants and int(constants[key]) != int(live):
+                    failures.append(
+                        f"doc_constants.{key} = {constants[key]} ≠ prod {live} "
+                        f"(mettre à jour contracts/doc_constants.json puis les docs — I13)"
+                    )
+
     if failures:
         print("T-12 prod-drift FAIL:\n")
         for f in failures:

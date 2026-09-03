@@ -227,7 +227,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
   CI rouge.
 - **Qui** : moi. **Estimation** : 3 h.
 
-## T‑14 · Docs : constantes vérifiées, SECURITY.md vrai, ROADMAP à jour, CLAUDE.md sans récit
+## T‑14 · Docs : constantes vérifiées, SECURITY.md vrai, ROADMAP à jour, CLAUDE.md sans récit — **FAIT 03/09 23:55** (PR, journal)
 
 - **Problème** : i‑01…i‑08, f‑06, h‑06, g‑05, g‑07, o‑12.
 - **Changement** : `contracts/doc_constants.json` + `scripts/check_docs_constants.py` (routines, versions, crons,

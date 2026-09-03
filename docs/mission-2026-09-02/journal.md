@@ -576,3 +576,38 @@
   par Zod » et « JSON = prod » se lit dans la CI prod-drift de la PR (secret `DATABASE_URL_RO`, absent en local).
   Validation « 27 RPC dans `latest_rpc_health()` » : à lire après la nuit du 04/09 (03:30 UTC) — attendu 23 + 16
   dashboard + 2 I7 + 1 budget = 42 lignes.
+- 23:24 `[R]` T-13 — CI de la PR #139 : `prod-drift` **vert** au 3ᵉ essai (`generate_dashboard_contracts.py
+  --check` : JSON commité = prod ; 16 échantillons réels parsés par les schémas Zod). Deux corrections
+  entre-temps : ordre de clés canonique / comparaison structurelle (1er échec : dicts égaux, texte différent),
+  puis sérialisation des `numeric` en nombres et des dates en ISO (2ᵉ échec : psycopg2 rend des `Decimal`,
+  PostgREST des nombres). **PR #139 mergée 23:26** ; `rpcs.sql` régénéré (134 routines).
+  **T-13 terminé au sens §3.9** ; reste à lire le 04/09 : `latest_rpc_health()` ≈ 42 lignes après 03:30 UTC.
+
+### T-14 — docs : constantes vérifiées, SECURITY.md vrai, ROADMAP à jour (03/09/2026, 23:27 → 23:55)
+- 23:27 `[F]` Relecture #115, i-01…i-08 / f-06 / h-06 / g-05 / g-07 / o-12 (annexes i-audit, i-refute : 8/8
+  CONFIRMÉS), `SECURITY.md` (07/08), `docs/ROADMAP.md` (10/08), `docs/README.md`, `docs/agents/domain.md`,
+  `cpi-modele-mathematique.md` (annexe SQL 305-415), `dashboard/README.md`, `.env.example`,
+  `dashboard/.env.local.example`, `gh secret list` (7 secrets), `secrets.*` des workflows (8).
+- 23:30 `[R]` **Mesure avant / faits prod** : `pg_proc` public f+p = **134** (130 Cooked + 4 `unaccent`) ;
+  `alert_rule_*` = 17 ; vues = 11 ; `dashboard_*` = 16 ; `freshness_contract` = 14 lignes (13 actives) ;
+  crons = 9 ; tracker attendu `sprint41` ; Edge Supabase : `track` version 38 (déployée 03/09 09:51 Paris =
+  v28), `form-webhook` version 22 (déployée 03/09 16:30 Paris = v14 — la doc disait « prod encore v13ʼ) ;
+  `page_taxonomy` 63 / 374 / 19 sans catégorie ; `crm_prospects` 858 (dernier 03/09 13:28) ;
+  `secib_dossiers` 49 ; `gbp_daily` max 20/08 ; bruit brut vs `events_human` 28 j = 15,1 % (3,7 % le 02/09 :
+  le bot Baidu sorti par T-04 reste dans `events` jusqu'à la purge du 06/09). Valeurs publiées avant :
+  routines 104 / 105 / 121 / 122 (8 fichiers), « 15 RPC + `dashboard_check_stale` », « 88 tests », « lag J-2 »,
+  « 56/328 », « ~170 contacts », « gbp_gap n'existe pas encore » (CLAUDE.md:1110, OPERATIONS.md:512).
+- 23:35 `[W]` `contracts/doc_constants.json` étendu ; `scripts/check_docs_constants.py` (5 contrôles) +
+  `.github/workflows/docs-check.yml` ; `check_prod_drift.py` compare 7 compteurs à la prod (I13 côté prod).
+  Premier run local : 4 échecs légitimes (regex versions trop large sur le récit des sprints — resserrée
+  aux lignes canoniques ; cron `math-refresh-snapshots-weekly` absent d'OPERATIONS — ajouté) → **I13 OK,
+  16 docs vivants**.
+- 23:40 `[W]` `SECURITY.md` réécrit (PII, 13 secrets, surface + vérificateurs, limites) ; `ROADMAP.md`
+  réécrit au 03/09 ; `cpi-modele-mathematique.md` : annexe SQL retirée (415 → 334 lignes), écarts prod
+  listés en tête ; OPERATIONS (registre de fraîcheur, security model I1, cron math, gbp, webhook v14,
+  134 routines) ; CLAUDE.md (règle absolue I1/I13, carte docs +5 lignes, 9 constantes) ; AGENTS,
+  README, CONTRIBUTING, docs/README, domain.md, PLAYBOOK, CONTEXT, HISTORY (+4 lignes), views.sql,
+  rgpd (statut daté 03/09), dashboard/README + `.env.local.example`.
+- 23:50 `[D]` Non fait dans T-14, volontairement : CLAUDE.md n'est pas dégonflé (le prompt interdit d'y
+  ajouter du récit, pas d'en retirer — chantier à part, décision Nicolas) ; l'issue #45 reçoit un
+  commentaire, pas une réouverture (décision produit).

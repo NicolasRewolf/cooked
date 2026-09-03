@@ -3,6 +3,55 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-14 : les docs suivent la prod, et la CI le vérifie
+
+Mission du 02/09/2026, ticket T-14 (#115), constats i-01 (P1), i-02 (P1), i-03…i-08, f-06, h-06,
+g-05, g-07, o-12. Invariant I13. Pas de migration.
+
+### Ajouté
+- **`contracts/doc_constants.json`** étendu (compteurs prod mesurés le 03/09 : 134 routines `pg_proc`
+  = 130 Cooked + 4 `unaccent`, 17 règles d'alerte, 16 RPC dashboard, 11 vues, 14 sources au registre,
+  9 crons ; versions `sprint41` / `track` v28 / `form-webhook` v14 ; liste des docs vivants, objets
+  fantômes interdits, exclusions de l'orphan-check). `check_prod_drift.py` compare désormais ces
+  compteurs à la prod (chaque matin + chaque PR SQL).
+- **`scripts/check_docs_constants.py`** + workflow **`docs-check.yml`** (I13) : nombres près d'un
+  mot-clé (« N routines », « N RPC dashboard », « N règles d'alerte », « N jobs pg_cron ») = JSON ;
+  versions canoniques d'AGENTS.md / CLAUDE.md = JSON ; objets supprimés (`dashboard_check_stale`,
+  crons `refresh-dashboard-*`, `cooked-cpi-daily-snapshot`, `dashboard-stale-check`, anciennes
+  `alert_rule_*`) absents des docs vivants ; chaque cron du JSON cité dans OPERATIONS ; tout `.md` de la
+  racine et de `docs/` référencé par un index.
+- `docs/OPERATIONS.md` : § **Registre de fraîcheur** (seuils des 14 sources, SECIB désactivée), ligne
+  du cron `math-refresh-snapshots-weekly`, modèle de sécurité réécrit (I1).
+- CLAUDE.md : règle absolue « privilèges et constantes » (I1 / I13) ; carte de la documentation
+  complétée (`CONTEXT.md`, `docs/adr/`, `SECURITY.md`, dossier de mission, `doc_constants.json`).
+
+### Corrigé
+- **`SECURITY.md` réécrit sur la prod** : PII en clair dans `crm_prospects` / `secib_dossiers` (où,
+  qui lit, règle de confinement), inventaire complet des secrets (13 lignes — `COOKED_INGEST_KEY`,
+  `NTFY_TOPIC`, `DATABASE_URL_RO`, SECIB… manquaient), surface d'attaque avec ce qui la vérifie
+  (`alert_rule_exposure`, prod-drift), limites connues (garde d'origine forgeable, Edge fail-open si
+  clé vide). La version du 07/08 affirmait « pas de PII », « REVOKE sur toute RPC », « RLS deny-all ».
+- **`docs/ROADMAP.md`** réécrit au 03/09 : tickets de mission ouverts (T-02, T-15→T-20), GBP en panne
+  attendue depuis le 20/08 (verdict Google ~10-15/09), SECIB devis non signé, RGPD en retard
+  (`crm_prospects` 858 lignes), #19 fermée, re-test CPI 56 j à replanifier, chute GSC de juillet à instruire.
+- **`docs/cpi-modele-mathematique.md`** : annexe SQL retirée (dérive de 39 jours — f-06), pointeur vers
+  `rpcs.sql` + contract-tests ; en-tête listant les écarts prod vs v2.2 (grades S, `gsc_is_branded`,
+  fenêtres closes, momentum sur `gsc_path_daily`, `potentiel`).
+- Constantes périmées : « 121 / 119 / 105 / 104 routines » (AGENTS, README, CLAUDE, OPERATIONS,
+  docs/README, HISTORY, views.sql, CONTRIBUTING), « 15 RPC / 16 exposées / `dashboard_check_stale` /
+  crons 04:00-04:16 / 88 tests » (dashboard/README), « lag J-2 normal » (PLAYBOOK, CONTEXT, README
+  dashboard) → J-3, « 56/328 » taxonomie → 63/374 + 19, « ~170 contacts » → 191, « ~17 % de bruit »
+  daté et re-mesuré, « `gbp_gap` n'existe pas encore » (CLAUDE, OPERATIONS) → `gbp_daily_stale`
+  sonne depuis le 28/08, « prod encore v13 » → v14 déployée le 03/09 16:30, `.env.local.example` /
+  README dashboard : la clé publishable « ne lit aucune donnée » devient une propriété vérifiée, pas
+  une affirmation.
+- `docs/README.md` : index complété (SECURITY, CONTEXT, adr/, rgpd, mission, audit du 25/07,
+  framework mathématique), dates de fraîcheur vraies ; `docs/agents/domain.md` ne dit plus que
+  `CONTEXT.md` et `docs/adr/` n'existent pas ; `docs/HISTORY-sprints.md` : lignes 22-23/08, 30-31/08,
+  01/09, 02-03/09.
+- Issue #45 : commentaire de fermeture honnête (fermée le 30/08 sans action — g-05), suivi dans
+  ROADMAP #1.
+
 ## [2026-09-03] — T-13 : le dashboard est sous contrat avec la prod
 
 Mission du 02/09/2026, ticket T-13 (#114), constats g-01 (P1), g-04, g-06, g-08. Invariant I8.

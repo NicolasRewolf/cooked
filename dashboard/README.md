@@ -27,13 +27,14 @@ src/
   app/                   / · /expertises · /seo · /article/[slug] · /login · /auth/{callback,signout}
 ```
 
-**Tests** : `npm test` — 88 tests vitest (view-models, chart-geometry, metric-columns, RPC schemas…).
+**Tests** : `npm test` — ≈ 145 tests vitest (view-models, chart-geometry, metric-columns, RPC schemas, contrat RPC ↔ prod…) ; 16 tests supplémentaires parsent des réponses prod réelles en CI (`prod-drift.yml`, T-13).
 
 ## Données (couche serveur, source de vérité)
-Le dashboard consomme **15 RPC** `service_role` `dashboard_*` (16 exposées en lecture — corps
-complets dans `../supabase/rpcs.sql`) qui figent les leçons de mesure.
+Le dashboard consomme **16 RPC `dashboard_*`** (`service_role` — corps complets dans
+`../supabase/rpcs.sql`, contrat depuis la prod dans `../contracts/dashboard_rpc_columns.json`) qui figent
+les leçons de mesure.
 
-**Appelées par `src/data/dashboard.ts`** (13) :
+**Appelées par `src/data/dashboard.ts`** (14) :
 - `dashboard_honoraires_funnel(period_kind)` — tunnel intention → formulaire sur /honoraires-rendez-vous.
 - `dashboard_resources_overview(period_kind, max_rows)` — 1 ligne / article ressource.
 - `dashboard_resources_kpis(period_kind)` — KPI d'en-tête N vs N-1.
@@ -47,21 +48,22 @@ complets dans `../supabase/rpcs.sql`) qui figent les leçons de mesure.
 - `dashboard_expertises_kpis(period_kind)` — KPI d'en-tête expertises N vs N-1.
 - `dashboard_seo_by_query(period_kind, scope, min_volume, max_rows)` — requêtes + volume DFS.
 - `dashboard_seo_kpis(period_kind, scope)` — totaux SEO calculés SQL (quick wins, 2 niveaux de clics) indépendants du cap du tableau.
+- `dashboard_lab_gsc_weekly(p_weeks)` — onglet Lab : clics/impressions GSC par semaine ISO close et type de page.
 
 **Appelées par `src/data/trend.ts`** (2) : `dashboard_resources_trend(period_kind)` et
 `dashboard_expertises_trend(period_kind)` — séries quotidiennes des sparklines.
 
-**Non consommée par l'app** (1) : `dashboard_check_stale()` — sonde de fraîcheur, appelée par le
-cron pg_cron `dashboard-stale-check` (xx:30 chaque heure).
-
-Les RPC lisent des **snapshots quotidiens** (tables `dashboard_*_snapshot`) — l'agrégation live
-des events était trop lente (~106 s). Refresh par 3 fonctions en cron pg_cron (heures UTC),
-driver `cooked_snapshot_window`, lens `live_j1` = fenêtre close à J-1 Paris :
-- `refresh_dashboard_snapshots(p_window)` — **04:00** (articles + SEO) ;
-- `refresh_dashboard_expertises_snapshots(p_window)` — **04:12** (timeout 590 s) ;
-- `refresh_dashboard_resources_assisted(p_window)` — **04:16** (timeout 590 s) ; dépend de la
-  table `identity_stitch`, reconstruite chaque nuit à **03:40** par le cron
-  `refresh-identity-stitch` (90 j glissants).
+Les RPC lisent des **snapshots** (tables `dashboard_*_snapshot`) — l'agrégation live des events
+était trop lente (~106 s). Ils sont rafraîchis par **un seul orchestrateur**, `cooked_refresh_after_gsc()`
+(cron `cooked-refresh-after-gsc`, tick horaire `0 6-21 * * *` UTC, T-11) qui ne tourne que si une
+ingestion Google Search Console plus récente que le dernier refresh complet est arrivée
+(`cooked_refresh_after_gsc_pending()`), quelle que soit son heure — l'ingestion est planifiée 06:00 UTC
+mais part avec +4 à +12 h de dérive depuis fin août. Séquence (≈ 25 min, durées dans `refresh_runs`) :
+`cooked_cpi_snapshot` → `refresh_dashboard_snapshots` (articles + SEO) →
+`refresh_dashboard_expertises_snapshots` → `refresh_dashboard_resources_assisted` (dépend de
+`identity_stitch`, reconstruite chaque nuit à 03:40 UTC par `refresh-identity-stitch`, 90 j glissants) →
+`refresh_dashboard_assisted_quarter`. Driver `cooked_snapshot_window`, lens `live_j1` = fenêtre close à J-1
+Paris : le matin le dashboard montre J-2, l'après-midi J-1 — le bandeau de fraîcheur le dit (T-10).
 - `refresh_dashboard_assisted_quarter()` — 5ᵉ étape de `cooked_refresh_after_gsc` (timeout 600 s) ;
   table `dashboard_assisted_quarter_snapshot`. `dashboard_assisted_quarter()` **lit** ce snapshot
   (< 1 s). Fenêtre trimestre close à J-1. Les contacts `(non attribuable)` n'y entrent pas
@@ -189,7 +191,7 @@ npm run dev                        # http://localhost:3000
 | Var | Rôle | Exposée navigateur ? |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | URL projet | oui (sûr) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | flux auth uniquement | oui (sûr, RLS deny-all) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | flux auth uniquement | oui — flux auth seulement ; ne doit lire **aucune** donnée : RLS deny-all + `REVOKE`, vérifié par `alert_rule_exposure()` et la CI prod-drift (T-01, 02/09/2026 — deux objets étaient lisibles avant) |
 | `SUPABASE_SECRET_KEY` | lecture des données (`sb_secret_…`) | **NON — serveur only** |
 | `DASHBOARD_ALLOWED_EMAILS` | allowlist (séparée par virgules) | non |
 
@@ -231,5 +233,5 @@ re-vérifie via `requireUser()` (`src/lib/auth.ts`). Côté Supabase (projet `mx
 - **Magic-link** : `signInWithOtp` reçoit `shouldCreateUser: false` (`src/lib/otp.ts`) — un e-mail
   hors allowlist ne crée pas de compte et ne consomme pas le quota d'e-mails, quel que soit le
   réglage console.
-- Le bandeau de fraîcheur affiche le décalage Google (lag J-2 normal) — le dashboard dit toujours à
+- Le bandeau de fraîcheur affiche la fin des données site (`cooked_end`) et le décalage Google (lag J-3 normal) — le dashboard dit toujours à
   quel point il est à jour.
