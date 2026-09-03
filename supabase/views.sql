@@ -22,13 +22,15 @@
 --   Opportunité de contact (ex-gisement, norme 23/07/2026) : relit le dernier
 --   cpi_daily, sépare potentiel (hors conversion) du badge convertit.
 --   Filtrer grade IN ('S','A','B') AND NOT convertit.
+--   T-06 (03/09/2026, f-07) : potentiel = cpi_compose(zc, zr, zl, 0, 1, 1, true) — hors
+--   momentum et hors gate (avant : × momentum × gate, 7 opportunités sur 16 déplacées ≥ 3 rangs).
 CREATE OR REPLACE VIEW public.cpi_opportunite_contact AS
  SELECT path,
     ptype,
     grade,
     n_org,
     cpi,
-    round(public.cpi_compose(zc, zr, zl, 0::numeric, momentum, gate, true))::integer AS potentiel,
+    round(public.cpi_compose(zc, zr, zl, 0::numeric, 1::numeric, 1::numeric, true))::integer AS potentiel,
     coalesce(convertit, false) AS convertit,
     zc,
     zr,

@@ -108,6 +108,13 @@ nombre sans ses composantes.
 `momentum` ∈ [0,71-1,40] : tendance clics **relative au site** (une marée qui
 baisse partout ne punit personne) ; **transition continue** entre régime
 position (peu de clics) et régime clics relatif (v2.2 — fin du saut à 20 clics).
+**Source des clics (depuis le 03/09/2026, T-06, option (b))** : `gsc_path_daily`
+— la source complète — **moins les clics brandés que Google révèle** dans
+`gsc_query_page_daily` (≈ total non brandé). Du 25/07 au 03/09/2026 le momentum
+ne lisait que la traîne révélée non brandée, soit 16 à 28 % des clics réels
+d'une page : 15 des 47 pages fiables avaient une direction inverse à leurs
+clics. Le terme position reste calculé sur les requêtes révélées non brandées
+(une position n'a de sens que requête par requête).
 `couv_gsc_pct` : part des impressions dont Google révèle la requête (peut
 descendre à 6 % — d'où le scaling v2.1).
 
@@ -231,9 +238,31 @@ CPI d'avant/après ces dates revient à comparer deux définitions**, pas une
   organiques attribuables/mois), 3 badges `convertit` changent, CPI pondéré
   trafic 45,6 → 45,7. Le CPI n'a plus aucune borne d'horloge.
 
+- **03/09/2026 — momentum sur la source complète des clics** (ticket T-06 de
+  la mission du 02/09, migration `20260903101652`, décision Nicolas : option
+  (b)). `c1`/`c0` = `gsc_path_daily` moins les clics brandés révélés, au lieu
+  de `gsc_query_page_daily` non brandé (16-28 % des clics réels ; 15 des 47
+  pages fiables en direction inverse de leurs clics). Photo avant/après du
+  même jour, mêmes données GSC : 175 pages → 175, **seul le momentum bouge**
+  (132 pages ; zc/zr/zl/zv/gate identiques), delta moyen **+3,7 pts**, médiane
+  |Δ| 4, **0 changement de grade**, 31 movers ≥ 15 pts dont 8 fiables
+  (notre-cabinet 62→100, indemnisation-accident-moto 52→87,
+  interdiction-de-gérer 56→80, assurance-perte-exploitation 43→61,
+  5-8-millions-notaires 34→52, garde-à-vue-ou-audition-libre 23→40 ;
+  abus-de-confiance 81→64, indemnisation-civi 80→60), CPI pondéré trafic
+  45,7 → 45,9. Contrefactuel rejoué : **0 page fiable en direction inverse**.
+  Deux choses à savoir pour lire ces momentums : (1) les clics GSC du site ont
+  chuté de ~40 % fin juillet (≈ 2 300/sem → ≈ 1 350/sem depuis le 27/07) —
+  le momentum étant relatif au site, une page stable apparaît « ↗ » ; (2) sur
+  `/notre-cabinet` et la home, les clics brandés **non révélés** restent dans
+  le total : biais de marque résiduel, borné à ces deux pages.
+  `cpi_opportunite_contact.potentiel` ne dépend plus du momentum ni du gate ;
+  `cpi_drop` ignore une page dont les clics réels (`gsc_path_daily`, 7 j vs
+  7 j) montent.
+
 Tables d'audit : `cpi_pre_restatement_20260712` et `_20260727` (supprimées le
-10/08/2026), `cpi_pre_restatement_20260903` (phases `t05_avant` / `t09_avant`,
-à supprimer au ticket T-19).
+10/08/2026), `cpi_pre_restatement_20260903` (phases `t05_avant` / `t09_avant` /
+`t06_avant`, à supprimer au ticket T-19).
 
 ## v2.2 — analyses d'impact (instruites le 10/06/2026, AVANT tout code)
 

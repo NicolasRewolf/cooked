@@ -381,3 +381,42 @@
   arbre scripts), cpi doc (en-tête + §Ruptures), CONTRIBUTING (C6c), workflow `sql-contracts.yml`.
 - 11:45 `[D]` À reporter : commentaire interne de `cooked_refresh_after_gsc` périmé (T-14) ; `cpi_drop` peut sonner sur
   les 6 movers du 03/09 — annotation posée, périmètre T-07 ; DROP de `cpi_pre_restatement_20260903` au T-19.
+
+### Décisions Nicolas — 03/09/2026 12:0x
+- 12:02 `[D]` **T-06** : option **(b)** retenue (momentum sur `gsc_path_daily` total moins les clics brandés révélés par
+  qpd), question posée en clair (« sur quoi le momentum doit-il se baser ? »), réponse Nicolas 03/09/2026 ~12:02.
+- 12:02 `[D]` **T-08** : **pas d'objectif trimestriel pour l'instant** — la ligne « Contacts nourris par les articles »
+  affiche le compteur seul (clé `objectif_assistes_trimestre` laissée absente ; repères donnés : 110 / 90 j, 33 / 28 j).
+  Le reste de T-08 (bucket « non attribuable », snapshot au lieu du calcul à l'affichage — `dashboard_assisted_quarter()`
+  **dépasse les 30 s aujourd'hui** : ligne masquée, constaté 11:58) reste à faire, sans décision bloquante.
+
+### T-06 — momentum du CPI sur la source complète (03/09/2026, 12:05 → 12:35)
+- 12:05 `[R]` Relecture f-01/f-07, corps `cooked_page_index` (CTE `mom` sur `gsc_query_page_daily` non brandé), vue
+  `cpi_opportunite_contact` (potentiel × momentum × gate), `alert_rule_cpi_drop`, `cpi_movers`.
+- 12:08 `[M]` **Mesure avant** (cpi_daily du jour = après T-09, GSC clos au 30/08) : couverture du momentum (clics qpd non
+  brandé / clics totaux) = 28 % (S), 19 % (A), 18 % (B), 12 % (C). Direction du momentum vs clics réels non brandés :
+  **15 pages fiables sur 47 en direction inverse** (2 S, 1 A, 12 B) — le contrefactuel de l'audit se reproduit.
+  Contrôle par semaine des clics GSC : **chute réelle de ~40 % fin juillet** (2 155 → 1 463 sem. du 27/07, ≈ 1 350/sem.
+  depuis) — pas une double ingestion (7 jours × ~2 000 lignes chaque semaine). Non expliqué, hors périmètre T-06, noté.
+- 12:12 `[A]` Migration `20260903101159_t06_photo_avant_cpi` : phase `t06_avant` (175 lignes).
+- 12:14 `[A]` Migration `20260903101652_t06_momentum_source_complete` (1er essai refusé : `pg_get_functiondef` ne termine
+  pas par `;` — générateur corrigé, rien d'appliqué, atomique). Contenu : `mom` = `momf` (gsc_path_daily) − `momb`
+  (brandé révélé), position `momp` inchangée ; `cpi_opportunite_contact.potentiel = cpi_compose(zc,zr,zl,0,1,1,true)` ;
+  `alert_rule_cpi_drop` + `NOT EXISTS` clics réels 7 j > 7 j précédents ; contract-tests `cpi_momentum_source_complete`
+  (≥ 1) et `potentiel_sans_momentum_gate` (= 0) — **ok / ok** au premier run ; `alert_rule_cpi_drop()` s'exécute sans
+  erreur (aucun cpi_drop à cet instant).
+- 12:17 `[A]` Migration `20260903101736_t06_photo_apres_cpi` : cron one-shot 10:22 UTC → `succeeded` (12:22:00 →
+  ~12:23:30 Paris), désarmé.
+- 12:25 `[M]` **Mesure après** (même jour, mêmes données GSC) : 175 → 175 pages ; **seul le momentum bouge** (132 pages ;
+  zc/zr/zl/zv/gate identiques sur les 175) ; delta CPI moyen **+3,7**, médiane |Δ| 4 ; **0 changement de grade** ;
+  31 movers ≥ 15 dont **8 fiables** (notre-cabinet 62→100, accident-moto 52→87, interdiction-de-gérer 56→80,
+  assurance-perte-exploitation 43→61, 5-8-millions-notaires 34→52, garde-à-vue-ou-audition-libre 23→40 ;
+  abus-de-confiance 81→64, indemnisation-civi 80→60) ; CPI pondéré trafic 45,7 → 45,9 ; momentum moyen 1,065 → 1,139
+  (le site baisse de 40 %, une page stable est « ↗ » — c'est le sens du momentum relatif).
+  **Contrefactuel rejoué : 0 page fiable en direction inverse** (critère de validation du plan atteint).
+  Limite documentée : `/notre-cabinet` (48 → 56 clics totaux, 2 clics non brandés révélés par fenêtre) — les clics brandés
+  non révélés restent dans le total, biais de marque résiduel borné à cette page et à la home.
+- 12:30 `[A]` Migration `20260903102532_t06_annotation_restatement_momentum` (annotation posée, I10).
+- 12:33 `[R]` `rpcs.sql` resynchronisé (3 corps, md5 identiques à la prod), `views.sql`, méta ; CHANGELOG, CLAUDE.md,
+  OPERATIONS (table des restatements), doc CPI (source du momentum + rupture de série).
+- Reste (T-06) : PR + merge ; vérifier demain (04/09) que `cpi_drop` ne sonne pas sur une page dont les clics montent.
