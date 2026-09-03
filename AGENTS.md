@@ -22,7 +22,7 @@ SELECT gsc_last_data_day();
 
 | Besoin | Fichier |
 |---|---|
-| Corps complets des RPC (136 routines `pg_proc` = 132 Cooked + 4 `unaccent`, régénéré depuis la prod en CI) | [supabase/rpcs.sql](supabase/rpcs.sql) |
+| Corps complets des RPC (137 routines `pg_proc` = 133 Cooked + 4 `unaccent`, régénéré depuis la prod en CI) | [supabase/rpcs.sql](supabase/rpcs.sql) |
 | Glossaire de domaine (conversions, attribution, lecture, fraîcheur, invariants) | [CONTEXT.md](CONTEXT.md) |
 | Décisions d'architecture (ADR) | [docs/adr/](docs/adr/) |
 | Sécurité : PII, secrets, surface d'attaque, invariant I1 | [SECURITY.md](SECURITY.md) |
@@ -56,7 +56,7 @@ SELECT gsc_last_data_day();
 | Tracker | `sprint41` (ids auto-réparants) | Wix Custom Code (minify) — déployé 12/07/2026 |
 | Edge `track` | v28 (T-04 : UA « pc » / SEBot droppés ; v27 = gate `x-cooked-key` ; v26 = filtre bots à l'ingestion) | `supabase functions deploy track` — v28 déployée le 03/09/2026 |
 | Edge `form-webhook` | `v14` (T-07 : `form_submit_dropped` via `raise_cooked_alert`) | déployée le 03/09/2026 16:30 Paris (version Supabase 22) |
-| RPC Postgres | 136 routines `pg_proc` (132 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`, comparé à la prod chaque matin) | migrations Supabase |
+| RPC Postgres | 137 routines `pg_proc` (133 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`, comparé à la prod chaque matin) | migrations Supabase |
 
 **Repo et prod peuvent diverger** tant que Edge / tracker ne sont pas redéployés.
 Toujours vérifier : `props->>'_v'` sur events récents + version commentée en tête

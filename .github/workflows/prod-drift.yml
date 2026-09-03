@@ -17,6 +17,9 @@ on:
       - 'contracts/dashboard_rpc_columns.json'
       - 'dashboard/src/data/rpc-schemas.ts'
       - 'dashboard/src/data/rpc-contract.test.ts'
+      - 'contracts/normalize_vectors.json'
+      - 'scripts/check_normalize_vectors.py'
+      - 'scripts/secib_ingest.py'
       - 'scripts/generate_rpcs_sql.py'
       - '.github/workflows/prod-drift.yml'
   workflow_dispatch:
@@ -39,6 +42,10 @@ jobs:
             echo "::error::Si Network unreachable / IPv6 : DATABASE_URL_RO doit utiliser le pooler Session (IPv4), ex. postgresql://cooked_ci_ro.<PROJECT_REF>:…@aws-0-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require"
             exit 1
           }
+      - name: T-16 — vecteurs de normalisation SQL = Python (I12)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_RO }}
+        run: python3 scripts/check_normalize_vectors.py
       - name: T-13 — contrat RPC dashboard régénéré depuis la prod + échantillons réels
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_RO }}

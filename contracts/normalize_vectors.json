@@ -1,0 +1,21 @@
+{
+  "_note": "T-16 (mission 02/09/2026) — vecteurs partagés des fonctions de normalisation du pont SECIB. SQL : cooked_normalize_email / cooked_normalize_phone_fr ; Python : scripts/secib_ingest.py normalize_email / normalize_phone_fr. Vérifiés des deux côtés en CI (scripts/check_normalize_vectors.py, tests/test_secib_ingest.py). Toute évolution = ici d'abord.",
+  "email": [
+    {"in": " Jean.Dupont@Example.com ", "out": "jean.dupont@example.com"},
+    {"in": "a b@c.fr", "out": "ab@c.fr"},
+    {"in": "", "out": null},
+    {"in": null, "out": null}
+  ],
+  "phone_fr": [
+    {"in": "06 12 34 56 78", "out": "+33612345678"},
+    {"in": "06.12.34.56.78", "out": "+33612345678"},
+    {"in": "+33 6 12 34 56 78", "out": "+33612345678"},
+    {"in": "0033612345678", "out": "+33612345678"},
+    {"in": "+33 (0)6 12 34 56 78", "out": "+33612345678", "note": "e-05 : (0) après l'indicatif — cassait des deux côtés avant T-16"},
+    {"in": "00 33 (0)6 12 34 56 78", "out": "+33612345678"},
+    {"in": "+41 79 123 45 67", "out": "+41791234567"},
+    {"in": "12345", "out": null},
+    {"in": "", "out": null},
+    {"in": null, "out": null}
+  ]
+}

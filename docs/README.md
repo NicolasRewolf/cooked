@@ -10,7 +10,7 @@ Carte de la documentation. **Racine du repo** (standard mainteneur) :
 ### Opérer & analyser
 - [`OPERATIONS.md`](OPERATIONS.md) — architecture, events captés, RPCs publiées, crons, déploiement, dépannage.
 - [`PLAYBOOK-analyse-seo.md`](PLAYBOOK-analyse-seo.md) — recettes d'analyse SEO × GSC et les pièges déjà payés.
-- [`../supabase/rpcs.sql`](../supabase/rpcs.sql) — miroir lecture des **136 corps de RPC** (régénéré depuis la prod par le workflow `rpcs-regenerate`, gate CI Arch #5 + prod-drift T-12).
+- [`../supabase/rpcs.sql`](../supabase/rpcs.sql) — miroir lecture des **137 corps de RPC** (régénéré depuis la prod par le workflow `rpcs-regenerate`, gate CI Arch #5 + prod-drift T-12).
 - [`rgpd-pont-secib.md`](rgpd-pont-secib.md) — RGPD du pont SECIB : textes à publier, registre, arbitrages ouverts.
 - [`adr/`](adr/) — décisions d'architecture (ADR-0001 source unique de la profondeur de lecture, ADR-0002 registre des contrats de fraîcheur).
 - [`mission-2026-09-02/`](mission-2026-09-02/) — mission précision/fiabilité/hygiène : [`00-baseline.md`](mission-2026-09-02/00-baseline.md), [`01-audit.md`](mission-2026-09-02/01-audit.md) (86 constats, 7 causes racines, 13 invariants), [`02-plan.md`](mission-2026-09-02/02-plan.md) (22 tickets), [`journal.md`](mission-2026-09-02/journal.md), [`03-passation.md`](mission-2026-09-02/03-passation.md).

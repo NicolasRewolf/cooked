@@ -68,8 +68,8 @@ PAGE_SIZE = 50  # maximum accepté par l'API
 
 # ---------------------------------------------------------------------------
 # Normalisation — MIROIR STRICT des fonctions SQL cooked_normalize_email /
-# cooked_normalize_phone_fr (migration 20260810082433_secib_pont_fondations).
-# Toute évolution doit se faire des deux côtés.
+# cooked_normalize_phone_fr (migration 20260810082433_secib_pont_fondations ; v2 T-16 20260903).
+# Toute évolution doit se faire des deux côtés — vecteurs partagés : contracts/normalize_vectors.json.
 # ---------------------------------------------------------------------------
 
 
@@ -86,6 +86,11 @@ def normalize_phone_fr(raw: str | None) -> str | None:
     d = re.sub(r"[^0-9]", "", raw)
     if not d:
         return None
+    # T-16 (e-05) : « +33 (0)6 … » / « 00 33 (0)6 … » — le (0) après l'indicatif
+    if d.startswith("00330") and len(d) == 14:
+        return "+33" + d[5:]
+    if d.startswith("330") and len(d) == 12:
+        return "+33" + d[3:]
     if d.startswith("0033") and len(d) == 13:
         return "+33" + d[4:]
     if d.startswith("33") and len(d) == 11:
