@@ -3,6 +3,26 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-08 : les contacts qu'on ne rattache pas sont comptés, le trimestre ne bloque plus le dashboard
+
+Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-08 (#109), constats c-03 (P1) et g-02 (P1).
+Décision Nicolas (03/09/2026) : **pas d'objectif trimestriel** pour l'instant.
+
+### Corrigé
+- **12 contacts macro / 28 j disparaissaient** (`assisted_contacts_by_entry_path` : 179 vs 191). Cause : les
+  formulaires sans `cooked_sid`/`cooked_aid` étaient exclus, et un `JOIN LATERAL` jetait tout contact sans visite
+  appariée. Désormais ils apparaissent sur la ligne **`(non attribuable)`**. Mesure 03/09 (06/08→02/09) :
+  **191 = 191**, dont 12 non attribuables. Migration `20260903114751`.
+- **`dashboard_assisted_quarter` recalculait le trimestre à chaque chargement** (timeout 30 s, ligne masquée).
+  Elle lit un snapshot (`dashboard_assisted_quarter_snapshot`) rafraîchi après l'ingest GSC, fenêtre close à
+  hier. La home affiche « objectif indisponible » si la lecture échoue, au lieu de cacher la ligne.
+  Premier remplissage : le trimestre (01/07→02/09) dépasse 180 s — timeout porté à 600 s
+  (migration `20260903120048`). Snapshot T3 2026 = **94** (01/07→02/09) ; lecture **3 ms**.
+
+### Invariant livré (I4 / I8)
+- `assistes_plus_non_attribuables_eq_site` : Σ assistés = `site_macro_counts` sur `live_j1`, écart 0.
+- Les 15 RPC `dashboard_*` sont sous `run_rpc_contract_tests`.
+
 ## [2026-09-03] — T-06 : le momentum du CPI voit tous les clics, le potentiel ne dépend plus du momentum
 
 Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-06 (#107), constats f-01 (P1) et f-07. Décision Nicolas

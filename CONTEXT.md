@@ -142,6 +142,10 @@ c'est le sens de `acked` : « vu, je gère ».
   ✅ Résolu le 25/07/2026 : `dashboard_assisted_quarter` lit désormais
   `assisted_contacts_by_entry_path` (visite recousue via `identity_stitch`),
   migration `20260725220100_audit_assisted_contacts_unified`.
+  Depuis T-08 (03/09/2026) : elle lit un **snapshot** nocturne (plus de calcul
+  à l'affichage) ; les forms sans identifiant sont sur la ligne `(non attribuable)`
+  — comptés dans le total site, pas dans le compteur ressources. Pas d'objectif
+  trimestriel posé.
 - **« sur la page » et « à l'entrée » ne se somment jamais** et ne partagent
   jamais un libellé nu « contacts ». Toujours qualifier lequel des deux.
 - **Conversion = macro uniquement.** Le booking (micro, intention) n'entre

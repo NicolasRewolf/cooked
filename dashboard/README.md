@@ -39,7 +39,7 @@ complets dans `../supabase/rpcs.sql`) qui figent les leçons de mesure.
 - `dashboard_resources_kpis(period_kind)` — KPI d'en-tête N vs N-1.
 - `dashboard_resources_assisted(period_kind)` — contacts assistés par article (voir ci-dessous).
 - `dashboard_resources_cohorts()` — cohortes mensuelles (clics cumulés depuis la 1re impression GSC).
-- `dashboard_assisted_quarter()` — contacts assistés du trimestre vs objectif (`cooked_config`).
+- `dashboard_assisted_quarter()` — contacts assistés ressources du trimestre (snapshot clos à J-1 ; pas d'objectif posé).
 - `dashboard_article_detail(p_path, period_kind)` — fiche `/article/[slug]`.
 - `dashboard_annotations(period_kind)` — interventions/événements de la table `annotations`.
 - `dashboard_intervention_effect(p_path, p_day)` — avant/après GSC d'une intervention (marée soustraite).
@@ -62,6 +62,11 @@ driver `cooked_snapshot_window`, lens `live_j1` = fenêtre close à J-1 Paris :
 - `refresh_dashboard_resources_assisted(p_window)` — **04:16** (timeout 590 s) ; dépend de la
   table `identity_stitch`, reconstruite chaque nuit à **03:40** par le cron
   `refresh-identity-stitch` (90 j glissants).
+- `refresh_dashboard_assisted_quarter()` — 5ᵉ étape de `cooked_refresh_after_gsc` (timeout 600 s) ;
+  table `dashboard_assisted_quarter_snapshot`. `dashboard_assisted_quarter()` **lit** ce snapshot
+  (< 1 s). Fenêtre trimestre close à J-1. Les contacts `(non attribuable)` n'y entrent pas
+  (JOIN `page_taxonomy` ressources seulement). Pas d'objectif posé (`objectif_assistes_trimestre`
+  absent).
 
 Garanties intégrées : visiteurs **uniques** (pas sessions), spam **Baidu exclu** (filtrage
 inline dans les RPC `dashboard_*` ; la vue `events_human_clean` d'origine a été dropée), lecture sur
@@ -83,6 +88,12 @@ passer les contacts assistés « ressource » 28 j de **16 → 37** — le bug d
 (corrigé côté tracker en `sprint41`) coupait ~22 % des sessions et masquait l'amont des contacts.
 Garde-fou hérité de `refresh_identity_stitch` : ne **jamais** coudre via un `anonymous_id` 32-hex
 (fallback serveur hash IP|UA, partageable entre visiteurs).
+
+Depuis T-08 (03/09/2026) : les formulaires sans `cooked_sid`/`cooked_aid` et les contacts sans
+visite appariée apparaissent sur la ligne **`(non attribuable)`** de `assisted_contacts_by_entry_path`
+(Σ = totaux site). Cette ligne **n'entre pas** dans le tableau ressources ni dans le compteur
+trimestre (JOIN `page_taxonomy` catégorie ressource). Phrase de lecture : « les formulaires sans
+identifiant sont désormais comptés à part ».
 
 ### Facteurs de pilotage (migration `20260630133301_dashboard_pilotage_factors`, 30/06/2026)
 Pour répondre à « est-ce que ça va ou pas ? » au niveau de chaque ligne (et pas juste des KPI

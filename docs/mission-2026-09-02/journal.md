@@ -420,3 +420,25 @@
 - 12:33 `[R]` `rpcs.sql` resynchronisé (3 corps, md5 identiques à la prod), `views.sql`, méta ; CHANGELOG, CLAUDE.md,
   OPERATIONS (table des restatements), doc CPI (source du momentum + rupture de série).
 - Reste (T-06) : PR + merge ; vérifier demain (04/09) que `cpi_drop` ne sonne pas sur une page dont les clics montent.
+
+### T-08 — assistés non attribuables + snapshot trimestre (03/09/2026, 11:47 → 14:12)
+- 11:47 `[M]` **Mesure avant** (06/08→02/09, live_j1) : `site_macro_counts` / `conversion_journeys` = **191** ;
+  `assisted_contacts_by_entry_path` = **179**, bucket `(non rattaché)` = 0. Écart = **12 forms macro** sans
+  `cooked_sid`/`cooked_aid`. `dashboard_assisted_quarter` timeout 30 s (recalcule le trimestre à l'affichage).
+- 11:47 `[A]` Migrations `20260903114723` (no-op, appliquée par erreur — conservée pour parité) puis
+  `20260903114751` (LEFT JOIN + ligne `(non attribuable)`, table snapshot, refresh 180 s, lecture 5 s) ;
+  `20260903114815` (`cooked_refresh_after_gsc` 5ᵉ étape) ; `20260903114857` (I4 + 15 `dashboard_*`) ;
+  `20260903114858` (one-shot 11:55 UTC).
+- 11:53 `[M]` **I4 après** : 191 = 191, dont 12 `(non attribuable)`, écart 0. Contract-test
+  `assistes_plus_non_attribuables_eq_site` **ok** (73 s).
+- 13:55 `[W-PROD]` One-shot 11:55 UTC **failed 57014** à 180 s exact (CREATE TEMP `_pvk` sur 01/07→02/09).
+  28 j = 73 s ; trimestre ≈ 2,3× → ~170 s, trop juste. Job encore actif (unschedule non atteint).
+- 14:00 `[A]` Migration `20260903120048` : timeout refresh **600 s**, assisted **300 s** ; unschedule + retry
+  12:06 UTC avec `SET statement_timeout='600s'` dans la commande cron (le SET fonction n'arme pas le timer
+  pg_cron — retex 01/07).
+- 14:06 `[M]` Retry **succeeded** 14:06:00→14:09:30 Paris (**210 s**), job désarmé. Snapshot T3 2026 :
+  **94** (01/07→02/09, target NULL). `dashboard_assisted_quarter()` **3 ms**, status ok.
+- 14:10 `[A]` Annotation I10 `20260903121037`. Advisors : 0 ERROR ; nouvelle table snapshot en RLS deny-all
+  sans policy (même pattern que les autres `dashboard_*_snapshot`).
+- Décision Nicolas 12:02 : **pas d'objectif** (`objectif_assistes_trimestre` absent). Le compteur ressources
+  n'inclut pas les 12 `(non attribuable)` (JOIN `page_taxonomy`).
