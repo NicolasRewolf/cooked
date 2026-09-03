@@ -349,6 +349,75 @@ END;
 $function$
 
 
+-- ═══ public.alert_rule_identity_stitch() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_identity_stitch()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_rows  bigint;
+  v_at    timestamptz;
+  v_age_h numeric;
+  v_j1    date;
+  v_tot   bigint;
+  v_miss  bigint;
+BEGIN
+  SELECT count(*) INTO v_rows FROM public.identity_stitch;
+  IF v_rows = 0 THEN
+    kind := 'identity_stitch_empty'; severity := 'critical';
+    detail := 'identity_stitch est VIDE : conversion_journeys, assisted_contacts_by_entry_path, seo_to_contact_funnel et les snapshots dashboard retombent sur la session brute (contacts assistés sous-comptés). Relancer : SELECT public.refresh_identity_stitch(90); puis lire cron.job_run_details du job refresh-identity-stitch.';
+    RETURN NEXT; RETURN;
+  END IF;
+
+  SELECT nullif(btrim(value), '')::timestamptz INTO v_at
+  FROM public.cooked_config WHERE key = 'identity_stitch_refreshed_at';
+
+  IF v_at IS NULL THEN
+    kind := 'identity_stitch_stale'; severity := 'critical';
+    detail := format('Couture d''identité sans horodatage (clé cooked_config.identity_stitch_refreshed_at absente) : %s lignes d''âge inconnu. Relancer : SELECT public.refresh_identity_stitch(90);', v_rows);
+    RETURN NEXT; RETURN;
+  END IF;
+
+  v_age_h := extract(epoch FROM (now() - v_at)) / 3600.0;
+  IF v_age_h > 30 THEN
+    kind := 'identity_stitch_stale';
+    severity := CASE WHEN v_age_h > 54 THEN 'critical' ELSE 'warn' END;
+    detail := format('Couture d''identité reconstruite il y a %s h (dernière : %s Paris, %s lignes) — attendue chaque nuit à 05:40 Paris (cron refresh-identity-stitch). conversion_journeys, assisted_contacts_by_entry_path et seo_to_contact_funnel lisent une couture périmée. Relancer : SELECT public.refresh_identity_stitch(90);',
+                     round(v_age_h), to_char(v_at AT TIME ZONE 'Europe/Paris', 'DD/MM/YYYY HH24:MI'), v_rows);
+    RETURN NEXT; RETURN;
+  END IF;
+
+  -- Couverture : une fois la reconstruction du jour faite, chaque session humaine de J-1
+  -- (hors webhook, hors aid 32-hex — jamais cousu, garde-fou du 12/07/2026) doit être cousue.
+  IF public.paris_date(v_at) = public.paris_today() THEN
+    v_j1 := public.paris_today() - 1;
+    WITH s AS (
+      SELECT DISTINCT session_id
+      FROM public.events_human
+      WHERE public.paris_date(occurred_at) = v_j1
+        AND anonymous_id NOT LIKE 'webhook-%'
+        AND anonymous_id !~ '^[0-9a-f]{32}$'
+    )
+    SELECT count(*),
+           count(*) FILTER (WHERE NOT EXISTS (
+             SELECT 1 FROM public.identity_stitch i WHERE i.kind = 'sid' AND i.key = s.session_id))
+    INTO v_tot, v_miss
+    FROM s;
+
+    IF v_miss > 0 THEN
+      kind := 'identity_stitch_coverage'; severity := 'warn';
+      detail := format('%s session(s) humaine(s) de J-1 (%s) sur %s hors couture après la reconstruction de %s Paris : refresh_identity_stitch lit events brut sur %s — vérifier que la reconstruction a bien couvert la journée (durée, timeout 420 s) ; relancer : SELECT public.refresh_identity_stitch(90);',
+                       v_miss, to_char(v_j1, 'DD/MM/YYYY'), v_tot,
+                       to_char(v_at AT TIME ZONE 'Europe/Paris', 'HH24:MI'),
+                       '90 j glissants');
+      RETURN NEXT;
+    END IF;
+  END IF;
+END $function$
+
+
 -- ═══ public.alert_rule_page_taxonomy_gap() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_page_taxonomy_gap()
  RETURNS TABLE(kind text, severity text, detail text)
@@ -4678,7 +4747,7 @@ CREATE OR REPLACE FUNCTION public.refresh_identity_stitch(p_days integer DEFAULT
  SET statement_timeout TO '420s'
 AS $function$
 DECLARE
-  t0 timestamptz := now() - make_interval(days => p_days);
+  t0 timestamptz := now() - make_interval(days => p_days);  -- c6c:allow (fenêtre de topologie, pas un chiffre business ; inchangé depuis le 12/07/2026)
 BEGIN
   -- Paires (aid, sid) observées. Lecture d'events BRUT, assumée et
   -- volontaire : (a) c'est de la topologie d'identité, pas un chiffre
@@ -4723,6 +4792,15 @@ BEGIN
     SELECT 'sid', s, lbl FROM _st_l3
     UNION ALL
     SELECT 'aid', a, lbl FROM _st_a3;
+
+  -- T-10 (03/09/2026) : horodatage de la couture. Lu par alert_rule_identity_stitch()
+  -- et le contract-test identity_stitch_horodatee. Une couture vidée ou non reconstruite
+  -- n'est plus un « succeeded » muet.
+  INSERT INTO cooked_config (key, value, updated_at)
+  VALUES ('identity_stitch_refreshed_at', now()::text, now()),
+         ('identity_stitch_rows', (SELECT count(*) FROM identity_stitch)::text, now())
+  ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at;
 END $function$
 
 
@@ -5593,6 +5671,21 @@ BEGIN
        $q$select count(*) from public.cooked_refresh_after_gsc_pending() p
           where p.pending and p.last_ingest < now() - interval '6 hours'$q$,
        NULL, 0)
+      ,
+      -- I7 (T-10, 03/09/2026) : la couture d'identité est horodatée et couvre 100 % des sessions
+      -- humaines de J-2 (reconstruite à 05:40 Paris, contrôlée ici à 05:30 : J-1 n'est pas encore cousue).
+      ('identity_stitch_couvre_j2',
+       $q$select count(*) from (select distinct session_id from public.events_human
+            where public.paris_date(occurred_at) = public.paris_today() - 2
+              and anonymous_id not like 'webhook-%' and anonymous_id !~ '^[0-9a-f]{32}$') s
+          where not exists (select 1 from public.identity_stitch i
+                            where i.kind = 'sid' and i.key = s.session_id)$q$,
+       NULL, 0),
+      ('identity_stitch_horodatee',
+       $q$select count(*) from public.cooked_config
+          where key = 'identity_stitch_refreshed_at'
+            and value::timestamptz > now() - interval '30 hours'$q$,
+       NULL, 1)
     ) AS v(nom, requete, min_rows, exact_rows)
   LOOP
     PERFORM public.rpc_contract_check(t.nom, t.requete, t.min_rows, t.exact_rows);
