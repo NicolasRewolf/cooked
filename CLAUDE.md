@@ -255,8 +255,23 @@ et `gsc_pages_overview` lisent **28 jours clos à `gsc_last_data_day()`** — pl
 la date serveur (24 jours de données réelles) ni l'heure du run côté Cooked.
 `gsc_clicks_28d` +12 à +20 % selon le lag ; CPI delta moyen −1,3 pt, 1 mover
 fiable. Photo dans `cpi_pre_restatement_20260903` (à supprimer au T-19).
-**Un « avant/après 03/09 » dans `cpi_daily` n'est PAS un decay.** Seul le terme
-conversion (`conversion_journeys`) reste sur l'horloge du run → T-09.
+**Un « avant/après 03/09 » dans `cpi_daily` n'est PAS un decay.**
+
+⚠️ **Restatement contacts du 03/09/2026** (T-09, migration `20260903093320`) :
+`conversion_journeys(days_back, p_end)`, `form_submits_attributed(days_back, p_end)`
+et `macro_contacts_by_path(days_back)` lisent **N jours Paris clos ancrés sur J-1**
+(`cooked_period_bounds('rolling_28','live_j1')`) — plus `now() - N jours`. Le
+chiffre « contacts macro 28 j » est **le même dans toutes les RPC et à toute
+heure** (191 le 03/09 ; avant : 183 / 189 / 195). `seo_to_contact_funnel` : GSC,
+entrées et contacts sur la même fenêtre close à `gsc_last_data_day()`,
+dénominateur au grain de la visite recousue. `classify_channel` v5 : un
+`gclid`/`gbraid`/`wbraid` dans l'URL ⇒ `paid` (avant : `gmb` ou `direct`). Le
+CPI n'a **plus aucune borne d'horloge** (zv sur la fenêtre du score) : seul zv
+bouge, 0 changement de grade, 6 movers ≥ 15 pts (contacts entrant/sortant d'une
+fenêtre reculée de 3 jours). Contract-tests I4 : `contacts_28j_une_fenetre`,
+`funnel_meme_total_que_journeys`, `classify_channel_gclid_paid`. Règle CI C6c :
+`current_date` / `now() - make_interval` interdits dans les migrations. Pour
+comparer deux RPC de contacts, comparer leurs `window_start`/`window_end` d'abord.
 
 **10/08/2026 — Pont SECIB (PIVOT — PII en clair)** :
 - **Décision produit (Nicolas)** : Cooked rapproche les prospects web des
@@ -501,8 +516,9 @@ RPCs publiées — analyses historiques & snapshot :
   handling)
 - `engagement_density_for_path(target_path, days)` — p25/p50/p75 du
   dwell + evenness_score par page (Sprint 30 : GROUP BY session_id)
-- `classify_channel(ref, utm_source, utm_medium, self_host)` —
-  taxonomie unifiée des canaux d'acquisition (Sprint 28)
+- `classify_channel(ref, utm_source, utm_medium, self_host, url DEFAULT NULL)` —
+  taxonomie unifiée des canaux d'acquisition (Sprint 28 ; v5 T-09 03/09/2026 :
+  `gclid`/`gbraid`/`wbraid` dans `url` ⇒ `paid`, prime sur GMB)
 - `refresh_pipeline_health()` — self-diagnostic 5 axes (snapshot, cron,
   ingestion, GSC, DataForSEO : dfs_last_synced_at, dfs_row_count)
 - `latest_rpc_health()` — dernier état des contract tests par RPC
@@ -529,17 +545,22 @@ RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
 - `dfs_keywords_to_sync(limit_n)` — liste keywords à syncer (union GSC 28j ∪ 90j)
 - `gsc_x_dfs_opportunities(...)` — quick wins SEO (volume DFS + position 5–15)
 
-RPCs attribution & santé (Sprint 37-38) :
-- `form_submits_attributed(days)` — attribution des forms : hidden_field >
-  temporal_unique > unresolved
-- `conversion_journeys(days)` — un row par contact macro : entry_path,
-  entry_channel, journey[] (séquence de pages), pages_count, device.
-  **v2 recousue depuis le 12/07/2026** (migration `20260712203935`) : contrat
-  de sortie inchangé, mais l'entrée/parcours se calcule sur le **visiteur
-  recousu** via `identity_stitch` (priorité sid > aid > fallback session brute)
+RPCs attribution & santé (Sprint 37-38 ; fenêtres closes depuis T-09, 03/09/2026) :
+- `form_submits_attributed(days_back, p_end DEFAULT NULL)` — attribution des
+  forms : hidden_field > temporal_unique > unresolved. Fenêtre = `days_back`
+  jours Paris clos à J-1 (ou à `p_end`), bornes en sortie `window_start`/`window_end`
+- `conversion_journeys(days_back, p_end DEFAULT NULL)` — un row par contact macro :
+  entry_path, entry_channel, journey[] (séquence de pages), pages_count, device,
+  `window_start`/`window_end`. **v2 recousue depuis le 12/07/2026** (migration
+  `20260712203935`) : l'entrée/parcours se calcule sur le **visiteur recousu**
+  via `identity_stitch` (priorité sid > aid > fallback session brute). Même
+  fenêtre que `site_macro_counts` / `macro_contacts_by_path` (contract-test
+  `contacts_28j_une_fenetre`)
 - `content_performance(days)` — perf par page_type × theme
-- `seo_to_contact_funnel(days)` — GSC clics → entrées organiques → contacts
-  par landing
+- `seo_to_contact_funnel(days_back, p_end DEFAULT NULL)` — GSC clics → entrées
+  organiques (visite recousue) → contacts par landing, **une seule fenêtre**
+  close à `gsc_last_data_day()` (lens `cross`) ; Σ contacts = `conversion_journeys`
+  organiques sur cette fenêtre (contract-test `funnel_meme_total_que_journeys`)
 - `cooked_page_index(days)` / `cooked_cpi_snapshot()` — score santé par page
   + snapshot quotidien `cpi_daily`
 - `cpi_movers` (vue) — Δ CPI sur ~7j glissants depuis `cpi_daily` : statuts

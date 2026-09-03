@@ -330,3 +330,54 @@
 - 11:10 `[D]` À reporter : le commentaire interne de `cooked_refresh_after_gsc` (« cooked_page_index lit now() ») est
   périmé — texte de commentaire seulement, pas de redéfinition de fonction pour ça (T-09/T-14) ; `cpi_drop` sonnera
   peut-être sur le 03/09 (Δ −19 sur /honoraires-rendez-vous, grade C donc hors `fiable`) — annotation posée, T-07.
+
+### T-09 (#110) — 03/09/2026
+- 11:10 `[D]` Validation citée : « Allez on poursuit on avance :) » (Nicolas, 03/09/2026 11:10). Vague 1 dans l'ordre du
+  plan : T-06 (option a/b/c) et T-08 (valeur d'objectif) attendent une décision → **T-09** est le prochain ticket sans
+  décision bloquante. Session unique (le ticket lourd est repris dans la même session, journal + #110 relus).
+- 11:12 `[F]` Relecture d-02/c-05, d-06/c-01, o-14 (01-audit.md), §T-09 du plan, corps prod de `conversion_journeys`,
+  `form_submits_attributed`, `seo_to_contact_funnel`, `macro_contacts_by_path` (×2), `classify_channel`,
+  `cooked_period_bounds`, `gsc_pages_overview`, `cooked_page_index`, `run_rpc_contract_tests` (rpcs.sql = prod, sha vérifié).
+- 11:15 `[R]` Mesure « avant » : contacts 28 j = 183 / 189 / 195 selon la RPC (lens live, live_j1, gsc : 100 % fenêtre) ;
+  funnel : GSC 24 j (`current_date` UTC) face à 28 × 24 h d'entrées ; 16 entrées `gmb` + 3 `direct` portent un gclid.
+- 11:22 `[W-PROD]` `apply_migration` `t09_photo_avant_cpi` (version **`20260903092218`**) : colonne `phase` sur
+  `cpi_pre_restatement_20260903` (lignes T-05 → `t05_avant`), copie synchrone de `cpi_daily` du 03/09 (= après T-05,
+  10:58) en `t09_avant` — 175 lignes.
+- 11:25 `[W]` Migration principale générée par script (`/tmp/gen_t09.py`, hors repo) : corps de `gsc_pages_overview`,
+  `cooked_page_index`, `run_rpc_contract_tests` extraits de `rpcs.sql` + substitutions ciblées ; les 5 autres réécrits.
+  Dry-run en transaction : **timeout MCP** sur le funnel (`cross join w` → hash join sur 28 j) ; réécrit en sous-requêtes
+  scalaires `(select d_start from w)` (InitPlan, bornes constantes pour le planificateur) : `explain analyze` du
+  dénominateur ~5 s au lieu de > 60 s. Rollback vérifié, prod inchangée.
+- 11:33 `[W-PROD]` `apply_migration` `t09_fenetre_unique_contacts_invariant_i4` (version **`20260903093320`**) :
+  `classify_channel` v5 (DROP 4 args + CREATE 5 args, `url DEFAULT NULL`, gclid/gbraid/wbraid ⇒ paid avant gmb),
+  `form_submits_attributed(days_back, p_end)`, `conversion_journeys(days_back, p_end)` (DROP + CREATE, `window_start`/
+  `window_end` en sortie, `form_submit_counts_as_macro`), `macro_contacts_by_path(int)` ancrée J-1,
+  `seo_to_contact_funnel(days_back, p_end)` (lens `cross`, entrées de visite recousue, FULL JOIN), `gsc_pages_overview`
+  (contacts sur ses bornes GSC), `cooked_page_index` (zv sur `conversion_journeys(p_days, gsc_last_data_day())`, url passée
+  à `classify_channel`), `run_rpc_contract_tests` (+ `contacts_28j_une_fenetre`, `funnel_meme_total_que_journeys`,
+  `classify_channel_gclid_paid`). ACL réappliquées (REVOKE public/anon/authenticated, GRANT service_role).
+- 11:34 `[R]` « Après » : fenêtre live_j1 06/08→02/09 : `site_macro_counts` **191** = Σ `macro_contacts_by_path(28)`
+  **191** = `conversion_journeys(28)` **191** ; `form_submits_attributed(28)` 65 macro ; fenêtre cross 03/08→30/08 :
+  site 195 = journeys 195, dont 55 organiques. Funnel(28) : 5 860 entrées organiques, 55 contacts, 0,94 %, 5 346 clics
+  GSC, 308 lignes, 0 ligne sans entrée, fenêtre 03/08→30/08. Grain isolé sur la même fenêtre : 5 845 sessions brutes
+  vs 5 860 entrées recousues (+0,3 %) — l'écart de +8,3 % de l'audit venait des fenêtres, pas du grain.
+- 11:35 `[R]` Contract-tests I4 exécutés via `rpc_contract_check` : `classify_channel_gclid_paid` ok (1 ms),
+  `contacts_28j_une_fenetre` ok (4,4 s), `funnel_meme_total_que_journeys` ok (6,5 s).
+- 11:35 `[W-PROD]` `apply_migration` `t09_photo_apres_cpi` (version **`20260903093524`**) : job one-shot 09:37 UTC →
+  `cooked_cpi_snapshot()`, auto-désarmé. Réussi 11:37:50, `cron.job` t09 = 0.
+- 11:36 `[W]` `rpcs.sql` reconstruit (9 corps prod recollés, format d'origine préservé, `write_outputs`) : 125 fonctions,
+  sha256 corps `a52e8007…` ; `check_rpcs_sql_fresh.py` OK. Règle CI **C6c** dans `check_migration_paris_date.py`
+  (`current_date` / `now() - make_interval` interdits pour les migrations ≥ `20260903093320`, littéraux entre apostrophes
+  et commentaires ignorés, `-- c6c:allow`) ; sonde /tmp : 2 violations détectées, 0 sur les migrations T-09.
+- 11:40 `[R]` **Comparaison avant/après** (`cpi_pre_restatement_20260903` phase `t09_avant` vs `cpi_daily` 03/09) : 175 → 175
+  pages, 175 appariées ; **seul zv bouge** (64 pages), zc/zr/zl/momentum/gate : 0 changement ; delta CPI moyen **+0,33**,
+  max |Δ| 27 ; **0 changement de grade** ; 6 movers ≥ 15 pts (garde-à-vue-ou-audition-libre 50→23 B, cap-ferret-relaxe
+  11→38 B, abus-de-confiance 62→81 A, sarvi 31→13 A, escroqueries-cryptomonnaies 34→52 C, DDSE 48→30 B) ; 3 badges
+  `convertit` changent ; CPI pondéré trafic 45,6 → 45,7.
+- 11:43 `[W-PROD]` `apply_migration` `t09_annotation_restatement_fenetre_contacts` (version **`20260903094241`**) :
+  annotation posée (4 annotations au 03/09). ACL vérifiées : anon/authenticated false sur les 8 fonctions sauf
+  `cooked_page_index` true/true (état antérieur, SECURITY INVOKER — T-19). Miroirs des 4 migrations (versions prod),
+  CHANGELOG, CLAUDE.md (bloc restatement contacts 03/09 + signatures), OPERATIONS (RPC attribution, table restatements,
+  arbre scripts), cpi doc (en-tête + §Ruptures), CONTRIBUTING (C6c), workflow `sql-contracts.yml`.
+- 11:45 `[D]` À reporter : commentaire interne de `cooked_refresh_after_gsc` périmé (T-14) ; `cpi_drop` peut sonner sur
+  les 6 movers du 03/09 — annotation posée, périmètre T-07 ; DROP de `cpi_pre_restatement_20260903` au T-19.

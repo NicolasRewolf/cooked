@@ -13,6 +13,15 @@ C6b — CONTRAT D'INLINING : vérifie dans le miroir supabase/rpcs.sql que
       arrivée par une remédiation en masse de l'advisor Supabase appliquée hors
       repo ; elle a été enregistrée telle quelle dans rpcs.sql sans alerter.
       Voir 20260725045430_restore_paris_date_inlining_contract.sql.
+
+C6c — BORNES D'HORLOGE : interdit `current_date` et `now() - make_interval(...)`
+      dans les migrations à partir de T-09 (20260903093320). Ces deux formes ont
+      produit les défauts d-02/d-06 de la mission du 02/09/2026 : une fenêtre
+      « 28 j » qui change avec l'heure de la question et un `current_date` UTC
+      qui décale la borne Paris. Fenêtres closes = cooked_period_bounds() /
+      cooked_snapshot_window() / paris_today(). Les littéraux entre apostrophes
+      (regex d'un contract-test) et les commentaires sont ignorés ; échappement
+      explicite : `-- c6c:allow` sur la ligne.
 """
 from __future__ import annotations
 
@@ -52,6 +61,13 @@ HISTORICAL_ALLOWLIST = {
 }
 
 
+# C6c — règle instaurée par T-09 : s'applique à cette migration et aux suivantes.
+CLOCK_BOUND_SINCE = "20260903093320"
+CLOCK_BOUND = re.compile(r"\bcurrent_date\b|now\(\)\s*-\s*make_interval", re.IGNORECASE)
+CLOCK_BOUND_ALLOW = re.compile(r"^\s*--|COMMENT ON|c6c:allow", re.IGNORECASE)
+QUOTED_LITERAL = re.compile(r"'[^']*'")
+
+
 def scan_file(path: Path) -> list[tuple[int, str]]:
     hits: list[tuple[int, str]] = []
     if path.name in HISTORICAL_ALLOWLIST:
@@ -60,6 +76,25 @@ def scan_file(path: Path) -> list[tuple[int, str]]:
         if ALLOW_LINE.search(line):
             continue
         if RAW_PARIS_CAST.search(line):
+            hits.append((i, line.strip()))
+    return hits
+
+
+def clock_bound_applies(path: Path) -> bool:
+    version = path.name.split("_", 1)[0]
+    return version.isdigit() and version >= CLOCK_BOUND_SINCE
+
+
+def scan_clock_bounds(path: Path) -> list[tuple[int, str]]:
+    """C6c — current_date / now() - make_interval interdits (fenêtres closes obligatoires)."""
+    hits: list[tuple[int, str]] = []
+    if not clock_bound_applies(path):
+        return hits
+    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if CLOCK_BOUND_ALLOW.search(line):
+            continue
+        code = QUOTED_LITERAL.sub("''", line).split("--", 1)[0]
+        if CLOCK_BOUND.search(code):
             hits.append((i, line.strip()))
     return hits
 
@@ -151,16 +186,30 @@ def main() -> int:
         return rc
 
     failures: list[str] = []
+    clock_failures: list[str] = []
     for path in targets:
         if not path.exists():
             continue
         for lineno, text in scan_file(path):
             failures.append(f"{path.name}:{lineno}: {text}")
+        for lineno, text in scan_clock_bounds(path):
+            clock_failures.append(f"{path.name}:{lineno}: {text}")
     if failures:
         print("C6 contract violation — use paris_date() / cooked_paris_ts_*() instead of raw casts:\n")
         print("\n".join(failures))
-        return 1
-    print(f"C6 OK — {len(targets)} fichier(s) scanné(s)")
+        rc = 1
+    else:
+        print(f"C6 OK — {len(targets)} fichier(s) scanné(s)")
+    if clock_failures:
+        print(
+            "\nC6c contract violation — current_date / now() - make_interval interdits : "
+            "fenêtre close via cooked_period_bounds() / paris_today() (ou `-- c6c:allow` justifié) :\n"
+        )
+        print("\n".join(clock_failures))
+        rc = 1
+    else:
+        scanned = sum(1 for p in targets if p.exists() and clock_bound_applies(p))
+        print(f"C6c OK — {scanned} migration(s) ≥ {CLOCK_BOUND_SINCE} sans borne d'horloge")
     return rc
 
 

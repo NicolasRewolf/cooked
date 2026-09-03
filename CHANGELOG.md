@@ -3,6 +3,52 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-09 : une seule fenêtre « N jours » pour les contacts, un seul grain par ratio
+
+Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-09 (#110), constats d-02/c-05 (P1), d-06/c-01 (P1), o-14 (P3).
+
+### Corrigé
+- **« Contacts macro 28 j » valait 183, 189 ou 195 selon la RPC**, et la réponse changeait avec l'heure de la question
+  (`occurred_at > now() - make_interval(...)`). `conversion_journeys(days_back, p_end)`, `form_submits_attributed(days_back,
+  p_end)` et `macro_contacts_by_path(days_back)` lisent désormais **N jours Paris clos, ancrés sur J-1**
+  (`cooked_period_bounds('rolling_28','live_j1')`) ; `p_end` permet d'aligner sur une autre borne close (le CPI passe
+  `gsc_last_data_day()`). Bornes exposées en sortie (`window_start` / `window_end`). Le 03/09/2026 : **191 partout**
+  (`site_macro_counts`, Σ `macro_contacts_by_path(28)`, `conversion_journeys(28)`). Statut macro des formulaires par
+  `form_submit_counts_as_macro(props)` — une seule définition avec `site_macro_counts`.
+- **`seo_to_contact_funnel(days_back, p_end)` divisait des contacts recousus par des sessions brutes**, sur trois fenêtres
+  dont une en `current_date` UTC sans borne Google (24 jours de GSC face à 28 jours d'entrées). Désormais GSC, entrées et
+  contacts sur **la même fenêtre close à `gsc_last_data_day()`** (lens `cross`), dénominateur au grain de la **visite
+  recousue** (`identity_stitch`, coupure 30 min — la clé de `conversion_journeys`), `FULL JOIN` entrées/contacts (aucun
+  contact perdu si sa page d'entrée n'a pas d'entrée organique comptée). Le 03/09 (03/08→30/08) : 5 346 clics GSC,
+  5 860 entrées organiques (5 845 sessions brutes sur la même fenêtre : l'effet grain est de +0,3 %, l'écart de +8,3 %
+  de l'audit venait des fenêtres), 55 contacts = `conversion_journeys` organiques sur la même fenêtre, taux 0,94 %.
+- **`gsc_pages_overview`** : contacts sur les bornes GSC de la ligne (avant : `macro_contacts_by_path(28)` = lens live,
+  autre fenêtre que les clics de la même ligne).
+- **`classify_channel` v5** : 5e paramètre `url` (défaut NULL) — un identifiant de clic Ads (`gclid` / `gbraid` /
+  `wbraid`) dans l'URL d'atterrissage ⇒ `paid`, posé avant la branche GMB (16 entrées/28 j taguées `utm_source=gmb` et 3
+  `direct` portaient un gclid). Les appels à 4 arguments gardent leur comportement ; `conversion_journeys` et
+  `cooked_page_index` passent l'URL.
+- **CPI : plus aucune borne d'horloge.** Le terme conversion (`zv`) lit `conversion_journeys(p_days, gsc_last_data_day())`
+  — la fenêtre du score. Migration `20260903093320`.
+
+### Invariant livré (I4) + CI
+- Trois contrats dans `run_rpc_contract_tests` : `contacts_28j_une_fenetre` (site = Σ par page = journeys, écart 0),
+  `funnel_meme_total_que_journeys` (Σ contacts du funnel = journeys organiques sur la même fenêtre, écart 0),
+  `classify_channel_gclid_paid` (3 vecteurs). 0 violation le 03/09/2026 (4,4 s / 6,5 s / 1 ms).
+- **Règle CI C6c** (`scripts/check_migration_paris_date.py`) : `current_date` et `now() - make_interval` interdits dans
+  les migrations à partir de `20260903093320` (littéraux entre apostrophes et commentaires ignorés ; échappement
+  `-- c6c:allow`).
+
+### Restatement (annotation du 03/09/2026, migration `20260903094241`)
+- Photo « avant » = `cpi_daily` du 03/09 après T-05 (copié dans `cpi_pre_restatement_20260903`, colonne `phase` =
+  `t09_avant`, migration `20260903092218`) ; « après » = `cpi_daily` recalculé 11:37 (migration `20260903093524`), mêmes
+  données GSC (dernier jour 30/08). 175 pages → 175, **seul `zv` bouge** (64 pages ; zc/zr/zl/momentum/gate identiques),
+  delta CPI moyen **+0,3 pt**, **0 changement de grade**, 6 movers ≥ 15 pts (garde-à-vue-ou-audition-libre 50→23,
+  cap-ferret-relaxe 11→38, abus-de-confiance 62→81, sarvi 31→13, escroqueries-cryptomonnaies 34→52, DDSE 48→30 :
+  des contacts qui entrent ou sortent d'une fenêtre reculée de 3 jours), 3 badges « convertit » changent, CPI pondéré
+  trafic 45,6 → 45,7. Phrase : « une seule fenêtre pour les contacts — même question, même chiffre, à toute heure ;
+  correction de mesure, pas un changement de trafic ». Table `cpi_pre_restatement_20260903` à supprimer au T-19.
+
 ## [2026-09-03] — T-05 : « 28 jours » = 28 jours de données GSC, une seule fenêtre dans le CPI
 
 Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-05 (#106), constats d-03 (P1), d-07 (P2), f-04 (P2).

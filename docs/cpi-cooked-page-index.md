@@ -15,9 +15,11 @@ au site et gate technique LCP.
 > qui se terminent à `gsc_last_data_day()`, pas « hier ». Avant : la moitié GSC
 > était bornée par la date serveur (24-25 jours de données réelles sur 28
 > nominaux) et la moitié Cooked par l'heure du run (deux snapshots consécutifs
-> séparés de 18 à 34 h). Reste sur l'horloge du run jusqu'au ticket T-09 : le
-> terme conversion (`conversion_journeys(28)`). Invariant : contract-test
-> `cpi_sans_horloge` (0 borne d'horloge dans le corps de `cooked_page_index`).
+> séparés de 18 à 34 h). Depuis le ticket T-09 (même jour), le terme
+> conversion lit `conversion_journeys(p_days, gsc_last_data_day())` — la
+> fenêtre du score — et le CPI n'a **plus aucune borne d'horloge**. Invariant :
+> contract-test `cpi_sans_horloge` (0 borne d'horloge dans le corps de
+> `cooked_page_index`).
 
 > **v2.2 (16/06/2026)** — deux raffinements adoptés après revue mathématique
 > externe (corr 0,9855 avec v2.1, aucun verdict fiable A/B déplacé de ≥5 pts) :
@@ -214,8 +216,24 @@ CPI d'avant/après ces dates revient à comparer deux définitions**, pas une
   capture au lieu de 24). CPI pondéré trafic 48,5 → 45,6. Le momentum du
   03/09 se compare à un `c1` enfin de même durée que `c0`.
 
+- **03/09/2026 — terme conversion sur la fenêtre du score** (ticket T-09 de
+  la mission du 02/09, migration `20260903093320`). `zv` lit
+  `conversion_journeys(p_days, gsc_last_data_day())` au lieu de
+  `conversion_journeys(p_days)` sur `now()` : les contacts comptés sont ceux des
+  28 jours du score, plus ceux des 28 × 24 h précédant le run (fenêtre reculée
+  de 3 jours). `entry_channel` via `classify_channel` v5 (gclid ⇒ paid). Photo
+  avant/après du même jour, mêmes données GSC : 175 pages → 175, **seul `zv`
+  bouge** (64 pages ; zc/zr/zl/momentum/gate identiques), delta moyen
+  **+0,3 pt**, **0 changement de grade**, 6 movers ≥ 15 pts
+  (garde-à-vue-ou-audition-libre 50→23, cap-ferret-relaxe 11→38,
+  abus-de-confiance 62→81, sarvi 31→13, escroqueries-cryptomonnaies 34→52,
+  DDSE 48→30 — la volatilité connue du terme conversion sur ~10 contacts
+  organiques attribuables/mois), 3 badges `convertit` changent, CPI pondéré
+  trafic 45,6 → 45,7. Le CPI n'a plus aucune borne d'horloge.
+
 Tables d'audit : `cpi_pre_restatement_20260712` et `_20260727` (supprimées le
-10/08/2026), `cpi_pre_restatement_20260903` (à supprimer au ticket T-19).
+10/08/2026), `cpi_pre_restatement_20260903` (phases `t05_avant` / `t09_avant`,
+à supprimer au ticket T-19).
 
 ## v2.2 — analyses d'impact (instruites le 10/06/2026, AVANT tout code)
 

@@ -71,7 +71,7 @@ Docs : synchro arch 10/07 + rpcs.sql
 
 | Workflow | Rôle |
 |---|---|
-| `sql-contracts` | C6 pas de cast Paris brut ; Arch #5 rpcs.sql à jour |
+| `sql-contracts` | C6 pas de cast Paris brut ; C6c pas de `current_date` / `now() - make_interval` (migrations ≥ 20260903093320) ; Arch #5 rpcs.sql à jour |
 | `canonical-path-contract` | SQL / Edge / Python alignés |
 | `python-ingest-contract` | Tests GSC/DFS |
 | `dashboard-contract` | Vitest dashboard (85 tests) |
