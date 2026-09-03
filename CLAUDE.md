@@ -655,14 +655,14 @@ Paris (première ingestion réelle).
   comptés dans `ingest_drops` ; v25 = D4 `track_row` + C5 `events_row` ;
   clamp horloge v23). Détail des constats :
   `docs/audit-architecture-2026-07-25.md`.
-- Edge `form-webhook` : **v13** (10/08/2026 — Pont SECIB : identité prospect
-  en clair → `crm_prospects`, jamais bloquant pour l'event ; v12 = D4
-  `form_row` ; v11 = submissionTime + drop alert).
+- Edge `form-webhook` : **v14** (03/09/2026 — T-07 : `form_submit_dropped` via
+  `raise_cooked_alert` ; v13 = Pont SECIB ; v12 = D4 ; v11 = drop alert).
+  **Repo à jour, prod encore v13** tant que `supabase functions deploy form-webhook`
+  n'est pas passé.
 
 Prod peut lagger : vérifier la version déployée avant d'annoncer un changement
 Edge. Dernier contrôle le 03/09/2026 : `track` **v28** + `form-webhook`
-**v13 déployées**, prod alignée
-avec le repo.
+**v13 en prod** (v14 dans le repo, T-07, pas encore déployée).
 
 **Couture d'identité (12/07/2026)** : table `identity_stitch` (sid|aid →
 `visitor_key`, composantes connexes du graphe aid↔sid, cron nocturne 03:40 UTC,

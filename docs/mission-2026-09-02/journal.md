@@ -442,3 +442,14 @@
   sans policy (même pattern que les autres `dashboard_*_snapshot`).
 - Décision Nicolas 12:02 : **pas d'objectif** (`objectif_assistes_trimestre` absent). Le compteur ressources
   n'inclut pas les 12 `(non attribuable)` (JOIN `page_taxonomy`).
+
+### T-07 — alertes v4 (03/09/2026, 14:27 →)
+- 14:27 `[M]` **Mesure avant** : 55 non acquittées (34 `cpi_drop`, 9 `gbp_daily_stale`, 8 `gbp_gap`,
+  3 `gsc_ingest_missed`, 1 `pipeline_dead` du 22/08) ; 11 critical / 10 j. GSC last day = 31/08.
+  GBP last day = 20/08 (vrai retard). `cpi_drop` du jour : 3 pages (2 S/A momentum 1,01 et 1,09 ; 1 B).
+- 14:28 `[R]` Replay 40 j `received_at` : trou 166 min le 01/08 13:16→16:02 (diurne, vrai) ; 68,9 min
+  le 10/08 02:05 ; 63,3 min le 22/08 03:12 (FP) ; 60,8 min le 03/09 04:56. 0 trou > 90 min hors 01/08.
+- 14:32 `[A]` Migration `20260903123218` : `pipeline_dead` âge 90 min + heure active ; `cpi_drop` S/A +
+  momentum < 0,90 ; escalade hors `cpi_drop` ; cap 2 pushs ; `volume_floor` ; `ack_alerts` ; `cooked_paris_hour`.
+- 14:33 `[M]` Règles à chaud : pipeline / cpi / volume / escalade = **0 ligne** (v4 silencieuse à 14:33).
+- Reste : ack des 55 (décision Nicolas) ; deploy `form-webhook` v14 ; PR.

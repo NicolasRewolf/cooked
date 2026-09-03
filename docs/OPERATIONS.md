@@ -496,7 +496,7 @@ la source de vérité est `SELECT jobname, schedule FROM cron.job` en prod.
 | `cooked-purge-noise-weekly` | `30 4 * * 0` (06:30 Paris, dimanche) | **T-09 (03/07)** : `purge_cooked_noise(28)` — supprime le bruit bot/noise > 28 j + TTL 90 j sur `noise_sessions`. Ne change AUCUN résultat (lignes déjà hors `events_human` à toute fenêtre). 1er run : 41 589 lignes |
 | `cooked-cpi-daily-snapshot` | `30 7 * * *` (09:30 Paris) | `cooked_cpi_snapshot()` → `cpi_daily` · `SET statement_timeout='600s'` · run à froid ≈ 322 s au 03/07 (croît avec `events` ; la purge hebdo le contient) |
 | `refresh_noise_filters_hourly` | `5 * * * *` | Bot fingerprints + noise sessions, **incrémental 48 h depuis T-08 (02/07)** : ~4 s/run (155 s avant ; fingerprints historiques conservés, noise = delete-récent + réinsertion) |
-| `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — pipeline, double-embed, RPCs, attribution, `gsc_lag` + **`gsc_gap`** (jours manquants), `cpi_drop` (garde `ecart_jours ≤ 8`), `dfs_stale`, `tracker_drift` (grâce 48 h) — les `critical` **poussent sur ntfy** (T-11, topic dans `cooked_config`) |
+| `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — v4 (T-07, 03/09/2026) : voir § Alertes ci-dessous. Les `critical` **poussent sur ntfy** (≤ 2 par épisode, topic dans `cooked_config`) |
 | `dashboard-stale-check` | `30 * * * *` | Alerte `dashboard_stale` si snapshot dashboard > 36 h (29/06) |
 | `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
 | `gbp-daily-ingest` | GitHub Actions | Google Business Profile quotidien 05:30 UTC, fenêtre 30 j (lag ~J-4, la queue rembourrée à zéro est coupée par le script) → `gbp_daily`. Notifie ntfy en échec. ⚠️ **Le credential est un ADC utilisateur : Google exige une reauth périodique** — panne silencieuse de 6 jours du 30/07 au 04/08/2026, réparée le 05/08 (`gcloud auth application-default login --scopes=…business.manage,…cloud-platform` puis secret `GBP_CREDENTIALS_B64` re-poussé). **Aucune alerte `gbp_gap` n'existe encore** : jusqu'à sa création, contrôler `max(day)` de `gbp_daily` avant de livrer un chiffre GBP. Parade durable : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`) |
@@ -548,6 +548,20 @@ WHERE e.occurred_at > now() - interval '24 hours'
   AND NOT EXISTS (SELECT 1 FROM events p WHERE p.anonymous_id = e.anonymous_id
     AND p.name='pageview' AND p.occurred_at > now() - interval '24 hours');
 ```
+
+### Alertes v4 (T-07, 03/09/2026) — invariant I6
+
+Chaque seuil a une distribution mesurée le 03/09. Acquittement : `SELECT public.ack_alerts();` (tout le stock) ou `SELECT public.ack_alerts(ARRAY['cpi_drop']);`.
+
+| Kind | Seuil | Distribution / replay | Push ntfy |
+|---|---|---|---|
+| `pipeline_dead` | âge `now() - max(received_at) > 90 min` **et** cette heure Paris a une médiane ≥ 1 event / 7 j | 40 j : 1 trou diurne 166 min (01/08 13:16→16:02, détecté) ; 3 trous nuit 61-69 min (dont 22/08, **non** détectés). 0 faux positif nocturne | critical, cap 2 / épisode |
+| `cpi_drop` | chute ≥ 15 pts, grades **S/A** aux deux dates, **momentum < 0,90**, vrai decay (Δmom ≤ −0,10 ou Δzc ≤ −0,5), clics réels non croissants | 03/09 : 3 pages en v3 (2 S/A à momentum 1,01 / 1,09 + 1 B) → **0** en v4. Grade B = consultatif (`cpi_movers`), pas d'alerte | warn seulement, **jamais critical** |
+| `warn_escalation` | warn ≥ 5 j non acquitté, hors kinds éditoriaux (`cpi_drop`) | avant : 9 escalades cpi_drop en 9 j | critical, cap 2 / épisode |
+| `volume_floor` | heure Paris précédente (9-18 h), pageviews < 50 % de la médiane 7 j, médiane ≥ 30 | 7 j heures bureau : 2 horaires auraient sonné (med ≥ 30) ; 0 si med ≥ 40 | warn |
+| `form_submit_dropped` | insert form échoué → `raise_cooked_alert` (Edge v14) | 0 ligne historique (jamais passé par raise) | critical, cap 2 |
+
+Le stock du 03/09 (55 non acquittées) n'est **pas** vidé par la migration — ack = décision Nicolas.
 
 ### Restatements des séries (lire l'historique sans conclure à tort)
 

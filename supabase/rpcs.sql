@@ -10,6 +10,25 @@
 -- Généré le 03/09/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
+-- ═══ public.ack_alerts(p_kinds text[]) ═══
+CREATE OR REPLACE FUNCTION public.ack_alerts(p_kinds text[] DEFAULT NULL::text[])
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_n int;
+BEGIN
+  UPDATE public.alerts
+     SET acked = true
+   WHERE NOT acked
+     AND (p_kinds IS NULL OR kind = ANY (p_kinds));
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RETURN v_n;
+END;
+$function$
+
+
 -- ═══ public.alert_rule_cpi_drop() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_cpi_drop()
  RETURNS TABLE(kind text, severity text, detail text)
@@ -23,23 +42,22 @@ BEGIN
     SELECT count(*),
            string_agg(
              path || ' (' || cpi_ref || '→' || cpi_now
-               || ', zvΔ' || round(coalesce(delta_zv, 0)::numeric, 1)
-               || ' momΔ' || round(coalesce(delta_momentum, 0)::numeric, 2) || ')',
+               || ', mom ' || round(coalesce(momentum_now, 0)::numeric, 2)
+               || ', zvΔ' || round(coalesce(delta_zv, 0)::numeric, 1) || ')',
              ', ' ORDER BY rn
            ) FILTER (WHERE rn <= 3)
       INTO v_n, v_detail
     FROM (
-      SELECT path, cpi_ref, cpi_now, delta_zv, delta_momentum,
+      SELECT path, cpi_ref, cpi_now, delta_zv, momentum_now,
              row_number() OVER (ORDER BY delta_cpi ASC) AS rn
       FROM public.cpi_movers
       WHERE statut = 'present'
-        AND fiable
+        AND grade_now IN ('S', 'A')
+        AND grade_ref IN ('S', 'A')
         AND delta_cpi <= -15
         AND coalesce(ecart_jours, 99) <= 8
+        AND coalesce(momentum_now, 1) < 0.90
         AND (coalesce(delta_momentum, 0) <= -0.10 OR coalesce(delta_zc, 0) <= -0.5)
-        -- T-06 (mission 02/09/2026, f-01) : pas de « decay » sur une page dont les clics réels (gsc_path_daily)
-        -- montent — 7 derniers jours livrés par Google contre les 7 précédents. Le 01/09 l'alerte avait sonné sur une
-        -- page en croissance, le momentum ne voyant que la traîne révélée.
         AND NOT EXISTS (
           SELECT 1
           FROM (SELECT public.gsc_last_data_day() AS g_end) g,
@@ -55,17 +73,13 @@ BEGIN
         'cpi_drop'::text,
         'warn'::text,
         format(
-          '%s page(s) fiable(s) en vrai decay sur ~7j (fenêtre ≤8j, volatilité conversion exclue) : %s%s — diagnostiquer via cpi_movers (delta_zc/zr/zl/zv)',
-          v_n,
-          v_detail,
+          '%s page(s) S/A en vrai decay (momentum < 0,90, fenêtre ≤8j) : %s%s — cpi_movers',
+          v_n, v_detail,
           CASE WHEN v_n > 3 THEN format(' … et %s autre(s)', v_n - 3) ELSE '' END
         );
     END IF;
   EXCEPTION WHEN OTHERS THEN
-    RETURN QUERY SELECT
-      'cpi_movers_failed'::text,
-      'critical'::text,
-      SQLERRM;
+    RETURN QUERY SELECT 'cpi_movers_failed'::text, 'critical'::text, SQLERRM;
   END;
 END;
 $function$
@@ -383,17 +397,47 @@ CREATE OR REPLACE FUNCTION public.alert_rule_pipeline_dead()
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE v_n bigint;
+DECLARE
+  v_last timestamptz;
+  v_age_min numeric;
+  v_hour int;
+  v_med numeric;
 BEGIN
-  SELECT count(*) INTO v_n
-  FROM public.events
-  WHERE received_at > now() - interval '60 minutes';
-  IF v_n = 0 THEN
+  SELECT max(received_at) INTO v_last FROM public.events;
+  IF v_last IS NULL THEN
     RETURN QUERY SELECT
-      'pipeline_dead'::text,
-      'critical'::text,
-      'Aucun event reçu depuis 60 min — tracker ou Edge track en panne ?'::text;
+      'pipeline_dead'::text, 'critical'::text,
+      'Aucun event en base — tracker ou Edge track jamais vu ?'::text;
+    RETURN;
   END IF;
+
+  v_age_min := extract(epoch FROM (now() - v_last)) / 60.0;
+  IF v_age_min <= 90 THEN
+    RETURN;
+  END IF;
+
+  v_hour := public.cooked_paris_hour(now());
+  SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY n) INTO v_med
+  FROM (
+    SELECT count(*) AS n
+    FROM public.events e
+    WHERE e.received_at >= now() - interval '8 days'
+      AND e.received_at < now() - interval '1 hour'
+      AND public.cooked_paris_hour(e.received_at) = v_hour
+    GROUP BY public.paris_date(e.received_at)
+  ) s;
+
+  IF coalesce(v_med, 0) < 1 THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY SELECT
+    'pipeline_dead'::text,
+    'critical'::text,
+    format(
+      'Aucun event reçu depuis %s min (seuil 90 min, heure Paris habituellement active, médiane %s). Tracker ou Edge track en panne ?',
+      round(v_age_min), round(v_med)
+    )::text;
 END;
 $function$
 
@@ -511,6 +555,65 @@ END;
 $function$
 
 
+-- ═══ public.alert_rule_volume_floor() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_volume_floor()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_today date := public.paris_today();
+  v_hour_now int;
+  v_prev_hour int;
+  v_prev_day date;
+  t0 timestamptz;
+  t1 timestamptz;
+  v_n bigint;
+  v_med numeric;
+BEGIN
+  v_hour_now := public.cooked_paris_hour(now());
+  v_prev_hour := v_hour_now - 1;
+  v_prev_day := v_today;
+  IF v_prev_hour < 0 THEN
+    v_prev_hour := 23;
+    v_prev_day := v_today - 1;
+  END IF;
+  IF v_prev_hour < 9 OR v_prev_hour > 18 THEN
+    RETURN;
+  END IF;
+
+  t0 := public.cooked_paris_ts_start(v_prev_day) + make_interval(hours => v_prev_hour);
+  t1 := t0 + interval '1 hour';
+
+  SELECT count(*) FILTER (WHERE name = 'pageview') INTO v_n
+  FROM public.events_human
+  WHERE occurred_at >= t0 AND occurred_at < t1;
+
+  SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY n) INTO v_med
+  FROM (
+    SELECT count(*) FILTER (WHERE e.name = 'pageview') AS n
+    FROM public.events_human e
+    WHERE e.occurred_at >= public.cooked_paris_ts_start(v_prev_day - 7)
+      AND e.occurred_at < public.cooked_paris_ts_start(v_prev_day)
+      AND public.cooked_paris_hour(e.occurred_at) = v_prev_hour
+    GROUP BY public.paris_date(e.occurred_at)
+  ) s;
+
+  IF coalesce(v_med, 0) >= 30 AND coalesce(v_n, 0) < 0.5 * v_med THEN
+    RETURN QUERY SELECT
+      'volume_floor'::text,
+      'warn'::text,
+      format(
+        'Pageviews %sh Paris : %s vs médiane 7 j %s (−%s %%). Heure habituellement ≥ 30.',
+        v_prev_hour, v_n, round(v_med),
+        round(100.0 * (1 - v_n / nullif(v_med, 0)))
+      )::text;
+  END IF;
+END;
+$function$
+
+
 -- ═══ public.alert_rule_warn_escalation() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_warn_escalation()
  RETURNS TABLE(kind text, severity text, detail text)
@@ -525,6 +628,7 @@ AS $function$
     SELECT DISTINCT ON (kind) kind, detail
     FROM public.alerts
     WHERE severity = 'warn' AND created_at > now() - interval '26 hours'
+      AND kind NOT IN ('cpi_drop')
     ORDER BY kind, created_at DESC
   ) a
   WHERE EXISTS (
@@ -1568,6 +1672,19 @@ AS $function$
     FULL OUTER JOIN mc ON mc.p = s.p
   ORDER BY coalesce(s.sessions_total, 0) DESC, coalesce(mc.contacts, 0) DESC, coalesce(s.p, mc.p)
   LIMIT max_rows;
+$function$
+
+
+-- ═══ public.cooked_paris_hour(p_ts timestamp with time zone) ═══
+CREATE OR REPLACE FUNCTION public.cooked_paris_hour(p_ts timestamp with time zone)
+ RETURNS integer
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT floor(extract(epoch FROM (
+    p_ts - public.cooked_paris_ts_start(public.paris_date(p_ts))
+  )) / 3600)::int;
 $function$
 
 
@@ -3810,40 +3927,48 @@ CREATE OR REPLACE FUNCTION public.raise_cooked_alert(p_kind text, p_sev text, p_
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-declare
-  v_topic      text;
+DECLARE
+  v_topic text;
   v_last_acked boolean;
-begin
-  -- Dédup par (kind, severity) — et non plus par kind seul : le passage
-  -- warn→critical d'un même kind s'insère (et pousse) immédiatement au lieu
-  -- d'attendre jusqu'à 24 h l'expiration de la fenêtre du warn.
-  if exists (
-    select 1 from public.alerts
-    where kind = p_kind
-      and severity = p_sev
-      and created_at > now() - interval '24 hours'
-  ) then
-    return 0;
-  end if;
+  v_sev text := p_sev;
+  v_crit_since_ack int;
+BEGIN
+  IF p_kind IN ('cpi_drop') AND v_sev = 'critical' THEN
+    v_sev := 'warn';
+  END IF;
 
-  -- La dernière alerte du kind est-elle acquittée ? (à lire AVANT l'insert)
-  select a.acked into v_last_acked
-  from public.alerts a
-  where a.kind = p_kind
-  order by a.created_at desc
-  limit 1;
+  IF EXISTS (
+    SELECT 1 FROM public.alerts
+    WHERE kind = p_kind AND severity = v_sev
+      AND created_at > now() - interval '24 hours'
+  ) THEN
+    RETURN 0;
+  END IF;
 
-  insert into public.alerts (kind, severity, detail) values (p_kind, p_sev, p_detail);
+  SELECT a.acked INTO v_last_acked
+  FROM public.alerts a
+  WHERE a.kind = p_kind
+  ORDER BY a.created_at DESC
+  LIMIT 1;
 
-  -- Push ntfy : critical uniquement, et pas si l'épisode est acquitté
-  -- (l'insert a toujours lieu — seule la notification se tait).
-  if p_sev = 'critical' and coalesce(v_last_acked, false) = false then
-    begin
-      select nullif(btrim(value), '') into v_topic
-      from public.cooked_config where key = 'ntfy_topic';
+  INSERT INTO public.alerts (kind, severity, detail) VALUES (p_kind, v_sev, p_detail);
 
-      if v_topic is not null then
-        perform net.http_post(
+  SELECT count(*) INTO v_crit_since_ack
+  FROM public.alerts
+  WHERE kind = p_kind AND severity = 'critical'
+    AND created_at > coalesce(
+      (SELECT max(created_at) FROM public.alerts WHERE kind = p_kind AND acked),
+      '-infinity'::timestamptz
+    );
+
+  IF v_sev = 'critical'
+     AND coalesce(v_last_acked, false) = false
+     AND v_crit_since_ack <= 2 THEN
+    BEGIN
+      SELECT nullif(btrim(value), '') INTO v_topic
+      FROM public.cooked_config WHERE key = 'ntfy_topic';
+      IF v_topic IS NOT NULL THEN
+        PERFORM net.http_post(
           url     := 'https://ntfy.sh/',
           body    := jsonb_build_object(
                        'topic',    v_topic,
@@ -3854,14 +3979,14 @@ begin
                      ),
           headers := '{"Content-Type": "application/json"}'::jsonb
         );
-      end if;
-    exception when others then
-      null;
-    end;
-  end if;
+      END IF;
+    EXCEPTION WHEN others THEN
+      NULL;
+    END;
+  END IF;
 
-  return 1;
-end;
+  RETURN 1;
+END;
 $function$
 
 

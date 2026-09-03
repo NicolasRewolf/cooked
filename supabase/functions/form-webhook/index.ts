@@ -1,4 +1,5 @@
-// COOKED — form-webhook Edge Function (v13 — 10/08/2026 : Pont SECIB, identité
+// COOKED — form-webhook Edge Function (v14 — 03/09/2026 : T-07 form_submit_dropped
+// via raise_cooked_alert — dédup + ntfy ; v13 — 10/08/2026 : Pont SECIB, identité
 // prospect en clair → crm_prospects ; v12 — 10/07/2026 : C5 _shared/events_row ;
 // D4 _shared/form_row)
 // POST /functions/v1/form-webhook?token=<WEBHOOK_SECRET>
@@ -111,11 +112,14 @@ Deno.serve(async (req) => {
     // muette. On lève une alerte CRITIQUE (au lieu d'avaler dans un log) pour
     // pouvoir la ré-insérer à la main. On garde le 200 (stop retry Wix).
     try {
-      await supabase.from("alerts").insert({
-        kind: "form_submit_dropped",
-        severity: "critical",
-        detail: `form_submit dropped (code=${code}) submission=${submissionId ?? "?"} : ${s(error.message, 300)}`,
+      const { error: alertErr } = await supabase.rpc("raise_cooked_alert", {
+        p_kind: "form_submit_dropped",
+        p_sev: "critical",
+        p_detail: `form_submit dropped (code=${code}) submission=${submissionId ?? "?"} : ${s(error.message, 300)}`,
       });
+      if (alertErr) {
+        console.error("[form-webhook] raise_cooked_alert failed:", alertErr);
+      }
     } catch (alertErr) {
       console.error("[form-webhook] failed to raise dropped alert:", alertErr);
     }
