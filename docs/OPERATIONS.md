@@ -122,7 +122,16 @@ Table `identity_stitch` (`kind` = `sid` | `aid`, `key` → `visitor_key`) :
 propagation (convergence en 2 itérations), sur **90 j glissants**.
 Exclusions : identités `webhook-%` et **aid 32-hex** (fallback serveur).
 Reconstruite chaque nuit par `refresh_identity_stitch(90)` (cron
-`refresh-identity-stitch`, 03:40 UTC).
+`refresh-identity-stitch`, 03:40 UTC). **Horodatée depuis T-10 (03/09/2026)** :
+la fonction écrit `cooked_config.identity_stitch_refreshed_at` et
+`identity_stitch_rows` à sa fin ; `alert_rule_identity_stitch()` sonne si la
+table est vide, si l'horodatage a plus de 30 h, ou si des sessions humaines de
+J-1 manquent après la reconstruction du jour ; contract-tests nocturnes
+`identity_stitch_couvre_j2` (= 0) et `identity_stitch_horodatee` (= 1).
+Aucun consommateur en périmètre ne lit la couture sur le jour en cours
+(`conversion_journeys`, `assisted_*`, `seo_to_contact_funnel` : fenêtres closes
+à J-1) — `site_kpis_compare` / `cooked_pages_snapshot` (lens `live`) comptent
+des sessions brutes, sans couture.
 
 🚨 **Garde-fou : ne JAMAIS coudre via un aid 32-hex.** C'est le fallback
 serveur `sha256(IP | UA | sel journalier)`, potentiellement **partagé entre
@@ -493,7 +502,7 @@ et comparée à la prod par la gate `prod-drift` (T-12) : 9 jobs. Source de vér
 |---|---|---|
 | `refresh_seo_url_snapshot` | `0 3 * * *` (05:00 Paris) | Rebuild nocturne de `seo_url_snapshot` · `SET statement_timeout='600s'` — rebuild ≈ 230 s depuis la matérialisation d'`events_human` en temp table (30/06) |
 | `run_rpc_contract_tests` | `30 3 * * *` (05:30 Paris) | Contract-tests nocturnes des RPCs publiées → `rpc_health` (Sprint 27) |
-| `refresh-identity-stitch` | `40 3 * * *` (05:40 Paris) | `refresh_identity_stitch(90)` — reconstruit la table `identity_stitch` (couture d'identité, 90 j glissants) |
+| `refresh-identity-stitch` | `40 3 * * *` (05:40 Paris) | `refresh_identity_stitch(90)` — reconstruit la table `identity_stitch` (couture d'identité, 90 j glissants) · **horodate sa fin** dans `cooked_config.identity_stitch_refreshed_at` (T-10) |
 | `cooked-refresh-after-gsc` | `0 6-21 * * *` (tick horaire, 08:00→23:00 Paris l'été) | **Orchestrateur aval de l'ingestion GSC** (T-11, 03/09/2026) : `cooked_refresh_after_gsc()` enchaîne `cooked_cpi_snapshot` → `refresh_dashboard_snapshots` → `refresh_dashboard_expertises_snapshots` → `refresh_dashboard_resources_assisted` → `refresh_dashboard_assisted_quarter` · budget `SET statement_timeout='2400s'` dans la commande (clé `cooked_config.refresh_after_gsc_budget_s`) · **garde** : ne tourne que si `max(gsc_path_daily.ingested_at)` > marqueur `last_full_refresh_after_gsc_at` (`cooked_refresh_after_gsc_pending()`), quelle que soit l'heure d'arrivée de l'ingestion — le cron GitHub dérive de +4 à +12 h depuis le 27/08 · **durée par étape dans `refresh_runs`** (une ligne par étape + `_total`) · 21 h UTC = dernier tick qui reste dans le jour Paris (`cpi_daily.day = paris_today()`) · séquence ≈ 1 350-1 650 s (p50 30 j ≈ 1 600 s) |
 | `purge_old_events_monthly` | `0 4 1 * *` (06:00 Paris, 1er du mois) | Rétention : supprime les events > 400 j (⚠️ destruction d'historique RÉEL — re-poser la question du backup à Nicolas ~juin 2027 avant le 1er run utile) |
 | `cooked-purge-noise-weekly` | `30 4 * * 0` (06:30 Paris, dimanche) | **T-09 (03/07)** : `purge_cooked_noise(28)` — supprime le bruit bot/noise > 28 j + TTL 90 j sur `noise_sessions`. Ne change AUCUN résultat (lignes déjà hors `events_human` à toute fenêtre). 1er run : 41 589 lignes |
@@ -564,6 +573,11 @@ Chaque seuil a une distribution mesurée le 03/09. Acquittement : `SELECT public
 | `gsc_ingest_missed` | **T-11** : dès 12:00 UTC, aucune ingestion GSC datée du jour Paris (attendue 06:00 UTC) | 27/08, 28/08, 31/08 : 3 retards de +6 à +12 h, tous rattrapés le jour même | warn |
 | `refresh_after_gsc_stale` | **T-11** : `cooked_refresh_after_gsc_pending()` = true et ingestion > 3 h, entre 8 h et 23 h UTC, sans `refresh_step_failed_*` dans les 6 h | 0 cas historique reconstituable (la garde « ingestion du jour » masquait le cas) | critical, cap 2 |
 | `refresh_budget` | **T-11** : dernier `_total` de `refresh_runs` (48 h) ≥ 80 % de `refresh_after_gsc_budget_s` (2 400 s) | 30 j : p50 ≈ 1 600 s (67 %), max 2 166 s le 05/08 (90 % — aurait sonné), 26/07 : 7 runs à 100 % | warn |
+| `identity_stitch_empty` | **T-10** : `identity_stitch` vide | jamais observé (30 succès / 30 j) — une couture vidée était un « succeeded » muet | critical, cap 2 |
+| `identity_stitch_stale` | **T-10** : `cooked_config.identity_stitch_refreshed_at` absent (critical), > 30 h (warn), > 54 h (critical) | 30 j : 30 reconstructions à 05:40 Paris, 17-25 s ; 0 cas | warn / critical |
+| `identity_stitch_coverage` | **T-10** : après la reconstruction du jour, sessions humaines de J-1 (hors webhook, hors aid 32-hex) absentes de la couture | 03/09 : J-1 429/429, J-2 416/416 cousues (0,5 s) | warn |
+| `dashboard_resources_snapshot_stale` (registre) | **T-10** : mesuré sur `max(cooked_end)` (fin des données), plus sur `refreshed_at` ; warn > 2 j, critical > 4 j | 28/08 : J-2 affiché en vert de 00:00 à 21:00 Paris — invisible de l'ancien registre | warn / critical |
+| `page_taxonomy_stale` (registre) | **T-10** : `max(updated_at)` > 21 j (aucune synchro Wix Blog) | dernière synchro 31/08 11:05 | warn |
 
 Le stock du 03/09 (55 non acquittées) n'est **pas** vidé par la migration — ack = décision Nicolas.
 

@@ -502,3 +502,43 @@
   marqueur ré-avancé à 17:00 ; `pending()` = false ; 0 alerte ouverte. Contrats I9 passés à la main
   (`rpc_contract_check`) → `latest_rpc_health()`. **T-11 terminé au sens §3.9 du prompt** (PR #134 mergée, miroirs,
   `rpcs.sql` régénéré, effet montré, docs). Constat neuf pour T-10/T-13 : l'étape assistés = 63 % de la séquence.
+
+## Phase 3 — suite (session du 03/09/2026 soir, Claude Fable 5.1, worktree `friendly-euler-39e8a2`)
+
+- 22:47 `[D]` Reprise sur instruction de Nicolas (03/09/2026 22:47, message de session) : « Reprend le prompt et va
+  au bout stp. » Lue comme la validation d'exécuter les tickets encore ouverts du plan (tous `ready-for-agent`
+  depuis le tri du 03/09) puis de clore la Phase 4 ; les décisions et actions Nicolas (T-02, Wix, secrets, DROP)
+  restent des arrêts. Ordre : T-10 → T-13 → T-14 → T-15 → T-16 → T-17 → T-18 → T-19 → T-20 → Phase 4.
+- 22:48 `[R]` Réflexes : `alerts WHERE NOT acked` = **0** ; `gsc_last_data_day()` = 31/08 ; heure Paris 22:48.
+
+### T-10 — fraîcheur mesurée sur la donnée, couture horodatée (03/09/2026, 22:50 → 23:20)
+- 22:50 `[F]` Relecture #111, g-03/c-02/c-04/e-06 (01-audit.md:190-221), `FreshnessBanner.tsx` (`ageHours > 36`,
+  `cookedGap` affiché mais jamais orange), `freshness_contract` (13 lignes : `dashboard_resources_snapshot` sur
+  `paris_date(max(refreshed_at))`), corps prod `alert_rule_freshness`, `refresh_identity_stitch` (DELETE+INSERT, aucun
+  horodatage), `cooked_alerts_refresh` (ramasse `alert_rule_%` à 0 argument), `run_rpc_contract_tests` (md5 disque =
+  prod `62ea9362…`).
+- 22:52 `[R]` **Mesure avant.** `cron.job_run_details` job 42 : 30 succès / 30 j, 17-25 s, « 1 row ». `cooked_config` :
+  5 clés, aucune `identity_stitch_*`. Couverture : J-1 (02/09) **429/429** sessions humaines cousues ; J-2 **416/416**
+  (0,5 s, index `idx_events_paris_date`). `dashboard_resources_snapshot` : `cooked_end` 02/09, `refreshed_at` 03/09
+  17:00, `paris_today` 03/09. `page_taxonomy` : 456 lignes, 437 catégorisées, `max(updated_at)` 31/08 11:05.
+  Consommateurs d'`identity_stitch` (rpcs.sql) : `assisted_contacts_by_entry_path`, `conversion_journeys`,
+  `seo_to_contact_funnel` (fenêtres closes J-1 depuis T-08/T-09), `math_*` (hors périmètre). Lens `live` :
+  `site_kpis_compare`, `cooked_pages_snapshot` — sessions brutes, sans couture.
+- 22:58 `[D]` Écart au plan, assumé : « `paris_today() - cooked_end >= 2` ⇒ orange » sonnerait **chaque matin** (la
+  séquence suit l'ingestion GSC, ~13-15 h Paris : J-2 de 00:00 à la séquence est l'état normal — g-03 le mesurait
+  à 13,5 h/j). Règle retenue : orange si J-3 à toute heure, ou J-2 **après 16 h Paris** ; registre : warn > 2 j,
+  critical > 4 j ; le grain horaire reste aux alertes T-11 (`gsc_ingest_missed` 12:00 UTC, `refresh_after_gsc_stale`).
+  Rejeu du 28/08 : orange de 16:00 à 21:00 le 28/08 ; dès 00:00 le 29/08 si rien n'avait suivi (J-3).
+  `identity_stitch` : pas de ligne au registre (grain jour) mais une règle dédiée à l'heure (30 h / 54 h), comme
+  demandé par le plan ; page_taxonomy au registre (warn 21 j). Pas de drapeau `grain_partiel` : aucune RPC en
+  périmètre ne mélange plus couture et jour en cours → `COMMENT ON FUNCTION` sur les deux RPC lens `live`.
+- 23:05 `[W]` Migration `t10_fraicheur_donnee_couture_horodatee` écrite (registre, `refresh_identity_stitch` +
+  horodatage `cooked_config`, amorce depuis le dernier succès cron, `alert_rule_identity_stitch`, 2 contrats I7,
+  ACL, commentaires). C6/C6b/C6c OK (`-- c6c:allow` sur le `make_interval` d'origine de la couture).
+  Dashboard : `lib/freshness.ts` (pur, `now` injecté) + 9 tests (rejeu 28/08 matin/après-midi, J-3, J-1, 36 h,
+  GSC, live) ; `FreshnessBanner` rebranché ; vitest 121/121, tsc, eslint OK.
+- 22:58 `[W-PROD]` `apply_migration` → version **`20260903205820`** (clés `cooked_config` écrites 22:58 Paris : `identity_stitch_refreshed_at` = 03/09 05:40:17, `identity_stitch_rows` = 121 237) ; fichier local renommé.
+- 23:12 `[R]` **Après.** `alert_rule_identity_stitch()` = 0 ligne ; `alert_rule_freshness()` = `gbp_daily_stale`
+  seul (20/08, retard GBP connu) ; registre : `dashboard_resources_snapshot` sur `max(cooked_end)` (1/2/4),
+  `page_taxonomy` (7/21/—). Contrats via `rpc_contract_check` : `identity_stitch_couvre_j2` **ok** (0 ligne,
+  123 ms), `identity_stitch_horodatee` **ok** (1). Routines : 134.

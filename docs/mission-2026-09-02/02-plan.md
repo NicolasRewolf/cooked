@@ -195,7 +195,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
 - **Validation** : `alerts WHERE NOT acked` → 0 après ack ; sur 7 j : ≤ 1 push critical hors incident réel.
 - **Restatement** : non. **Qui** : moi ; Nicolas : ack initial. **Estimation** : 3 h.
 
-## T‑10 · Fraîcheur mesurée sur la donnée, couture horodatée
+## T‑10 · Fraîcheur mesurée sur la donnée, couture horodatée — **FAIT 03/09 23:15** (migration `20260903205820`, journal)
 
 - **Problème** : g‑03, c‑02, c‑04, e‑06 (partie registre).
 - **Changement** : `freshness_contract` : `last_point_sql` de `dashboard_resources_snapshot` → `max(cooked_end)` ;

@@ -3,6 +3,38 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-10 : la fraîcheur se mesure sur la donnée, la couture est horodatée
+
+Mission du 02/09/2026, ticket T-10 (#111), constats g-03 (P1), c-02 (P1), c-04, e-06. Invariant I7.
+Migration `20260903205820`.
+
+### Corrigé
+- **Bandeau de fraîcheur du dashboard** : le niveau se juge sur la **fin des données site**
+  (`cooked_end`), plus seulement sur l'âge du calcul (36 h). Orange si `cooked_end` est à J-3, ou à
+  J-2 après 16 h Paris (la séquence qui suit l'ingestion Google n'a pas eu lieu) ; rouge inchangé
+  (calcul > 36 h). Le 28/08 la home avait affiché des chiffres J-2 en vert de 00:00 à 21:00.
+  Logique pure dans `dashboard/src/lib/freshness.ts` (9 tests, dont le rejeu du 28/08).
+- **Registre `freshness_contract`** : `dashboard_resources_snapshot` mesuré sur `max(cooked_end)`
+  (warn > 2 j, critical > 4 j) ; `page_taxonomy` entre au registre (warn > 21 j sans synchro Wix).
+
+### Ajouté
+- **Couture d'identité horodatée** : `refresh_identity_stitch()` écrit
+  `cooked_config.identity_stitch_refreshed_at` / `identity_stitch_rows` (clé amorcée depuis le
+  dernier succès cron, 03/09 05:40 Paris). Avant : `DELETE` + `INSERT` sans trace — une couture
+  vidée était un cron « succeeded ».
+- `alert_rule_identity_stitch()` : `identity_stitch_empty` (critical), `identity_stitch_stale`
+  (> 30 h warn, > 54 h critical, clé absente critical), `identity_stitch_coverage` (sessions
+  humaines de J-1 hors couture après la reconstruction du jour, warn).
+- Contract-tests I7 : `identity_stitch_couvre_j2` (= 0 ; 03/09 : 0 sur 416, 123 ms),
+  `identity_stitch_horodatee` (= 1).
+
+### Constaté (sans changement)
+- c-04 « jour en cours non cousu » : depuis T-08/T-09, aucun consommateur en périmètre ne lit
+  `identity_stitch` sur le jour en cours. `site_kpis_compare` et `cooked_pages_snapshot` (lens
+  `live`) comptent des sessions brutes sans couture — `COMMENT ON FUNCTION` posé, contrat inchangé.
+- Après : `alert_rule_identity_stitch()` = 0 ligne ; `alert_rule_freshness()` = `gbp_daily_stale`
+  seulement (retard GBP connu, verdict Google attendu ~10-15/09).
+
 ## [2026-09-03] — Lab : un onglet de graphes éditoriaux sur data.rewolf.studio
 
 Décision Nicolas (03/09/2026) : ajouter un onglet **Lab** au dashboard pour des graphes « de fou »,

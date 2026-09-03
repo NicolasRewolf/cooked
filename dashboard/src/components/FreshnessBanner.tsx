@@ -1,8 +1,7 @@
 import { cn } from "@/lib/cn";
-import { dayGap, jjmm, jjmmHeure, parisTodayISO } from "@/lib/dates";
+import { jjmm, jjmmHeure } from "@/lib/dates";
+import { freshnessState } from "@/lib/freshness";
 import { Info } from "./Info";
-
-const GSC_LAG_MAX_DAYS = 3;
 
 const GLOW: Record<string, string> = {
   "bg-up": "rgba(47,122,82,.14)",
@@ -25,18 +24,14 @@ export function FreshnessBanner({
   noPrevBaseline?: boolean;
   live?: boolean;
 }) {
-  const lag = lagDays ?? 0;
-  const ageHours = refreshedAt
-    // eslint-disable-next-line react-hooks/purity -- Server Component : heure courante lue une fois
-    ? Math.floor((Date.now() - new Date(refreshedAt).getTime()) / 3_600_000)
-    : null;
-  const staleSnapshot = !live && ageHours != null && ageHours > 36;
-  const gscLate = lag > GSC_LAG_MAX_DAYS;
+  // Server Component : horloge lue une fois ; la logique de niveau est pure (lib/freshness, testée).
+  const state = freshnessState({ gscLastDay, lagDays, cookedEnd, refreshedAt, live, now: new Date() });
+  const { lag, ageHours, cookedGap } = state;
 
   let dot: string;
   let boxClass: string;
   let sentence: React.ReactNode;
-  if (staleSnapshot) {
+  if (state.reason === "stale_snapshot") {
     dot = "bg-alert";
     boxClass = "border-alert/40 bg-alert/5";
     sentence = (
@@ -45,7 +40,16 @@ export function FreshnessBanner({
         probablement échoué. À signaler à Claude.
       </>
     );
-  } else if (gscLate) {
+  } else if (state.reason === "cooked_end_late") {
+    dot = "bg-warn";
+    boxClass = "border-warn/40 bg-warn/5";
+    sentence = (
+      <>
+        ⚠ Données site arrêtées au {jjmm(cookedEnd)} (il y a {cookedGap} j) — la mise à jour qui suit
+        l&apos;ingestion Google n&apos;a pas eu lieu. À signaler à Claude.
+      </>
+    );
+  } else if (state.reason === "gsc_late") {
     dot = "bg-warn";
     boxClass = "border-warn/40 bg-warn/5";
     sentence = (
@@ -57,8 +61,6 @@ export function FreshnessBanner({
   } else {
     dot = "bg-up";
     boxClass = "border-line bg-panel";
-  // eslint-disable-next-line react-hooks/purity -- Server Component : jour Paris lu une fois
-    const cookedGap = cookedEnd ? dayGap(cookedEnd, parisTodayISO()) : null;
     sentence = live ? (
       <>Données Google à J-{lag} ({jjmm(gscLastDay)}, délai normal).</>
     ) : cookedGap != null && cookedGap >= 2 ? (
@@ -74,7 +76,7 @@ export function FreshnessBanner({
     );
   }
 
-  const suffix = !staleSnapshot && !live && noPrevBaseline
+  const suffix = state.level === "ok" && !live && noPrevBaseline
     ? " · comparaisons N-1 indisponibles (historique trop court)"
     : "";
 
