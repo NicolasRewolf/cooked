@@ -3,7 +3,15 @@
 > Écrit à la fin de la Phase 2 (02/09/2026 20:20 Paris). La version finale viendra après les Phases 3‑4.
 > Registre : celui du §2 de `ROADMAP-sprint38-handoff.md` — sans langue de bois.
 
-## État exact
+## État exact (mis à jour 03/09/2026 07:20)
+
+- **T‑01 exécuté et vérifié** (02/09 20:23 → 03/09 07:04) ; **T‑12 exécuté par une session Cursor parallèle** (PR #124,
+  02/09 23:00→00:08) : gate `prod-drift` verte, `rpcs.sql` régénéré (124 fonctions), `doc_constants.json`, 7 migrations
+  re‑datées, miroirs T‑01/weekly. Ma migration `20260903050701` (rôle CI) est redondante et mirrorée.
+- **T‑02** (rotation de la clé publishable, relecture des logs) : action Nicolas, non faite à ma connaissance.
+- **Vague 1 validée** (T‑03, T‑04 sans purge, T‑05+T‑06 fusionnés option b, T‑08 [objectif à fournir], T‑09) : à
+  exécuter en sessions fraîches, une par ticket, en commençant par relire ce dossier.
+
 
 - **Fait** : `00-baseline.md` (photo « avant », 35 requêtes), `01-audit.md` (86 constats, 81 réfutés fail‑closed :
   70 confirmés / 11 partiels / 0 réfuté ; 19 contre‑vérifiés à la main ; 7 causes racines ; 13 invariants),

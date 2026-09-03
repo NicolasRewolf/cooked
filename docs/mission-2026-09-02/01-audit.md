@@ -1,8 +1,8 @@
 # 01 — Audit — mission Cooked 02/09/2026
 
-> ⛔ **NE PAS PUBLIER CE FICHIER (ni `02-plan.md`, ni `00-baseline.md`) sur le dépôt public tant que le ticket
-> T-01 n'est pas exécuté** : ils décrivent une exposition non corrigée (§4, h-01). Le dépôt `NicolasRewolf/cooked`
-> est PUBLIC et `SECURITY.md` interdit les issues publiques pour les failles.
+> ✅ **T-01 exécuté le 02/09/2026 à 20:23 Paris** (migration `20260902182316`, vérifiée 03/09 07:04 : 401 sur les
+> trois objets, 0 fonction SECURITY DEFINER exposée, advisors 0 ERROR, `alert_rule_exposure()` = 0 ligne). L'exposition
+> décrite en h-01 est **fermée** ; ce document peut être publié.
 >
 > Audit multi-agents en **lecture seule** (aucune écriture prod, aucun `apply_migration`, aucune issue, aucun
 > commit) : 9 auditeurs de zone, 9 réfuteurs fail-closed, contre-vérification manuelle des P0/P1 par

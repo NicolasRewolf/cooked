@@ -188,3 +188,34 @@
 - 02/09/2026 20:20 `[D]` **⛔ ARRÊT 1.** Aucune écriture prod pendant toute la session. Aucun push : le dossier de
   mission contient le détail d'une exposition non corrigée (T-01) — commit **local** sur la branche de mission
   seulement, publication après T-01. Prochaine session : relire `journal.md` + le ticket validé, puis Phase 3.
+- 02/09/2026 20:23 `[W-PROD]` **T-01 appliqué** (`apply_migration`, version prod `20260902182316`) : REVOKE sur
+  `rpc_contract_check`, `page_reads` ×2 ; `security_invoker` + REVOKE sur `cpi_capture_perdue`, `cpi_movers`,
+  `events_no_bots` ; `ALTER DEFAULT PRIVILEGES FOR ROLE postgres … REVOKE EXECUTE … FROM PUBLIC, anon, authenticated` ;
+  celui de `supabase_admin` refusé (notice) ; nouvelle règle `alert_rule_exposure()` (invariant I1).
+- 02/09/2026 20:30 `[W]` Réponses aux trois questions de Nicolas dans `01-audit.md` §8 (routine hebdo lancée à la
+  main via MCP le lundi matin ; Q-14 = expirations légitimes, Q-13 = signature du bug ; composantes multi-aid =
+  traces pré-sprint41, 4 multi-device sur 1 547, sortie de fenêtre ~10/10).
+- 02/09/2026 20:35→03/09 07:00 `[D]` Session inactive (nuit).
+- 03/09/2026 07:04 `[R]` **Vérification T-01** : `has_function_privilege(anon|authenticated)` = false sur les 3
+  fonctions ; 3 vues `security_invoker=true`, SELECT anon false ; `pg_default_acl` postgres = `{postgres=X,
+  service_role=X}` (supabase_admin inchangé) ; `alert_rule_exposure()` → 0 ligne ; 0 SECURITY DEFINER exposée ;
+  curl anon → **401** sur `cpi_capture_perdue`, `rpc/page_reads`, `cpi_movers` ; advisors security : **0 ERROR**,
+  lints 0028/0029 disparus (restent 8 `search_path` justifiés, 2 extensions, 1 auth). **T-01 terminé au sens §3.9**
+  sauf le miroir/rpcs.sql — voir ci-dessous.
+- 03/09/2026 07:07 `[W-PROD]` `apply_migration` `t12_role_lecture_seule_ci` (version `20260903050701`) : rôle
+  `cooked_ci_ro` (IF NOT EXISTS), settings read-only, grants, policy SELECT sur `freshness_contract`.
+- 03/09/2026 07:10 `[R]` Miroir de `20260807224552` (routine hebdo) et de T-01 écrits localement ; 9 corps de fonction
+  prod transcrits et **vérifiés au md5** ; `rpcs.sql` reconstruit (124 sections) : sha256 corps = `0e06add6…` =
+  dump prod — reconstruction exacte. Découverte d'une fonction inattendue `cooked_ci_cron_jobs()` (migration prod
+  `20260902220012`, que je n'ai pas appliquée).
+- 03/09/2026 07:15 `[D]` **Travail parallèle constaté** : `origin/main` = `d205ff9` (PR #124 « t12-ci-prod-drift »,
+  session **Cursor** de Nicolas, 02/09 23:00→03/09 00:08) : rôle `cooked_ci_ro` (`20260902212045`), no-op
+  (`20260902215946`), `cooked_ci_cron_jobs()` (`20260902220012`), workflow `prod-drift.yml` + `check_prod_drift.py`,
+  `contracts/doc_constants.json`, 7 migrations re-datées, miroir weekly, **miroir T-01** (identique au mien),
+  `rpcs.sql` régénéré (124, sha `0e06add6…`). Issues **#102 et #113 fermées** par la PR. Gate `prod-drift` verte
+  (run 02/09 22:08 UTC). Conséquence : mes miroirs T-01/weekly sont abandonnés (identiques), ma migration
+  `20260903050701` est **redondante** (rôle déjà créé) mais appliquée → miroir ajouté pour la parité, sinon la gate
+  quotidienne (06:20 UTC) serait rouge. Point de vigilance : deux sessions ont écrit en prod la même nuit sans se
+  voir (mémoire « canal de travail unique ») — à signaler à Nicolas, pas à re-litiger.
+- 03/09/2026 07:20 `[W]` Rebase de la branche de mission sur `origin/main` ; bandeaux « ne pas publier » remplacés
+  par l'état vérifié de T-01 ; PR ouverte.

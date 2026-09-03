@@ -4,7 +4,7 @@
 > mot dans la session avant toute exécution. Les Phases 3‑4 se feront dans des sessions ultérieures (une par ticket
 > lourd), chacune commençant par relire `journal.md` et le ticket validé.
 >
-> ⛔ **Ne pas pousser ce dossier sur le dépôt public avant T‑01** (il décrit une exposition non corrigée).
+> ✅ T‑01 exécuté le 02/09/2026 20:23 Paris (vérifié 03/09 07:04) ; T‑12 livré par la session Cursor du 02/09 23:00→00:08 (PR #124, #102 et #113 fermées).
 >
 > Format : `docs/plan-correction-audit-2026-07-02.md`. Source des constats : `01-audit.md` (IDs `x‑nn`). Priorité :
 > **P0 → P1 → invariants anti‑récidive → P2 → P3.** Règle de valeur : une correction vaut par la part de chiffres
@@ -39,7 +39,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
 
 # VAGUE 0 — Fermer les portes
 
-## T‑01 · Révoquer l'exposition `anon` : `rpc_contract_check`, `page_reads`, `cpi_capture_perdue` + privilèges par défaut ⚠️ P0
+## T‑01 · Révoquer l'exposition `anon` : `rpc_contract_check`, `page_reads`, `cpi_capture_perdue` + privilèges par défaut ⚠️ P0 — **FAIT 02/09 20:23, vérifié 03/09 07:04** (journal)
 
 - **Problème** : h‑01 (P0), o‑02 (P1), o‑03 (P1). Deux fonctions SECURITY DEFINER et une vue répondent au rôle
   `anon` ; `rpc_contract_check` exécute le SQL qu'on lui passe. Cause : `pg_default_acl` (rôles `postgres` et
@@ -166,7 +166,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
 
 # VAGUE 2 — Invariants anti‑récidive
 
-## T‑12 · La CI compare la prod à la prod (prérequis de six invariants)
+## T‑12 · La CI compare la prod à la prod (prérequis de six invariants) — **FAIT par la session Cursor du 02/09 23:00 (PR #124)** ; reste : les contrats dashboard depuis la prod (→ T‑13) et `views.sql`
 
 - **Problème** : h‑03, o‑04, o‑05, i‑04, g‑01, i‑02, h‑06.
 - **Changement** : (1) **secret `DATABASE_URL_RO`** : rôle Postgres `cooked_ci_ro` (`SELECT` sur `pg_catalog`,
