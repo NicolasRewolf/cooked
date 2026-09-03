@@ -327,19 +327,22 @@ CREATE OR REPLACE FUNCTION public.alert_rule_gsc_ingest_missed()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  v_last_ingest date;
+  v_last_ingest timestamptz;
 BEGIN
-  -- Le cron GSC tourne à 06:00 UTC ; on ne juge qu'après 13:00 Paris.
-  IF (now() AT TIME ZONE 'Europe/Paris')::time < time '13:00' THEN  -- garde HORAIRE Paris : paris_today() ne porte pas l'heure (C6 ok)
+  -- Le cron GitHub est planifié 06:00 UTC et dérive de +4 à +12 h (constat e-02) :
+  -- on ne juge qu'à partir de 12:00 UTC, heure du cron (UTC), pas heure Paris.
+  IF (now() AT TIME ZONE 'UTC')::time < time '12:00' THEN
     RETURN;
   END IF;
-  SELECT public.paris_date(max(ingested_at)) INTO v_last_ingest
-  FROM public.gsc_path_daily;
-  IF v_last_ingest IS DISTINCT FROM public.paris_today() THEN
+  SELECT max(g.ingested_at) INTO v_last_ingest FROM public.gsc_path_daily g;
+  IF public.paris_date(v_last_ingest) IS DISTINCT FROM public.paris_today() THEN
     kind := 'gsc_ingest_missed'; severity := 'warn';
     detail := format(
-      'Ingestion GSC absente aujourd''hui (dernière : %s) — vérifier le workflow gsc-daily-ingest.',
-      coalesce(to_char(v_last_ingest, 'DD/MM/YYYY'), 'jamais'));
+      'Ingestion GSC en retard : attendue à 06:00 UTC, toujours absente à %s UTC (dernière : %s). '
+      'Si rien à 18:00 UTC : gh workflow run gsc-daily-ingest.yml. '
+      'L''aval (cooked-refresh-after-gsc) repartira seul à l''heure suivante, jusqu''à 21:00 UTC.',
+      to_char(now() AT TIME ZONE 'UTC', 'HH24:MI'),
+      coalesce(to_char(v_last_ingest AT TIME ZONE 'Europe/Paris', 'DD/MM/YYYY HH24:MI'), 'jamais'));
     RETURN NEXT;
   END IF;
 END;
@@ -438,6 +441,89 @@ BEGIN
       'Aucun event reçu depuis %s min (seuil 90 min, heure Paris habituellement active, médiane %s). Tracker ou Edge track en panne ?',
       round(v_age_min), round(v_med)
     )::text;
+END;
+$function$
+
+
+-- ═══ public.alert_rule_refresh_after_gsc_stale() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_refresh_after_gsc_stale()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_pending record;
+  v_hour    integer := extract(hour FROM (now() AT TIME ZONE 'UTC'))::int;
+BEGIN
+  -- Jugé dans la fenêtre du cron aval (6h-21h UTC), après au moins deux ticks.
+  IF v_hour < 8 OR v_hour > 23 THEN
+    RETURN;
+  END IF;
+  SELECT * INTO v_pending FROM public.cooked_refresh_after_gsc_pending();
+  IF v_pending.pending AND v_pending.last_ingest < now() - interval '3 hours'
+     AND NOT EXISTS (
+       SELECT 1 FROM public.alerts a
+       WHERE a.kind LIKE 'refresh_step_failed_%'
+         AND a.created_at > now() - interval '6 hours')
+  THEN
+    kind := 'refresh_after_gsc_stale'; severity := 'critical';
+    detail := format(
+      '%s — le cron cooked-refresh-after-gsc (0 6-21 * * * UTC) n''a pas suivi. '
+      'Vérifier cron.job (actif ?) et refresh_runs ; relancer : SELECT public.cooked_refresh_after_gsc();',
+      v_pending.reason);
+    RETURN NEXT;
+  END IF;
+END;
+$function$
+
+
+-- ═══ public.alert_rule_refresh_budget() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_refresh_budget()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_budget_s integer;
+  v_run      record;
+  v_steps    text;
+BEGIN
+  SELECT nullif(btrim(c.value), '')::int INTO v_budget_s
+  FROM public.cooked_config c WHERE c.key = 'refresh_after_gsc_budget_s';
+  IF v_budget_s IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT r.run_id, r.started_at, r.duration_ms, r.ok INTO v_run
+  FROM public.refresh_runs r
+  WHERE r.step = '_total' AND r.started_at > now() - interval '48 hours'
+  ORDER BY r.started_at DESC
+  LIMIT 1;
+
+  IF v_run.run_id IS NULL OR v_run.duration_ms < v_budget_s * 1000 * 0.8 THEN
+    RETURN;
+  END IF;
+
+  SELECT string_agg(format('%s %s s%s', s.step, round(s.duration_ms / 1000.0),
+                           CASE WHEN s.ok THEN '' ELSE ' ✗' END),
+                    ', ' ORDER BY s.step_no)
+    INTO v_steps
+  FROM public.refresh_runs s
+  WHERE s.run_id = v_run.run_id AND s.step_no > 0;
+
+  kind := 'refresh_budget'; severity := 'warn';
+  detail := format(
+    'Refresh après GSC du %s : %s s = %s %% du budget de %s s (%s). '
+    'Au-delà de 100 %% les étapes restantes sautent (retex 26/07). Étapes : %s.',
+    to_char(v_run.started_at AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'),
+    round(v_run.duration_ms / 1000.0),
+    round(100.0 * v_run.duration_ms / (v_budget_s * 1000)),
+    v_budget_s,
+    CASE WHEN v_run.ok THEN 'complet' ELSE 'partiel' END,
+    coalesce(v_steps, '—'));
+  RETURN NEXT;
 END;
 $function$
 
@@ -1750,9 +1836,11 @@ CREATE OR REPLACE FUNCTION public.cooked_refresh_after_gsc()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  v_last_ingest   timestamptz;
-  v_last_complete timestamptz;
-  v_today_paris   date := public.paris_today();
+  v_pending  record;
+  v_run_id   uuid        := gen_random_uuid();
+  v_run_t0   timestamptz := clock_timestamp();
+  v_t0       timestamptz;
+  v_t1       timestamptz;
   v_steps constant text[] := ARRAY[
     'cooked_cpi_snapshot',
     'refresh_dashboard_snapshots',
@@ -1771,27 +1859,27 @@ BEGIN
     RETURN 'skip: un refresh est déjà en cours';
   END IF;
 
-  SELECT max(ingested_at) INTO v_last_ingest FROM public.gsc_path_daily;
-
-  SELECT value::timestamptz INTO v_last_complete
-  FROM public.cooked_config
-  WHERE key = 'last_full_refresh_after_gsc_at';
-
-  IF v_last_ingest IS NULL
-     OR public.paris_date(v_last_ingest) < v_today_paris THEN
-    RETURN 'skip: ingestion GSC du jour pas encore arrivée';
-  END IF;
-
-  IF v_last_complete IS NOT NULL AND v_last_complete >= v_last_ingest THEN
-    RETURN 'skip: séquence déjà complète après l''ingestion du jour';
+  -- T-11 : plus de garde « ingestion du jour ». On repart dès qu'une ingestion GSC est
+  -- plus récente que le dernier refresh complet, quelle que soit l'heure d'arrivée.
+  SELECT * INTO v_pending FROM public.cooked_refresh_after_gsc_pending();
+  IF NOT v_pending.pending THEN
+    RETURN 'skip: ' || v_pending.reason;
   END IF;
 
   FOR v_i IN 1..cardinality(v_steps) LOOP
     v_step := v_steps[v_i];
+    v_t0   := clock_timestamp();
     BEGIN
       EXECUTE format('SELECT public.%I()', v_step);
+      v_t1 := clock_timestamp();
+      INSERT INTO public.refresh_runs
+        (run_id, step_no, step, started_at, finished_at, duration_ms, ok, trigger_ingest_at)
+      VALUES
+        (v_run_id, v_i, v_step, v_t0, v_t1,
+         (extract(epoch FROM (v_t1 - v_t0)) * 1000)::int, true, v_pending.last_ingest);
     EXCEPTION WHEN OTHERS OR query_canceled THEN
       GET STACKED DIAGNOSTICS v_err = MESSAGE_TEXT, v_state = RETURNED_SQLSTATE;
+      v_t1     := clock_timestamp();
       v_detail := format('%s [%s]: %s', v_step, v_state, v_err);
       IF v_state = '57014' AND v_i < cardinality(v_steps) THEN
         v_detail := v_detail || format(' — étapes non lancées (budget timeout épuisé) : %s',
@@ -1800,9 +1888,20 @@ BEGIN
       v_failures := v_failures || v_detail;
 
       BEGIN
+        INSERT INTO public.refresh_runs
+          (run_id, step_no, step, started_at, finished_at, duration_ms, ok, sqlstate, error, trigger_ingest_at)
+        VALUES
+          (v_run_id, v_i, v_step, v_t0, v_t1,
+           (extract(epoch FROM (v_t1 - v_t0)) * 1000)::int, false, v_state, left(v_err, 500),
+           v_pending.last_ingest);
+      EXCEPTION WHEN OTHERS OR query_canceled THEN
+        NULL;
+      END;
+
+      BEGIN
         PERFORM public.raise_cooked_alert(
           'refresh_step_failed_' || v_step, 'critical',
-          format('Refresh après GSC — %s. Les étapes réussies sont conservées ; retry complet au prochain tick horaire (cron 46, 8h-20h).',
+          format('Refresh après GSC — %s. Les étapes réussies sont conservées ; retry complet au prochain tick horaire (cron cooked-refresh-after-gsc, 6h-21h UTC). Durées : SELECT * FROM refresh_runs ORDER BY started_at DESC.',
                  v_detail));
       EXCEPTION WHEN OTHERS OR query_canceled THEN
         NULL;
@@ -1814,8 +1913,25 @@ BEGIN
     END;
   END LOOP;
 
+  v_t1 := clock_timestamp();
+  BEGIN
+    INSERT INTO public.refresh_runs
+      (run_id, step_no, step, started_at, finished_at, duration_ms, ok, error, trigger_ingest_at)
+    VALUES
+      (v_run_id, 0, '_total', v_run_t0, v_t1,
+       (extract(epoch FROM (v_t1 - v_run_t0)) * 1000)::int,
+       cardinality(v_failures) = 0,
+       nullif(array_to_string(v_failures, ' | '), ''),
+       v_pending.last_ingest);
+    DELETE FROM public.refresh_runs WHERE started_at < now() - interval '400 days';
+  EXCEPTION WHEN OTHERS OR query_canceled THEN
+    NULL;
+  END;
+
   IF cardinality(v_failures) = 0 THEN
     BEGIN
+      -- now() = début de la transaction, volontairement : une ingestion arrivée PENDANT
+      -- la séquence reste « plus récente que le dernier refresh complet » → rejouée.
       INSERT INTO public.cooked_config (key, value, updated_at)
       VALUES ('last_full_refresh_after_gsc_at', now()::text, now())
       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;
@@ -1823,11 +1939,45 @@ BEGIN
       NULL;
     END;
 
-    RETURN format('ok: séquence complète après ingestion du %s',
-                  to_char(v_last_ingest AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'));
+    RETURN format('ok: séquence complète en %s s après ingestion du %s',
+                  round(extract(epoch FROM (v_t1 - v_run_t0))),
+                  to_char(v_pending.last_ingest AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'));
   END IF;
 
   RETURN format('partiel: %s', array_to_string(v_failures, ' | '));
+END;
+$function$
+
+
+-- ═══ public.cooked_refresh_after_gsc_pending() ═══
+CREATE OR REPLACE FUNCTION public.cooked_refresh_after_gsc_pending()
+ RETURNS TABLE(pending boolean, reason text, last_ingest timestamp with time zone, last_complete timestamp with time zone)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  SELECT max(g.ingested_at) INTO last_ingest FROM public.gsc_path_daily g;
+
+  SELECT c.value::timestamptz INTO last_complete
+  FROM public.cooked_config c
+  WHERE c.key = 'last_full_refresh_after_gsc_at';
+
+  IF last_ingest IS NULL THEN
+    pending := false;
+    reason  := 'aucune ingestion GSC en base';
+  ELSIF last_complete IS NOT NULL AND last_complete >= last_ingest THEN
+    pending := false;
+    reason  := format('séquence complète le %s après l''ingestion du %s',
+                      to_char(last_complete AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'),
+                      to_char(last_ingest   AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'));
+  ELSE
+    pending := true;
+    reason  := format('ingestion GSC du %s non suivie d''un refresh complet (dernier complet : %s)',
+                      to_char(last_ingest AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'),
+                      coalesce(to_char(last_complete AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'), 'jamais'));
+  END IF;
+  RETURN NEXT;
 END;
 $function$
 
@@ -5365,6 +5515,16 @@ BEGIN
       ('dashboard_seo_kpis',
        $q$select count(*) from public.dashboard_seo_kpis('rolling_28', 'ressource')$q$,
        NULL, NULL)
+      ,
+      -- I9 (T-11, 03/09/2026) : chaque ingestion GSC est suivie d'un refresh complet journalisé.
+      ('refresh_runs_after_ingest',
+       $q$select count(*) from public.refresh_runs
+          where step = '_total' and ok and started_at > now() - interval '36 hours'$q$,
+       1, NULL),
+      ('refresh_after_gsc_not_pending',
+       $q$select count(*) from public.cooked_refresh_after_gsc_pending() p
+          where p.pending and p.last_ingest < now() - interval '6 hours'$q$,
+       NULL, 0)
     ) AS v(nom, requete, min_rows, exact_rows)
   LOOP
     PERFORM public.rpc_contract_check(t.nom, t.requete, t.min_rows, t.exact_rows);
