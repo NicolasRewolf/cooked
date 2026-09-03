@@ -130,9 +130,10 @@ _Avoid_ : confondre avec le Retard d'un snapshot — le Silence porte sur des
 événements humains, sa normalité dépend de la cadence réelle du site.
 
 **Escalade** :
-Un warn ininterrompu ≥ 5 jours devient critical (et pousse sur ntfy).
-**Acker la dernière alerte du kind suspend l'escalade et le re-push** —
-c'est le sens de `acked` : « vu, je gère ».
+Un warn ininterrompu ≥ 5 jours devient critical (et pousse sur ntfy),
+**sauf** les kinds éditoriaux (`cpi_drop` — jamais critical). Au plus
+2 pushs par épisode, puis silence jusqu'à ack. **Acker** (`SELECT ack_alerts();`)
+suspend l'escalade et le re-push : « vu, je gère ».
 
 ## Invariants
 

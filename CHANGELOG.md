@@ -3,6 +3,18 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-07 : les alertes ne crient plus pour rien
+
+Mission du 02/09/2026, ticket T-07 (#108). Mesure avant : **55** alertes ouvertes, **11** critical en 10 j (dont des escalades `cpi_drop` quotidiennes).
+
+### Corrigé
+- **`pipeline_dead` regardait une fenêtre de 60 min**, pas l'âge du dernier event : un trou de 69 min la nuit du 10/08 passait, un trou de 63 min le 22/08 à 04:15 sonnait. Désormais : âge > **90 min** et heure Paris habituellement active. Replay 40 j : 0 faux positif nocturne, 1 vraie panne diurne (01/08, 166 min).
+- **`cpi_drop` prenait le grade B et un momentum encore au-dessus de 1** (chute de score sans baisse de trafic). Désormais : grades **S/A**, momentum **< 0,90**. Le 03/09 : 3 pages → 0.
+- **Escalade** : plus jamais sur `cpi_drop` ; au plus **2 notifications** par épisode, puis silence jusqu'à acquittement.
+- **`form_submit_dropped`** passe par `raise_cooked_alert` (Edge `form-webhook` v14, à déployer).
+- **Plancher de volume** : heure de bureau à −50 % vs la médiane 7 j (médiane ≥ 30).
+- **Acquittement** : `SELECT ack_alerts();` — le stock de 55 n'est pas vidé tout seul.
+
 ## [2026-09-03] — T-08 : les contacts qu'on ne rattache pas sont comptés, le trimestre ne bloque plus le dashboard
 
 Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-08 (#109), constats c-03 (P1) et g-02 (P1).
