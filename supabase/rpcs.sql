@@ -3837,52 +3837,6 @@ AS $function$
 $function$
 
 
--- ═══ public.page_reads(p_days integer) ═══
-CREATE OR REPLACE FUNCTION public.page_reads(p_days integer DEFAULT 28)
- RETURNS TABLE(session_id text, path text, dwell_s numeric, scroll_pct numeric, session_pageviews bigint, retained boolean, source text)
- LANGUAGE sql
- STABLE
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-  SELECT * FROM public.page_reads(now() - make_interval(days => p_days), now());
-$function$
-
-
--- ═══ public.page_reads(p_from timestamp with time zone, p_to timestamp with time zone) ═══
-CREATE OR REPLACE FUNCTION public.page_reads(p_from timestamp with time zone, p_to timestamp with time zone)
- RETURNS TABLE(session_id text, path text, dwell_s numeric, scroll_pct numeric, session_pageviews bigint, retained boolean, source text)
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-  WITH pex AS (
-    SELECT e.session_id, e.path,
-           max((e.props->>'duration_seconds')::numeric) AS d,
-           max(coalesce((e.props->>'max_scroll')::numeric, 0)) AS s
-    FROM public.events_human e
-    WHERE e.name = 'page_exit'
-      AND e.path IS NOT NULL
-      AND e.occurred_at > p_from AND e.occurred_at <= p_to
-    GROUP BY e.session_id, e.path
-  ),
-  spv AS (
-    SELECT e.session_id, count(*) AS pv
-    FROM public.events_human e
-    WHERE e.name = 'pageview'
-      AND e.occurred_at > p_from AND e.occurred_at <= p_to
-    GROUP BY e.session_id
-  )
-  SELECT pex.session_id,
-         pex.path,
-         pex.d,
-         pex.s,
-         coalesce(spv.pv, 1)::bigint,
-         (pex.d >= 15 OR coalesce(spv.pv, 1) >= 2),
-         'page_exit'::text
-  FROM pex LEFT JOIN spv ON spv.session_id = pex.session_id;
-$function$
-
-
 -- ═══ public.page_taxonomy_sync_wix(p_posts jsonb, p_dry_run boolean) ═══
 CREATE OR REPLACE FUNCTION public.page_taxonomy_sync_wix(p_posts jsonb, p_dry_run boolean DEFAULT false)
  RETURNS TABLE(inserted integer, updated integer, unpublished integer, inserted_paths text[], updated_paths text[])
@@ -5717,9 +5671,6 @@ BEGIN
       ('refresh_pipeline_health',
        $q$select count(*) from public.refresh_pipeline_health()$q$,
        NULL, 1),
-      ('page_reads',
-       $q$select count(*) from public.page_reads(7) where source = 'page_exit'$q$,
-       1, NULL),
       ('units_behavior_pages_for_period',
        $q$select count(*) from public.behavior_pages_for_period(now() - interval '7 days', now())
           where bounce_rate > 1 or bounce_rate_pct > 100 or abs(bounce_rate * 100 - bounce_rate_pct) > 0.02$q$,
