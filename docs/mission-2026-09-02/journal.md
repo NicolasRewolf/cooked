@@ -664,3 +664,30 @@
   `alert_rule_exposure()` = 0 ; `cooked_ci_ro` EXECUTE sur les 2 normalisations ; routines 137, vues 12.
   Contrats via `rpc_contract_check` : `pont_test_jamais_dans_prod` ok, `normalize_phone_vecteurs` ok,
   `crm_prospects_doublons_email_minute` ok.
+- 00:50 `[R]` T-16 — PR #142 : prod-drift rouge au 1er essai (`check_normalize_vectors.py` importe `secib_ingest`
+  → `requests` absent du job) ; corrigé (`pip install psycopg2-binary requests`) ; **vert, mergée 01:00**.
+
+### T-17 — tracker : filet CI, tests des correctifs, CLS explicite, debug off (04/09/2026, 01:00 → 01:25)
+- 01:00 `[F]` Relecture #118, a-03/a-04/a-05/a-07/a-08, `tests/tracker.test.js` (14 assertions, jsdom),
+  `tracker.html` (storage/healAid 236-345, isAN 665-700, vitals 950-1050, page_exit 1070-1090, send/flush
+  395-445), `minify-tracker.py`, `tracker-test.yml` (paths sans les fichiers Velo), `masterpage-cooked.js:22`
+  (`COOKED_DEBUG = true`).
+- 01:05 `[R]` **Mesure avant.** Minifié sprint41 = 14 760 / 15 000. Contacts sans amont (events_human 28 j, hors
+  server) : `cta_phone_click` 0/128, `cta_booking_click` 4/331. Suite jsdom : 14 assertions, aucune sur
+  sprint41/40/35, PerformanceObserver mocké à `undefined` (CLS jamais exercé).
+- 01:08 `[D]` CLS explicite tient dans la marge (+60 chars → 14 820) : fait dans sprint42, sans attendre le loader.
+  a-04 (reprise sur échec + id client) reste hors monolithe → décision loader §7.1 ; détection livrée à la place
+  (alerte `contact_sans_amont`, plancher `volume_floor` T-07). Cliquet CI plutôt que « rouge sous 14 500 » (le
+  ticket) : un workflow rouge en permanence jusqu'à la décision loader serait un « rouge en silence » de plus ;
+  le cliquet refuse tout AJOUT net au-dessus de 14 500, ce qui est l'invariant recherché.
+- 01:12 `[W]` `tracker.html` sprint42 (`clsOn`, `if (vitals.cls || clsOn)`, arrondi 3 décimales, en-tête) ;
+  `tracker.test.js` +6 assertions (validées d'abord sur une copie en scratch : 20/20 source + minifié) ;
+  `minify-tracker.py` cliquet (`contracts/doc_constants.json` → `tracker.min_chars_baseline` 14 820,
+  `soft_limit_chars` 14 500, exit 3) ; `masterpage-cooked.js` debug off ; `tracker-test.yml` (`wix/**`, grep
+  `COOKED_DEBUG = true`) ; PLAYBOOK piège n° 16 (CWV : dénominateur + périmètre navigateur) ; migration
+  `alert_rule_contact_sans_amont` (≥ 3 / 24 h warn, ≥ 10 critical).
+- 01:15 `[W-PROD]` `apply_migration` → **`20260903215424`**. `alert_rule_contact_sans_amont()` = 0 ligne ;
+  anon = false ; routines 138, règles d'alerte 18 → `doc_constants.json`, docs « 138 routines ».
+- 01:20 `[R]` Suite locale : **20/20 source, 20/20 minifié**, minifié 14 820 (⚠ marge, cliquet armé),
+  `COOKED_DEBUG` grep vide, C6/C6c OK, I13 OK. `expected_tracker_version` reste `sprint41` (prod) jusqu'au
+  collage — bump = migration après contrôle J+1 (bloc « À faire par Nicolas » dans la PR).

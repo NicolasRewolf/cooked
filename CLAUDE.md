@@ -211,7 +211,7 @@ après C1–C9 ; tue les fuites SQL restantes :
   `contracts/branded_query_vectors.json`).
 - **`cooked_snapshot_window(w, grain)`** : driver bornes `live_j1` + GSC +
   `cooked_events_window` pour les 3 refreshers dashboard.
-- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 137 routines au
+- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 138 routines au
   03/09/2026, régénéré depuis la prod par le workflow `rpcs-regenerate`) ; gate CI
   `check_rpcs_sql_fresh.py` si migration redéfinit une RPC + prod-drift (sha = prod).
 
@@ -382,7 +382,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (137 routines au 03/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
+| Corps complets des RPC (138 routines au 03/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
 | Glossaire de domaine et invariants (conversions, attribution, lecture, fraîcheur) | `CONTEXT.md` |
 | Décisions d'architecture | `docs/adr/` |
 | PII, secrets, surface d'attaque, invariant I1 | `SECURITY.md` |
@@ -658,10 +658,14 @@ Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
 Paris (première ingestion réelle).
 
-**Versions canoniques (repo `main`, 10/08/2026)** :
-- Tracker : **`sprint41`** (ids auto-réparants — fin de la rotation aid/sid sur
-  wipe de storage qui coupait ~22 % des sessions). **DÉPLOYÉ le 12/07/2026
-  ~22:20 par Nicolas**, vérifié J+1 le 13/07/2026 (OK).
+**Versions canoniques (repo `main`, 04/09/2026)** :
+- Tracker : **`sprint42`** (T-17, 04/09/2026 — CLS explicite : un chargement sans layout
+  shift émet CLS = 0 quand l'observer est attaché, CLS à 3 décimales ; 14 820 / 15 000 chars ;
+  cliquet CI : aucun ajout net au-dessus de 14 500 sans le loader). **Déployé en prod :
+  `sprint41`** (12/07/2026) tant que Nicolas n'a pas collé `wix/tracker.min.html` — puis
+  migration `UPDATE cooked_config SET value='sprint42' WHERE key='expected_tracker_version'`.
+  sprint41 = ids auto-réparants (fin de la rotation aid/sid sur wipe de storage, ~22 % des
+  sessions), vérifié J+1 le 13/07/2026.
 - Edge `track` : **v28** (03/09/2026 — T-04 : UA littéral « pc » (bot Baidu,
   13,8 % des pageviews d'`events_human` pendant 4 mois) et SEBot-WA droppés à
   l'ingestion, miroir SQL dans `refresh_noise_sessions` + règle

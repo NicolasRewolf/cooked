@@ -256,7 +256,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
   **Validation** : vecteurs verts des deux côtés ; `pont` sur `env='test'` = 0 ligne quand `env='prod'` demandé.
   **Qui** : moi. **Estimation** : 4 h. Aucune préparation de credentials prod (devis non signé).
 
-## T‑17 · Tracker : filet CI, tests des correctifs, CLS explicite, debug off — puis décision loader
+## T‑17 · Tracker : filet CI, tests des correctifs, CLS explicite, debug off — puis décision loader — **CODE FAIT 04/09 01:20** (migration `20260903215424` ; collage Wix = Nicolas ; loader = §7.1)
 - **Problème** : a‑03, a‑04, a‑05, a‑07, a‑08. **Changement** : CI rouge sous 14 500 chars ; 3 assertions jsdom
   (session cut, page_exit ré‑armé, anchor chrome) ; CLS = 0 émis (coûte des chars → dépend de §7.1) ;
   `COOKED_DEBUG=false` + grep CI ; alerte « contact sans amont » (a‑08) et plancher de volume (T‑07) en attendant une

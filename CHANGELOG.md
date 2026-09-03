@@ -3,6 +3,42 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-04] — T-17 : tracker `sprint42` — CLS explicite, filet CI, tests des correctifs, debug off
+
+Mission du 02/09/2026, ticket T-17 (#118), constats a-03 (P1), a-04 (arbitrage), a-05, a-07, a-08.
+Invariant I11. Migration `20260903215424` (alerte). **Collage Wix = Nicolas** (tracker + masterPage) ;
+prod reste `sprint41` d'ici là.
+
+### Ajouté
+- **Tracker `sprint42`** : un chargement sans layout shift émet **CLS = 0** quand l'observer
+  `layout-shift` est attaché (drapeau `clsOn`) ; CLS arrondi à 3 décimales (seuil « bon » 0,1 ; 0,01
+  était 1/10 du seuil). Sans observer (Safari, Firefox) rien n'est émis : la métrique reste
+  Chromium-only, dit comme tel (PLAYBOOK piège n° 16). +60 chars minifiés (14 820 / 15 000).
+- **6 assertions jsdom** (`tests/tracker.test.js`, 20 au total) : wipe de storage en cours de page →
+  même sid, aid ré-écrit (sprint41, jamais testé) ; page_exit ré-armé au retour d'onglet (sprint40) ;
+  clic Cookiebot hors `cta_anchor_click`, ancre réelle comptée (sprint35) ; CLS = 0 émis avec observer,
+  rien sans (sprint42).
+- **Cliquet CI** (`scripts/minify-tracker.py`, `contracts/doc_constants.json` → `tracker`) : au-dessus de
+  14 500 chars, la CI refuse tout ajout net par rapport à la baseline (14 820) — réduire passe, grossir
+  non, tant que le loader first-party (décision §7.1) n'est pas tranché.
+- `tracker-test.yml` : déclenché sur `wix/**` (les deux fichiers Velo n'étaient dans aucun workflow) ;
+  échoue si `COOKED_DEBUG = true` dans `wix/*.js`.
+- Alerte **`contact_sans_amont`** : ≥ 3 contacts macro sur 24 h sans pageview antérieure dans la même
+  session (détection d'injection via `/_functions/track` — garde d'origine forgeable, sans rate-limit —
+  ou tracker cassé). 28 j au 04/09 : 0/128 phone, 4/331 booking.
+
+### Corrigé
+- `wix/masterpage-cooked.js` : `COOKED_DEBUG = false` (chaîne vérifiée depuis le 11/06 ; les ids étaient
+  journalisés dans la console de chaque visiteur).
+
+### À faire par Nicolas
+1. Coller `wix/tracker.min.html` (sprint42, 14 820 chars) dans le Custom Code Wix, puis
+   `wix/masterpage-cooked.js` dans `masterPage.js` ; publier.
+2. Contrôle J+1 : `SELECT props->>'_v', count(*) FROM events_human WHERE occurred_at > now() - interval '24 hours' GROUP BY 1`
+   → `sprint42` majoritaire ; et `SELECT count(*) FROM events_human WHERE name='web_vitals' AND props->>'metric'='CLS' AND (props->>'value')::numeric = 0 AND occurred_at > now() - interval '24 hours'` > 0.
+3. Puis migration `UPDATE cooked_config SET value = 'sprint42' WHERE key = 'expected_tracker_version'`
+   (sinon `tracker_drift` sonne).
+
 ## [2026-09-04] — T-16 : le pont SECIB ne peut plus livrer un taux faux avec aplomb
 
 Mission du 02/09/2026, ticket T-16 (#117), constats e-01 (P1), c-08, e-03, e-04, e-05/c-07, e-08.
@@ -66,8 +102,8 @@ Mission du 02/09/2026, ticket T-14 (#115), constats i-01 (P1), i-02 (P1), i-03�
 g-05, g-07, o-12. Invariant I13. Pas de migration.
 
 ### Ajouté
-- **`contracts/doc_constants.json`** étendu (compteurs prod mesurés le 03/09 : 137 routines `pg_proc`
-  = 133 Cooked + 4 `unaccent`, 17 règles d'alerte, 16 RPC dashboard, 11 vues, 14 sources au registre,
+- **`contracts/doc_constants.json`** étendu (compteurs prod mesurés le 03/09 : 138 routines `pg_proc`
+  = 134 Cooked + 4 `unaccent`, 17 règles d'alerte, 16 RPC dashboard, 11 vues, 14 sources au registre,
   9 crons ; versions `sprint41` / `track` v28 / `form-webhook` v14 ; liste des docs vivants, objets
   fantômes interdits, exclusions de l'orphan-check). `check_prod_drift.py` compare désormais ces
   compteurs à la prod (chaque matin + chaque PR SQL).
