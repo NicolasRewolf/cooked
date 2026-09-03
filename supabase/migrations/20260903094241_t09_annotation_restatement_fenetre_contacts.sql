@@ -1,0 +1,11 @@
+-- T-09 (mission 02/09/2026, issue #110) — annotation du restatement (règle §2.10 de la mission).
+-- Appliquée en prod le 03/09/2026 vers 11:45 Paris, après la migration 20260903093320 et la comparaison photo « avant »
+-- (cpi_pre_restatement_20260903, phase t09_avant = cpi_daily du 03/09 à 10:58) / « après » (cpi_daily du 03/09 recalculé
+-- 11:37 par cooked_cpi_snapshot(), migration 20260903093524) sur les mêmes données GSC (dernier jour 30/08).
+INSERT INTO public.annotations (day, kind, label, paths)
+VALUES (
+  DATE '2026-09-03',
+  'autre',
+  'Restatement T-09 (03/09/2026) : une seule fenêtre « N jours » pour les contacts. conversion_journeys, form_submits_attributed et macro_contacts_by_path(days) lisent N jours Paris clos à J-1 (cooked_period_bounds ''live_j1'') au lieu de now()-N jours ; la réponse ne dépend plus de l''heure de la question. « Contacts macro 28 j » = 191 partout (site_macro_counts, Σ macro_contacts_by_path, conversion_journeys ; avant : 183 / 189 / 195 selon la RPC). seo_to_contact_funnel : GSC, entrées et contacts sur la même fenêtre close à gsc_last_data_day() (03/08→30/08 ce jour : 5 346 clics au lieu de 24 jours), dénominateur au grain de la visite recousue (5 860 entrées organiques ; 5 845 sessions brutes sur la même fenêtre, +0,3 %), 55 contacts organiques = conversion_journeys sur la même fenêtre, taux 0,94 %. classify_channel v5 : gclid/gbraid/wbraid ⇒ paid (avant : gmb ou direct). CPI : le terme conversion (zv) est calculé sur la fenêtre du score (28 j clos à gsc_last_data_day()) et plus sur l''horloge du run — le CPI n''a plus aucune borne d''horloge. Photo avant/après du même jour : 175 pages → 175, seul zv bouge (64 pages ; zc/zr/zl/momentum/gate identiques), delta CPI moyen +0,3 pt, 0 changement de grade, 6 movers ≥ 15 pts (garde-à-vue-ou-audition-libre 50→23, cap-ferret-relaxe 11→38, abus-de-confiance 62→81, sarvi 31→13, escroqueries-cryptomonnaies 34→52, DDSE 48→30 — des contacts qui entrent ou sortent d''une fenêtre reculée de 3 jours), 3 pages changent de badge « convertit », CPI pondéré trafic 45,6 → 45,7. Correction de mesure (alignement des fenêtres et des grains), pas un changement de trafic ni de santé des pages. Un « avant/après 03/09 » dans cpi_daily n''est PAS un decay.',
+  NULL
+);

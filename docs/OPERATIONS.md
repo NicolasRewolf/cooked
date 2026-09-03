@@ -206,7 +206,7 @@ cooked/
 │   ├── dfs_sync.py                    — CLI sync hebdo top 500 keywords GSC → DFS
 │   ├── generate_rpcs_sql.py           — Régénère supabase/rpcs.sql (DATABASE_URL)
 │   ├── check_rpcs_sql_fresh.py        — Gate CI : RPC modifiée → miroir à jour
-│   ├── check_migration_paris_date.py  — Gate CI C6 (pas de cast Paris brut)
+│   ├── check_migration_paris_date.py  — Gates CI C6 (cast Paris brut), C6b (inlining), C6c (bornes d'horloge)
 │   ├── validate_gsc_is_branded.sql    — Pilote Arch #3 branded
 │   ├── validate_period_bounds_live_j1.sql — Pilote Arch #1 live_j1
 │   ├── cpi_validation_j28.sql         — Harnais validation prédictive CPI (tir réel validé le 11/07/2026)
@@ -222,7 +222,7 @@ cooked/
 ├── .github/workflows/
 │   ├── gsc-daily-ingest.yml           — cron GSC quotidien (06:00 UTC)
 │   ├── dfs-weekly-sync.yml            — cron DataForSEO hebdo (lundi 07:00 UTC)
-│   ├── sql-contracts.yml              — C6 paris_date + Arch #5 rpcs.sql
+│   ├── sql-contracts.yml              — C6/C6b/C6c paris_date + Arch #5 rpcs.sql
 │   ├── canonical-path-contract.yml    — C3 SQL / Edge / Python
 │   ├── python-ingest-contract.yml     — C7 tests GSC/DFS
 │   ├── dashboard-contract.yml         — C9 vitest dashboard
@@ -302,23 +302,37 @@ Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Cla
 
 ### RPCs attribution & santé (Sprint 37-38)
 
-- `form_submits_attributed(days)` — per form_submit: method = `hidden_field`
+**Fenêtres (T-09, 03/09/2026)** : les trois RPC ci-dessous prennent
+`(days_back integer DEFAULT 28, p_end date DEFAULT NULL)` et lisent `days_back`
+jours **Paris clos** — à J-1 (`cooked_period_bounds('rolling_28','live_j1')`)
+pour `form_submits_attributed` / `conversion_journeys`, à `gsc_last_data_day()`
+(lens `cross`) pour `seo_to_contact_funnel` ; `p_end` aligne sur une autre borne
+close (le CPI passe `gsc_last_data_day()`). Plus de `now() - N jours` : la
+réponse ne dépend plus de l'heure. Les bornes sortent dans `window_start` /
+`window_end`. `macro_contacts_by_path(days_back)` est ancrée de la même façon.
+
+- `form_submits_attributed(days_back, p_end)` — per form_submit: method = `hidden_field`
   (tracker-seeded `cooked_aid`/`cooked_sid` read by webhook v10) >
   `temporal_unique` > `unresolved`. ~75 % resolved before hidden fields,
-  ~95 % expected after.
-- `conversion_journeys(days)` — **v2 (12/07/2026)** : one row per macro
-  contact (≈210 events/28 j mesurés le 12/07/2026) : entry_path,
+  ~95 % expected after. Statut macro par `form_submit_counts_as_macro(props)`.
+- `conversion_journeys(days_back, p_end)` — **v2 (12/07/2026)** : one row per macro
+  contact (≈190 events/28 j) : entry_path,
   entry_channel, journey[] (page sequence), pages_count, device. Parcours
   reconstruit sur le **visiteur recousu** (`visitor_key` via
   `identity_stitch`, priorité sid > aid > fallback session brute) ;
   journey = pageviews de la visite [t−6h, t+3min], chaîne sans trou
-  > 30 min. Contrat de sortie inchangé (voir « Couture d'identité »).
+  > 30 min. `entry_channel` via `classify_channel(..., url)` (gclid ⇒ paid).
+  Même total que `site_macro_counts` et Σ `macro_contacts_by_path` sur les
+  mêmes bornes (contract-test `contacts_28j_une_fenetre`).
 - `content_performance(days)` — page_type × theme: sessions, median
   dwell/scroll, booking_intents, assisted contacts. Consomme
   `conversion_journeys` → couture héritée depuis le 12/07/2026.
-- `seo_to_contact_funnel(days)` — GSC clicks → organic entries → contacts
-  per landing page. Consomme `conversion_journeys` → couture héritée
-  depuis le 12/07/2026.
+- `seo_to_contact_funnel(days_back, p_end)` — GSC clicks → organic entries → contacts
+  per landing page, **une seule fenêtre** (GSC, entrées, contacts) close à
+  `gsc_last_data_day()`. Dénominateur = entrées de **visite recousue**
+  (`identity_stitch`, coupure 30 min — le grain du numérateur) ; `FULL JOIN`
+  entrées/contacts. Σ contacts = `conversion_journeys` organiques sur la même
+  fenêtre (contract-test `funnel_meme_total_que_journeys`).
 - `cooked_page_index(days)` / `cooked_cpi_snapshot()` / table `cpi_daily` —
   CPI **v2.2**, score santé 0-100 par page (spec : `docs/cpi-cooked-page-index.md`).
 - `cpi_movers` (vue) — Δ CPI ~7j : statuts present/nouveau/disparu, delta_z
@@ -543,11 +557,14 @@ Un « avant/après » qui enjambe une de ces dates n'est **pas** un signal
 | 12/07/2026 | CPI — conversion recousue (couture d'identité) | **seule la composante conversion zv bouge** (zc/zr/zl/momentum/gate inchangés) ; delta moyen −0,1 pt ; **0 changement de grade** ; 7 movers ≥ 15 pts (ex. arnaque-en-ligne 41→100, /nos-affaires 67→12) |
 | 12/07/2026 | Contacts assistés « ressource » (dashboard) — attribution sur la visite recousue | **16 → 37** sur 28 j |
 | 27/07/2026 | `classify_channel` v3 — GMB sort d'`organic_google` | home : n_org 305→164, grade S→A ; CPI/journeys/funnel restatés (annotation posée) |
+| 03/09/2026 (T-09) | Contacts : `conversion_journeys` / `form_submits_attributed` / `macro_contacts_by_path` sur N jours clos à J-1 ; funnel sur une fenêtre GSC unique au grain recousu ; `classify_channel` v5 (gclid ⇒ paid) ; CPI zv sur la fenêtre du score | « contacts 28 j » **191 partout** (avant 183 / 189 / 195) ; funnel 5 860 entrées, 55 contacts, 0,94 % ; CPI : seul zv bouge, delta moyen +0,3, **0 changement de grade**, 6 movers ≥ 15 pts (annotation posée) |
 
-Les restatements des 12/07 et 27/07/2026 sont annotés dans la table
+Les restatements des 12/07, 27/07 et 03/09/2026 sont annotés dans la table
 `annotations` : la consulter avant d'interpréter un mouvement dans
-`cpi_daily`. Les tables d'audit `cpi_pre_restatement_*` ont été supprimées le
-10/08/2026 (migration `rangement_post_pivot_secib`).
+`cpi_daily`. Les tables d'audit `cpi_pre_restatement_20260712` / `_20260727` ont
+été supprimées le 10/08/2026 (migration `rangement_post_pivot_secib`) ;
+`cpi_pre_restatement_20260903` (phases `t05_avant` / `t09_avant`) est à supprimer
+au ticket T-19.
 
 ### Redémarrage après sinistre — briques ajoutées
 

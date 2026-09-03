@@ -697,8 +697,8 @@ AS $function$
 $function$
 
 
--- ═══ public.classify_channel(ref text, utm_source text, utm_medium text, self_host text) ═══
-CREATE OR REPLACE FUNCTION public.classify_channel(ref text, utm_source text, utm_medium text, self_host text DEFAULT 'jplouton-avocat.fr'::text)
+-- ═══ public.classify_channel(ref text, utm_source text, utm_medium text, self_host text, url text) ═══
+CREATE OR REPLACE FUNCTION public.classify_channel(ref text, utm_source text, utm_medium text, self_host text DEFAULT 'jplouton-avocat.fr'::text, url text DEFAULT NULL::text)
  RETURNS text
  LANGUAGE sql
  IMMUTABLE
@@ -708,6 +708,10 @@ AS $function$
     when ref ilike '%' || self_host || '%' then null
     -- T-04 (mission 02/09/2026, d-05) : referrer spam → canal 'spam' (94 % du canal referral était le bot Baidu).
     when public.cooked_is_spam_referrer(ref) then 'spam'
+    -- T-09 (mission 02/09/2026, o-14) : un identifiant de clic Ads (gclid / gbraid / wbraid) dans l'URL d'atterrissage
+    -- = paid, quel que soit l'utm_source — décision « paid prime » sur le chevauchement paid/GMB (16 entrées/28 j
+    -- taguées utm_source=gmb portaient un gclid). `url` est facultatif : les appels à 4 arguments sont inchangés.
+    when url ~* '[?&](gclid|gbraid|wbraid)=' then 'paid'
     when lower(utm_medium) in ('cpc','paid','ppc')
       or lower(utm_source) like '%google%ads%' then 'paid'
     -- Fiche Google Business : posée AVANT la branche google.*, sinon le
@@ -790,23 +794,32 @@ AS $function$
 $function$
 
 
--- ═══ public.conversion_journeys(days_back integer) ═══
-CREATE OR REPLACE FUNCTION public.conversion_journeys(days_back integer DEFAULT 28)
- RETURNS TABLE(contact_kind text, occurred_at timestamp with time zone, contact_path text, objet text, anonymous_id text, attribution_method text, entry_path text, entry_channel text, pages_count integer, journey text[], device_type text)
+-- ═══ public.conversion_journeys(days_back integer, p_end date) ═══
+CREATE OR REPLACE FUNCTION public.conversion_journeys(days_back integer DEFAULT 28, p_end date DEFAULT NULL::date)
+ RETURNS TABLE(contact_kind text, occurred_at timestamp with time zone, contact_path text, objet text, anonymous_id text, attribution_method text, entry_path text, entry_channel text, pages_count integer, journey text[], device_type text, window_start date, window_end date)
  LANGUAGE sql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  with contacts as (
+  -- T-09 (mission 02/09/2026, #110 — d-02) : fenêtre = days_back jours Paris CLOS ancrés sur J-1 (lens 'live_j1'), ou sur
+  -- p_end (CPI : gsc_last_data_day()). Même fenêtre que form_submits_attributed(days_back, p_end), site_macro_counts et
+  -- macro_contacts_by_path sur les mêmes bornes ⇒ un seul total de contacts (contract-test contacts_28j_une_fenetre).
+  -- Avant : `occurred_at > now() - make_interval(...)`. Le parcours (visite recousue, coupure 30 min) est inchangé (v2, 12/07).
+  with w as (
+    select coalesce(p_end, b.n_end) as d_end,
+           coalesce(p_end, b.n_end) - (days_back - 1) as d_start
+    from public.cooked_period_bounds('rolling_28', 'live_j1') b
+  ),
+  contacts as (
     select 'phone'::text as kind, e.occurred_at, e.path as contact_path,
       null::text as objet, e.anonymous_id, e.session_id, 'direct'::text as method
     from public.events_human e
     where e.name = 'cta_phone_click'
-      and e.occurred_at > now() - make_interval(days => days_back)
+      and public.paris_date(e.occurred_at) between (select d_start from w) and (select d_end from w)
     union all
     select 'form', f.occurred_at, f.form_path, f.objet,
       f.resolved_anonymous_id, f.resolved_session_id, f.attribution_method
-    from public.form_submits_attributed(days_back) f
+    from public.form_submits_attributed(days_back, p_end) f
     where f.counts_as_macro
   ),
   ck as (
@@ -829,13 +842,14 @@ AS $function$
   )
   select s.kind, s.occurred_at, s.contact_path, s.objet, s.anonymous_id, s.method,
     s.journey[1],
-    public.classify_channel(s.first_ref, s.first_utm_source, s.first_utm_medium, 'www.jplouton-avocat.fr'),
+    public.classify_channel(s.first_ref, s.first_utm_source, s.first_utm_medium, 'www.jplouton-avocat.fr', s.first_url),
     coalesce(array_length(s.journey, 1), 0),
     s.journey,
-    s.dev
+    s.dev,
+    w.d_start, w.d_end
   from (
     select c.kind, c.occurred_at, c.contact_path, c.objet, c.anonymous_id, c.method,
-      j.journey, j.first_ref, j.first_utm_source, j.first_utm_medium,
+      j.journey, j.first_ref, j.first_utm_source, j.first_utm_medium, j.first_url,
       (select e6.device_type from public.events_human e6
         where e6.session_id in (select v2.sid from vsess v2 where v2.vk = c.vk)
           and e6.device_type is distinct from 'server'
@@ -844,7 +858,7 @@ AS $function$
     left join lateral (
       with pv as (
         select e2.path, e2.occurred_at as t,
-               e2.referrer_hostname, e2.utm_source, e2.utm_medium
+               e2.referrer_hostname, e2.utm_source, e2.utm_medium, e2.url
         from public.events_human e2
         where e2.name = 'pageview'
           and e2.session_id in (select v.sid from vsess v where v.vk = c.vk)
@@ -866,9 +880,11 @@ AS $function$
            from (select ch.path, min(ch.t) as first_seen from chain ch group by ch.path) q) as journey,
         (select ch.referrer_hostname from chain ch order by ch.t limit 1) as first_ref,
         (select ch.utm_source from chain ch order by ch.t limit 1) as first_utm_source,
-        (select ch.utm_medium from chain ch order by ch.t limit 1) as first_utm_medium
+        (select ch.utm_medium from chain ch order by ch.t limit 1) as first_utm_medium,
+        (select ch.url from chain ch order by ch.t limit 1) as first_url
     ) j on true
   ) s
+  cross join w
   order by s.occurred_at desc;
 $function$
 
@@ -1248,7 +1264,8 @@ AS $function$
 -- gsc_last_data_day() (avant : borne sur la date serveur, soit 24 jours de données réelles sur 28 nominaux, lag Google J-4).
 -- Côté Cooked : les MÊMES jours Paris, bornés par cooked_paris_ts_start/_end_exclusive (avant : 28 × 24 h glissantes, borne
 -- qui glissait avec l'heure du run — deux snapshots consécutifs étaient séparés de 18 à 34 h). Le score d'un jour donné
--- est désormais reproductible. Reste hors fenêtre (T-09) : conversion_journeys(p_days), encore sur l'horloge du run.
+-- est désormais reproductible. T-09 (#110) : le terme zv (conversion_journeys) est lui aussi clos à gsc_last_data_day() —
+-- plus aucune borne d'horloge dans le score ; url passée à classify_channel (gclid ⇒ paid, o-14).
 WITH w AS (
   SELECT g.g_end,
          public.cooked_paris_ts_start(g.g_end - (p_days - 1)) AS t0,
@@ -1272,7 +1289,7 @@ cap AS (SELECT p.path, greatest(p.o_full - coalesce(b.o_b,0),0)::numeric AS o,
     q.i_qpd, greatest(p.i_full-coalesce(b.i_b,0),0) AS i_nb
   FROM capp p LEFT JOIN capq q ON q.path=p.path LEFT JOIN capb b ON b.path=p.path),
 firstpv AS (SELECT DISTINCT ON (session_id) session_id, eh.path,
-    public.classify_channel(referrer_hostname, utm_source, utm_medium,'www.jplouton-avocat.fr') chan
+    public.classify_channel(referrer_hostname, utm_source, utm_medium,'www.jplouton-avocat.fr', url) chan
   FROM public.events_human eh WHERE name='pageview' AND occurred_at >= (SELECT t0 FROM w) AND occurred_at < (SELECT t1 FROM w) ORDER BY session_id, occurred_at),
 orge AS (SELECT session_id, firstpv.path FROM firstpv WHERE chan LIKE 'organic%'),
 norg AS (SELECT orge.path, count(*) n_org FROM orge GROUP BY orge.path),
@@ -1300,7 +1317,7 @@ ebk AS (
   LEFT JOIN (SELECT ptype, var_samp(r::numeric/n) v, count(*) np FROM reads WHERE n>=10 GROUP BY ptype) er ON er.ptype=t.ptype
   LEFT JOIN (SELECT ptype, var_samp(k::numeric/nullif(r,0)) v, count(*) np FROM reads WHERE r>=10 GROUP BY ptype) el ON el.ptype=t.ptype
 ),
-jx AS (SELECT * FROM public.conversion_journeys(p_days) WHERE entry_channel LIKE 'organic%'),
+jx AS (SELECT * FROM public.conversion_journeys(p_days, (SELECT g_end FROM w)) WHERE entry_channel LIKE 'organic%'),
 direct AS (SELECT entry_path path, count(*)::numeric v FROM jx WHERE entry_path IS NOT NULL GROUP BY 1),
 assist AS (SELECT jp.path, sum(1.0/greatest(j.pages_count,1)) v FROM jx j CROSS JOIN LATERAL unnest(j.journey) jp(path) WHERE jp.path <> j.entry_path GROUP BY jp.path),
 book AS (SELECT o.path, 0.25*count(*)::numeric v FROM orge o JOIN public.events_human b ON b.session_id=o.session_id AND b.path=o.path AND b.name='cta_booking_click' GROUP BY o.path),
@@ -2436,22 +2453,32 @@ AS $function$
 $function$
 
 
--- ═══ public.form_submits_attributed(days_back integer) ═══
-CREATE OR REPLACE FUNCTION public.form_submits_attributed(days_back integer DEFAULT 28)
- RETURNS TABLE(event_id uuid, occurred_at timestamp with time zone, form_path text, objet text, counts_as_macro boolean, resolved_anonymous_id text, resolved_session_id text, attribution_method text)
+-- ═══ public.form_submits_attributed(days_back integer, p_end date) ═══
+CREATE OR REPLACE FUNCTION public.form_submits_attributed(days_back integer DEFAULT 28, p_end date DEFAULT NULL::date)
+ RETURNS TABLE(event_id uuid, occurred_at timestamp with time zone, form_path text, objet text, counts_as_macro boolean, resolved_anonymous_id text, resolved_session_id text, attribution_method text, window_start date, window_end date)
  LANGUAGE sql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  with forms as (
+  -- T-09 (mission 02/09/2026, #110 — d-02) : fenêtre = days_back jours Paris CLOS, ancrés par défaut sur J-1 Paris
+  -- (cooked_period_bounds, lens 'live_j1') ; p_end permet d'aligner sur une autre borne close (CPI : gsc_last_data_day()).
+  -- Avant : `occurred_at > now() - make_interval(...)` — la réponse changeait avec l'heure de la question.
+  -- Le statut macro passe par form_submit_counts_as_macro(props) : une seule définition avec site_macro_counts.
+  -- Lecture de `events` brut assumée : les form_submit sont insérés server-side, jamais classés bot ni bruit.
+  with w as (
+    select coalesce(p_end, b.n_end) as d_end,
+           coalesce(p_end, b.n_end) - (days_back - 1) as d_start
+    from public.cooked_period_bounds('rolling_28', 'live_j1') b
+  ),
+  forms as (
     select e.id, e.occurred_at, e.path,
       e.props->>'objet_de_ma_demande' as objet,
-      coalesce((e.props->>'counts_as_macro')::boolean, true) as counts_as_macro,
+      public.form_submit_counts_as_macro(e.props) as counts_as_macro,
       nullif(e.props->>'cooked_aid','') as hf_aid,
       nullif(e.props->>'cooked_sid','') as hf_sid
     from public.events e
     where e.name = 'form_submit'
-      and e.occurred_at > now() - make_interval(days => days_back)
+      and public.paris_date(e.occurred_at) between (select d_start from w) and (select d_end from w)
   ),
   temporal as (
     -- candidat unique : visiteurs browser actifs sur la page du form
@@ -2477,8 +2504,10 @@ AS $function$
       when f.hf_aid is not null then 'hidden_field'
       when t.aids[1] is not null then 'temporal_unique'
       else 'unresolved'
-    end
+    end,
+    w.d_start, w.d_end
   from forms f
+  cross join w
   left join temporal t on t.form_id = f.id;
 $function$
 
@@ -2749,8 +2778,9 @@ CREATE OR REPLACE FUNCTION public.gsc_pages_overview(max_rows integer DEFAULT 30
 AS $function$
   -- T-05 (mission 02/09/2026, #106 — d-03) : « 28 j » = 28 jours GSC clos à gsc_last_data_day() (lens 'gsc'), plus la
   -- fenêtre brute `paris_today() - 27` qui ne contenait que 24-25 jours de données (lag Google J-3/J-4 : −12 à −17 %
-  -- de clics selon le jour). Récidive du 24/05/2026 (off-by-one corrigé, alignement GSC jamais fait). Les colonnes
-  -- Cooked (seo_url_snapshot, macro_contacts_by_path(28)) gardent leur fenêtre propre — unification au ticket T-09.
+  -- de clics selon le jour). Récidive du 24/05/2026 (off-by-one corrigé, alignement GSC jamais fait).
+  -- T-09 (#110 — d-02) : les contacts de la ligne sont comptés sur les MÊMES bornes GSC (macro_contacts_by_path(n_start,
+  -- n_end)) — avant macro_contacts_by_path(28) = jour en cours inclus. seo_url_snapshot garde sa fenêtre nocturne propre.
   WITH b AS (
     SELECT n_start, n_end FROM public.cooked_period_bounds('rolling_28', 'gsc') LIMIT 1
   ),
@@ -2785,7 +2815,7 @@ AS $function$
     (s.path IS NOT NULL)
   FROM g
   LEFT JOIN seo_url_snapshot s ON s.path = g.path
-  LEFT JOIN macro_contacts_by_path(28) mc ON mc.path = g.path
+  LEFT JOIN macro_contacts_by_path((SELECT n_start FROM b), (SELECT n_end FROM b)) mc ON mc.path = g.path
   ORDER BY g.clicks_total DESC, g.impressions_total DESC
   LIMIT max_rows;
 $function$
@@ -3032,11 +3062,11 @@ CREATE OR REPLACE FUNCTION public.macro_contacts_by_path(days_back integer)
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
+  -- T-09 (mission 02/09/2026, #110 — d-02) : days_back jours Paris CLOS ancrés sur J-1 (lens 'live_j1'), comme
+  -- conversion_journeys(days_back). Avant : paris_today() - (days_back - 1) → paris_today() = jour en cours partiel.
   SELECT m.*
-  FROM public.macro_contacts_by_path(
-    public.paris_today() - (days_back - 1),
-    public.paris_today()
-  ) m;
+  FROM public.cooked_period_bounds('rolling_28', 'live_j1') b,
+       LATERAL public.macro_contacts_by_path(b.n_end - (days_back - 1), b.n_end) m;
 $function$
 
 
@@ -5110,6 +5140,33 @@ BEGIN
        $q$select count(*) from regexp_matches(
             pg_get_functiondef('public.cooked_page_index(integer)'::regprocedure),
             'now\(\)|current_date|current_timestamp|localtimestamp', 'gi')$q$,
+       NULL, 0),
+
+      -- T-09 (mission 02/09/2026, invariant I4) : « contacts macro 28 j » = UN chiffre. site_macro_counts sur les bornes
+      -- live_j1 = Σ macro_contacts_by_path(28) = conversion_journeys(28) (téléphone + formulaires macro). Écart attendu 0.
+      ('contacts_28j_une_fenetre',
+       $q$with b as (select n_start, n_end from public.cooked_period_bounds('rolling_28', 'live_j1')),
+               s as (select sm.macro_conversions as n from b, public.site_macro_counts(b.n_start, b.n_end) sm),
+               m as (select coalesce(sum(contacts), 0) as n from public.macro_contacts_by_path(28)),
+               j as (select count(*) as n from public.conversion_journeys(28))
+          select abs((select n from s) - (select n from m)) + abs((select n from s) - (select n from j))$q$,
+       NULL, 0),
+
+      -- T-09 (I4) : le funnel SEO et conversion_journeys comptent les mêmes contacts organiques sur la même fenêtre (cross).
+      ('funnel_meme_total_que_journeys',
+       $q$with b as (select n_end from public.cooked_period_bounds('rolling_28', 'cross'))
+          select abs(coalesce((select sum(contacts) from public.seo_to_contact_funnel(28)), 0)
+                   - (select count(*) from b, public.conversion_journeys(28, b.n_end) j
+                      where j.entry_channel like 'organic%' and j.entry_path is not null))$q$,
+       NULL, 0),
+
+      -- T-09 (o-14) : un identifiant de clic Ads dans l'URL d'atterrissage prime sur utm_source=gmb et sur le referrer.
+      ('classify_channel_gclid_paid',
+       $q$select count(*) from (values
+            ('www.google.com', 'gmb', null, 'https://www.jplouton-avocat.fr/?utm_source=gmb&gclid=abc'),
+            ('www.google.com', null, null, 'https://www.jplouton-avocat.fr/defense-penale?gbraid=xyz'),
+            (null, null, null, 'https://www.jplouton-avocat.fr/?wbraid=k')) v(r, s, m, u)
+          where public.classify_channel(v.r, v.s, v.m, 'www.jplouton-avocat.fr', v.u) is distinct from 'paid'$q$,
        NULL, 0)
     ) AS v(nom, requete, min_rows, exact_rows)
   LOOP
@@ -5216,41 +5273,63 @@ AS $function$
 $function$
 
 
--- ═══ public.seo_to_contact_funnel(days_back integer) ═══
-CREATE OR REPLACE FUNCTION public.seo_to_contact_funnel(days_back integer DEFAULT 28)
- RETURNS TABLE(entry_path text, page_type text, theme text, gsc_impressions bigint, gsc_clicks bigint, top_queries text[], organic_entries bigint, contacts bigint, contacts_phone bigint, contacts_form bigint, contact_rate_pct numeric)
+-- ═══ public.seo_to_contact_funnel(days_back integer, p_end date) ═══
+CREATE OR REPLACE FUNCTION public.seo_to_contact_funnel(days_back integer DEFAULT 28, p_end date DEFAULT NULL::date)
+ RETURNS TABLE(entry_path text, page_type text, theme text, gsc_impressions bigint, gsc_clicks bigint, top_queries text[], organic_entries bigint, contacts bigint, contacts_phone bigint, contacts_form bigint, contact_rate_pct numeric, window_start date, window_end date)
  LANGUAGE sql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  with entries as (
-    select distinct on (e.session_id)
-      e.session_id, e.path,
-      public.classify_channel(e.referrer_hostname, e.utm_source, e.utm_medium,
-                              'www.jplouton-avocat.fr') as channel
+  -- T-09 (mission 02/09/2026, #110 — d-06/c-01) : UNE fenêtre pour les trois sources (GSC, entrées, contacts) = days_back
+  -- jours clos à gsc_last_data_day() (lens 'cross'), p_end pour surcharger. UN grain pour le ratio : le dénominateur compte
+  -- les entrées de VISITE RECOUSUE (identity_stitch, coupure 30 min — la clé de conversion_journeys), plus la session brute.
+  -- FULL JOIN entrées/contacts : un contact dont la page d'entrée n'a aucune entrée organique comptée reste visible
+  -- (organic_entries = 0, taux NULL) au lieu de disparaître — Σ contacts = conversion_journeys organiques (contract-test).
+  -- Avant : entrées sur session brute et `now()` glissant, GSC sur `current_date` UTC sans borne Google (24 j de données).
+  with w as (
+    select coalesce(p_end, b.n_end) as d_end,
+           coalesce(p_end, b.n_end) - (days_back - 1) as d_start
+    from public.cooked_period_bounds('rolling_28', 'cross') b
+  ),
+  pv as (
+    select coalesce(ss.visitor_key, sa.visitor_key,
+                    'sid:' || coalesce(e.session_id, e.anonymous_id, 'inconnu')) as vk,
+           e.path, e.occurred_at as t, e.referrer_hostname, e.utm_source, e.utm_medium, e.url
     from public.events_human e
-    where e.name = 'pageview'
-      and e.occurred_at > now() - make_interval(days => days_back)
-    order by e.session_id, e.occurred_at
+    left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = e.session_id
+    left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = e.anonymous_id
+    where e.name = 'pageview' and e.path is not null
+      -- bornes en sous-requêtes scalaires (InitPlan) : un CROSS JOIN sur w faisait perdre l'index idx_events_paris_date
+      and public.paris_date(e.occurred_at) between (select d_start from w) and (select d_end from w)
+  ),
+  entries as (
+    select s.vk, s.path, s.referrer_hostname, s.utm_source, s.utm_medium, s.url
+    from (
+      select pv.*, lag(pv.t) over (partition by pv.vk order by pv.t) as prev_t
+      from pv
+    ) s
+    where s.prev_t is null or s.t - s.prev_t > interval '30 minutes'
   ),
   organic as (
-    select path as entry_path, count(*) as organic_entries
-    from entries where channel like 'organic%'
-    group by path
+    select en.path as entry_path, count(*) as organic_entries
+    from entries en
+    where public.classify_channel(en.referrer_hostname, en.utm_source, en.utm_medium,
+                                  'www.jplouton-avocat.fr', en.url) like 'organic%'
+    group by en.path
   ),
   conv as (
     select j.entry_path,
       count(*) as contacts,
       count(*) filter (where j.contact_kind = 'phone') as contacts_phone,
       count(*) filter (where j.contact_kind = 'form')  as contacts_form
-    from public.conversion_journeys(days_back) j
+    from public.conversion_journeys(days_back, (select d_end from w)) j
     where j.entry_channel like 'organic%' and j.entry_path is not null
     group by j.entry_path
   ),
   gsc as (
     select g.path, sum(g.impressions) as impressions, sum(g.clicks) as clicks
     from public.gsc_path_daily g
-    where g.day > current_date - days_back
+    where g.day between (select d_start from w) and (select d_end from w)
     group by g.path
   ),
   topq as (
@@ -5259,23 +5338,32 @@ AS $function$
       select q.path, q.query, sum(q.clicks) as clicks,
         row_number() over (partition by q.path order by sum(q.clicks) desc) as rn
       from public.gsc_query_page_daily q
-      where q.day > current_date - days_back
+      where q.day between (select d_start from w) and (select d_end from w)
       group by q.path, q.query
     ) r where rn <= 3
     group by path
+  ),
+  pages as (
+    select coalesce(o.entry_path, c.entry_path) as entry_path,
+           coalesce(o.organic_entries, 0) as organic_entries,
+           coalesce(c.contacts, 0) as contacts,
+           coalesce(c.contacts_phone, 0) as contacts_phone,
+           coalesce(c.contacts_form, 0) as contacts_form
+    from organic o
+    full join conv c on c.entry_path = o.entry_path
   )
   select
-    o.entry_path, public.cooked_page_type(o.entry_path), t.theme,
+    p.entry_path, public.cooked_page_type(p.entry_path), t.theme,
     coalesce(g.impressions, 0), coalesce(g.clicks, 0), tq.top_queries,
-    o.organic_entries, coalesce(c.contacts, 0),
-    coalesce(c.contacts_phone, 0), coalesce(c.contacts_form, 0),
-    round(100.0 * coalesce(c.contacts, 0) / nullif(o.organic_entries, 0), 2)
-  from organic o
-  left join conv c  on c.entry_path = o.entry_path
-  left join gsc g   on g.path = o.entry_path
-  left join topq tq on tq.path = o.entry_path
-  left join public.page_taxonomy t on t.path = o.entry_path
-  order by coalesce(c.contacts, 0) desc, coalesce(g.clicks, 0) desc;
+    p.organic_entries, p.contacts, p.contacts_phone, p.contacts_form,
+    round(100.0 * p.contacts / nullif(p.organic_entries, 0), 2),
+    w.d_start, w.d_end
+  from pages p
+  cross join w
+  left join gsc g   on g.path = p.entry_path
+  left join topq tq on tq.path = p.entry_path
+  left join public.page_taxonomy t on t.path = p.entry_path
+  order by p.contacts desc, coalesce(g.clicks, 0) desc;
 $function$
 
 
