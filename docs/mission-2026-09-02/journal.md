@@ -235,3 +235,45 @@
   `gsc_page_performance` **36,92** (fenêtre GSC J‑3, en %) ; chemin lent max **44,44** (%) ; 4 contrats d'unités :
   **0 violation**. Sha du dump prod = `53c5ee52…` = `rpcs.sql` reconstruit depuis le fichier de migration (5 md5
   identiques). `apply_migration` `t03_annotation_restatement_bounce` : ligne `annotations` du 03/09/2026 posée.
+
+### T-04 (#105) — 03/09/2026
+- 09:40 `[D]` Validation citée : « Tu mets à jour et tu enchaines sur T-04 ok ? » (Nicolas, 03/09/2026 09:40). Périmètre
+  = ticket #105 **sans purge** (validation du 02/09) : masquage par `noise_sessions`, aucun DELETE dans `events`.
+- 09:41 `[F]` Clone local remis sur `origin/main` (`fbb37cf`) — le premier `git pull` avait tourné par erreur dans le
+  worktree `.claude/worktrees/…` (cwd persistant) : branche `claude/t04-bot-baidu` recréée depuis le bon `main`,
+  patch Edge (3 fichiers, worktree `claude/t04-bot-baidu-source`) ré-appliqué. Corps `refresh_noise_sessions`,
+  `classify_channel`, `run_rpc_contract_tests` de `rpcs.sql` **= prod (3 md5 identiques)**.
+- 09:42 `[R]` « Avant » (events_human, 28 j Paris 06/08→02/09) : 13 823 pageviews dont **1 875 `pc`** (13,6 %) =
+  1 875 referrer Baidu (mêmes lignes) + 34 SEBot-WA ; 11 110 sessions dont 1 875 spam (16,9 %) ; canal `referral`
+  1 995 dont **1 875 spam (94 %)**. Historique (events brut, annoncé) : `pc` = 85 985 lignes / 7 252 sessions,
+  07/05/2026 → 03/09/2026, **0 ligne `pc` sans referrer Baidu et 0 ligne Baidu sans UA `pc`** ; SEBot-WA 554 lignes /
+  113 sessions. Couverture `page_exit` 28 j : 75,6 % avec bot, **89,1 % hors bot**. Coût du rattrapage : 7 365 sessions
+  (27 déjà dans `noise_sessions`), scan 6,7 s.
+- 09:46 `[W]` Tests Deno (`npx deno@2 test track_row_test.ts`) : **42 verts** dont 3 T-04 (`pc`/`PC` = bot, SEBot-WA =
+  bot, `pc` en sous-chaîne d'un UA Android = humain).
+- 09:48 `[W]` Migration générée depuis les corps prod par substitutions ciblées (script /tmp, chaque motif matché
+  exactement 1 fois ; C6 : 0 cast Paris brut) : taxonomie `ua_bot` + `pc`/`sebot`, règle `spam_referrer`, rattrapage
+  `noise_sessions`, `classify_channel` v4 (`spam`), `alert_rule_spam_in_events_human`, 2 contract-tests I3, REVOKE.
+- 09:50 `[W-PROD]` `apply_migration` `t04_bot_baidu_spam_referrer_invariant_i3` (version **`20260903075011`**).
+- 09:50 `[R]` « Après » (même requête) : pageviews **11 914** (−1 909 = 1 875 + 34, exact), `pc` **0**, Baidu **0**,
+  SEBot **0** ; sessions **9 201** (−1 909) ; `referral` **120**, spam dans referral **0**. `noise_sessions` :
+  +7 252 `ua_bot: pc`, +86 `ua_bot: sebot` (113 − 27). `classify_channel` : baidu → `spam`, google → `organic_google`,
+  null → `direct`, `gmb` intact. `alert_rule_spam_in_events_human()` → 0 ligne en 0,13 s ; contrats
+  `spam_share_events_human` = 0, `classify_channel_spam` = 0 (0,65 s). ACL : anon/authenticated = false sur les 4
+  fonctions ; `paris_date`/`paris_today` sans `proconfig` (C6b intact). Advisors security : 0 ERROR (inchangé).
+  `page_exit` 28 j : **89,1 %** (mobile 86,5 / desktop 94,6 / tablet 82,9) — a-02 confirmé.
+- 09:51 `[W-PROD]` `npx supabase functions deploy track --no-verify-jwt` → **Edge track v28 déployée** (version
+  interne Supabase 38, 07:51 UTC). Ingestion vivante (76 events / 15 min, tracker `sprint41`). Le robot arrive par
+  salves (41, 12, 66, 12, 45, 12, 17 lignes/h sur 24 h, dernière à 04:16 Paris) : la preuve « 0 ligne `pc` après
+  déploiement » se lit à **J+1**, pas maintenant. `ingest_drops.bot_ua` ne l'isolera pas (106 004 drops déjà ce jour).
+- 09:52 `[W]` `rpcs.sql` reconstruit sans `DATABASE_URL` (3 sections remplacées + 1 insérée) : **125 fonctions, sha256
+  corps `52bf519a…` = dump prod**, méta régénéré par `write_outputs`.
+- 09:55 `[W-PROD]` `apply_migration` `t04_annotation_restatement_bot_baidu` (version **`20260903075234`**) : annotation
+  posée. Miroirs des deux migrations, CHANGELOG, AGENTS/CLAUDE/OPERATIONS (v28) écrits.
+- 09:56 `[D]` **Point à signaler à Nicolas** : « sans purge » = aucun DELETE de ma main. Mais les sessions désormais
+  classées bruit tombent sous la politique existante `cooked-purge-noise-weekly` (`purge_cooked_noise(28)`, dimanche
+  04:30 UTC) : dimanche **06/09/2026 ~06:30 Paris**, les ~80 000 lignes du robot antérieures au 06/08 seront
+  supprimées d'`events` comme tout bruit > 28 j. Cohérent avec la doctrine « supprimer du bruit ne change aucun
+  résultat », mais c'est une conséquence, pas une décision prise ici — à confirmer ou à bloquer avant dimanche.
+  Corollaire : si Nicolas veut les conserver, il faut aussi les sortir de `noise_sessions` (purgée à 90 j) et poser un
+  filtre durable dans `events_human` — sinon le robot ressurgit dans la vue au bout de 90 jours.

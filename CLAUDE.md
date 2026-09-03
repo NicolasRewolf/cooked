@@ -583,7 +583,11 @@ Paris (première ingestion réelle).
 - Tracker : **`sprint41`** (ids auto-réparants — fin de la rotation aid/sid sur
   wipe de storage qui coupait ~22 % des sessions). **DÉPLOYÉ le 12/07/2026
   ~22:20 par Nicolas**, vérifié J+1 le 13/07/2026 (OK).
-- Edge `track` : **v27** (25/07/2026 — gate `x-cooked-key` à l'ingestion,
+- Edge `track` : **v28** (03/09/2026 — T-04 : UA littéral « pc » (bot Baidu,
+  13,8 % des pageviews d'`events_human` pendant 4 mois) et SEBot-WA droppés à
+  l'ingestion, miroir SQL dans `refresh_noise_sessions` + règle
+  `spam_referrer`, `classify_channel` v4 renvoie `spam` ; v27 = 25/07/2026 —
+  gate `x-cooked-key` à l'ingestion,
   constat n°3 de la revue d'architecture ; v26 = filtre bots à l'ingestion,
   constat n°5/R2 — la taxonomie ua_bot est appliquée AVANT l'INSERT, drops
   comptés dans `ingest_drops` ; v25 = D4 `track_row` + C5 `events_row` ;
@@ -594,7 +598,7 @@ Paris (première ingestion réelle).
   `form_row` ; v11 = submissionTime + drop alert).
 
 Prod peut lagger : vérifier la version déployée avant d'annoncer un changement
-Edge. Dernier contrôle le 10/08/2026 : `track` **v27** + `form-webhook`
+Edge. Dernier contrôle le 03/09/2026 : `track` **v28** + `form-webhook`
 **v13 déployées**, prod alignée
 avec le repo.
 

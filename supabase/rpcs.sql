@@ -418,6 +418,45 @@ END;
 $function$
 
 
+-- ═══ public.alert_rule_spam_in_events_human() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_spam_in_events_human()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+-- T-04 (mission 02/09/2026, invariant I3) : le filet ua_bot / spam_referrer laisse-t-il passer du robot dans
+-- events_human ? Fenêtre 24 h (horaire), warn dès 1 % des pageviews (garde ≥ 50 pageviews et ≥ 5 spam).
+-- Découverte automatiquement par cooked_alerts_refresh() (préfixe alert_rule_, 0 argument).
+DECLARE
+  v_pv   bigint;
+  v_spam bigint;
+  v_pct  numeric;
+BEGIN
+  SELECT count(*) FILTER (WHERE name = 'pageview'),
+         count(*) FILTER (WHERE name = 'pageview'
+                            AND (lower(user_agent) = 'pc' OR user_agent ILIKE '%sebot%'
+                                 OR public.cooked_is_spam_referrer(referrer_hostname)))
+    INTO v_pv, v_spam
+  FROM public.events_human
+  WHERE occurred_at > now() - interval '24 hours';
+
+  IF coalesce(v_pv, 0) >= 50 AND coalesce(v_spam, 0) >= 5 THEN
+    v_pct := round(100.0 * v_spam / v_pv, 1);
+    IF v_pct >= 1 THEN
+      RETURN QUERY SELECT
+        'spam_in_events_human'::text,
+        'warn'::text,
+        format('%s pageviews de robot / referrer spam sur %s dans events_human (24 h) = %s %% (seuil 1 %%). '
+               || 'Le filet ua_bot / spam_referrer laisse passer : vérifier la version Edge (props->>''_v''), '
+               || 'ingest_drops et le cron refresh_noise_filters_hourly (T-04, mission 02/09/2026).',
+               v_spam, v_pv, v_pct)::text;
+    END IF;
+  END IF;
+END;
+$function$
+
+
 -- ═══ public.alert_rule_tracker_drift() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_tracker_drift()
  RETURNS TABLE(kind text, severity text, detail text)
@@ -667,6 +706,8 @@ CREATE OR REPLACE FUNCTION public.classify_channel(ref text, utm_source text, ut
 AS $function$
   select case
     when ref ilike '%' || self_host || '%' then null
+    -- T-04 (mission 02/09/2026, d-05) : referrer spam → canal 'spam' (94 % du canal referral était le bot Baidu).
+    when public.cooked_is_spam_referrer(ref) then 'spam'
     when lower(utm_medium) in ('cpc','paid','ppc')
       or lower(utm_source) like '%google%ads%' then 'paid'
     -- Fiche Google Business : posée AVANT la branche google.*, sinon le
@@ -4300,6 +4341,9 @@ begin
     session_id,
     'ua_bot: ' || (
       case
+        -- T-04 (mission 02/09/2026, a-01) : UA littéral « pc » (bot Baidu) et SEBot-WA — miroir de BOT_UA_RE (Edge v28)
+        when lower(user_agent) = 'pc'                   then 'pc'
+        when user_agent ilike '%sebot%'                 then 'sebot'
         when user_agent ilike '%headless%'              then 'headless'
         when user_agent ilike '%googlebot%'             then 'googlebot'
         when user_agent ilike '%bingbot%'               then 'bingbot'
@@ -4347,7 +4391,9 @@ begin
     and device_type is distinct from 'server'
     and user_agent is not null
     and (
-         user_agent ilike '%headless%'
+         lower(user_agent) = 'pc'
+      or user_agent ilike '%sebot%'
+      or user_agent ilike '%headless%'
       or user_agent ilike '%googlebot%'
       or user_agent ilike '%bingbot%'
       or user_agent ilike '%applebot%'
@@ -4387,6 +4433,19 @@ begin
       or user_agent ilike '%httpclient%'
       or user_agent ilike '%java/%'
     )
+  on conflict (session_id) do nothing;
+
+  -- T-04 (mission 02/09/2026, a-01 / c-06 / d-05) : referrer spam (cooked_is_spam_referrer) — la session entière
+  -- est du bruit, quel que soit l'UA. Jusqu'ici seules les RPC filtraient ce referrer ; events_human ne le voyait pas.
+  insert into public.noise_sessions (session_id, reason)
+  select distinct
+    session_id,
+    'spam_referrer: ' || referrer_hostname
+  from _no_bots
+  where session_id is not null
+    and device_type is distinct from 'server'
+    and name = 'pageview'
+    and public.cooked_is_spam_referrer(referrer_hostname)
   on conflict (session_id) do nothing;
 end;
 $function$
@@ -4999,6 +5058,24 @@ BEGIN
             union all
             select cooked_bounce_rate from public.pages_overview_unified('rolling_7', 50)
           ) u$q$,
+       NULL, 0),
+
+      -- T-04 (mission 02/09/2026, invariant I3) : part de pageviews de robot / referrer spam dans events_human
+      -- < 1 % sur 7 j (1 si violation, 0 sinon ; garde ≥ 100 pageviews). Avant T-04 : 13,6 % (03/09/2026).
+      ('spam_share_events_human',
+       $q$select case when count(*) filter (where name = 'pageview') >= 100
+                    and 100.0 * count(*) filter (where name = 'pageview'
+                          and (lower(user_agent) = 'pc' or user_agent ilike '%sebot%'
+                               or public.cooked_is_spam_referrer(referrer_hostname)))
+                        / count(*) filter (where name = 'pageview') >= 1
+                  then 1 else 0 end
+          from public.events_human where occurred_at > now() - interval '7 days'$q$,
+       NULL, 0),
+
+      -- T-04 (invariant I3) : classify_channel renvoie 'spam' pour tout referrer spam (0 écart attendu).
+      ('classify_channel_spam',
+       $q$select count(*) from (values ('m.baidu.com'), ('baidu.com')) v(h)
+          where public.classify_channel(v.h, null, null, 'www.jplouton-avocat.fr') <> 'spam'$q$,
        NULL, 0)
     ) AS v(nom, requete, min_rows, exact_rows)
   LOOP
