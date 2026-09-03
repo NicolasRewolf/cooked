@@ -558,13 +558,14 @@ Un « avant/après » qui enjambe une de ces dates n'est **pas** un signal
 | 12/07/2026 | Contacts assistés « ressource » (dashboard) — attribution sur la visite recousue | **16 → 37** sur 28 j |
 | 27/07/2026 | `classify_channel` v3 — GMB sort d'`organic_google` | home : n_org 305→164, grade S→A ; CPI/journeys/funnel restatés (annotation posée) |
 | 03/09/2026 (T-09) | Contacts : `conversion_journeys` / `form_submits_attributed` / `macro_contacts_by_path` sur N jours clos à J-1 ; funnel sur une fenêtre GSC unique au grain recousu ; `classify_channel` v5 (gclid ⇒ paid) ; CPI zv sur la fenêtre du score | « contacts 28 j » **191 partout** (avant 183 / 189 / 195) ; funnel 5 860 entrées, 55 contacts, 0,94 % ; CPI : seul zv bouge, delta moyen +0,3, **0 changement de grade**, 6 movers ≥ 15 pts (annotation posée) |
+| 03/09/2026 (T-06) | CPI : momentum sur `gsc_path_daily` moins brandé révélé (option (b), décision Nicolas) au lieu de `gsc_query_page_daily` non brandé (16-28 % des clics) ; `cpi_opportunite_contact.potentiel` hors momentum/gate ; `cpi_drop` ignore une page dont les clics réels montent | seul le momentum bouge (132 pages), delta moyen +3,7, médiane \|Δ\| 4, **0 changement de grade**, 8 movers fiables ≥ 15 pts ; contrefactuel : 0 page fiable en direction inverse (avant 15/47) ; CPI pondéré 45,7 → 45,9 (annotation posée) |
 
 Les restatements des 12/07, 27/07 et 03/09/2026 sont annotés dans la table
 `annotations` : la consulter avant d'interpréter un mouvement dans
 `cpi_daily`. Les tables d'audit `cpi_pre_restatement_20260712` / `_20260727` ont
 été supprimées le 10/08/2026 (migration `rangement_post_pivot_secib`) ;
-`cpi_pre_restatement_20260903` (phases `t05_avant` / `t09_avant`) est à supprimer
-au ticket T-19.
+`cpi_pre_restatement_20260903` (phases `t05_avant` / `t09_avant` / `t06_avant`)
+est à supprimer au ticket T-19.
 
 ### Redémarrage après sinistre — briques ajoutées
 

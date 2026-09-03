@@ -273,6 +273,23 @@ fenêtre reculée de 3 jours). Contract-tests I4 : `contacts_28j_une_fenetre`,
 `current_date` / `now() - make_interval` interdits dans les migrations. Pour
 comparer deux RPC de contacts, comparer leurs `window_start`/`window_end` d'abord.
 
+⚠️ **Restatement CPI du 03/09/2026 — momentum** (T-06, migration `20260903101652`,
+décision Nicolas option (b)) : le momentum lit **`gsc_path_daily` (tous les clics)
+moins les clics brandés révélés** — plus la seule traîne de requêtes révélées
+(16-28 % des clics, 15/47 pages fiables en direction inverse de leurs clics
+réels depuis le 25/07). Photo avant/après du même jour : **seul le momentum
+bouge** (132 pages), delta CPI moyen +3,7 pts, 0 changement de grade, 8 movers
+fiables ≥ 15 pts (notre-cabinet 62→100, accident-moto 52→87… ; abus-de-confiance
+81→64, indemnisation-civi 80→60). Contrefactuel rejoué : 0 page fiable en
+direction inverse. Limite connue : sur `/notre-cabinet` et la home, les clics
+brandés **non révélés** restent dans le total (biais de marque résiduel).
+`cpi_opportunite_contact.potentiel` = `cpi_compose(zc,zr,zl,0,1,1,true)` (plus de
+momentum ni de gate dedans) ; `cpi_drop` ignore une page dont les clics réels
+montent. **Un « avant/après 03/09 » dans `cpi_daily` n'est PAS un decay.**
+Contexte à garder en tête : les clics GSC du site ont chuté de ~40 % fin
+juillet (≈ 2 300/sem → ≈ 1 350/sem depuis le 27/07/2026) — non expliqué à ce
+jour, à instruire séparément.
+
 **10/08/2026 — Pont SECIB (PIVOT — PII en clair)** :
 - **Décision produit (Nicolas)** : Cooked rapproche les prospects web des
   dossiers SECIB **en clair** (nom/prénom/email/téléphone) — le hachage a été
@@ -569,7 +586,9 @@ RPCs attribution & santé (Sprint 37-38 ; fenêtres closes depuis T-09, 03/09/20
   momentum/capture**, warn — recalibré S39, exclut la volatilité conversion)
 - `cpi_opportunite_contact` (vue, ex-`cpi_gisement`) — pilotage conversion : relit le dernier
   `cpi_daily` et sépare le **potentiel** (capture+rétention+lecture, hors
-  conversion, renormalisés) du badge **conversion réalisée** (`convertit`).
+  conversion, renormalisés — et depuis T-06 le 03/09/2026 **hors momentum et
+  hors gate** : `cpi_compose(zc,zr,zl,0,1,1,true)`) du badge **conversion
+  réalisée** (`convertit`).
   Opportunité de contact = `grade IN ('S','A','B') AND NOT convertit ORDER BY potentiel DESC`.
   Ne recalcule rien, ne complexifie pas le CPI. Alias déprécié : `cpi_gisement`.
   Colonne `grade` = **Fiabilité** S/A/B/C (S≥200∧E≥40, A≥100∧≥20, B≥30∧≥5, C sinon).

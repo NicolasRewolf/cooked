@@ -37,6 +37,18 @@ BEGIN
         AND delta_cpi <= -15
         AND coalesce(ecart_jours, 99) <= 8
         AND (coalesce(delta_momentum, 0) <= -0.10 OR coalesce(delta_zc, 0) <= -0.5)
+        -- T-06 (mission 02/09/2026, f-01) : pas de « decay » sur une page dont les clics réels (gsc_path_daily)
+        -- montent — 7 derniers jours livrés par Google contre les 7 précédents. Le 01/09 l'alerte avait sonné sur une
+        -- page en croissance, le momentum ne voyant que la traîne révélée.
+        AND NOT EXISTS (
+          SELECT 1
+          FROM (SELECT public.gsc_last_data_day() AS g_end) g,
+               LATERAL (SELECT coalesce(sum(p.clicks) FILTER (WHERE p.day > g.g_end - 7), 0)  AS r1,
+                               coalesce(sum(p.clicks) FILTER (WHERE p.day <= g.g_end - 7), 0) AS r0
+                        FROM public.gsc_path_daily p
+                        WHERE p.path = cpi_movers.path AND p.day > g.g_end - 14) c
+          WHERE c.r1 > c.r0
+        )
     ) m;
     IF v_n >= 1 THEN
       RETURN QUERY SELECT
@@ -1347,14 +1359,34 @@ madg AS (SELECT greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(
   greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_ret-g.mr)),0.15) sr,
   greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_lec-g.ml)),0.15) sl,
   greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_conv-g.mv)),0.15) sv FROM xs x, medg g),
-mom AS (SELECT g.path,
+-- T-06 (mission 02/09/2026, f-01, option (b) — décision Nicolas 03/09/2026) : les clics du momentum viennent de la source
+-- COMPLÈTE gsc_path_daily, moins les clics brandés que Google révèle dans gsc_query_page_daily (≈ total non brandé).
+-- Avant (25/07/2026) : gsc_query_page_daily non brandé seul = 16 à 28 % des clics réels d'une page ; 15 des 47 pages
+-- fiables avaient un momentum de direction inverse à leurs clics. Le terme position (p1/p0) reste sur les requêtes
+-- révélées non brandées : la position n'a de sens que requête par requête.
+momf AS (SELECT path,
     coalesce(sum(clicks) FILTER (WHERE day > (SELECT g_end FROM w) - p_days),0) c1,
-    coalesce(sum(clicks) FILTER (WHERE day <= (SELECT g_end FROM w) - p_days),0) c0,
+    coalesce(sum(clicks) FILTER (WHERE day <= (SELECT g_end FROM w) - p_days),0) c0
+  FROM public.gsc_path_daily
+  WHERE day > (SELECT g_end FROM w) - 2*p_days
+  GROUP BY path),
+momb AS (SELECT path,
+    coalesce(sum(clicks) FILTER (WHERE day > (SELECT g_end FROM w) - p_days),0) b1,
+    coalesce(sum(clicks) FILTER (WHERE day <= (SELECT g_end FROM w) - p_days),0) b0
+  FROM public.gsc_query_page_daily
+  WHERE day > (SELECT g_end FROM w) - 2*p_days AND public.gsc_is_branded(query)
+  GROUP BY path),
+momp AS (SELECT path,
     avg(position) FILTER (WHERE day > (SELECT g_end FROM w) - p_days) p1,
     avg(position) FILTER (WHERE day <= (SELECT g_end FROM w) - p_days) p0
-  FROM public.gsc_query_page_daily g
-  WHERE g.day > (SELECT g_end FROM w) - 2*p_days AND NOT public.gsc_is_branded(g.query)
-  GROUP BY g.path),
+  FROM public.gsc_query_page_daily
+  WHERE day > (SELECT g_end FROM w) - 2*p_days AND NOT public.gsc_is_branded(query)
+  GROUP BY path),
+mom AS (SELECT f.path,
+    greatest(f.c1 - coalesce(b.b1,0), 0) c1,
+    greatest(f.c0 - coalesce(b.b0,0), 0) c0,
+    p.p1, p.p0
+  FROM momf f LEFT JOIN momb b ON b.path = f.path LEFT JOIN momp p ON p.path = f.path),
 site AS (SELECT sum(c1) s1, sum(c0) s0 FROM mom),
 lcp AS (SELECT eh.path, percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric) lcp75
   FROM public.events_human eh WHERE name='web_vitals' AND props->>'metric'='LCP' AND device_type='mobile'
@@ -5167,6 +5199,21 @@ BEGIN
             ('www.google.com', null, null, 'https://www.jplouton-avocat.fr/defense-penale?gbraid=xyz'),
             (null, null, null, 'https://www.jplouton-avocat.fr/?wbraid=k')) v(r, s, m, u)
           where public.classify_channel(v.r, v.s, v.m, 'www.jplouton-avocat.fr', v.u) is distinct from 'paid'$q$,
+       NULL, 0),
+
+      -- T-06 (mission 02/09/2026, invariants I4/I10) : le momentum du CPI lit la source COMPLÈTE des clics
+      -- (gsc_path_daily) — la CTE `mom` doit s'appuyer sur momf ← gsc_path_daily. 1 occurrence attendue au minimum.
+      ('cpi_momentum_source_complete',
+       $q$select count(*) from regexp_matches(
+            pg_get_functiondef('public.cooked_page_index(integer)'::regprocedure),
+            'momf AS \(SELECT path,.*?FROM public\.gsc_path_daily', 'g')$q$,
+       1, NULL),
+
+      -- T-06 (f-07) : le `potentiel` de cpi_opportunite_contact est hors conversion ET hors momentum/gate
+      -- (cpi_compose(zc, zr, zl, 0, 1, 1, true)). 0 ligne du dernier cpi_daily en désaccord attendue.
+      ('potentiel_sans_momentum_gate',
+       $q$select count(*) from public.cpi_opportunite_contact o
+          where o.potentiel is distinct from round(public.cpi_compose(o.zc, o.zr, o.zl, 0, 1, 1, true))::int$q$,
        NULL, 0)
     ) AS v(nom, requete, min_rows, exact_rows)
   LOOP

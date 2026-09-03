@@ -3,6 +3,32 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-03] — T-06 : le momentum du CPI voit tous les clics, le potentiel ne dépend plus du momentum
+
+Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-06 (#107), constats f-01 (P1) et f-07. Décision Nicolas
+03/09/2026 : **option (b)**.
+
+### Corrigé
+- **Le momentum du CPI ne voyait que 16 à 28 % des clics d'une page.** Depuis le correctif « momentum non brandé » du
+  25/07/2026, `c1`/`c0` venaient de `gsc_query_page_daily` non brandé — la seule traîne de requêtes que Google révèle
+  (couverture mesurée le 03/09 : 28 % en grade S, 19 % en A, 18 % en B). Contrefactuel : **15 des 47 pages fiables**
+  (2 S, 1 A, 12 B) avaient un momentum de direction inverse à leurs clics réels. Désormais `c1`/`c0` = **`gsc_path_daily`
+  (source complète) moins les clics brandés révélés** (≈ total non brandé) ; le terme position reste sur les requêtes
+  révélées non brandées ; le momentum reste relatif au site (`s1`/`s0` suivent). Migration `20260903101652`.
+- **`cpi_opportunite_contact.potentiel` était multiplié par momentum × gate** (f-07 : 7 opportunités sur 16 déplacées
+  de ≥ 3 rangs par un terme sans rapport avec le potentiel de contact). Désormais `cpi_compose(zc, zr, zl, 0, 1, 1, true)`
+  — hors conversion, hors momentum, hors gate. Alias `cpi_gisement` inchangé.
+- **`alert_rule_cpi_drop` refuse une page dont les clics réels montent** (7 derniers jours livrés par Google > 7
+  précédents, `gsc_path_daily`). Le 01/09 l'alerte avait sonné sur une page en croissance.
+
+### Invariant livré (I4/I10)
+- Deux contrats dans `run_rpc_contract_tests` : `cpi_momentum_source_complete` (la CTE `momf` lit `gsc_path_daily`) et
+  `potentiel_sans_momentum_gate` (0 ligne de `cpi_opportunite_contact` en désaccord). 0 violation le 03/09/2026.
+
+### Restatement (voir CLAUDE.md, `docs/cpi-cooked-page-index.md`)
+- Photo avant/après du même jour, mêmes données GSC (30/08) : phase `t06_avant` de `cpi_pre_restatement_20260903`
+  (migration `20260903101159`), recalcul one-shot `20260903101736`. Chiffres dans l'annotation du 03/09.
+
 ## [2026-09-03] — T-09 : une seule fenêtre « N jours » pour les contacts, un seul grain par ratio
 
 Mission du 02/09/2026 (`docs/mission-2026-09-02/`), ticket T-09 (#110), constats d-02/c-05 (P1), d-06/c-01 (P1), o-14 (P3).
