@@ -379,7 +379,7 @@ Deno.test("buildEventRow — row complète iso au handler v25 (troncatures, coer
     url: "https://www.jplouton-avocat.fr/post/foo/",
     path: "/post/foo",
     hostname: "www.jplouton-avocat.fr",
-    title: "t".repeat(500),
+    title: null, // T-19 : title plus écrit (décision 03/09/2026)
     referrer: "https://www.google.com/search?q=avocat",
     referrer_hostname: "www.google.com",
     utm_source: "s".repeat(100),
