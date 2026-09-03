@@ -246,7 +246,7 @@ cooked/
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS (référence)
 │   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets des 136 routines (généré depuis la prod en CI, lecture seule)
+│   ├── rpcs.sql                       — corps complets des 137 routines (généré depuis la prod en CI, lecture seule)
 │   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
@@ -680,7 +680,7 @@ canonique d'une base fraîche.
 
 | Fichier | Contenu | Régénération |
 |---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 136 routines `pg_proc` de `public` (132 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
+| `supabase/rpcs.sql` | **Corps complets** des 137 routines `pg_proc` de `public` (133 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
 | `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
 | `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
 

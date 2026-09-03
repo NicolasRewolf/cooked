@@ -211,7 +211,7 @@ après C1–C9 ; tue les fuites SQL restantes :
   `contracts/branded_query_vectors.json`).
 - **`cooked_snapshot_window(w, grain)`** : driver bornes `live_j1` + GSC +
   `cooked_events_window` pour les 3 refreshers dashboard.
-- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 136 routines au
+- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 137 routines au
   03/09/2026, régénéré depuis la prod par le workflow `rpcs-regenerate`) ; gate CI
   `check_rpcs_sql_fresh.py` si migration redéfinit une RPC + prod-drift (sha = prod).
 
@@ -313,10 +313,18 @@ jour, à instruire séparément.
   only. `events`/`events_human`/RPCs analytics restent SANS PII. Ne jamais
   faire transiter ces colonnes dans une vue analytics ou le dashboard sans
   décision explicite. Le texte libre des formulaires (message) reste exclu.
-- **Lecture du pont** : vue `pont_prospects_dossiers` (email norm > tél E.164,
-  statut converti / client_existant / non_converti, délai jours,
-  `facture_total_ht`). Matching SQL via `cooked_normalize_email` /
-  `cooked_normalize_phone_fr` — MIROIR STRICT dans `scripts/secib_ingest.py`.
+- **Lecture du pont (T-16, 04/09/2026)** : vue `pont_prospects_dossiers` = **env `prod` seulement**
+  (bac à sable : `pont_prospects_dossiers_env('test')`). Une implémentation :
+  `pont_prospects_dossiers_env(p_env)`. Statuts : `non_rapprochable` (prospect sans clé),
+  `non_converti`, `converti` (dossier ouvert entre J-7 et J+180), `client_existant` (avant),
+  `dossier_ulterieur` (après) ; priorité email > tél E.164 puis proximité temporelle ;
+  `personne_key` + `rang_personne` (compter des **personnes** : 765 pour 858 lignes), `rang_dossier`
+  (un dossier crédité une fois). 🚨 **Aucun taux du pont sans `pont_couverture` à côté** : part des
+  dossiers porteurs d'une clé (bac à sable : 8/49 = 16 %) — sous 80 % tout taux est un plancher.
+  Matching SQL via `cooked_normalize_email` / `cooked_normalize_phone_fr` (v2 : `+33 (0)6…`) —
+  MIROIR STRICT dans `scripts/secib_ingest.py`, vecteurs partagés `contracts/normalize_vectors.json`
+  vérifiés des deux côtés en CI (I12). `crm_prospects` : 2 doublons (email, minute) connus au 03/09
+  (import CSV aveugle au webhook, corrigé dans `wix_forms_import.py`) — nettoyage = décision Nicolas.
 - **API SECIB (étape 0 validée 10/08 sur bac à sable)** : token
   client_credentials (`~/.claude/secib-credentials.json`, JAMAIS committé) ;
   `Dossier/Get` en **POST** body `FiltreDossierApiDto` (le GET → 400) ;
@@ -374,7 +382,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (136 routines au 03/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
+| Corps complets des RPC (137 routines au 03/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
 | Glossaire de domaine et invariants (conversions, attribution, lecture, fraîcheur) | `CONTEXT.md` |
 | Décisions d'architecture | `docs/adr/` |
 | PII, secrets, surface d'attaque, invariant I1 | `SECURITY.md` |

@@ -3,6 +3,37 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-04] — T-16 : le pont SECIB ne peut plus livrer un taux faux avec aplomb
+
+Mission du 02/09/2026, ticket T-16 (#117), constats e-01 (P1), c-08, e-03, e-04, e-05/c-07, e-08.
+Invariant I12. Migrations `20260903214532` (pont) et `20260903214711` (contract-tests). Pré-prod : devis
+SECIB non signé, aucune préparation de credentials, aucune PII lue au-delà des comptes.
+
+### Ajouté
+- **`pont_couverture`** (vue) : part des dossiers SECIB et des prospects porteurs d'une clé de rapprochement,
+  par env, avec une `lecture` (« aucun dossier ingéré : aucun taux publiable » / « couverture < 80 % : tout
+  taux est un plancher ») — **règle CLAUDE.md : aucun taux du pont sans cette ligne à côté**. 04/09 :
+  prod 0 dossier ; bac à sable 8/49 = 16 %.
+- **`pont_prospects_dossiers_env(p_env)`** — une implémentation ; la vue `pont_prospects_dossiers` = env
+  `prod` seulement (le bac à sable ne se rapproche plus des vrais prospects). Statuts `non_rapprochable`
+  (prospect sans clé), `non_converti`, `converti` (dossier entre J-7 et J+180), `client_existant`,
+  `dossier_ulterieur` ; priorité email > téléphone puis proximité ; `personne_key` / `rang_personne`
+  (765 personnes pour 858 lignes) ; `rang_dossier` (un dossier crédité une fois).
+- **`contracts/normalize_vectors.json`** + `scripts/check_normalize_vectors.py` : 14 vecteurs vérifiés en
+  Python (CI ingest) et en SQL (CI prod-drift, `cooked_ci_ro` EXECUTE sur les deux fonctions).
+- Tests `test_secib_ingest.py`, `test_wix_forms_import.py`, `test_gbp_ingest.py` ; le workflow
+  `python-ingest-contract` se déclenche sur `scripts/**.py` et `tests/test_*.py` (e-08 : 974 lignes qui
+  écrivent en prod n'avaient ni test ni déclencheur).
+- Contract-tests nocturnes `pont_test_jamais_dans_prod`, `normalize_phone_vecteurs`,
+  `crm_prospects_doublons_email_minute` (pas de nouveau doublon au-delà des 2 connus).
+
+### Corrigé
+- **`cooked_normalize_phone_fr` v2** + miroir Python : `+33 (0)6 12 34 56 78` → `+33612345678`
+  (avant : `+33061234567`, des deux côtés — e-05/c-07).
+- **`wix_forms_import.py`** : dédup contre les lignes du webhook (même email normalisé à ± 2 min) —
+  la récidive e-04 (2 doublons en base) ne peut plus se reproduire ; les 2 existants restent
+  (suppression = décision Nicolas ; l'index unique fonctionnel du plan attend ce nettoyage).
+
 ## [2026-09-04] — T-15 : `page_taxonomy` suit la liste publiée du blog, plus le trafic
 
 Mission du 02/09/2026, ticket T-15 (#116), constats e-06 (P2), e-07 (P3). Migration `20260903213503`.
@@ -35,8 +66,8 @@ Mission du 02/09/2026, ticket T-14 (#115), constats i-01 (P1), i-02 (P1), i-03�
 g-05, g-07, o-12. Invariant I13. Pas de migration.
 
 ### Ajouté
-- **`contracts/doc_constants.json`** étendu (compteurs prod mesurés le 03/09 : 136 routines `pg_proc`
-  = 132 Cooked + 4 `unaccent`, 17 règles d'alerte, 16 RPC dashboard, 11 vues, 14 sources au registre,
+- **`contracts/doc_constants.json`** étendu (compteurs prod mesurés le 03/09 : 137 routines `pg_proc`
+  = 133 Cooked + 4 `unaccent`, 17 règles d'alerte, 16 RPC dashboard, 11 vues, 14 sources au registre,
   9 crons ; versions `sprint41` / `track` v28 / `form-webhook` v14 ; liste des docs vivants, objets
   fantômes interdits, exclusions de l'orphan-check). `check_prod_drift.py` compare désormais ces
   compteurs à la prod (chaque matin + chaque PR SQL).

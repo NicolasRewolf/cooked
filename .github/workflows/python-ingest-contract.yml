@@ -1,29 +1,22 @@
 name: Python ingest contracts
 
 # C7 — pures GSC/DFS + cooked_store (sans credentials prod).
+# T-16 — + SECIB (vecteurs de normalisation partagés), import Wix, GBP, taxonomie Wix.
 
 on:
   pull_request:
     paths:
-      - 'scripts/gsc_common.py'
-      - 'scripts/dfs_common.py'
-      - 'scripts/cooked_store.py'
-      - 'scripts/cooked_path.py'
-      - 'tests/test_gsc_common.py'
-      - 'tests/test_dfs_common.py'
-      - 'tests/test_cooked_store.py'
-      - 'scripts/wix_taxonomy_sync.py'
-      - 'tests/test_wix_taxonomy_sync.py'
-      - 'tests/fixtures/wix_blog_posts_*.txt'
+      - 'scripts/**.py'
+      - 'tests/test_*.py'
+      - 'tests/fixtures/**'
+      - 'contracts/normalize_vectors.json'
       - '.github/workflows/python-ingest-contract.yml'
   push:
     branches: [main]
     paths:
-      - 'scripts/gsc_common.py'
-      - 'scripts/dfs_common.py'
-      - 'scripts/cooked_store.py'
-      - 'tests/test_*_common.py'
-      - 'tests/test_cooked_store.py'
+      - 'scripts/**.py'
+      - 'tests/test_*.py'
+      - 'contracts/normalize_vectors.json'
 
 jobs:
   python-ingest-contract:
@@ -36,7 +29,7 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/requirements-gsc.txt
       - name: Install test deps
-        run: pip install pytest -r scripts/requirements-gsc.txt
+        run: pip install pytest -r scripts/requirements-gsc.txt -r scripts/requirements-gbp.txt -r scripts/requirements-secib.txt
       - name: GSC + DFS + store unit tests
         run: |
           python3 -m pytest \
@@ -44,4 +37,9 @@ jobs:
             tests/test_dfs_common.py \
             tests/test_cooked_store.py \
             tests/test_wix_taxonomy_sync.py \
+            tests/test_secib_ingest.py \
+            tests/test_wix_forms_import.py \
+            tests/test_gbp_ingest.py \
             -q
+      - name: I12 — vecteurs de normalisation (Python ; SQL dans prod-drift)
+        run: python3 scripts/check_normalize_vectors.py

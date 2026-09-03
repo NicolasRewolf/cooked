@@ -33,12 +33,13 @@ import os
 import re
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from secib_ingest import normalize_phone_fr  # noqa: E402  (miroir SQL, réutilisé)
+from secib_ingest import normalize_email, normalize_phone_fr  # noqa: E402  (miroir SQL, réutilisé)
 
 ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 ID_RE = re.compile(r"^[a-zA-Z0-9_-]{8,128}$")
@@ -97,6 +98,38 @@ def load_secret_key() -> tuple[str, str]:
     if not key:
         sys.exit("ERROR: SUPABASE_SECRET_KEY introuvable (env ou dashboard/.env.local)")
     return url, key
+
+
+def already_captured(row: dict, webhook_rows: list[tuple[str | None, str]], tolerance_s: int = 120) -> bool:
+    """T-16 (e-04) : vrai si le webhook a déjà capturé ce prospect (même email normalisé, à ± tolerance_s).
+
+    L'import CSV ne connaissait que ses propres lignes (`wiximport-…`) : rejouer un export qui
+    chevauche la période où le webhook tournait dupliquait les prospects (2 doublons email/minute
+    en base le 03/09/2026). `webhook_rows` = [(email_norm, occurred_at ISO)] des lignes non importées.
+    """
+    email_norm = normalize_email(row.get("email"))
+    if not email_norm:
+        return False
+
+    def _ts(value: str):
+        # Les dates naïves (export CSV) sont stockées telles quelles en timestamptz → UTC.
+        d = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+    try:
+        t = _ts(row["occurred_at"])
+    except ValueError:
+        return False
+    for e, ts in webhook_rows:
+        if e != email_norm:
+            continue
+        try:
+            u = _ts(ts)
+        except ValueError:
+            continue
+        if abs((u - t).total_seconds()) <= tolerance_s:
+            return True
+    return False
 
 
 def build_row(r: dict) -> dict | None:
@@ -183,8 +216,25 @@ def main() -> None:
             break
         start += 1000
 
-    todo = [r for r in rows if r["wix_submission_id"] not in existing]
-    print(f"\nDéjà en base : {len(existing)} — à insérer : {len(todo)}")
+    # T-16 (e-04) : les lignes capturées par le webhook (pas d'id wiximport-) comptent aussi.
+    webhook_rows: list[tuple[str | None, str]] = []
+    start = 0
+    while True:
+        page = (
+            client.table("crm_prospects")
+            .select("email_norm,occurred_at")
+            .not_.like("wix_submission_id", "wiximport-%")
+            .range(start, start + 999)
+            .execute()
+            .data
+        )
+        webhook_rows.extend((p["email_norm"], p["occurred_at"]) for p in page)
+        if len(page) < 1000:
+            break
+        start += 1000
+
+    todo = [r for r in rows if r["wix_submission_id"] not in existing and not already_captured(r, webhook_rows)]
+    print(f"\nDéjà en base : {len(existing)} imports + {len(webhook_rows)} webhook — à insérer : {len(todo)}")
     for i in range(0, len(todo), BATCH):
         chunk = todo[i : i + BATCH]
         client.table("crm_prospects").insert(chunk).execute()

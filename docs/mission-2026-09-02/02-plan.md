@@ -247,7 +247,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
   **Validation** : 0 `/post/` publié sans ligne (recoupement API). **Qui** : moi (script), Nicolas (secret Wix API
   si nécessaire). **Estimation** : 2 h.
 
-## T‑16 · Pont SECIB : garde‑fous avant le premier chiffre
+## T‑16 · Pont SECIB : garde‑fous avant le premier chiffre — **FAIT 04/09 00:40** (migrations `20260903214532`, `20260903214711` ; doublons = Nicolas)
 - **Problème** : e‑01, e‑03, e‑04, e‑05/c‑07, c‑08, e‑08. **Changement** : vue avec `env` paramétré, statut
   `non_rapprochable`, `personne_key` + rang pour dédupliquer, priorité email > tél implémentée, borne haute sur
   `converti`, indicateur de couverture publié ; normalisation téléphone (`(0)` après indicatif) + vecteurs JSON

@@ -637,3 +637,30 @@
 - 00:10 `[D]` Action Nicolas : créer la clé API Wix (manage.wix.com → API Keys, permission Blog lecture) et la
   poser en secret `WIX_API_KEY` ; contrôle après : `gh workflow run wix-taxonomy-sync.yml -f dry_run=true`
   puis lire le log (« insérés : 0 »). D'ici là : synchro à la main (`--dry-run` puis sans).
+- 00:18 `[R]` T-15 — PR #141 : CI verte (docs-constants, prod-drift à 136 routines, python-ingest-contract,
+  SQL contracts). **Mergée 00:19.**
+
+### T-16 — pont SECIB : garde-fous avant le premier chiffre (04/09/2026, 00:20 → 00:45)
+- 00:20 `[F]` Relecture #117, e-01/e-03/e-04/e-05/e-08/c-07/c-08, `secib_ingest.py` (normalisation l.76-97,
+  `dossier_row`), `wix_forms_import.py` (`build_row`, `clean_*`, insertion : dédup sur `wiximport-%` seulement),
+  `gbp_ingest.py` (`_trim_unconsolidated`, `_to_store_rows`), corps prod `cooked_normalize_*`, `pg_get_viewdef`
+  du pont, index de `crm_prospects`, `python-ingest-contract.yml` (paths sans les 3 scripts).
+- 00:25 `[R]` **Mesure avant** (agrégats seuls, aucune valeur individuelle) : `crm_prospects` 858 (0 sans clé,
+  765 personnes distinctes, **2 doublons (email, minute)**, 0 téléphone non normalisé) ; `secib_dossiers` 49,
+  100 % `env='test'`, 41/49 sans clé ; pont : 858/858 `non_converti` ; `cooked_normalize_phone_fr('+33 (0)6…')`
+  → `+33061…` (faux, miroir Python identique).
+- 00:28 `[D]` Index unique fonctionnel du plan : impossible sans supprimer les 2 doublons (DELETE = Nicolas) →
+  remplacé par un contrat « pas de nouveau doublon » + dédup dans l'import. Sandbox jamais rapproché des
+  vrais prospects (vue = prod) ; `pont_prospects_dossiers_env('test')` pour le bac à sable.
+- 00:32 `[W]` `contracts/normalize_vectors.json` (14 vecteurs), `check_normalize_vectors.py`, `secib_ingest.py`
+  v2, `wix_forms_import.py` (`already_captured`, lecture des lignes webhook), 3 fichiers de tests (11 tests verts),
+  workflows (`scripts/**.py`, requirements gbp+secib, vecteurs SQL dans prod-drift). Migration pont + migration
+  contract-tests. C6/C6b/C6c OK.
+- 00:35 `[W-PROD]` `apply_migration` → **`20260903214532`** (pont) puis **`20260903214711`** (contrats).
+- 00:38 `[R]` **Après.** Vue prod : 858 `non_converti` (0 dossier prod) ; `pont_prospects_dossiers_env('test')` :
+  858 `non_converti`, 0 dossier apparié (le bac à sable ne contient aucun des 858 prospects) ; `rang_personne=1`
+  = 765 ; `pont_couverture` : prod 0 dossier → « aucun taux publiable », test 8/49 = 16,3 % → « plancher » ;
+  vecteurs `(0)` → `+33612345678` en SQL ; anon = false sur la vue, `pont_couverture` et la fonction ;
+  `alert_rule_exposure()` = 0 ; `cooked_ci_ro` EXECUTE sur les 2 normalisations ; routines 137, vues 12.
+  Contrats via `rpc_contract_check` : `pont_test_jamais_dans_prod` ok, `normalize_phone_vecteurs` ok,
+  `crm_prospects_doublons_email_minute` ok.
