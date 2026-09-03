@@ -209,7 +209,6 @@ export function buildFormSubmitRow(
     browser: null,
     viewport_width: null,
     viewport_height: null,
-    country: null,
     props: {
       form_id: formId,
       submission_id: submissionId,
