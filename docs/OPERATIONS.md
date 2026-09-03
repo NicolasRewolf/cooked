@@ -288,7 +288,7 @@ Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Cla
 | `pages_overview_unified(period_kind, max_rows)` | Univers ~490 paths, tri sessions |
 | `gsc_page_performance(target_path, period_kind)` | Fiche page : GSC + Cooked + CWV + device |
 | `gsc_top_queries_for_path(path, period_kind, max)` | Top requêtes Google sur une landing |
-| `gsc_pages_overview(period_kind, max_rows)` | Top pages SEO (tri clics) ; contacts macro = phone + form |
+| `gsc_pages_overview(max_rows)` | Top pages SEO (tri clics) ; GSC = 28 jours clos à `gsc_last_data_day()` (T-05, 03/09/2026 — la doc promettait un `period_kind` qui n'a jamais existé) ; contacts macro = phone + form |
 | `gsc_top_queries_global(period_kind, max)` | Top requêtes site + page cible + `volume_fr` / `cpc` / `click_yield_pct` (DataForSEO) |
 | `gsc_x_dfs_opportunities(min_vol, pos_min, pos_max, period_kind, max)` | Quick wins SEO (pos 5–15, volume FR ≥ 100) |
 | `dfs_keywords_to_sync(limit_n)` | Top N keywords = union clics GSC **28j ∪ 90j** (`scripts/dfs_sync.py`) |

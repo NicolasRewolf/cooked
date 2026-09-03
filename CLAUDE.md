@@ -250,6 +250,14 @@ Tables d'audit `cpi_pre_restatement_20260712` / `_20260727` : **supprimées le
 10/08/2026** (migration `20260810093206_rangement_post_pivot_secib` — qui
 désarme aussi le VACUUM FULL annuel du 26/07 et crée l'alerte `gbp_gap`).
 
+⚠️ **Restatement CPI du 03/09/2026** (T-05, migration `20260903085351`) : le CPI
+et `gsc_pages_overview` lisent **28 jours clos à `gsc_last_data_day()`** — plus
+la date serveur (24 jours de données réelles) ni l'heure du run côté Cooked.
+`gsc_clicks_28d` +12 à +20 % selon le lag ; CPI delta moyen −1,3 pt, 1 mover
+fiable. Photo dans `cpi_pre_restatement_20260903` (à supprimer au T-19).
+**Un « avant/après 03/09 » dans `cpi_daily` n'est PAS un decay.** Seul le terme
+conversion (`conversion_journeys`) reste sur l'horloge du run → T-09.
+
 **10/08/2026 — Pont SECIB (PIVOT — PII en clair)** :
 - **Décision produit (Nicolas)** : Cooked rapproche les prospects web des
   dossiers SECIB **en clair** (nom/prénom/email/téléphone) — le hachage a été

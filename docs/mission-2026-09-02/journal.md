@@ -277,3 +277,56 @@
   résultat », mais c'est une conséquence, pas une décision prise ici — à confirmer ou à bloquer avant dimanche.
   Corollaire : si Nicolas veut les conserver, il faut aussi les sortir de `noise_sessions` (purgée à 90 j) et poser un
   filtre durable dans `events_human` — sinon le robot ressurgit dans la vue au bout de 90 jours.
+- 09:58 `[W]` PR #127 ouverte (avant/après dans la description) ; CI verte (8 jobs) ; **mergée sur `main`** (`179fd7f`),
+  branche supprimée, **#105 fermée**. T-04 terminé au sens §3.9 — reste la preuve J+1 « 0 ligne `pc` ingérée ».
+- 10:02 `[D]` **Décision purge citée** : « si il faut purger : on purge, point. » (Nicolas, 03/09/2026 10:02). La purge
+  hebdo `cooked-purge-noise-weekly` fera son travail dimanche 06/09 : rien à bloquer, rien à ajouter. Même message :
+  « On s'en tient au prompt et on avance. » → Phase 3 poursuivie dans l'ordre de la vague 1 (`02-plan.md` §0) :
+  **T-05** (#106) maintenant. T-06 (choix d'option), T-08 (valeur d'objectif) et T-02 restent des décisions à poser.
+
+### T-05 (#106) — 03/09/2026
+- 10:07→10:19 `[W-PROD]` (session précédente, même agent) Photo « avant » du CPI : table `cpi_pre_restatement_20260903`
+  (LIKE `cpi_daily`, RLS sans policy, REVOKE) + job pg_cron one-shot auto-désarmé — `apply_migration` `t05_photo_avant_cpi`
+  (version **`20260903081257`**) ; le job a échoué à 10:18 (`statement_timeout` 2 min : un `SET LOCAL` DANS le bloc DO ne
+  réarme pas la commande en cours) → `t05_photo_avant_cpi_fix_timeout` (version **`20260903081927`**, SET séparé du DO,
+  patron `cooked-refresh-after-gsc`). Brouillon de la migration principale écrit (`TMP_…`), docs OPERATIONS + CPI amorcées.
+- 10:32 `[D]` Validation citée : « On s'en tient au prompt et on avance. » (Nicolas, 03/09/2026 10:32) et « Personne ne
+  travaille sur T-05 ! Tu es le seul à bosser dessus » (10:40) — reprise du ticket #106 tel que validé, restatement compris
+  (§7.7 du plan : « alignement des fenêtres, +12 % de clics affichés sur 28 j »).
+- 10:45 `[R]` Photo « avant » **réussie** : job de 10:22:00 → 10:27:25, 175 pages (47 fiables), `cron.job` t05 = 0.
+  Brouillon relu : diff ligne à ligne contre `rpcs.sql` = uniquement les bornes (11 / 39 / 16 lignes), aucun changement de
+  contrat de sortie ; **md5 prod des 3 corps = `rpcs.sql`** (vérifié 10:52). « Avant » `gsc_pages_overview` : Σ
+  `gsc_clicks_28d` **4 474** vs Σ `gsc_path_daily` 28 j alignés (03/08→30/08) **5 358** ; 24 jours de données sous la
+  borne brute. `cpi_daily` du 03/09 : 0 ligne (l'orchestrateur `cooked_refresh_after_gsc` — cron 46, 8h-20h UTC — attend
+  l'ingestion GSC du jour ; il n'y a pas de job `cooked-cpi-daily-snapshot` : la ligne d'OPERATIONS.md §crons est
+  périmée → T-14). Alertes non acquittées : `cpi_drop` 2/jour depuis le 10/08 (warn + critical), `gbp_daily_stale`,
+  `pipeline_dead` du 22/08 — bruit d'alerte, périmètre **T-07**, non traité ici.
+- 10:53 `[W-PROD]` `apply_migration` `t05_fenetres_28j_gsc_cpi_invariant_i4` (version **`20260903085351`**) :
+  `gsc_pages_overview` (bornes `cooked_period_bounds('rolling_28','gsc')`), `cooked_page_index` (CTE `w` :
+  `g_end = gsc_last_data_day()`, `t0/t1 = cooked_paris_ts_start/_end_exclusive`, toutes les bornes GSC et Cooked
+  réécrites, `c0` = 28 j pleins), `run_rpc_contract_tests` (+ `gsc_pages_overview_28d_alignes`, `cpi_sans_horloge`).
+- 10:54 `[R]` « Après » : Σ `gsc_clicks_28d` **5 358 = 5 358** ; contrats I4 : **0 / 0** ; ACL anon/authenticated
+  `gsc_pages_overview` false/false, `run_rpc_contract_tests` false/false ; `cooked_page_index` **true/true** — état
+  antérieur préservé par CREATE OR REPLACE (fonction SECURITY INVOKER, hors périmètre de l'invariant I1 qui vise les
+  SECURITY DEFINER ; à instruire au T-19 avec l'inventaire d'usage), `paris_date`/`paris_today` sans `proconfig`.
+  Écart de miroir détecté : 2 lignes de `gsc_pages_overview` indentées 2 espaces en prod vs 4 dans le fichier (mon
+  collage) → fichier réaligné sur la prod, **md5 prod = fichier** sur les 3 corps. `rpcs.sql` reconstruit (3 sections
+  remplacées, `write_outputs`) : **125 fonctions, sha256 corps `e439762f…` = dump prod**.
+- 10:57 `[W-PROD]` `apply_migration` `t05_photo_apres_cpi` (version **`20260903085657`**) : job one-shot 08:58 UTC →
+  `cooked_cpi_snapshot()` (upsert `cpi_daily` du 03/09 avec la définition T-05, mêmes données GSC que la photo :
+  dernier jour 30/08). Réussi **10:58:00 → 10:58:59** (59 s contre 5 min 25 s pour l'ancienne définition : les bornes
+  fixes remplacent `now()` pour le planificateur). L'orchestrateur repassera après l'ingestion GSC (~13:00) et
+  rafraîchira la ligne — comportement quotidien normal.
+- 11:02 `[R]` **Comparaison avant/après** (`cpi_pre_restatement_20260903` vs `cpi_daily` 03/09) : 175 → 175 pages,
+  169 communes, 6 entrées / 6 sorties (toutes grade C, `n_org` 5-7 : la fenêtre Cooked recule de 3-4 jours) ; delta CPI
+  moyen **−1,30**, médiane |Δ| 3 ; composantes : Δzc +0,02, Δzr −0,04, Δzl −0,08, Δzv +0,06, Δmomentum −0,03, Δgate 0 ;
+  18 movers ≥ 15 pts dont **1 fiable** (assurance-perte-exploitation 21→41 B→B, zv −2,5→−0,7 — terme conversion,
+  hors fenêtre T-05, volatilité connue) ; 2 changements de grade (1 B→C, 1 C→B) ; 46 fiables S/A/B : delta moyen −1,28,
+  médiane |Δ| 2, max 20 ; top pages : garde-à-vue 67→58, CIVI 70→66, home 74→79, sarvi 45→31, prestation
+  compensatoire 87→93 ; `clics_perdus` 1 138 → 1 284 (+13 %) ; CPI pondéré trafic 48,5 → 45,6.
+- 11:06 `[W-PROD]` `apply_migration` `t05_annotation_restatement_fenetres_28j` (version **`20260903090225`**) :
+  annotation posée. Miroirs des 5 migrations écrits (versions prod), CHANGELOG, CLAUDE.md (bloc restatement 03/09),
+  `cpi-cooked-page-index.md` (§Ruptures de série), OPERATIONS.md (ligne `gsc_pages_overview`).
+- 11:10 `[D]` À reporter : le commentaire interne de `cooked_refresh_after_gsc` (« cooked_page_index lit now() ») est
+  périmé — texte de commentaire seulement, pas de redéfinition de fonction pour ça (T-09/T-14) ; `cpi_drop` sonnera
+  peut-être sur le 03/09 (Δ −19 sur /honoraires-rendez-vous, grade C donc hors `fiable`) — annotation posée, T-07.
