@@ -117,6 +117,17 @@ def build(conn, want_samples: bool):
     return contract, samples
 
 
+KEY_ORDER = ("kind", "columns", "not_null", "relation", "sample_call")
+
+
+def canonical(contract: dict[str, dict]) -> dict[str, dict]:
+    """Ordre de clés stable (RPC triées, champs dans KEY_ORDER) → diff textuel lisible."""
+    return {
+        rpc: {k: entry[k] for k in KEY_ORDER if k in entry}
+        for rpc, entry in sorted(contract.items())
+    }
+
+
 def dumps(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, indent=2, default=str) + "\n"
 
@@ -143,6 +154,7 @@ def main() -> int:
         conn.set_session(readonly=True)
         contract, samples = build(conn, want_samples=samples_path is not None)
 
+    contract = canonical(contract)
     text = dumps(contract)
     if samples_path is not None:
         samples_path.write_text(dumps(samples), encoding="utf-8")
@@ -150,15 +162,16 @@ def main() -> int:
 
     if check:
         committed = CONTRACT.read_text(encoding="utf-8") if CONTRACT.exists() else ""
-        if committed != text:
+        old = json.loads(committed) if committed else {}
+        if old != contract:
             print("T-13 dashboard contract FAIL — contracts/dashboard_rpc_columns.json dérive de la prod :")
-            old = json.loads(committed) if committed else {}
-            new = json.loads(text)
-            for rpc in sorted(set(old) | set(new)):
-                if old.get(rpc) != new.get(rpc):
-                    print(f"  • {rpc}: repo={old.get(rpc)}\n            prod={new.get(rpc)}")
+            for rpc in sorted(set(old) | set(contract)):
+                if old.get(rpc) != contract.get(rpc):
+                    print(f"  • {rpc}: repo={old.get(rpc)}\n            prod={contract.get(rpc)}")
             print("Régénérer : DATABASE_URL=… python3 scripts/generate_dashboard_contracts.py")
             return 1
+        if committed != text:
+            print("T-13 : contenu identique à la prod, formatage différent — régénérer pour aligner le texte")
         print(f"T-13 OK — {len(contract)} RPC dashboard : contrat commité = prod")
         return 0
 
