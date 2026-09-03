@@ -18,6 +18,7 @@
  */
 
 import { type CookedEventRow, iso, s, validId } from "./events_row.ts";
+import { canonicalPath } from "./canonical_path.ts";
 
 /** Champ Wix typologie — pas de PII, whitelisté dans props. */
 export function extractObjetDeMaDemande(
@@ -81,7 +82,9 @@ export function resolvePageSource(raw: string | null): {
       );
       return { url: raw, path: null, hostname: null };
     }
-    return { url: u.toString(), path: u.pathname, hostname: u.hostname };
+    // T-18 (b-06) : même canonicalisation que le tracker et le SQL (decode → NFC → slash),
+    // sinon un page_source « /post/itt-p%C3%A9nale… » ne rejoint jamais son pageview.
+    return { url: u.toString(), path: canonicalPath(u.pathname), hostname: u.hostname };
   } catch {
     return { url: raw, path: null, hostname: null };
   }
@@ -127,12 +130,14 @@ export function buildFormSubmitRow(
 ): FormSubmitBuild {
   const d = body?.data ?? body;
 
+  // T-18 : Wix envoie parfois « Prise de contact site-web » AVEC un espace final
+  // (230 lignes vs 22 sans, 180 j au 04/09/2026) → deux form_id pour un formulaire. Trim.
   const formId =
-    s(d?.formName, 200) ??
-    s(d?.formId, 200) ??
-    s(body?.formName, 200) ??
-    s(body?.formId, 200) ??
-    "wix-form-webhook";
+    (s(d?.formName, 200) ??
+      s(d?.formId, 200) ??
+      s(body?.formName, 200) ??
+      s(body?.formId, 200) ??
+      "wix-form-webhook").trim() || "wix-form-webhook";
 
   const submissionId =
     s(d?.submissionId, 200) ??

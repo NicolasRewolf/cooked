@@ -263,7 +263,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
   reprise sur échec (nécessite le loader). **Invariant I11.** **Qui** : moi (code, tests) ; **Nicolas** : collage Wix
   du tracker et de `masterpage-cooked.js`. **Estimation** : 2 h + collage.
 
-## T‑18 · Edge / formulaires : `page_source` partout, alertes routées, gate fail‑fast
+## T‑18 · Edge / formulaires : `page_source` partout, alertes routées, gate fail‑fast — **CODE + EDGE FAITS 04/09 00:05** (migration `20260903215921`, track v29 / form-webhook v15 déployés ; Velo + champs Wix = Nicolas)
 - **Problème** : b‑01, b‑02, b‑04, b‑05, b‑06 (réfutation en cours). **Changement** : Nicolas ajoute
   `page_source` (+ `objet`) aux formulaires « Divorce » et « Demande dossier en cours » (bloc à coller fourni) ;
   `form_row.ts` : `canonicalPath` sur `page_source` ; `alert_rule_form_attribution_degraded` surveille aussi

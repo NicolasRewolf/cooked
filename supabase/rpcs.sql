@@ -249,8 +249,10 @@ CREATE OR REPLACE FUNCTION public.alert_rule_form_attribution_degraded()
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE v_n bigint; v_tot bigint; v_pct numeric;
+DECLARE
+  v_n bigint; v_tot bigint; v_pct numeric; v_forms text;
 BEGIN
+  -- 1. cooked_aid (attribution hidden_field) — inchangé
   SELECT count(*) FILTER (WHERE props->>'cooked_aid' IS NULL), count(*)
     INTO v_n, v_tot
   FROM public.events
@@ -259,14 +261,34 @@ BEGIN
   IF v_tot >= 5 THEN
     v_pct := round(100.0 * v_n / v_tot, 0);
     IF v_pct > 30 THEN
-      RETURN QUERY SELECT
-        'form_attribution_degraded'::text,
-        'warn'::text,
-        format(
-          '%s %% des form_submit sans cooked_aid sur 7j (%s/%s) — champs cachés Wix manquants ou tracker pas à jour ?',
-          v_pct, v_n, v_tot
-        );
+      kind := 'form_attribution_degraded'; severity := 'warn';
+      detail := format('%s %% des form_submit sans cooked_aid sur 7j (%s/%s) — champs cachés Wix manquants ou tracker pas à jour ?', v_pct, v_n, v_tot);
+      RETURN NEXT;
     END IF;
+  END IF;
+
+  -- 2. T-18 : page_source (path) et objet par formulaire, 28 j, webhook seulement
+  WITH f AS (
+    SELECT btrim(coalesce(props->>'form_id', '?')) AS form_id,
+           count(*) AS n,
+           count(*) FILTER (WHERE path IS NULL) AS sans_path,
+           count(*) FILTER (WHERE nullif(props->>'objet_de_ma_demande', '') IS NULL) AS sans_objet
+    FROM public.events
+    WHERE name = 'form_submit'
+      AND coalesce(props->>'capture_source', 'wix-webhook') = 'wix-webhook'
+      AND occurred_at > now() - interval '28 days'
+    GROUP BY 1
+  )
+  SELECT string_agg(format('%s : %s/%s sans page_source, %s/%s sans objet', form_id, sans_path, n, sans_objet, n), ' ; ' ORDER BY n DESC)
+    INTO v_forms
+  FROM f
+  WHERE (n >= 3 AND (100.0 * sans_path / n > 10 OR 100.0 * sans_objet / n > 10))
+     OR (n >= 1 AND sans_path = n);
+
+  IF v_forms IS NOT NULL THEN
+    kind := 'form_fields_missing'; severity := 'warn';
+    detail := format('Formulaires Wix sans page_source ou sans objet sur 28 j — un contact sans page_source est compté au total site mais invisible par page ; sans objet, il est compté macro par défaut (candidature ?). Câbler les champs cachés `page_source` (seedé par masterPage) et « Objet de ma demande » sur le formulaire (action Nicolas, T-18). %s', v_forms);
+    RETURN NEXT;
   END IF;
 END;
 $function$

@@ -500,3 +500,22 @@ Deno.test("buildProspectRow — la row events reste sans PII (invariant v13)", (
 Deno.test("classifyIdentityKey — « nombre de » ne pollue pas le slot nom", () => {
   assertEquals(classifyIdentityKey("field:nombre_de_personnes"), null);
 });
+
+// ------------------------------------------- T-18 (mission 02/09/2026) — page_source canonique, form_id trimé
+
+Deno.test("resolvePageSource — path canonicalisé (decode → NFC → slash), b-06", () => {
+  const r = resolvePageSource(
+    "https://www.jplouton-avocat.fr/post/itt-p%C3%A9nale-de%CC%81finition-en-2025/?utm_source=x",
+  );
+  assertEquals(r.path, "/post/itt-pénale-définition-en-2025");
+  assertEquals(r.hostname, "www.jplouton-avocat.fr");
+});
+
+Deno.test("buildFormSubmitRow — form_id trimé (Wix envoie parfois un espace final)", () => {
+  const b = buildFormSubmitRow(
+    { data: { formName: "Prise de contact site-web ", submissionId: "s1", "field:page_source": "/x" } },
+    OPTS,
+  );
+  assertEquals(b.formId, "Prise de contact site-web");
+  assertEquals(b.row.props.form_id, "Prise de contact site-web");
+});

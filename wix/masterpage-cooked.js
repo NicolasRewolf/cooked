@@ -44,11 +44,22 @@ function seedCookedIds() {
   if (aid) values.cooked_aid = aid;
   if (sid) values.cooked_sid = sid;
 
+  // T-18 (04/09/2026) : page_source seedé ici aussi (chemin courant, sans query) — pour les
+  // formulaires qui ont le champ caché `page_source` sans passer par faq-system.js
+  // (« Formulaire Divorce », « Demande dossier en cours » : 100 % sans page_source sur 180 j).
+  // Appel séparé : un champ absent ne doit pas faire échouer le seed des ids.
+  const pageSource = '/' + ((wixLocation.path || []).join('/'));
+
   cookedForms().forEach((form) => {
     try {
       form.setFieldValues(values);
     } catch (e) {
       if (COOKED_DEBUG) console.log('[cooked] setFieldValues KO:', e.message);
+    }
+    try {
+      form.setFieldValues({ page_source: pageSource });
+    } catch (e) {
+      if (COOKED_DEBUG) console.log('[cooked] page_source non seedé (champ absent ?):', e.message);
     }
   });
 }

@@ -580,6 +580,7 @@ Chaque seuil a une distribution mesurée le 03/09. Acquittement : `SELECT public
 | `identity_stitch_coverage` | **T-10** : après la reconstruction du jour, sessions humaines de J-1 (hors webhook, hors aid 32-hex) absentes de la couture | 03/09 : J-1 429/429, J-2 416/416 cousues (0,5 s) | warn |
 | `dashboard_resources_snapshot_stale` (registre) | **T-10** : mesuré sur `max(cooked_end)` (fin des données), plus sur `refreshed_at` ; warn > 2 j, critical > 4 j | 28/08 : J-2 affiché en vert de 00:00 à 21:00 Paris — invisible de l'ancien registre | warn / critical |
 | `page_taxonomy_stale` (registre) | **T-10** : `max(updated_at)` > 21 j (aucune synchro Wix Blog) | dernière synchro 31/08 11:05 | warn |
+| `form_fields_missing` | **T-18** : par formulaire, 28 j (webhook) : > 10 % sans `page_source` ou sans objet (≥ 3 envois), ou 100 % sans page | 180 j : « Divorce » 3/3, « Demande dossier en cours » 1/1, « Prise de contact » 18/252 sans page, 30 sans objet — **sonne au 04/09** tant que les champs ne sont pas câblés (action Nicolas) | warn (escalade critical à 5 j) |
 | `contact_sans_amont` | **T-17** : ≥ 3 `cta_phone_click`/`cta_booking_click` sur 24 h sans pageview antérieure dans la même session (détection d'injection via `/_functions/track`, garde d'origine forgeable — ou tracker cassé) | 28 j au 04/09 : 0/128 phone, 4/331 booking sans amont | warn ; critical ≥ 10 |
 
 Le stock du 03/09 (55 non acquittées) n'est **pas** vidé par la migration — ack = décision Nicolas.
@@ -657,14 +658,16 @@ supabase functions deploy track --no-verify-jwt
 supabase functions deploy form-webhook --no-verify-jwt
 ```
 
-Versions (03/09/2026, **prod alignée avec le repo**) : **track v28** (T-04 :
+Versions (03/09/2026 23:59, **prod alignée avec le repo**) : **track v29** (T-18 : gate `x-cooked-key`
+fail-fast — `requireIngestKey`, le boot échoue sans secret ; v28 = T-04 :
 UA littéral « pc » — bot Baidu — et SEBot-WA droppés à l'ingestion, motifs
 miroir dans la taxonomie `ua_bot` de `refresh_noise_sessions` + règle
 `spam_referrer` ; v27 = gate `x-cooked-key` à l'ingestion ;
 v26 = filtre bots à l'ingestion — taxonomie ua_bot appliquée avant l'INSERT,
-drops comptés dans `ingest_drops` ; D4 `track_row`), **form-webhook v13**
-(10/08/2026 — Pont SECIB : identité prospect en clair → `crm_prospects` ;
-v12 = D4 `form_row`) ; tracker Wix
+drops comptés dans `ingest_drops` ; D4 `track_row`), **form-webhook v15**
+(04/09/2026 — T-18 : `page_source` canonicalisé, `form_id` trimé ; v14 = T-07
+`form_submit_dropped` via `raise_cooked_alert` ; v13 = 10/08/2026 — Pont SECIB : identité
+prospect en clair → `crm_prospects` ; v12 = D4 `form_row`) ; tracker Wix
 **`sprint41`** (déployé le 12/07/2026). Modules testables dans
 `supabase/functions/_shared/` : `events_row`, `track_row`, `form_row`
 (+ tests Deno, CI `edge-shared-helpers`).

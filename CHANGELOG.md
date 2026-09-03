@@ -3,6 +3,40 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-04] — T-18 : formulaires et Edge — `page_source` canonique, gate fail-fast, champs surveillés
+
+Mission du 02/09/2026, ticket T-18 (#119), constats b-01 (P1), b-02, b-05, b-06 (b-04 était déjà clos
+par T-07 / v14). Invariants I1, I4. Migration `20260903215921`. Edge **`track` v29** et
+**`form-webhook` v15** déployés le 03/09/2026 23:59 Paris (CLI, sondes 405/401 relues).
+**Collage Wix = Nicolas** (`http-functions.js`, `masterpage-cooked.js`, champs de formulaires).
+
+### Ajouté
+- **`_shared/ingest_gate.ts`** (`requireIngestKey`, `ingestKeyMatches`, tests Deno) : `track` v29 refuse
+  de démarrer sans `COOKED_INGEST_KEY` — avant, un secret absent éteignait la gate en silence (b-02).
+  Miroir Velo : `http-functions.js` répond `ingest_key_missing` (500) au lieu d'envoyer sans clé.
+- **Alerte `form_fields_missing`** (`alert_rule_form_attribution_degraded` v2) : par formulaire sur
+  28 j, > 10 % sans `page_source` ou sans objet, ou 100 % sans page. **Sonne dès le 04/09** : « Divorce »
+  et « Demande dossier en cours » n'ont jamais eu ces champs (b-01 : contact compté au total site mais
+  invisible par page ; b-05 : compté macro par défaut).
+- `masterpage-cooked.js` seede aussi `page_source` (chemin courant) pour tout formulaire qui porte le
+  champ caché, en appel séparé (un champ absent ne casse pas le seed des ids).
+
+### Corrigé
+- **`form-webhook` v15** : `page_source` canonicalisé (decode → NFC → slash, `canonical_path` partagé,
+  b-06) — un `/post/itt-p%C3%A9nale…` rejoint enfin son pageview ; `form_id` trimé (« Prise de contact
+  site-web » arrivait avec un espace final : 230 lignes vs 22 sur 180 j).
+
+### À faire par Nicolas
+1. Coller `wix/http-functions.js` (fail-closed sans clé) et `wix/masterpage-cooked.js` (seed
+   `page_source`, debug off — T-17) dans Velo ; publier.
+2. Sur « Formulaire Divorce » et « Demande dossier en cours » : ajouter le champ caché `page_source`
+   (clé exacte) et un champ « Objet de ma demande » (clé `objet_de_ma_demande`) ; « Prise de contact »
+   les a déjà.
+3. Contrôle après la prochaine soumission :
+   `SELECT props->>'form_id', path, props->>'objet_de_ma_demande' FROM events_human WHERE name='form_submit' ORDER BY occurred_at DESC LIMIT 5;`
+   → l'alerte `form_fields_missing` s'éteint d'elle-même quand la fenêtre 28 j ne contient plus de
+   formulaire sans champ.
+
 ## [2026-09-04] — T-17 : tracker `sprint42` — CLS explicite, filet CI, tests des correctifs, debug off
 
 Mission du 02/09/2026, ticket T-17 (#118), constats a-03 (P1), a-04 (arbitrage), a-05, a-07, a-08.

@@ -54,8 +54,8 @@ SELECT gsc_last_data_day();
 | Composant | Version repo | Déploiement prod |
 |---|---|---|
 | Tracker | `sprint42` (T-17 : CLS explicite, cliquet CI 14 500) | Wix Custom Code (minify) — **prod encore `sprint41`** (12/07/2026) jusqu'au collage par Nicolas |
-| Edge `track` | v28 (T-04 : UA « pc » / SEBot droppés ; v27 = gate `x-cooked-key` ; v26 = filtre bots à l'ingestion) | `supabase functions deploy track` — v28 déployée le 03/09/2026 |
-| Edge `form-webhook` | `v14` (T-07 : `form_submit_dropped` via `raise_cooked_alert`) | déployée le 03/09/2026 16:30 Paris (version Supabase 22) |
+| Edge `track` | v29 (T-18 : gate `x-cooked-key` fail-fast — boot refusé sans `COOKED_INGEST_KEY` ; v28 = UA « pc » / SEBot droppés ; v27 = gate ; v26 = filtre bots) | `supabase functions deploy track --no-verify-jwt` — v29 déployée le 03/09/2026 23:59 Paris |
+| Edge `form-webhook` | `v15` (T-18 : `page_source` canonicalisé, `form_id` trimé ; v14 = `form_submit_dropped` via `raise_cooked_alert`) | déployée le 03/09/2026 23:59 Paris (version Supabase 23) |
 | RPC Postgres | 138 routines `pg_proc` (134 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`, comparé à la prod chaque matin) | migrations Supabase |
 
 **Repo et prod peuvent diverger** tant que Edge / tracker ne sont pas redéployés.
