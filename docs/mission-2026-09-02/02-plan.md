@@ -282,7 +282,7 @@ est proposée) ; un backup externe (décision du 02/07) ; l'ingestion SECIB prod
   côté Edge (1 appel/minute) ; contrats SQL manuels câblés dans le job T‑12. Compte cible : 122 → ~114 routines.
   **Qui** : moi après §7.4. **Estimation** : 2 h.
 
-## T‑20 · Restatements passés : annotations et version du CPI
+## T‑20 · Restatements passés : annotations et version du CPI — **FAIT 04/09 08:55** (migration `20260904064553` ; correctif T-11 `20260904064833` ; journal)
 - **Problème** : f‑05, o‑11, f‑08. **Changement** : 3 lignes `annotations` (02/07 CPI grain lectures, 25/07
   momentum/zv, 31/08 périmètre taxonomie) ; colonne `cpi_version` alimentée par `cooked_cpi_snapshot` ; check §3
   planifié (R² + médiane dans une table, au registre) ; re‑test 56 j lancé (t0 10/06) en signalant les 4 ruptures.

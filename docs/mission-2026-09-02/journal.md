@@ -748,3 +748,36 @@
   `page_reads(`).
 - 00:35 `[W-PROD]` `npx supabase functions deploy track --no-verify-jwt` → **v30** (Supabase 40). Sondes :
   GET → 405, POST sans clé → 401. Tests Deno : en CI (deno absent en local).
+- 08:44 `[R]` CI verte sur PR #145 après retrait de `country` dans `form_row.ts` (TS2353) ; **mergée** (`7527f46`).
+
+### T-20 — restatements passés (04/09/2026, 08:40 → 08:55)
+- 08:40 `[F]` #121, `cpi_daily` (colonnes, 76 j / 13 040 lignes, 10/06 → 03/09), `annotations` (13 lignes, kinds
+  `site_change`/`autre`), `freshness_contract`, `cooked_config`, corps de `cooked_cpi_snapshot()`, harnais
+  `scripts/cpi_validation_j28.sql` §3, doc CPI § Ruptures.
+- 08:42 `[R]` **Mesure avant.** Aucune colonne de version dans `cpi_daily` (6 définitions indiscernables) ; aucune
+  annotation pour le 02/07 (la doc CPI en affirmait une), le 25/07 ni le 31/08 ; check §3 rejoué 2 fois à la main
+  (11/07 R² 0,930 / 20,1 % ; 02/09 0,909 / 28,8 %), ni table, ni cron, ni registre. Cron `cpi-calibration-monthly`
+  absent, 136 routines, 18 règles, 14 sources, 9 crons.
+- 08:45 `[W-PROD]` `apply_migration` **`20260904064553`** (`cpi_version` + rétro-remplissage 2.2.0 → 2.2.5 par date
+  de rupture, `cooked_config.cpi_definition_version`, `cooked_cpi_snapshot()` l'écrit, 3 annotations,
+  `cpi_calibration_checks` + `cpi_calibration_check()` + cron `0 5 1 * *` + registre 31/35/62 +
+  `alert_rule_cpi_calibration()`, REVOKE/GRANT, premier point).
+- 08:47 `[R]` **Après.** `cpi_version` : 2.2.0 15 j / 2.2.1 10 j / 2.2.2 10 j (12→23/07, le 24/07 n'a pas de
+  snapshot) / 2.2.3 2 j / 2.2.4 38 j / 2.2.5 1 j, **0 NULL** ; config 2.2.5 ; annotations **16** (02/07 et 25/07 ont
+  désormais une ligne `site_change` ET une ligne `autre`) ; `cpi_calibration_checks` 04/09 : **R² 0,913, pente −1,259,
+  20 buckets, médiane 25,5 %, max 65,3 %, CTR pos 1 8,20 %** ; cron actif ; registre ; règle → 0 ligne ;
+  `cooked_alerts_refresh()` la voit ; ACL `postgres` + `service_role` seuls, RLS on ; `alert_rule_exposure()` = 0 ;
+  routines **138**, règles **19**, sources **15**, crons **10**.
+- 08:48 `[R]` Réflexes du matin : `latest_rpc_health()` **51 / 0 ko** (06:15 UTC) ; pipeline healthy ; GSC J-4
+  (31/08) ; séquence aval complète 03/09 17:00 (1 620 s) ; `cpi_daily` du 04/09 pas encore écrit (ingestion GSC du
+  jour attendue — le cron GitHub part à ~10:30 UTC depuis le 27/08). Alertes ouvertes : `form_fields_missing` warn
+  (attendu T-18), `gbp_daily_stale` critical (attendu, verdict Google ~10-15/09), et **`gsc_ingest_missed` warn du
+  03/09 22:15 UTC = FAUX POSITIF de ma règle T-11** : garde horaire en UTC mais jour comparé en Paris → de 22:00 à
+  24:00 UTC, `paris_today()` est déjà le lendemain.
+- 08:50 `[W-PROD]` `apply_migration` **`20260904064833`** `t11fix_gsc_ingest_missed_utc_day` : jour UTC des deux
+  côtés + acquittement du faux positif (1 ligne). Après : règle → 0 ligne, alerte 140 `acked`, exposition 0.
+- 08:55 `[W]` Constantes (138 / 134, 19 règles, 15 sources, 10 crons + `cpi-calibration-monthly`), OPERATIONS
+  (cron, alerte, registre, restatements), doc CPI (§ Version de définition + § Calibration, rupture du 25/07 ajoutée,
+  photo T-05 « après J+1 »), CLAUDE.md règle I10, CHANGELOG, ROADMAP (#3 re-test 56 j → 29/10/2026).
+  `check_docs_constants.py` : I13 OK.
+

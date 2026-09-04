@@ -211,7 +211,7 @@ après C1–C9 ; tue les fuites SQL restantes :
   `contracts/branded_query_vectors.json`).
 - **`cooked_snapshot_window(w, grain)`** : driver bornes `live_j1` + GSC +
   `cooked_events_window` pour les 3 refreshers dashboard.
-- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 136 routines au
+- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 138 routines au
   03/09/2026, régénéré depuis la prod par le workflow `rpcs-regenerate`) ; gate CI
   `check_rpcs_sql_fresh.py` si migration redéfinit une RPC + prod-drift (sha = prod).
 
@@ -382,7 +382,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (136 routines au 03/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
+| Corps complets des RPC (138 routines au 04/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
 | Glossaire de domaine et invariants (conversions, attribution, lecture, fraîcheur) | `CONTEXT.md` |
 | Décisions d'architecture | `docs/adr/` |
 | PII, secrets, surface d'attaque, invariant I1 | `SECURITY.md` |
@@ -804,6 +804,20 @@ avec un contract‑test « ok » (mission 02/09/2026, constat d‑01). Exception
 5 crons fantômes documentés avec horaires, un `SECURITY.md` qui affirmait « pas de PII » trois
 semaines après le pivot SECIB, et deux fonctions `SECURITY DEFINER` exécutables par `anon`
 (déjà corrigé le 25/07, revenu le 31/08).
+
+## 🚨 RÈGLE ABSOLUE — Un restatement CPI = une version + une annotation (invariant I10, 04/09/2026)
+
+Toute migration qui change la **définition** d'une entrée du CPI (fenêtre, source des clics, canal,
+attribution des contacts, grain des lectures) fait trois choses **dans la même migration** :
+(1) `UPDATE cooked_config SET value = '<x.y.z+1>' WHERE key = 'cpi_definition_version'` —
+`cooked_cpi_snapshot()` l'écrit dans `cpi_daily.cpi_version` ; (2) une ligne `annotations`
+(kind `autre`) datée du jour, qui dit ce qui bouge et ce qui ne bouge pas ; (3) la ligne de la
+table « Restatements » de `docs/OPERATIONS.md` et de `docs/cpi-cooked-page-index.md`. Deux lignes de
+`cpi_daily` de `cpi_version` différentes **ne se comparent pas** sans lire `annotations`.
+
+**Pourquoi :** le 04/09/2026, `cpi_daily` portait 6 définitions successives (16/06 → 03/09)
+indiscernables dans la donnée, et trois restatements (02/07, 25/07, 31/08) n'avaient aucune
+annotation — la doc CPI affirmait une annotation du 02/07 qui n'existait pas.
 
 ## 🚨 RÈGLE ABSOLUE — Toujours requêter `events_human`, jamais `events`
 

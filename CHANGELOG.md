@@ -3,6 +3,30 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-04] — T-20 : restatements passés — version de définition du CPI, annotations, calibration mensuelle
+
+Mission du 02/09/2026, ticket T-20 (#121), constats f-05, o-11, f-08 — invariant **I10**. Migration
+`20260904064553`. Aucun score ne change.
+
+### Ajouté
+- **`cpi_daily.cpi_version`** rétro-remplie par date de rupture (2.2.0 du 10/06 → 2.2.5 depuis le 03/09 ;
+  13 040 lignes, 0 NULL) ; `cooked_config.cpi_definition_version = 2.2.5`, écrite par `cooked_cpi_snapshot()`.
+- **3 annotations manquantes** (02/07 grain lectures + `classify_channel` v2 ; 25/07 momentum sur requêtes
+  révélées + `convertit` ; 31/08 périmètre `page_taxonomy` +12 articles) → 16 lignes `annotations`.
+- **Check de calibration mensuel** : `cpi_calibration_check()` (le §3 du harnais J+28 : loi de puissance
+  CTR × position sur 90 j clos à `gsc_last_data_day()`, brandé exclu) → table `cpi_calibration_checks`
+  (RLS, service_role), cron `cpi-calibration-monthly` (`0 5 1 * *`), registre `freshness_contract`
+  (warn > 35 j), alerte `cpi_calibration` (critical R² < 0,85, warn médiane |écart| > 30 %). Premier
+  point 04/09/2026 : **R² 0,913, médiane 25,5 %** (11/07 : 0,930 / 20,1 % ; 02/09 : 0,909 / 28,8 %).
+- Règle absolue I10 dans `CLAUDE.md` ; § « Version de définition » et « Calibration » dans la doc CPI.
+- Compteurs : 138 routines `pg_proc` (134 Cooked + 4 `unaccent`), 19 règles d'alerte, 15 sources au
+  registre, 10 crons.
+
+### Corrigé
+- **`alert_rule_gsc_ingest_missed` (T-11)** : la garde horaire était en UTC mais le jour comparé en Paris →
+  faux positif de 22:00 à 24:00 UTC (alerte du 03/09 22:15 UTC alors que l'ingestion du 03/09 avait eu
+  lieu à 10:35 UTC). Jour UTC des deux côtés (`20260904064833`), faux positif acquitté.
+
 ## [2026-09-04] — T-19 : budget de complexité — `country` amputée, vestiges supprimés, `url`/`title` réduits, bloat
 
 Mission du 02/09/2026, ticket T-19 (#120, absorbe #122 et #123), constats d-08, h-07, h-08, b-07.

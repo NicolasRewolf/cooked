@@ -7,7 +7,7 @@
 -- Ce fichier = instantané lisible pour humains et agents (Arch #5, 10/07/2026).
 --
 -- Régénérer : python3 scripts/generate_rpcs_sql.py  (DATABASE_URL requis)
--- Généré le 03/09/2026 — projet mxycmjkeotrycyneacje.
+-- Généré le 04/09/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
 -- ═══ public.ack_alerts(p_kinds text[]) ═══
@@ -64,6 +64,31 @@ BEGIN
     severity := CASE WHEN v_n >= 10 THEN 'critical' ELSE 'warn' END;
     detail := format('%s contact(s) macro sur %s en 24 h sans pageview antérieure dans la même session (28 j : 0/128 phone, 4/331 booking). Injection possible via /_functions/track (garde d''origine forgeable, T-17) ou tracker cassé (pageview non émise) : vérifier user_agent / referrer des sessions concernées avant de livrer un chiffre de contacts. Concernés : %s',
                      v_n, v_tot, left(coalesce(v_paths, ''), 300));
+    RETURN NEXT;
+  END IF;
+END $function$
+
+
+-- ═══ public.alert_rule_cpi_calibration() ═══
+CREATE OR REPLACE FUNCTION public.alert_rule_cpi_calibration()
+ RETURNS TABLE(kind text, severity text, detail text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE r record;
+BEGIN
+  SELECT * INTO r FROM public.cpi_calibration_checks ORDER BY day DESC LIMIT 1;
+  IF r.day IS NULL THEN RETURN; END IF;
+  IF r.r2 < 0.85 THEN
+    kind := 'cpi_calibration'; severity := 'critical';
+    detail := format('Courbe CTR du CPI : R² = %s < 0,85 (critère liant, check du %s, %s buckets, médiane |écart| %s %%). Le terme capture zc et clics_perdus reposent sur cette loi de puissance : ne pas livrer de « clics perdus » avant instruction (docs/cpi-cooked-page-index.md §validation).',
+                     r.r2, to_char(r.day, 'DD/MM/YYYY'), r.n_buckets, r.mediane_ecart_pct);
+    RETURN NEXT;
+  ELSIF r.mediane_ecart_pct > 30 THEN
+    kind := 'cpi_calibration'; severity := 'warn';
+    detail := format('Courbe CTR du CPI : R² %s (ok) mais médiane |écart| %s %% > 30 %% (20,1 %% le 11/07/2026, 28,8 %% le 02/09) — courbure non captée par la loi de puissance à 1 segment ; clics_perdus à lire avec prudence.',
+                     r.r2, r.mediane_ecart_pct);
     RETURN NEXT;
   END IF;
 END $function$
@@ -397,7 +422,8 @@ BEGIN
     RETURN;
   END IF;
   SELECT max(g.ingested_at) INTO v_last_ingest FROM public.gsc_path_daily g;
-  IF public.paris_date(v_last_ingest) IS DISTINCT FROM public.paris_today() THEN
+  -- Jour UTC des deux côtés (le cron vit en UTC) — un jour Paris ici sonnait à tort de 22:00 à 24:00 UTC.
+  IF (v_last_ingest AT TIME ZONE 'UTC')::date IS DISTINCT FROM (now() AT TIME ZONE 'UTC')::date THEN
     kind := 'gsc_ingest_missed'; severity := 'warn';
     detail := format(
       'Ingestion GSC en retard : attendue à 06:00 UTC, toujours absente à %s UTC (dernière : %s). '
@@ -1320,16 +1346,17 @@ CREATE OR REPLACE FUNCTION public.cooked_cpi_snapshot()
  SET statement_timeout TO '600s'
 AS $function$
   INSERT INTO public.cpi_daily
-    (day, path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct, convertit)
+    (day, path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct, convertit, cpi_version)
   SELECT public.paris_today(),
-    path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct, convertit
+    path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct, convertit,
+    (SELECT value FROM public.cooked_config WHERE key = 'cpi_definition_version')
   FROM public.cooked_page_index(28)
   ON CONFLICT (day, path) DO UPDATE SET
     ptype=EXCLUDED.ptype, grade=EXCLUDED.grade, cpi=EXCLUDED.cpi, cpi_raw=EXCLUDED.cpi_raw,
     momentum=EXCLUDED.momentum, gate=EXCLUDED.gate,
     zc=EXCLUDED.zc, zr=EXCLUDED.zr, zl=EXCLUDED.zl, zv=EXCLUDED.zv,
     clics_perdus=EXCLUDED.clics_perdus, n_org=EXCLUDED.n_org, couv_gsc_pct=EXCLUDED.couv_gsc_pct,
-    convertit=EXCLUDED.convertit;
+    convertit=EXCLUDED.convertit, cpi_version=EXCLUDED.cpi_version;
 $function$
 
 
@@ -2212,6 +2239,51 @@ BEGIN
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   RETURN v_rows;
 END;
+$function$
+
+
+-- ═══ public.cpi_calibration_check() ═══
+CREATE OR REPLACE FUNCTION public.cpi_calibration_check()
+ RETURNS TABLE(day date, r2 numeric, pente numeric, n_buckets integer, mediane_ecart_pct numeric, max_ecart_pct numeric, ctr_pos1_pct numeric)
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  WITH b AS (SELECT public.gsc_last_data_day() AS gsc_end),
+  base AS (
+    SELECT round(g.position)::int AS pos,
+           (sum(g.clicks) + 1.0) / (sum(g.impressions) + 20.0) AS ctr,
+           sum(g.impressions) AS imps
+    FROM public.gsc_query_page_daily g, b
+    WHERE g.day > b.gsc_end - 90 AND g.day <= b.gsc_end
+      AND NOT public.gsc_is_branded(g.query)
+    GROUP BY 1
+    HAVING round(g.position)::int BETWEEN 1 AND 20 AND sum(g.impressions) >= 200
+  ),
+  fit AS (
+    SELECT regr_slope(ln(ctr), ln(pos)) AS pente, regr_intercept(ln(ctr), ln(pos)) AS icept,
+           regr_r2(ln(ctr), ln(pos)) AS r2, count(*) AS n_buckets
+    FROM base
+  ),
+  ecarts AS (
+    SELECT abs(100 * (bs.ctr - exp(f.icept + f.pente * ln(bs.pos))) / exp(f.icept + f.pente * ln(bs.pos))) AS e
+    FROM base bs, fit f
+  ),
+  agg AS (
+    SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY e) AS med, max(e) AS mx FROM ecarts
+  ),
+  ins AS (
+    INSERT INTO public.cpi_calibration_checks (day, gsc_end, r2, pente, n_buckets, mediane_ecart_pct, max_ecart_pct, ctr_pos1_pct, cpi_version)
+    SELECT public.paris_today(), b.gsc_end, round(f.r2::numeric, 3), round(f.pente::numeric, 3), f.n_buckets::int,
+           round(agg.med::numeric, 1), round(agg.mx::numeric, 1), round((100 * exp(f.icept))::numeric, 2),
+           (SELECT value FROM public.cooked_config WHERE key = 'cpi_definition_version')
+    FROM b, fit f, agg
+    ON CONFLICT (day) DO UPDATE SET gsc_end = EXCLUDED.gsc_end, r2 = EXCLUDED.r2, pente = EXCLUDED.pente,
+      n_buckets = EXCLUDED.n_buckets, mediane_ecart_pct = EXCLUDED.mediane_ecart_pct,
+      max_ecart_pct = EXCLUDED.max_ecart_pct, ctr_pos1_pct = EXCLUDED.ctr_pos1_pct, cpi_version = EXCLUDED.cpi_version
+    RETURNING day, r2, pente, n_buckets, mediane_ecart_pct, max_ecart_pct, ctr_pos1_pct
+  )
+  SELECT * FROM ins;
 $function$
 
 
