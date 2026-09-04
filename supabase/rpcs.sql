@@ -4411,7 +4411,7 @@ begin
   v_before := pg_size_pretty(pg_total_relation_size('public.events'));
 
   delete from public.events
-  where occurred_at < now() - interval '400 days';
+  where occurred_at < now() - interval '13 months';
 
   get diagnostics v_deleted = row_count;
 

@@ -1,6 +1,7 @@
 # 03 — Passation finale — mission Cooked 02/09/2026
 
-> Écrite le **04/09/2026 à 09:50 Paris**, à la fin de la Phase 4. Registre : celui du §2 de
+> Écrite le **04/09/2026 à 09:50 Paris**, à la fin de la Phase 4 ; **mise à jour 04/09 12:15**
+> (collages Wix, secret, ntfy, annotations, dédup CRM, CNIL 13 mois). Registre : celui du §2 de
 > `ROADMAP-sprint38-handoff.md` — sans langue de bois. La passation intermédiaire de l'ARRÊT 1
 > (02/09 20:20) est conservée en fin de fichier pour l'historique.
 
@@ -34,16 +35,18 @@ et elle conditionne le DROP de `cpi_pre_restatement_20260903` (condition posée 
 | # | Action | Ticket / doc | Effet attendu |
 |---|---|---|---|
 | 1 | ~~**Coller `wix/tracker.min.html`** (sprint42)~~ **FAIT 04/09 10:12** — dans le Custom Code Wix, puis `UPDATE cooked_config SET value='sprint42' WHERE key='expected_tracker_version'` (migration) | T-17 (#118) | CLS = 0 explicite ; sans le collage `tracker_drift` reste muet et la prod tourne en sprint41 (fonctionnellement équivalent) |
-| 2 | Coller `wix/masterpage-cooked.js` (Velo) et `wix/http-functions.js` ; ajouter `cooked_aid`/`cooked_sid` + `page_source` aux formulaires qui en manquent | T-18 (#119), alerte `form_fields_missing` (warn, ouverte) | 6 formulaires / 28 j sans `page_source` deviennent attribuables |
-| 3 | Poser le secret GitHub `WIX_API_KEY` | T-15 (#116) | synchro hebdo `page_taxonomy` (lundi 05:00 UTC) ; sans lui l'alerte `page_taxonomy_gap` finira par sonner |
-| 4 | **T-02** : désactiver la clé `anon` legacy dans la console Supabase | #103 | ferme définitivement h‑01 ; puis rejouer l'annexe B du baseline (attendu : 401 partout) |
-| 5 | Lire la vérif J+1 du 04/09 (`cpi_movers`, 0 mover fiable inexpliqué attendu), puis `DROP TABLE cpi_pre_restatement_20260903` (migration) | #120, `docs/cpi-cooked-page-index.md` | photo d'audit supprimée, table sans PK en moins |
+| 2 | ~~Coller `masterpage-cooked.js` + `http-functions.js` + champs cachés~~ **FAIT 04/09 matin** — publiés ; Divorce et Demande dossier ont `page_source` + objet. Alerte `form_fields_missing` **reste** jusqu'au prochain vrai envoi (les 28 j d'avant n'ont pas le champ) | T-18 (#119) | le prochain Divorce / dossier porte `page_source` |
+| 3 | ~~Poser le secret GitHub `WIX_API_KEY`~~ **FAIT 04/09** — dry-run `wix-taxonomy-sync` n° 33854781065 : 434 posts, 0 à insérer | T-15 (#116) | synchro hebdo lundi 05:00 UTC |
+| 4 | **T-02** : **ne pas** désactiver les clés JWT (`Disable JWT-based API keys`) — Vercel et Wix sont déjà en `sb_publishable` / `sb_secret` ; le bouton tuerait aussi `service_role` JWT encore utilisé ailleurs | #103 **reste ouverte** | h‑01 fermé côté exposition ; rotation JWT = plus tard, quand tous les secrets sont `sb_secret_` |
+| 5 | Lire la vérif J+1 du 04/09 (`cpi_movers`, 0 mover fiable inexpliqué attendu), puis `DROP TABLE cpi_pre_restatement_20260903` (migration) | #120, `docs/cpi-cooked-page-index.md` | **en attente** : GSC du 04/09 pas encore arrivée (dernière ingest 03/09 12:35 Paris) |
 | 6 | Après le 01/10/2026 : DROP des overloads dépréciés `gsc_top_queries_for_path(text, integer, integer)` et `macro_contacts_by_path(integer)` (COMMENT « déprécié »), 4 appelants RPC à basculer | #120 | — |
-| 7 | **CNIL 13 mois** : confirmer ou non la rétention `purge_old_events` (400 j aujourd'hui) | #120, `SECURITY.md` | si 13 mois : une migration, la première purge utile tombe en 06/2027 |
-| 8 | 2 doublons `crm_prospects` (même email, même minute — import CSV du 23/08) : garder / supprimer | T-16 (#117) | comptes du pont exacts à l'unité |
-| 9 | Relire les 3 libellés d'annotation posés au T-20 (02/07, 25/07, 31/08) et les amender si besoin | T-20 (#121) | — |
-| 10 | Confirmer sur le téléphone la réception d'un push ntfy (2 × HTTP 200 côté base, réception jamais vérifiée) | `cooked_config.ntfy_topic` | ferme le dernier [non vérifié] de la chaîne d'alerte |
+| 7 | ~~**CNIL 13 mois**~~ **FAIT 04/09 11:19** — `purge_old_events` passe de 400 j à `interval '13 months'` (`20260904091903`) ; 0 ligne à supprimer aujourd'hui ; 1er run utile ≈ 06/2027 | #120 | politique posée |
+| 8 | ~~2 doublons `crm_prospects`~~ **FAIT 04/09** — 2e envoi retiré (17/04 import + 25/08 webhook) ; 0 doublon email×minute ; `crm_prospects` = 856 | T-16 (#117) | comptes du pont exacts à l'unité |
+| 9 | ~~Relire les 3 libellés d'annotation T-20~~ **FAIT 04/09** — Nicolas les a validés tels quels | T-20 (#121) | — |
+| 10 | ~~Confirmer ntfy~~ **FAIT 04/09** — Nicolas a reçu les push | `cooked_config.ntfy_topic` | chaîne d'alerte vérifiée de bout en bout |
 | 11 | Verdict Google Business Profile (~10-15/09) puis réactivation du cron GBP | ROADMAP #5 | `gbp_daily_stale` critical s'éteint |
+
+Reste vraiment ouvert pour Nicolas : **T-02 (#103, ne pas cliquer)**, **vérif CPI J+1 puis DROP de la photo 03/09**, **overloads après le 01/10**, **GBP ~10-15/09**. Cookiebot (`_ckd` / `_ckd_aid` à classer Nécessaire) : Nicolas gère hors mission.
 
 ## Ce qui reste ouvert — hors tickets (à mettre au ROADMAP, fait)
 

@@ -200,7 +200,7 @@ docs/plan-correction-audit-2026-07-02.md, chronologie : HISTORY-sprints).
   page d'entrée). Les 14 pages expertise = liste business explicite dans
   `refresh_dashboard_expertises_snapshots` (PAS d'énumération heuristique).
 - **Backup externe : décliné par Nicolas le 02/07** (risque assumé) — ne
-  plus le proposer avant ~juin 2027 (purge 400 j des events réels).
+  plus le proposer avant ~juin 2027 (purge 13 mois des events réels).
 
 **Revue architecture 10/07/2026 (Arch #1–#5, PRs #60–#61)** — 2e passe
 après C1–C9 ; tue les fuites SQL restantes :
@@ -1070,8 +1070,8 @@ La colonne `source` trace la provenance du THEME ; la provenance de
 `category` est toujours `wix_api`.
 
 ⚠️ **Synchro hebdomadaire depuis le 03/09/2026 (T-15)** : `scripts/wix_taxonomy_sync.py`
-(cron GitHub `wix-taxonomy-sync`, lundi 05:00 UTC, secret `WIX_API_KEY` **à poser par
-Nicolas** — sans lui le workflow sort sans écrire) lit la liste publiée et appelle
+(cron GitHub `wix-taxonomy-sync`, lundi 05:00 UTC, secret `WIX_API_KEY` **posé le 04/09/2026**)
+lit la liste publiée et appelle
 `page_taxonomy_sync_wix(jsonb)` (insère les absents, corrige `category` seule, ne
 supprime jamais) ; à la main : `python3 scripts/wix_taxonomy_sync.py --dry-run`. Endpoint faisant
 autorité : `GET https://www.wixapis.com/blog/v3/posts?categoryIds=…`
