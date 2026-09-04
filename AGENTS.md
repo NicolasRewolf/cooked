@@ -22,7 +22,7 @@ SELECT gsc_last_data_day();
 
 | Besoin | Fichier |
 |---|---|
-| Corps complets des RPC (136 routines `pg_proc` = 132 Cooked + 4 `unaccent`, régénéré depuis la prod en CI) | [supabase/rpcs.sql](supabase/rpcs.sql) |
+| Corps complets des RPC (138 routines `pg_proc` = 134 Cooked + 4 `unaccent`, régénéré depuis la prod en CI) | [supabase/rpcs.sql](supabase/rpcs.sql) |
 | Glossaire de domaine (conversions, attribution, lecture, fraîcheur, invariants) | [CONTEXT.md](CONTEXT.md) |
 | Décisions d'architecture (ADR) | [docs/adr/](docs/adr/) |
 | Sécurité : PII, secrets, surface d'attaque, invariant I1 | [SECURITY.md](SECURITY.md) |
@@ -56,7 +56,7 @@ SELECT gsc_last_data_day();
 | Tracker | `sprint42` (T-17 : CLS explicite, cliquet CI 14 500) | Wix Custom Code (minify) — **prod encore `sprint41`** (12/07/2026) jusqu'au collage par Nicolas |
 | Edge `track` | v30 (T-19/T-22 : `url` réduite aux paramètres de campagne, `title` plus écrit, `ingest_drops` agrégés ; v29 = gate fail-fast ; v28 = UA « pc » / SEBot droppés ; v27 = gate ; v26 = filtre bots) | `supabase functions deploy track --no-verify-jwt` — v30 déployée le 04/09/2026 00:35 Paris |
 | Edge `form-webhook` | `v15` (T-18 : `page_source` canonicalisé, `form_id` trimé ; v14 = `form_submit_dropped` via `raise_cooked_alert`) | déployée le 03/09/2026 23:59 Paris (version Supabase 23) |
-| RPC Postgres | 136 routines `pg_proc` (132 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`, comparé à la prod chaque matin) | migrations Supabase |
+| RPC Postgres | 138 routines `pg_proc` (134 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`, comparé à la prod chaque matin) | migrations Supabase |
 
 **Repo et prod peuvent diverger** tant que Edge / tracker ne sont pas redéployés.
 Toujours vérifier : `props->>'_v'` sur events récents + version commentée en tête

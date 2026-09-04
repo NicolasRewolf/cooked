@@ -184,18 +184,24 @@ inchangé, horizon doublé, non-gating) : à lancer le **05/08/2026**.
 
 ## Ruptures de série `cpi_daily` (restatements)
 
-Quatre corrections de mesure ont restaté le snapshot du jour. **Comparer un
+Les corrections de mesure suivantes ont restaté le snapshot du jour. **Comparer un
 CPI d'avant/après ces dates revient à comparer deux définitions**, pas une
 évolution de la page. Annotations posées dans la table `annotations`.
 
 - **02/07/2026 — grain lectures (session×path)** : ±7 pts max sur 4 pages
-  A/B, 8 pages C sorties du scoring.
+  A/B, 8 pages C sorties du scoring. Même jour : `classify_channel` v2 (IA détectée
+  aussi par `utm_source`). Annotation posée le 04/09/2026 (T-20).
 - **12/07/2026 — conversion recousue** : l'entrée de zv passe à
   `conversion_journeys` v2 (visiteur recousu via `identity_stitch`). Seule
   la composante zv bouge (zc/zr/zl/momentum/gate inchangés page par page),
   delta moyen −0,1 pt, **0 changement de grade**, 7 movers ≥ 15 pts — dont
   arnaque-en-ligne 41→100 et `/nos-affaires` 67→12 (qui rend un crédit
   usurpé par l'ancienne attribution mono-session).
+
+- **25/07/2026 — momentum sur les requêtes révélées + badge `convertit`** (revue
+  d'architecture n°2) : `c1`/`c0` lus dans `gsc_query_page_daily` non brandé —
+  16-28 % des clics réels — jusqu'au 03/09/2026 (T-06). Sur cette période le
+  momentum n'est pas un signal fiable. Annotation posée le 04/09/2026 (T-20).
 
 - **27/07/2026 — la fiche Google Business sort de l'organique**
   (`classify_channel` v3). Les clics du Local Pack arrivent sur
@@ -262,7 +268,41 @@ CPI d'avant/après ces dates revient à comparer deux définitions**, pas une
 
 Tables d'audit : `cpi_pre_restatement_20260712` et `_20260727` (supprimées le
 10/08/2026), `cpi_pre_restatement_20260903` (phases `t05_avant` / `t09_avant` /
-`t06_avant`, à supprimer au ticket T-19).
+`t06_avant`, à supprimer **après lecture de la vérification J+1 du 04/09** —
+condition posée par Nicolas sur #120).
+
+### Version de définition (`cpi_daily.cpi_version`, T-20, 04/09/2026)
+
+Le **modèle** reste v2.2 (pas de v2.3 : décisions du 18/06 et du 11/07). Ce qui
+change à chaque restatement, c'est la **définition** des entrées ; elle est
+versionnée dans `cooked_config.cpi_definition_version`, écrite par
+`cooked_cpi_snapshot()` dans `cpi_daily.cpi_version`, et rétro-remplie :
+
+| Version | Jours `cpi_daily` | Définition |
+|---|---|---|
+| 2.2.0 | 10/06 → 01/07/2026 | v2.2 (momentum continu, empirical Bayes dynamique) |
+| 2.2.1 | 02/07 → 11/07 | lectures au grain session×path ; `classify_channel` v2 (IA) |
+| 2.2.2 | 12/07 → 23/07 | conversion recousue (`identity_stitch`, `conversion_journeys` v2) |
+| 2.2.3 | 25/07 → 26/07 | momentum sur `gsc_query_page_daily` non brandé ; badge `convertit` |
+| 2.2.4 | 27/07 → 02/09 | `classify_channel` v3 : GMB hors `organic_google` |
+| 2.2.5 | 03/09 → | fenêtres closes à `gsc_last_data_day()` (T-05), momentum sur `gsc_path_daily` (T-06), zv sur la fenêtre du score (T-09) |
+
+**Invariant I10** : toute migration qui restate le CPI **bumpe la clé et pose
+l'annotation** dans la même migration. Deux lignes de `cpi_daily` de versions
+différentes ne se comparent pas sans lire `annotations` (`cpi_movers` compare à
+~7 j : un restatement y apparaît comme un mover, pas comme un decay).
+
+### Calibration de la courbe CTR — check mensuel (T-20)
+
+Le §3 du harnais (`scripts/cpi_validation_j28.sql`) est rejoué le 1er du mois à
+05:00 UTC (cron `cpi-calibration-monthly` → `cpi_calibration_check()` →
+table `cpi_calibration_checks`, fenêtre 90 j close à `gsc_last_data_day()`,
+brandé exclu via `gsc_is_branded`). **Critère liant : R² ≥ 0,85** (alerte
+`cpi_calibration` critical sinon — le terme capture et `clics_perdus` reposent
+sur cette loi de puissance) ; la médiane |écart| est un indicateur de suivi
+(warn > 30 %). Points : 11/07 R² 0,930 / 20,1 % ; 02/09 0,909 / 28,8 % ;
+**04/09/2026 : R² 0,913, pente −1,259, 20 buckets, médiane 25,5 %, CTR position 1
+8,20 %**. Le registre `freshness_contract` sonne si le cron n'écrit pas (warn > 35 j).
 
 ## v2.2 — analyses d'impact (instruites le 10/06/2026, AVANT tout code)
 

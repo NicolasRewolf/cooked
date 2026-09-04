@@ -158,7 +158,7 @@ Navigateur (Wix)          Wix Automations (server-side)
   │  gsc_path_daily / gsc_query_daily / gsc_query_page_daily          │
   │  gbp_daily (fiche Google : appels, itinéraires, vues)             │
   │  snapshots nocturnes · CPI quotidien · alertes horaires           │
-  │  ~132 routines SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
+  │  ~134 routines SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
   └───────────────────────────────────────────────────────────────────┘
       ↓
   Claude Code (MCP Supabase) — Nicolas pose des questions, en français
@@ -202,7 +202,7 @@ RLS deny-all) des dossiers du cabinet — accès prod SECIB en attente de
 signature. ~1,05 M d'événements bruts (bruit > 28 j purgé
 chaque semaine), ~2 millions de lignes Search Console (16 mois), 18 mois de
 métriques de la fiche Google, ~190 pages scorées par le CPI chaque matin,
-**136 routines** (132 Cooked + 4 `unaccent`) documentées dans `supabase/rpcs.sql`, régénéré depuis la prod en CI.
+**138 routines** (134 Cooked + 4 `unaccent`) documentées dans `supabase/rpcs.sql`, régénéré depuis la prod en CI.
 
 **Fin juillet — trois angles morts fermés.**
 - **Revue d'architecture n°2 (25/07)** : les crawlers ne sont plus écrits du

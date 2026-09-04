@@ -37,6 +37,10 @@
     {
       "jobname": "math-refresh-snapshots-weekly",
       "schedule": "10 5 * * 0"
+    },
+    {
+      "jobname": "cpi-calibration-monthly",
+      "schedule": "0 5 1 * *"
     }
   ],
   "migrations_must_exist": [
@@ -46,14 +50,14 @@
   ],
   "notes": "T-12 (02/09/2026) : liste cron figée depuis prod. T-14 (03/09/2026) : compteurs et versions mesurés en prod (check_prod_drift.py les compare chaque matin), bloc docs consommé par scripts/check_docs_constants.py (I13).",
   "measured_at": "2026-09-04",
-  "routines_pg_proc": 136,
-  "routines_cooked": 132,
-  "routines_note": "136 objets pg_proc dans public (f+p) = 132 routines Cooked + 4 fonctions de l'extension unaccent. Mesuré le 04/09/2026 00:35 Paris après T-19 (page_reads ×2 supprimées).",
-  "alert_rules": 18,
+  "routines_pg_proc": 138,
+  "routines_cooked": 134,
+  "routines_note": "138 objets pg_proc dans public (f+p) = 134 routines Cooked + 4 fonctions de l'extension unaccent. Mesuré le 04/09/2026 08:50 Paris après T-20 (cpi_calibration_check + alert_rule_cpi_calibration).",
+  "alert_rules": 19,
   "dashboard_rpcs": 16,
   "views": 11,
-  "freshness_sources": 14,
-  "cron_jobs_count": 9,
+  "freshness_sources": 15,
+  "cron_jobs_count": 10,
   "versions": {
     "tracker": "sprint42",
     "edge_track": 30,

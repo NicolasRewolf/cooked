@@ -246,7 +246,7 @@ cooked/
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS (référence)
 │   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets des 136 routines (généré depuis la prod en CI, lecture seule)
+│   ├── rpcs.sql                       — corps complets des 138 routines (généré depuis la prod en CI, lecture seule)
 │   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
@@ -495,7 +495,7 @@ ALL RPCs + snapshot read from events_human
 
 **pg_cron jobs + 4 GitHub Actions planifiés** (état 03/09/2026 ; horaires UTC —
 Paris = UTC+2 l'été). La liste pg_cron est **figée dans `contracts/doc_constants.json`**
-et comparée à la prod par la gate `prod-drift` (T-12) : 9 jobs. Source de vérité
+et comparée à la prod par la gate `prod-drift` (T-12) : 10 jobs. Source de vérité
 = `SELECT jobname, schedule FROM cron.job` en prod.
 
 | Job | Schedule (UTC) | What |
@@ -511,6 +511,7 @@ et comparée à la prod par la gate `prod-drift` (T-12) : 9 jobs. Source de vér
 | `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien **planifié** 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) — **départ réel +4 à +12 h** depuis le 27/08/2026 (ordonnanceur GitHub) : l'aval `cooked-refresh-after-gsc` suit seul jusqu'à 21:00 UTC, l'alerte `gsc_ingest_missed` sonne à 12:00 UTC (T-11) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
 | `gbp-daily-ingest` | GitHub Actions | Google Business Profile quotidien 05:30 UTC, fenêtre 30 j (lag ~J-4, la queue rembourrée à zéro est coupée par le script) → `gbp_daily`. Notifie ntfy en échec. ⚠️ **Le credential est un ADC utilisateur : Google exige une reauth périodique** — panne silencieuse de 6 jours du 30/07 au 04/08/2026, réparée le 05/08 (`gcloud auth application-default login --scopes=…business.manage,…cloud-platform` puis secret `GBP_CREDENTIALS_B64` re-poussé). Alerte de fraîcheur **`gbp_daily_stale`** (registre `freshness_contract` : normal J-4, warn > 7 j, critical > 14 j → ntfy). **Depuis le 21/08/2026 la série s'arrête au 20/08** : migration du projet Google vers `rewolf-507310` (01/09), approbation Business Profile redemandée — échec attendu jusqu'au verdict (~10-15/09). Parade durable : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`) |
 | `math-refresh-snapshots-weekly` | `10 5 * * 0` (07:10 Paris, dimanche) | `math_refresh_snapshots(28)` — snapshots `math_*_snapshot` du framework d'analyse mathématique (PR #91, 29/07/2026) ; registre `math_visit_sequences_snapshot` (warn > 9 j) |
+| `cpi-calibration-monthly` | `0 5 1 * *` (07:00 Paris, le 1er du mois) | **T-20 (04/09/2026)** : `cpi_calibration_check()` — rejoue le §3 du harnais `scripts/cpi_validation_j28.sql` (loi de puissance CTR × position, 90 j clos à `gsc_last_data_day()`, brandé exclu) → `cpi_calibration_checks` ; registre `cpi_calibration_checks` (warn > 35 j) + alerte `cpi_calibration` (critical R² < 0,85, warn médiane \|écart\| > 30 %) · `SET statement_timeout='300s'` · premier point 04/09/2026 : R² 0,913, médiane 25,5 % |
 | `wix-taxonomy-sync` | GitHub Actions | **T-15 (03/09/2026)** : lundi 05:00 UTC, `scripts/wix_taxonomy_sync.py` lit la liste **publiée** du blog (API Wix, secret `WIX_API_KEY`) et appelle `page_taxonomy_sync_wix(jsonb)` — insère les articles absents (category + theme, source `wix_api`), corrige `category` seule, ne supprime jamais. Sans secret : sort sans écrire (avertissement) ; filets : registre `page_taxonomy` (warn 21 j) + alerte `page_taxonomy_gap` (dès 1 article vu > 8 j) |
 | `backup-weekly.yml` | GitHub Actions | **Schedule désactivé** (backup externe décliné le 02/07/2026, risque assumé — ne pas re-proposer) — déclenchable manuellement via `workflow_dispatch` uniquement |
 
@@ -572,12 +573,13 @@ Chaque seuil a une distribution mesurée le 03/09. Acquittement : `SELECT public
 | `warn_escalation` | warn ≥ 5 j non acquitté, hors kinds éditoriaux (`cpi_drop`) | avant : 9 escalades cpi_drop en 9 j | critical, cap 2 / épisode |
 | `volume_floor` | heure Paris précédente (9-18 h), pageviews < 50 % de la médiane 7 j, médiane ≥ 30 | 7 j heures bureau : 2 horaires auraient sonné (med ≥ 30) ; 0 si med ≥ 40 | warn |
 | `form_submit_dropped` | insert form échoué → `raise_cooked_alert` (Edge v14) | 0 ligne historique (jamais passé par raise) | critical, cap 2 |
-| `gsc_ingest_missed` | **T-11** : dès 12:00 UTC, aucune ingestion GSC datée du jour Paris (attendue 06:00 UTC) | 27/08, 28/08, 31/08 : 3 retards de +6 à +12 h, tous rattrapés le jour même | warn |
+| `gsc_ingest_missed` | **T-11** : dès 12:00 UTC, aucune ingestion GSC datée du **jour UTC** (attendue 06:00 UTC) — correctif du 04/09 (`20260904064833`) : la comparaison en jour Paris sonnait à tort de 22:00 à 24:00 UTC (faux positif du 03/09 22:15 UTC, acquitté) | 27/08, 28/08, 31/08 : 3 retards de +6 à +12 h, tous rattrapés le jour même | warn |
 | `refresh_after_gsc_stale` | **T-11** : `cooked_refresh_after_gsc_pending()` = true et ingestion > 3 h, entre 8 h et 23 h UTC, sans `refresh_step_failed_*` dans les 6 h | 0 cas historique reconstituable (la garde « ingestion du jour » masquait le cas) | critical, cap 2 |
 | `refresh_budget` | **T-11** : dernier `_total` de `refresh_runs` (48 h) ≥ 80 % de `refresh_after_gsc_budget_s` (2 400 s) | 30 j : p50 ≈ 1 600 s (67 %), max 2 166 s le 05/08 (90 % — aurait sonné), 26/07 : 7 runs à 100 % | warn |
 | `identity_stitch_empty` | **T-10** : `identity_stitch` vide | jamais observé (30 succès / 30 j) — une couture vidée était un « succeeded » muet | critical, cap 2 |
 | `identity_stitch_stale` | **T-10** : `cooked_config.identity_stitch_refreshed_at` absent (critical), > 30 h (warn), > 54 h (critical) | 30 j : 30 reconstructions à 05:40 Paris, 17-25 s ; 0 cas | warn / critical |
 | `identity_stitch_coverage` | **T-10** : après la reconstruction du jour, sessions humaines de J-1 (hors webhook, hors aid 32-hex) absentes de la couture | 03/09 : J-1 429/429, J-2 416/416 cousues (0,5 s) | warn |
+| `cpi_calibration` | **T-20** : dernier `cpi_calibration_checks` — R² < 0,85 (critère liant du §3) → critical ; sinon médiane \|écart\| > 30 % → warn | 11/07 : R² 0,930 / 20,1 % ; 02/09 : 0,909 / 28,8 % ; 04/09 : 0,913 / 25,5 % → 0 ligne | critical / warn |
 | `dashboard_resources_snapshot_stale` (registre) | **T-10** : mesuré sur `max(cooked_end)` (fin des données), plus sur `refreshed_at` ; warn > 2 j, critical > 4 j | 28/08 : J-2 affiché en vert de 00:00 à 21:00 Paris — invisible de l'ancien registre | warn / critical |
 | `page_taxonomy_stale` (registre) | **T-10** : `max(updated_at)` > 21 j (aucune synchro Wix Blog) | dernière synchro 31/08 11:05 | warn |
 | `form_fields_missing` | **T-18** : par formulaire, 28 j (webhook) : > 10 % sans `page_source` ou sans objet (≥ 3 envois), ou 100 % sans page | 180 j : « Divorce » 3/3, « Demande dossier en cours » 1/1, « Prise de contact » 18/252 sans page, 30 sans objet — **sonne au 04/09** tant que les champs ne sont pas câblés (action Nicolas) | warn (escalade critical à 5 j) |
@@ -601,6 +603,7 @@ Le `repair_hint` de chaque ligne est la consigne de réparation embarquée dans 
 | `seo_url_snapshot` | `max(refreshed_at)` | 1 j | 1 j | 2 j | |
 | `form_submit`, `cta_phone_click`, `crm_prospects` | dernier événement | 0 | 2 j | 4 j | cadence événementielle |
 | `math_visit_sequences_snapshot` | `max(computed_at)` | 7 j | 9 j | 16 j | hebdo |
+| `cpi_calibration_checks` | `max(day)` (T-20) | 31 j | 35 j | 62 j | mensuel (1er du mois) |
 | `page_taxonomy` | `max(updated_at)` (T-10) | 7 j | 21 j | — | synchro Wix Blog manuelle jusqu'à T-15 |
 | `secib_dossiers` | `max(synced_at)` | 1 j | 3 j | 7 j | **désactivée** (`enabled = false`) tant que le devis SECIB+ n'est pas signé |
 
@@ -623,8 +626,9 @@ Un « avant/après » qui enjambe une de ces dates n'est **pas** un signal
 | 03/09/2026 (T-09) | Contacts : `conversion_journeys` / `form_submits_attributed` / `macro_contacts_by_path` sur N jours clos à J-1 ; funnel sur une fenêtre GSC unique au grain recousu ; `classify_channel` v5 (gclid ⇒ paid) ; CPI zv sur la fenêtre du score | « contacts 28 j » **191 partout** (avant 183 / 189 / 195) ; funnel 5 860 entrées, 55 contacts, 0,94 % ; CPI : seul zv bouge, delta moyen +0,3, **0 changement de grade**, 6 movers ≥ 15 pts (annotation posée) |
 | 03/09/2026 (T-06) | CPI : momentum sur `gsc_path_daily` moins brandé révélé (option (b), décision Nicolas) au lieu de `gsc_query_page_daily` non brandé (16-28 % des clics) ; `cpi_opportunite_contact.potentiel` hors momentum/gate ; `cpi_drop` ignore une page dont les clics réels montent | seul le momentum bouge (132 pages), delta moyen +3,7, médiane \|Δ\| 4, **0 changement de grade**, 8 movers fiables ≥ 15 pts ; contrefactuel : 0 page fiable en direction inverse (avant 15/47) ; CPI pondéré 45,7 → 45,9 (annotation posée) |
 | 03/09/2026 (T-08) | Contacts assistés : forms sans identifiant + contacts sans visite → ligne `(non attribuable)` ; `dashboard_assisted_quarter` lit un snapshot (plus de calcul à l'affichage) | Σ assistés = totaux site (191 = 191 le 03/09, dont 12 non attribuables). Le compteur « articles » du dashboard **ne prend pas** ces 12. Pas d'objectif trimestriel (décision Nicolas). |
+| 04/09/2026 (T-20) | `cpi_daily.cpi_version` (2.2.0 → 2.2.5, rétro-rempli par date de rupture) ; `cooked_config.cpi_definition_version` lu par `cooked_cpi_snapshot()` ; 3 annotations manquantes posées (02/07 grain lectures + `classify_channel` v2, 25/07 momentum sur requêtes révélées + `convertit`, 31/08 périmètre `page_taxonomy` +12 articles) | aucun score ne change ; **deux lignes de `cpi_daily` de `cpi_version` différentes ne se comparent pas sans lire `annotations`** (invariant I10) |
 
-Les restatements des 12/07, 27/07 et 03/09/2026 sont annotés dans la table
+Tous les restatements (02/07, 12/07, 25/07, 27/07, 31/08 et 03/09/2026) sont annotés dans la table
 `annotations` : la consulter avant d'interpréter un mouvement dans
 `cpi_daily`. Les tables d'audit `cpi_pre_restatement_20260712` / `_20260727` ont
 été supprimées le 10/08/2026 (migration `rangement_post_pivot_secib`) ;
@@ -685,7 +689,7 @@ canonique d'une base fraîche.
 
 | Fichier | Contenu | Régénération |
 |---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 136 routines `pg_proc` de `public` (132 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
+| `supabase/rpcs.sql` | **Corps complets** des 138 routines `pg_proc` de `public` (134 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
 | `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
 | `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
 
