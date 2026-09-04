@@ -1,8 +1,8 @@
 # Roadmap Cooked — reste à faire courant
 
-État des lieux au **03/09/2026 soir** (mission précision/fiabilité/hygiène du 02/09/2026 :
-Phases 0-2 livrées le 02/09, Phase 3 en cours — T-01, T-03→T-13 faits ; suite dans
-[mission-2026-09-02/02-plan.md](mission-2026-09-02/02-plan.md) et les issues `mission-2026-09-02`).
+État des lieux au **04/09/2026 matin** (mission précision/fiabilité/hygiène du 02/09/2026 :
+**Phases 0-4 livrées** — 20 tickets agent faits ; bilan [mission-2026-09-02/02-apres.md](mission-2026-09-02/02-apres.md),
+passation [03-passation.md](mission-2026-09-02/03-passation.md) ; restes Nicolas ci-dessous).
 Court par construction : une ligne de contexte par item. Les décisions produit restent chez
 **Nicolas** — ce fichier liste, il ne décide pas. Historique :
 [ROADMAP-sprint38-handoff.md](ROADMAP-sprint38-handoff.md) (archive) et [HISTORY-sprints.md](HISTORY-sprints.md).
@@ -12,6 +12,7 @@ Court par construction : une ligne de contexte par item. Les décisions produit 
 | Ticket | Quoi | Qui | Contexte (une ligne) |
 |---|---|---|---|
 | [T-02](https://github.com/NicolasRewolf/cooked/issues/103) | Relecture des journaux + rotation de la clé publishable | **Nicolas** | Décision : l'exposition `anon` (h-01) a été fermée le 02/09 (T-01) ; la clé legacy `anon` reste à désactiver dans la console Supabase, les 24 h de logs ont été relues. |
+| — | **Restes Nicolas des tickets livrés** (liste complète : `03-passation.md`) | **Nicolas** | coller `tracker.min.html` (sprint42) puis bump `expected_tracker_version` ; coller `masterpage-cooked.js` + `http-functions.js` et compléter les champs cachés des formulaires (`form_fields_missing`) ; secret `WIX_API_KEY` ; lire la vérif J+1 du 04/09 puis DROP `cpi_pre_restatement_20260903` ; overloads `days_back` après le 01/10 ; CNIL 13 mois ; 2 doublons `crm_prospects` ; 3 libellés d'annotation T-20 ; réception ntfy. |
 | [T-15](https://github.com/NicolasRewolf/cooked/issues/116) | `page_taxonomy` : synchro Wix Blog automatisée | **fait le 04/09** — reste : secret `WIX_API_KEY` (**Nicolas**) | Script + RPC + cron hebdo livrés ; sans le secret, le workflow sort sans écrire et la synchro se rejoue à la main (`--dry-run` puis sans). |
 | [T-16](https://github.com/NicolasRewolf/cooked/issues/117) | Pont SECIB : garde-fous avant le premier chiffre | **fait le 04/09** — reste : 2 doublons `crm_prospects` à nettoyer (**décision Nicolas**) | `pont_couverture`, statuts `non_rapprochable`/`dossier_ulterieur`, env prod seul, rangs personne/dossier, vecteurs de normalisation partagés, tests des 3 scripts d'ingestion. |
 | [T-17](https://github.com/NicolasRewolf/cooked/issues/118) | Tracker : filet CI, tests des correctifs, CLS explicite, debug off | **code fait le 04/09** — reste : **collage Wix par Nicolas** (`tracker.min.html` sprint42 + `masterpage-cooked.js`), puis bump `expected_tracker_version` ; loader first-party = décision §7.1 | 14 820 / 15 000 chars ; cliquet CI (aucun ajout net > 14 500) ; 6 assertions jsdom ajoutées (sprint41/40/35/42) ; alerte `contact_sans_amont`. |
@@ -34,3 +35,7 @@ Court par construction : une ligne de contexte par item. Les décisions produit 
 | 10 | RGPD du pont SECIB | **en retard** (annoncé « cette semaine » le 10/08) | `crm_prospects` = **858** lignes au 03/09 (796 le 10/08), dernier ajout 03/09 13:28. Textes prêts : [rgpd-pont-secib.md](rgpd-pont-secib.md) — relecture Julien, publication, 3 arbitrages (art. 28, durée de conservation, champ « objet »). |
 | 11 | Pont téléphone (3CX ↔ SECIB ↔ Cooked) | chantier Easylia en cours | Le jour où le journal d'appels est accessible : matcher avec `secib_dossiers`, corréler avec `cta_phone_click` (les appels ≈ 50 % du contact que les formulaires ne voient pas). |
 | 12 | Chute de ~40 % des clics GSC depuis fin juillet | à instruire | 2 155 → ~1 350 clics/semaine depuis le 27/07, portée par les ressources à impressions constantes (CTR 2,14 → 1,14 %) : la SERP bouge (AI Overview ?), pas le classement. Lecture du 03/09 dans l'onglet Lab. |
+| 13 | Parité sémantique `views.sql` ↔ prod | petit | 11/11 noms mais fichier reformaté à la main, aucune gate ne le compare (zone i). Faire générer `views.sql` par le workflow `rpcs-regenerate`. |
+| 14 | 3 copies littérales `m.baidu.com` dans des corps RPC | petit | `rpcs.sql:2426`, `:4640`, `:4846` filtrent la même chaîne que `cooked_is_spam_referrer()` — aucun chiffre faux aujourd'hui, aucune gate demain. |
+| 15 | `CLAUDE.md` à 1 252 lignes | hygiène | +140 lignes pendant la mission (3 règles absolues). Déplacer les blocs « Sprint 37/38/39 » vers `HISTORY-sprints.md`. |
+| 16 | Gate ACL tables (`has_table_privilege('anon', t, 'TRUNCATE') = false`) | petit | La re-mesure du 04/09 a trouvé 22 tables avec ALL pour `anon` (default privileges) que ni `alert_rule_exposure()` ni prod-drift ne voyaient — corrigé `20260904073237`, à garder sous gate. |

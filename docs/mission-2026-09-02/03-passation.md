@@ -1,45 +1,100 @@
-# 03 — Passation (intermédiaire, ARRÊT 1) — mission Cooked 02/09/2026
+# 03 — Passation finale — mission Cooked 02/09/2026
 
-> Écrit à la fin de la Phase 2 (02/09/2026 20:20 Paris). La version finale viendra après les Phases 3‑4.
-> Registre : celui du §2 de `ROADMAP-sprint38-handoff.md` — sans langue de bois.
+> Écrite le **04/09/2026 à 09:50 Paris**, à la fin de la Phase 4. Registre : celui du §2 de
+> `ROADMAP-sprint38-handoff.md` — sans langue de bois. La passation intermédiaire de l'ARRÊT 1
+> (02/09 20:20) est conservée en fin de fichier pour l'historique.
 
-## État exact (mis à jour 03/09/2026 07:20)
+## État exact
+
+**Les 20 tickets `ready-for-agent` sont livrés** (T-01, T-03 → T-20 ; T-21/T-22 absorbés par T-19),
+chacun au sens strict de la mission : PR mergée CI verte, migration appliquée **et** mirrorée au timestamp
+prod, `rpcs.sql` régénéré depuis la prod, effet vérifié en prod, docs à jour, ligne de journal. PRs #124 → #146.
+Deux jours (02/09 01:12 → 04/09 09:50), 49 migrations prod (`20260902182316` → `20260904073502`), 4 versions
+Edge (`track` v28 → v30, `form-webhook` v14 → v15), tracker `sprint42` sur `main`.
+
+Ce que la re‑mesure (`02-apres.md`) établit, en trois chiffres qui comptent :
+
+- **Contacts macro 28 j = un seul chiffre partout** : 193 (07/08 → 03/09, clos J‑1) dans les cinq RPC de
+  contacts — avant : 182 / 183 / 189 / 195 selon la fonction appelée.
+- **`events_human` sans le bot Baidu** : −11 % d'events, `browser` inconnu sur les pageviews 16 % → 2,2 %,
+  `page_exit` apparié desktop 60 % → 95 %. Quatre mois de chiffres « humains » contenaient un robot.
+- **Surface d'attaque** : 0 fonction ni vue exposée à `anon`/`authenticated`, 0 GRANT relation, default
+  privileges révoqués (tables, séquences, fonctions), advisors 0 ERROR ; 48 alertes muettes → 2 alertes
+  vraies et attendues.
+
+Les invariants (14, `02-apres.md` §4) sont tous sous gate : CI (prod‑drift, docs‑constants, sql‑contracts,
+tracker, Edge, dashboard, python), contract‑tests nocturnes (51), règles d'alerte (19), registre de fraîcheur (15).
+
+**Le dernier snapshot CPI est celui du 03/09** (version de définition 2.2.5). Celui du 04/09 s'écrira après
+l'ingestion GSC du jour (~12:30 Paris) : **la vérification J+1 du restatement T-05/T-06/T-09 se lit après**,
+et elle conditionne le DROP de `cpi_pre_restatement_20260903` (condition posée par Nicolas sur #120).
+
+## Ce qui reste ouvert — actions Nicolas (aucune n'est bloquante pour la mesure)
+
+| # | Action | Ticket / doc | Effet attendu |
+|---|---|---|---|
+| 1 | **Coller `wix/tracker.min.html`** (sprint42) dans le Custom Code Wix, puis `UPDATE cooked_config SET value='sprint42' WHERE key='expected_tracker_version'` (migration) | T-17 (#118) | CLS = 0 explicite ; sans le collage `tracker_drift` reste muet et la prod tourne en sprint41 (fonctionnellement équivalent) |
+| 2 | Coller `wix/masterpage-cooked.js` (Velo) et `wix/http-functions.js` ; ajouter `cooked_aid`/`cooked_sid` + `page_source` aux formulaires qui en manquent | T-18 (#119), alerte `form_fields_missing` (warn, ouverte) | 6 formulaires / 28 j sans `page_source` deviennent attribuables |
+| 3 | Poser le secret GitHub `WIX_API_KEY` | T-15 (#116) | synchro hebdo `page_taxonomy` (lundi 05:00 UTC) ; sans lui l'alerte `page_taxonomy_gap` finira par sonner |
+| 4 | **T-02** : désactiver la clé `anon` legacy dans la console Supabase | #103 | ferme définitivement h‑01 ; puis rejouer l'annexe B du baseline (attendu : 401 partout) |
+| 5 | Lire la vérif J+1 du 04/09 (`cpi_movers`, 0 mover fiable inexpliqué attendu), puis `DROP TABLE cpi_pre_restatement_20260903` (migration) | #120, `docs/cpi-cooked-page-index.md` | photo d'audit supprimée, table sans PK en moins |
+| 6 | Après le 01/10/2026 : DROP des overloads dépréciés `gsc_top_queries_for_path(text, integer, integer)` et `macro_contacts_by_path(integer)` (COMMENT « déprécié »), 4 appelants RPC à basculer | #120 | — |
+| 7 | **CNIL 13 mois** : confirmer ou non la rétention `purge_old_events` (400 j aujourd'hui) | #120, `SECURITY.md` | si 13 mois : une migration, la première purge utile tombe en 06/2027 |
+| 8 | 2 doublons `crm_prospects` (même email, même minute — import CSV du 23/08) : garder / supprimer | T-16 (#117) | comptes du pont exacts à l'unité |
+| 9 | Relire les 3 libellés d'annotation posés au T-20 (02/07, 25/07, 31/08) et les amender si besoin | T-20 (#121) | — |
+| 10 | Confirmer sur le téléphone la réception d'un push ntfy (2 × HTTP 200 côté base, réception jamais vérifiée) | `cooked_config.ntfy_topic` | ferme le dernier [non vérifié] de la chaîne d'alerte |
+| 11 | Verdict Google Business Profile (~10-15/09) puis réactivation du cron GBP | ROADMAP #5 | `gbp_daily_stale` critical s'éteint |
+
+## Ce qui reste ouvert — hors tickets (à mettre au ROADMAP, fait)
+
+- **Parité sémantique `views.sql` ↔ prod** : 11/11 noms mais le fichier est reformaté à la main ; aucune gate ne
+  le compare (zone i). Petit : faire générer `views.sql` par le même workflow que `rpcs.sql`.
+- **3 copies littérales `m.baidu.com`** dans des corps RPC (`rpcs.sql:2426`, `:4640`, `:4846`) au lieu de
+  `cooked_is_spam_referrer()` — même chaîne, aucun chiffre faux, mais une divergence future n'aurait pas de
+  test.
+- **`CLAUDE.md` = 1 252 lignes** (+140 pendant la mission : 3 règles absolues et des notes T‑xx). T-14 a retiré
+  du récit, la mission en a remis. Le fichier reste lisible mais gagnerait un déplacement des blocs « Sprint
+  37/38/39 » vers `HISTORY-sprints.md`.
+- **Chute de ~40 % des clics GSC depuis le 27/07** : non instruite (ROADMAP #12) ; le momentum du CPI est relatif
+  au site, donc il ne la voit pas — c'est voulu, mais il faut le savoir en lisant les « ↗ ».
+- **18 fonctions SECURITY INVOKER exécutables par `anon`** (helpers purs + `cooked_page_index`,
+  `cooked_cpi_snapshot`) : inertes sans grant sur les tables, mais une révocation de cohérence coûterait dix
+  lignes ; laissé tel quel pour ne pas toucher `paris_date`/`paris_today` (contrat d'inlining) sans besoin.
+
+## Ce que je referais autrement (Phases 3-4)
+
+- **Le faux positif `gsc_ingest_missed` est à moi** (T-11, 03/09) : une garde en heure UTC et une comparaison en
+  jour Paris dans la même fonction. Il a sonné dès la première nuit. La règle que j'aurais dû m'appliquer :
+  *une règle d'alerte se teste sur les 24 heures d'une journée simulée avant d'être mise en prod* — les
+  contract‑tests savent le faire (`rpc_contract_check` avec un `now()` figé n'existe pas encore ; c'est le
+  petit outil qui manque).
+- **La re‑mesure a trouvé trois défauts de plus** (default privileges tables/séquences, vue sans
+  `security_invoker`, fonction T-15 sans `search_path`). Deux sont antérieurs à la mission, un est une
+  régression de la mission. Le prod‑drift ne les voyait pas parce qu'il compare des listes, pas des ACL de
+  tables : une gate `has_table_privilege('anon', t, 'TRUNCATE') = false` sur toutes les tables serait la
+  suite logique de `alert_rule_exposure()`.
+- **Journal d'heures** : mes horodatages ont dérivé de +1 h en fin de nuit (recalibrés sur les versions de
+  migration, en UTC). Écrire l'heure depuis `now()` de la base, pas de tête.
+- **Un lot de requêtes MCP trop gros** (Q‑13 → Q‑18 en un appel) a dépassé le budget de la fonction
+  `execute_sql` : trois appels séparés suffisent et n'ont aucune incidence prod. Découper d'abord.
+- **Ce qui a bien marché et que je garderais** : une PR par ticket, régénération de `rpcs.sql` par le workflow
+  puis commit vide de relance, journal écrit avant de pousser, et la lecture des corps de fonction **en prod**
+  avant toute modification.
+
+---
+
+## Annexe — passation intermédiaire (ARRÊT 1, 02/09/2026 20:20, mise à jour 03/09 07:20)
 
 - **T‑01 exécuté et vérifié** (02/09 20:23 → 03/09 07:04) ; **T‑12 exécuté par une session Cursor parallèle** (PR #124,
   02/09 23:00→00:08) : gate `prod-drift` verte, `rpcs.sql` régénéré (124 fonctions), `doc_constants.json`, 7 migrations
   re‑datées, miroirs T‑01/weekly. Ma migration `20260903050701` (rôle CI) est redondante et mirrorée.
-- **T‑02** (rotation de la clé publishable, relecture des logs) : action Nicolas, non faite à ma connaissance.
-- **Vague 1 validée** (T‑03, T‑04 sans purge, T‑05+T‑06 fusionnés option b, T‑08 [objectif à fournir], T‑09) : à
-  exécuter en sessions fraîches, une par ticket, en commençant par relire ce dossier.
-
-
 - **Fait** : `00-baseline.md` (photo « avant », 35 requêtes), `01-audit.md` (86 constats, 81 réfutés fail‑closed :
   70 confirmés / 11 partiels / 0 réfuté ; 19 contre‑vérifiés à la main ; 7 causes racines ; 13 invariants),
   `02-plan.md` (22 tickets en 4 vagues, 8 décisions), 22 issues GitHub (#102‑#123). Livrables bruts des 18 agents
   dans `annexes/`.
-- **Pas fait, volontairement** : aucune écriture prod (pas même l'acquittement des 51 alertes) ; aucun push ; pas
-  de recoupement Google Ads (MCP sans `GOOGLE_ADS_DEVELOPER_TOKEN`) ; pas d'appel de `rpc_contract_check` ni de
-  `cooked_page_index(28)` ; pas de lecture de PII au‑delà des comptes.
-- **En attente de Nicolas** : validation des tickets (bloc ou un par un, citée mot pour mot) ; les 8 décisions du §7
-  de `02-plan.md` ; secret CI lecture seule (T‑12) ; collages Wix (T‑17, T‑18) ; valeur de l'objectif trimestre (T‑08).
-
-## Ce qui reste ouvert et qui n'est pas dans un ticket
-
-- La cause des 11 points d'écart résiduel de `cooked_bounce_rate` (d‑04) — à instruire dans T‑03.
-- La cause de la troncature à 105 caractères d'un path de `page_taxonomy` (e‑06).
-- La réception réelle des pushs ntfy (à confirmer par Nicolas sur son téléphone).
-- L'exploitation éventuelle de l'exposition h‑01 au‑delà des 24 h de logs (T‑02).
-
-## Ce que je referais autrement
-
-- **Lancer 9 agents Opus en parallèle a consommé la limite de session deux fois** (≈10:10 et ≈15:50 ; 4 h 30 de
-  réinitialisation cumulées). La prochaine fois : 3 à 4 agents à la fois, réfuteurs en Sonnet pour les zones sans
-  P0/P1 de chiffre, et un fichier de livrable écrit **au fil de l'eau** par les agents (les deux coupures ont
-  frappé pendant l'écriture finale).
-- **Mesurer la baseline hors spam** : trois lignes de `00-baseline.md` ont été contaminées par un bot que la zone (a)
-  n'a trouvé qu'en Phase 1. Le réflexe « décomposer une maille en dessous » aurait dû s'appliquer à `user_agent`
-  dès la Phase 0.
-- **Lire les corps de fonction en prod, jamais dans `rpcs.sql`** : le fichier était faux sur 12 fonctions, dont les
-  deux du cœur des alertes.
-- Les briefs de réfutation contenaient parfois des chiffres du jour (fenêtres glissantes) : plusieurs « écarts »
-  ne sont que des effets d'heure. Figer une date de mesure commune (`paris_today()-1`) dans les briefs.
+- **Pas fait, volontairement** : aucune écriture prod ; aucun push ; pas de recoupement Google Ads (MCP sans
+  `GOOGLE_ADS_DEVELOPER_TOKEN`) ; pas de lecture de PII au‑delà des comptes.
+- **Ce que je referais autrement (Phases 0-2)** : 9 agents Opus en parallèle ont consommé la limite de session deux
+  fois → 3 à 4 agents à la fois, réfuteurs en Sonnet, livrable écrit au fil de l'eau ; mesurer la baseline hors
+  spam (trois lignes contaminées par le bot trouvé en Phase 1) ; lire les corps de fonction en prod, jamais dans
+  `rpcs.sql` ; figer une date de mesure commune dans les briefs.
