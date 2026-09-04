@@ -803,4 +803,8 @@
   `docs/README.md` (index) ; `views.sql` (`security_invoker` sur `cpi_opportunite_contact`).
 - 09:55 `[W]` Commit + push sur PR #146 ; attente CI ; merge ; fermeture des issues #111, #114 → #121 avec le lien
   vers le journal. Restent ouvertes : #103 (T-02, Nicolas).
+- 10:05 `[R]` **PR #146 mergée par Nicolas à 09:34** (`9e06a92`, CI verte sur `523c66b`) pendant que je poussais
+  la suite sur la même branche : mes commits `6f7f06e` → `58bee92` (T-01 ter, `02-apres.md`, `03-passation.md`,
+  regen) n'ont déclenché aucun run (branche déjà mergée). Mon script d'attente (≥ 5 workflows) tournait à vide —
+  coupé. **PR #147** ouverte pour ces commits.
 
