@@ -780,4 +780,20 @@
   (cron, alerte, registre, restatements), doc CPI (§ Version de définition + § Calibration, rupture du 25/07 ajoutée,
   photo T-05 « après J+1 »), CLAUDE.md règle I10, CHANGELOG, ROADMAP (#3 re-test 56 j → 29/10/2026).
   `check_docs_constants.py` : I13 OK.
+- 08:58 `[W]` PR #146 ouverte ; `rpcs-regenerate` (bot `04fb609`) ; relance `523c66b`.
+- 09:00 `[R]` **Re-mesure Q-01…Q-34** pour `02-apres.md` (lecture seule, 8 appels MCP ; un lot Q-13…Q-18 a
+  dépassé le budget MCP et a été rejoué en 3 appels). Trouvailles en passant : (a) `pg_default_acl` de
+  `postgres` dans `public` donne encore ALL à `anon`/`authenticated` sur tables et séquences — 22/36 tables,
+  `has_table_privilege('anon','events','TRUNCATE') = true` (TRUNCATE n'est pas soumis à RLS) ; (b)
+  `cpi_opportunite_contact` = seule vue sans `security_invoker` ; (c) `page_taxonomy_theme_from_slug` (T-15)
+  sans `search_path` (advisor 0011 — régression de la mission).
+- 09:32 `[W-PROD]` `apply_migration` **`20260904073237`** `t01ter_revoke_table_grants_anon_authenticated` :
+  REVOKE ALL sur toutes les tables et séquences de `public` pour `anon`/`authenticated` + default privileges
+  tables/séquences/fonctions révoqués. Après : 0 GRANT relation, TRUNCATE `anon` = false, `service_role`
+  SELECT/INSERT `events` = true, `alert_rule_exposure()` = 0, `cooked_ci_ro` inchangé (catalogue seulement).
+- 09:35 `[W-PROD]` `apply_migration` **`20260904073502`** `t01ter_view_invoker_and_search_path`. Après :
+  11/11 vues `security_invoker`, `proconfig` de la fonction slug = `search_path=public, pg_catalog`,
+  `cpi_opportunite_contact` répond (177 lignes).
+- 09:40 `[W]` `02-apres.md` écrit (5 tables avant/après, une explication par ligne qui bouge, §3 photo
+  métier, §4 14 invariants). Points restés [non vérifié] listés en annexe.
 

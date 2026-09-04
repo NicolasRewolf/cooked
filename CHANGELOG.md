@@ -22,6 +22,13 @@ Mission du 02/09/2026, ticket T-20 (#121), constats f-05, o-11, f-08 — invaria
 - Compteurs : 138 routines `pg_proc` (134 Cooked + 4 `unaccent`), 19 règles d'alerte, 15 sources au
   registre, 10 crons.
 
+### Sécurité (T-01 ter, re-mesure du 04/09)
+- **Default privileges** : `anon`/`authenticated` gardaient ALL sur 22 des 36 tables de `public` (dont TRUNCATE
+  sur `events`, hors RLS) et rwU sur 12 séquences → REVOKE sur l'existant + `ALTER DEFAULT PRIVILEGES` tables /
+  séquences / fonctions (`20260904073237`). Plus aucune récidive possible par défaut.
+- `cpi_opportunite_contact` : `security_invoker = true` (11/11 vues) ; `page_taxonomy_theme_from_slug` : `search_path`
+  figé (`20260904073502`). Advisors : 0 ERROR.
+
 ### Corrigé
 - **`alert_rule_gsc_ingest_missed` (T-11)** : la garde horaire était en UTC mais le jour comparé en Paris →
   faux positif de 22:00 à 24:00 UTC (alerte du 03/09 22:15 UTC alors que l'ingestion du 03/09 avait eu
