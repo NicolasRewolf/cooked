@@ -19,6 +19,9 @@ node_modules/
 *.log
 __pycache__/
 *.pyc
+.ruff_cache/
+.pytest_cache/
+.venv/
 .deploy-*.json
 .full-deploy.json
 .mcp-deploy-args.json

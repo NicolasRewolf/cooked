@@ -3,6 +3,12 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-04] — `make check` : une commande = les gates CI locales
+
+- `Makefile` + `pyproject.toml` (ruff, pytest) + `.python-version` 3.12 + `.nvmrc` 22.
+- `make check` enveloppe SQL, Python ingest, paths, docs, tracker, Edge, dashboard — sans secret.
+- `make check-prod` = T-12 / I12 / T-13 (clé lecture seule). Les workflows GitHub ne changent pas.
+
 ## [2026-09-04] — Clôture mission : rétention 13 mois + dédup CRM + collages Wix
 
 Décisions Nicolas du 04/09/2026.

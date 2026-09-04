@@ -1,0 +1,33 @@
+[project]
+name = "cooked"
+version = "0.0.0"
+description = "Mesure first-party jplouton-avocat.fr — scripts d'ingest et gardes CI"
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.8",
+  "jsmin",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+indent-width = 2
+src = ["scripts", "tests"]
+extend-exclude = ["dashboard", "wix", "supabase"]
+
+[tool.ruff.lint]
+# Erreurs de syntaxe et noms indéfinis seulement. Le reste attend le
+# rangement de scripts/ en paquet.
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
