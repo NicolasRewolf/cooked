@@ -24,7 +24,7 @@
 --   Filtrer grade IN ('S','A','B') AND NOT convertit.
 --   T-06 (03/09/2026, f-07) : potentiel = cpi_compose(zc, zr, zl, 0, 1, 1, true) — hors
 --   momentum et hors gate (avant : × momentum × gate, 7 opportunités sur 16 déplacées ≥ 3 rangs).
-CREATE OR REPLACE VIEW public.cpi_opportunite_contact AS
+CREATE OR REPLACE VIEW public.cpi_opportunite_contact WITH (security_invoker = true) AS
  SELECT path,
     ptype,
     grade,

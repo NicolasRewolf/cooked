@@ -797,3 +797,10 @@
 - 09:40 `[W]` `02-apres.md` écrit (5 tables avant/après, une explication par ligne qui bouge, §3 photo
   métier, §4 14 invariants). Points restés [non vérifié] listés en annexe.
 
+### Phase 4 — clôture (04/09/2026, 09:40 → 09:55)
+- 09:45 `[W]` `03-passation.md` finale (état exact, 11 actions Nicolas, 5 restes hors tickets, ce que je referais
+  autrement) ; ROADMAP (en-tête, ligne « restes Nicolas », chantiers #13-#16) ; HISTORY-sprints (ligne 02-04/09) ;
+  `docs/README.md` (index) ; `views.sql` (`security_invoker` sur `cpi_opportunite_contact`).
+- 09:55 `[W]` Commit + push sur PR #146 ; attente CI ; merge ; fermeture des issues #111, #114 → #121 avec le lien
+  vers le journal. Restent ouvertes : #103 (T-02, Nicolas).
+
