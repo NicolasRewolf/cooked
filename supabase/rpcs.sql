@@ -3969,6 +3969,7 @@ CREATE OR REPLACE FUNCTION public.page_taxonomy_theme_from_slug(p_path text)
  RETURNS text
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
   select case
     when p_path ~* 'garde-.?-vue|gav' then 'garde à vue'
