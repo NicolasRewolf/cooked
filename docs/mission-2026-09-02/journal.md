@@ -808,3 +808,9 @@
   regen) n'ont déclenché aucun run (branche déjà mergée). Mon script d'attente (≥ 5 workflows) tournait à vide —
   coupé. **PR #147** ouverte pour ces commits.
 
+### Restes Nicolas — 1/8 tracker sprint42 (04/09/2026, 10:12 → 10:20)
+- 10:12 `[R]` Nicolas a collé `wix/tracker.min.html` : `events_human` 20 min → sprint42 28 events / 4 sessions /
+  4 CLS dès 10:12, sprint41 encore sur 8 sessions déjà ouvertes (attendu).
+- 10:14 `[W-PROD]` `apply_migration` **`20260904081320`** : `expected_tracker_version = sprint42`. Après :
+  `alert_rule_tracker_drift()` = 0 ligne. Docs : CLAUDE.md (déployé), ROADMAP, OPERATIONS, passation.
+

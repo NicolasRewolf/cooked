@@ -750,7 +750,7 @@ Le lendemain d'un déploiement tracker, quatre contrôles (réflexe posé pour
    pageview dans une session sœur (c'était la trace du bug de rotation
    corrigé par `sprint41`).
 4. **`cooked_config.expected_tracker_version` bumpé** (migration
-   `20260713000733` pour `sprint41`) — sinon l'alerte `tracker_drift` se
+   `20260713000733` pour `sprint41`, `20260904081320` pour `sprint42`) — sinon l'alerte `tracker_drift` se
    déclenche (grâce 48 h).
 
 ### Updating the Velo proxy
