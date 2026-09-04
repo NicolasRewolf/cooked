@@ -1,5 +1,5 @@
 {
-  "_note": "T-16 (mission 02/09/2026) — vecteurs partagés des fonctions de normalisation du pont SECIB. SQL : cooked_normalize_email / cooked_normalize_phone_fr ; Python : scripts/secib_ingest.py normalize_email / normalize_phone_fr. Vérifiés des deux côtés en CI (scripts/check_normalize_vectors.py, tests/test_secib_ingest.py). Toute évolution = ici d'abord.",
+  "_note": "T-16 (mission 02/09/2026) — vecteurs partagés des fonctions de normalisation du pont SECIB. SQL : cooked_normalize_email / cooked_normalize_phone_fr ; Python : cooked.secib normalize_email / normalize_phone_fr. Vérifiés des deux côtés en CI (scripts/check_normalize_vectors.py, tests/test_secib_ingest.py). Toute évolution = ici d'abord.",
   "email": [
     {"in": " Jean.Dupont@Example.com ", "out": "jean.dupont@example.com"},
     {"in": "a b@c.fr", "out": "ab@c.fr"},

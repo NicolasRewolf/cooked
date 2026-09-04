@@ -1,4 +1,2 @@
-google-auth>=2.23.0
-google-auth-oauthlib>=1.1.0
-requests>=2.31.0
-supabase>=2.0.0
+# Source unique : pyproject.toml. Conservé pour `pip install -r` et le cache CI.
+-e .

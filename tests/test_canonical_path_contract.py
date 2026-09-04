@@ -1,18 +1,14 @@
-"""C3 — contrat canonical_path partagé (Python adapter = gsc_common)."""
+"""C3 — contrat canonical_path partagé (Python adapter = cooked.path)."""
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
+from cooked.path import canonical_path
+
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-sys.path.insert(0, str(SCRIPTS))
-
-from cooked_path import canonical_path  # noqa: E402
-
 VECTORS = json.loads((ROOT / "contracts" / "canonical_path_vectors.json").read_text(encoding="utf-8"))
 
 

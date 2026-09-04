@@ -1,15 +1,9 @@
-"""Tests unitaires pour scripts/dfs_common.py (sanitize DFS, collisions)."""
+"""Tests unitaires pour cooked.dfs (sanitize DFS, collisions)."""
 from __future__ import annotations
-
-import sys
-from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-sys.path.insert(0, str(SCRIPTS))
-
-from dfs_common import (  # noqa: E402
+from cooked.dfs import (
     dfs_run_failed,
     prepare_keywords_for_dfs,
     sanitize_for_dfs,

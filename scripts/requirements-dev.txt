@@ -1,2 +1,2 @@
--r requirements-dfs.txt
-pytest>=8.0
+# Source unique : pyproject.toml (extra [dev]).
+-e ".[dev]"

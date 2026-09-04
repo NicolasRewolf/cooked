@@ -22,6 +22,7 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 .venv/
+*.egg-info/
 .deploy-*.json
 .full-deploy.json
 .mcp-deploy-args.json

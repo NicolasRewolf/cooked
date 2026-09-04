@@ -1,22 +1,17 @@
-"""C7 — tests unitaires des pures de scripts/gsc_common.py."""
+"""C7 — tests unitaires des pures de cooked.gsc."""
 from __future__ import annotations
 
-import sys
 from datetime import date
-from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-sys.path.insert(0, str(SCRIPTS))
-
-from gsc_common import (  # noqa: E402
+from cooked.gsc import (
     GSC_DAILY_MONTHS_BACK,
     aggregate_daily,
     list_months,
     parse_end_date,
 )
-from cooked_path import canonical_path  # noqa: E402
+from cooked.path import canonical_path
 
 
 def test_gsc_daily_months_back_is_two() -> None:

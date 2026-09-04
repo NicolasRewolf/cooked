@@ -52,7 +52,7 @@ Postgres
    │
    │  Google Search Console (Sprint 31-32, ingested via scripts/gsc_ingest.py)
    │     ↓ Service Account JWT → GSC API
-   │     ↓ gsc_common.canonical_path() (decode + NFC + slash ; URLs GSC complètes)
+   │     ↓ cooked.path.canonical_path() (decode + NFC + slash ; URLs GSC complètes)
    │     ↓ upsert
    │  gsc_path_daily        — day × path
    │  gsc_query_daily       — day × query
@@ -213,12 +213,16 @@ cooked/
 ├── CLAUDE.md                          — Claude Code agent instructions
 │                                        + site taxonomy + rules of thumb
 ├── README.md                          — ambition & vue d'ensemble du système
+├── Makefile                           — `make check` = gates CI locales
+├── pyproject.toml                     — paquet `cooked` + une liste de dépendances
+├── src/cooked/                        — libs ingest (gsc, dfs, gbp, secib, wix, store, path)
 ├── scripts/
 │   ├── minify-tracker.py              — Minify tracker.html before Wix paste
-│   ├── gsc_common.py                  — Lib partagée ingestion GSC
-│   ├── gsc_ingest.py                  — CLI : path-query | query-page
-│   ├── dfs_common.py                  — Lib ingestion DataForSEO (search_volume FR)
+│   ├── gsc_ingest.py                  — CLI GSC : path-query | query-page
 │   ├── dfs_sync.py                    — CLI sync hebdo top 500 keywords GSC → DFS
+│   ├── gbp_ingest.py                  — CLI Google Business Profile
+│   ├── secib_ingest.py                — CLI pont SECIB
+│   ├── wix_taxonomy_sync.py           — CLI synchro blog Wix → page_taxonomy
 │   ├── generate_rpcs_sql.py           — Régénère supabase/rpcs.sql (DATABASE_URL)
 │   ├── check_rpcs_sql_fresh.py        — Gate CI : RPC modifiée → miroir à jour
 │   ├── check_migration_paris_date.py  — Gates CI C6 (cast Paris brut), C6b (inlining), C6c (bornes d'horloge)
@@ -227,9 +231,7 @@ cooked/
 │   ├── cpi_validation_j28.sql         — Harnais validation prédictive CPI (tir réel validé le 11/07/2026)
 │   ├── test_refresh_dashboard_rolling28.sql — Smoke-test MANUEL post-migration dashboard (articles)
 │   ├── test_refresh_expertises_rolling28.sql — Smoke-test MANUEL post-migration dashboard (expertises)
-│   ├── cooked_events_window_contract.sql — Contrat cooked_events_window (MANUEL, non exécuté par la CI)
-│   ├── requirements-gsc.txt             — pip deps pour scripts GSC
-│   └── requirements-dfs.txt           — pip deps pour scripts DataForSEO
+│   └── cooked_events_window_contract.sql — Contrat cooked_events_window (MANUEL, non exécuté par la CI)
 ├── contracts/
 │   ├── canonical_path_vectors.json    — Contrat C3 canonical_path
 │   ├── branded_query_vectors.json     — Contrat Arch #3 gsc_is_branded
@@ -389,7 +391,7 @@ Même règle partout : **decode → NFC → slash final retiré (sauf `/`)**.
 | Couche | Où |
 |--------|-----|
 | Ingestion tracker | Edge `canonicalPath()` dans `supabase/functions/track/index.ts` |
-| Ingestion GSC | `scripts/gsc_common.canonical_path()` (+ strip domain/query sur URLs GSC) |
+| Ingestion GSC | `cooked.path.canonical_path()` (+ strip domain/query sur URLs GSC) |
 | Jointures SQL historiques | `canonical_path(events.path) = gsc_path_daily.path` (fonction Postgres, voir migration GSC) |
 
 → Nouveaux events : jointure directe `events.path = gsc_path_daily.path`.

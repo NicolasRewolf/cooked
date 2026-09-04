@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """T-16 — les vecteurs de contracts/normalize_vectors.json passent en Python ET en SQL.
 
-Python : scripts/secib_ingest.py (normalize_email / normalize_phone_fr) — toujours.
+Python : cooked.secib (normalize_email / normalize_phone_fr) — toujours.
 SQL    : cooked_normalize_email / cooked_normalize_phone_fr — si DATABASE_URL (prod-drift.yml,
          rôle cooked_ci_ro, EXECUTE accordé au T-16).
 Un vecteur faux d'un seul côté = miroir cassé = clés de rapprochement fausses en silence.
@@ -14,8 +14,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-from secib_ingest import normalize_email, normalize_phone_fr  # noqa: E402
+sys.path.insert(0, str(ROOT / "src"))
+from cooked.secib import normalize_email, normalize_phone_fr
 
 VECTORS = json.loads((ROOT / "contracts" / "normalize_vectors.json").read_text(encoding="utf-8"))
 FUNCS = {"email": ("cooked_normalize_email", normalize_email), "phone_fr": ("cooked_normalize_phone_fr", normalize_phone_fr)}

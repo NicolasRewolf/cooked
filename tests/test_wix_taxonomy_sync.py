@@ -1,10 +1,7 @@
-"""T-15 — parse de la liste publiée Wix (fixture du 03/09/2026) → lignes pour page_taxonomy_sync_wix."""
+"""T-15 — parse de la liste publiée Wix → lignes pour page_taxonomy_sync_wix."""
 from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from wix_taxonomy_sync import RESSOURCE_CATEGORY_ID, parse_fixture, post_to_row  # noqa: E402
+from cooked.wix.taxonomy import RESSOURCE_CATEGORY_ID, parse_fixture, post_to_row
 
 FIXTURE = Path(__file__).parent / "fixtures" / "wix_blog_posts_2026-09-03.txt"
 

@@ -20,6 +20,7 @@ on:
       - 'contracts/normalize_vectors.json'
       - 'scripts/check_normalize_vectors.py'
       - 'scripts/secib_ingest.py'
+      - 'src/cooked/secib.py'
       - 'scripts/generate_rpcs_sql.py'
       - '.github/workflows/prod-drift.yml'
   workflow_dispatch:
