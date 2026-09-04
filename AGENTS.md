@@ -6,7 +6,7 @@ au code ou à la prod.
 ## Lire en premier (ordre)
 
 1. [CLAUDE.md](CLAUDE.md) — règles métier, réflexes session, périmètre d'autonomie
-2. [CONTRIBUTING.md](CONTRIBUTING.md) — workflow Git, migrations, CI
+2. [CONTRIBUTING.md](CONTRIBUTING.md) — workflow Git, migrations, CI (`make check`)
 3. [docs/OPERATIONS.md](docs/OPERATIONS.md) — architecture, déploiement, crons
 4. [SECURITY.md](SECURITY.md) — secrets interdits dans le repo
 

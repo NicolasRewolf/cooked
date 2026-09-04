@@ -33,6 +33,18 @@ Règles :
 - Pas de contenu placeholder ; pas de `UPDATE` manuel non tracé en prod.
 - Après migration : `latest_rpc_health()` + advisors Supabase OK.
 
+## Vérifier en local
+
+Une commande, les mêmes gates que la CI (sans secret prod) :
+
+```
+make check
+```
+
+Python 3.12 (CI) / 3.12+ en local, Node 22 (dashboard), Deno 2. `make check` crée le `.venv` tout seul. `make check-prod` compare le repo à la prod (clé lecture seule).
+
+Les workflows GitHub restent la source d'exécution CI — le Makefile les enveloppe, il ne les remplace pas.
+
 ## Conventions de commit
 
 Format libre, en français ou anglais, **impératif court + contexte** :
