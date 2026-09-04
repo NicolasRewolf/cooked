@@ -4411,15 +4411,12 @@ begin
   v_before := pg_size_pretty(pg_total_relation_size('public.events'));
 
   delete from public.events
-  where occurred_at < now() - interval '400 days';
+  where occurred_at < now() - interval '13 months';
 
   get diagnostics v_deleted = row_count;
 
-  -- Idempotent : si pas mal de rows, VACUUM pour récupérer l'espace
   if v_deleted > 1000 then
     perform pg_advisory_lock(hashtext('purge_old_events_vacuum'));
-    -- Note : VACUUM ne peut pas tourner dans une transaction, donc on
-    -- log seulement. À appeler manuellement après gros purge si besoin.
     perform pg_advisory_unlock(hashtext('purge_old_events_vacuum'));
   end if;
 

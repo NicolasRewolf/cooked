@@ -814,3 +814,27 @@
 - 10:14 `[W-PROD]` `apply_migration` **`20260904081320`** : `expected_tracker_version = sprint42`. Après :
   `alert_rule_tracker_drift()` = 0 ligne. Docs : CLAUDE.md (déployé), ROADMAP, OPERATIONS, passation.
 
+### Restes Nicolas — collages Wix, secret, ntfy, annotations (04/09 10:20 → 11:50)
+- `[W]` Nicolas a collé et **publié** `masterpage-cooked.js` (T-18, `COOKED_DEBUG = false`) et
+  `http-functions.js` (T-18, `ingest_key_missing`). Champs cachés `page_source` + objet sur
+  « Formulaire Divorce » (`Droit de la famille`) et « Demande dossier en cours » (`Suivi de dossier`).
+  Pas de test live (décision Nicolas). Alerte `form_fields_missing` reste (historique 28 j).
+- `[W]` Secret GitHub `WIX_API_KEY` posé. Dry-run workflow `wix-taxonomy-sync` **33854781065** :
+  `[DRY-RUN] source=API Wix posts=434 ressources=62 ; insérés: 0 ; dépubliés conservés: 5`.
+- `[R]` ntfy : Nicolas confirme la réception des push. Annotations T-20 (02/07, 25/07, 31/08) :
+  validées telles quelles.
+
+### T-16 reste — dédup `crm_prospects` (04/09, décision Nicolas « supprime »)
+- `[W-PROD]` `apply_migration` **`20260904085950`**. Gardés crm 232 (17/04) et 839 (25/08, avec aid +
+  path). Retirés crm 231 + crm 840 + `form_submit` `787bf192-79fd-4157-9d06-75847488b401`.
+  Après : `crm_prospects` **856**, 0 doublon email×minute. Annotation 25/08 kind `autre`.
+
+### T-19 reste — CNIL 13 mois (04/09 11:19, décision Nicolas)
+- `[W-PROD]` `apply_migration` **`20260904091903`**. `purge_old_events` : `interval '13 months'`
+  (avant 400 j). 0 ligne à supprimer (plus ancien event 06/05/2026). 1er run utile ≈ 06/2027.
+
+### Clôture prompt — miroirs + passation (04/09 12:15)
+- `[W]` Miroirs des deux migrations + `rpcs.sql` / `rpc_snapshot_meta.json` ; passation, ROADMAP,
+  CHANGELOG, SECURITY, CLAUDE, HISTORY. T-02 : **ne pas** cliquer Disable JWT (#103 reste ouverte).
+  CPI J+1 : GSC du 04/09 pas encore arrivée (dernière ingest 03/09 12:35 Paris). Cookiebot : Nicolas.
+

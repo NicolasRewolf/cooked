@@ -3,6 +3,19 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-04] — Clôture mission : rétention 13 mois + dédup CRM + collages Wix
+
+Décisions Nicolas du 04/09/2026.
+
+- **CNIL** (`20260904091903`) : `purge_old_events()` coupe à `now() - interval '13 months'`
+  (avant : 400 jours). 0 ligne à supprimer aujourd'hui (plus ancien event : 06/05/2026) ;
+  première purge utile ≈ 06/2027.
+- **Dédup `crm_prospects`** (`20260904085950`) : 2e envoi retiré (17/04 import + 25/08 webhook) ;
+  0 doublon email×minute ; annotation 25/08 (un −1 contact 28 j n'est pas une baisse de demande).
+- **Wix** : tracker sprint42 (10:12), `masterpage-cooked.js` + `http-functions.js` publiés,
+  champs `page_source` / objet sur Divorce et Demande dossier ; secret `WIX_API_KEY` posé
+  (dry-run 434 posts). **T-02** : ne pas désactiver les clés JWT.
+
 ## [2026-09-04] — T-20 : restatements passés — version de définition du CPI, annotations, calibration mensuelle
 
 Mission du 02/09/2026, ticket T-20 (#121), constats f-05, o-11, f-08 — invariant **I10**. Migration
@@ -69,15 +82,15 @@ le 02/09 : dépréciations de T-19 autorisées », « décision : amputer `event
 
 ### Non fait (décisions Nicolas)
 - DROP `cpi_pre_restatement_20260903` — après lecture de la vérification J+1 du 04/09 (condition posée
-  dans #120) ; DROP des 2 overloads après la grâce ; rétention **CNIL 13 mois à confirmer** avant de
-  figer la politique (400 j aujourd'hui) ; 2 doublons `crm_prospects`.
+  dans #120) ; DROP des 2 overloads après la grâce. CNIL 13 mois et dédup CRM : faits le 04/09
+  (voir entrée du jour en tête de changelog).
 
 ## [2026-09-04] — T-18 : formulaires et Edge — `page_source` canonique, gate fail-fast, champs surveillés
 
 Mission du 02/09/2026, ticket T-18 (#119), constats b-01 (P1), b-02, b-05, b-06 (b-04 était déjà clos
 par T-07 / v14). Invariants I1, I4. Migration `20260903215921`. Edge **`track` v29** et
 **`form-webhook` v15** déployés le 03/09/2026 23:59 Paris (CLI, sondes 405/401 relues).
-**Collage Wix = Nicolas** (`http-functions.js`, `masterpage-cooked.js`, champs de formulaires).
+**Collage Wix = fait 04/09** (`http-functions.js`, `masterpage-cooked.js`, champs Divorce + dossier).
 
 ### Ajouté
 - **`_shared/ingest_gate.ts`** (`requireIngestKey`, `ingestKeyMatches`, tests Deno) : `track` v29 refuse
@@ -170,8 +183,8 @@ SECIB non signé, aucune préparation de credentials, aucune PII lue au-delà de
 - **`cooked_normalize_phone_fr` v2** + miroir Python : `+33 (0)6 12 34 56 78` → `+33612345678`
   (avant : `+33061234567`, des deux côtés — e-05/c-07).
 - **`wix_forms_import.py`** : dédup contre les lignes du webhook (même email normalisé à ± 2 min) —
-  la récidive e-04 (2 doublons en base) ne peut plus se reproduire ; les 2 existants restent
-  (suppression = décision Nicolas ; l'index unique fonctionnel du plan attend ce nettoyage).
+  la récidive e-04 (2 doublons en base) ne peut plus se reproduire ; les 2 existants ont été
+  retirés le 04/09 (`20260904085950`, décision Nicolas).
 
 ## [2026-09-04] — T-15 : `page_taxonomy` suit la liste publiée du blog, plus le trafic
 
@@ -182,8 +195,8 @@ Mission du 02/09/2026, ticket T-15 (#116), constats e-06 (P2), e-07 (P3). Migrat
   **publiée** de l'API Wix Blog (434 posts le 03/09) et appelle **`page_taxonomy_sync_wix(jsonb, dry_run)`**
   — insère les `/post/<slug>` absents (category + theme, source `wix_api`), corrige `category` seule sur
   les lignes existantes, compte les paths dépubliés sans jamais les supprimer, refuse une liste < 300.
-  Secret **`WIX_API_KEY` à créer par Nicolas** (permission Blog lecture) ; sans lui le workflow sort sans
-  écrire. Fixture `tests/fixtures/wix_blog_posts_2026-09-03.txt` + 3 tests (CI python-ingest-contract).
+  Secret **`WIX_API_KEY` posé le 04/09/2026** (dry-run workflow 33854781065 : 434 posts, 0 insert).
+  Fixture `tests/fixtures/wix_blog_posts_2026-09-03.txt` + 3 tests (CI python-ingest-contract).
 - `page_taxonomy_theme_from_slug(path)` : l'heuristique de thème n'existe plus qu'une fois
   (`refresh_page_taxonomy_heuristic` l'appelle).
 

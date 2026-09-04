@@ -51,7 +51,7 @@ rejouer les déploiements qui portent la valeur (Edge, Velo, GitHub Actions, Ver
 | `NTFY_TOPIC` / `cooked_config.ntfy_topic` | canal de push des alertes `critical` et des échecs de workflows | GitHub Actions ; table `cooked_config` (service_role) |
 | `DASHBOARD_ALLOWED_EMAILS` | allowlist du dashboard (après magic-link) | Vercel |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clé publishable) | flux d'authentification seulement — **ne doit lire aucune donnée** (voir surface d'attaque) | Vercel, navigateur (publique par construction) |
-| `WIX_API_KEY` | clé API du compte Wix, permission Blog (lecture) — synchro hebdo `page_taxonomy` (T-15) ; **à créer par Nicolas** (manage.wix.com → API Keys) | GitHub Actions (absent au 04/09/2026 : le workflow `wix-taxonomy-sync` se termine sans écrire tant qu'elle manque) |
+| `WIX_API_KEY` | clé API du compte Wix, permission Blog (lecture) — synchro hebdo `page_taxonomy` (T-15) | GitHub Actions (**posé le 04/09/2026** ; dry-run `wix-taxonomy-sync` 33854781065 OK) |
 | Credentials SECIB (client_credentials, GUID cabinet) | API SECIB — bac à sable Septeo tant que le devis SECIB+ n'est pas signé | `~/.claude/secib-credentials.json` (local) — pas de secret CI tant qu'il n'y a pas d'ingestion prod |
 
 Modèle sans valeurs : [.env.example](.env.example) · dashboard : [dashboard/.env.local.example](dashboard/.env.local.example).
