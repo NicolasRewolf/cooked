@@ -1,11 +1,8 @@
-"""T-16 — fonctions pures de scripts/secib_ingest.py : normalisation (vecteurs partagés) et dossier_row."""
+"""T-16 — fonctions pures de cooked.secib : normalisation (vecteurs partagés) et dossier_row."""
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from secib_ingest import dossier_row, normalize_email, normalize_phone_fr  # noqa: E402
+from cooked.secib import dossier_row, normalize_email, normalize_phone_fr
 
 VECTORS = json.loads((Path(__file__).resolve().parents[1] / "contracts" / "normalize_vectors.json").read_text(encoding="utf-8"))
 

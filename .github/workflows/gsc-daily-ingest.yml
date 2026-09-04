@@ -8,7 +8,7 @@ name: GSC Daily Ingest
 #   Console, puis upserte vers Supabase. Idempotent grâce aux clés
 #   primaires composites (day, path) / (day, query) / (day, path, query).
 #
-# Fenêtre : --daily (= GSC_DAILY_MONTHS_BACK dans scripts/gsc_common.py).
+# Fenêtre : --daily (= GSC_DAILY_MONTHS_BACK dans cooked.gsc).
 # Google refine les données jusqu'à J-3 ; avec un seul mois les derniers jours
 # d'un mois (ex. 30/06) n'étaient jamais ré-ingérés quand le run tombe le 1er
 # du mois suivant — trou fermé par 2 mois couverts (testé en CI :
@@ -49,10 +49,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: "scripts/requirements-gsc.txt"
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
-        run: pip install -r scripts/requirements-gsc.txt
+        run: pip install .
 
       - name: Write GSC credentials from secret
         run: |

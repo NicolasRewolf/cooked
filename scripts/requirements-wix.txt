@@ -1,1 +1,2 @@
-requests>=2.31.0
+# Source unique : pyproject.toml. Conservé pour `pip install -r` et le cache CI.
+-e .

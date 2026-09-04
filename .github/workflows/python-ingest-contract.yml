@@ -1,12 +1,14 @@
 name: Python ingest contracts
 
-# C7 — pures GSC/DFS + cooked_store (sans credentials prod).
+# C7 — pures cooked.gsc / cooked.dfs / cooked.store (sans credentials prod).
 # T-16 — + SECIB (vecteurs de normalisation partagés), import Wix, GBP, taxonomie Wix.
 
 on:
   pull_request:
     paths:
       - 'scripts/**.py'
+      - 'src/cooked/**'
+      - 'pyproject.toml'
       - 'tests/test_*.py'
       - 'tests/fixtures/**'
       - 'contracts/normalize_vectors.json'
@@ -15,6 +17,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/**.py'
+      - 'src/cooked/**'
+      - 'pyproject.toml'
       - 'tests/test_*.py'
       - 'contracts/normalize_vectors.json'
 
@@ -27,9 +31,9 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: scripts/requirements-gsc.txt
+          cache-dependency-path: pyproject.toml
       - name: Install test deps
-        run: pip install pytest -r scripts/requirements-gsc.txt -r scripts/requirements-gbp.txt -r scripts/requirements-secib.txt
+        run: pip install ".[dev]"
       - name: GSC + DFS + store unit tests
         run: |
           python3 -m pytest \

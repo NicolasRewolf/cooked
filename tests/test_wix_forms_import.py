@@ -1,10 +1,5 @@
-"""T-16 — fonctions pures de scripts/wix_forms_import.py : nettoyage, build_row, dédup contre le webhook (e-04)."""
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from wix_forms_import import already_captured, build_row, clean_email, clean_path, clean_phone  # noqa: E402
+"""T-16 — fonctions pures de cooked.wix.forms : nettoyage, build_row, dédup contre le webhook (e-04)."""
+from cooked.wix.forms import already_captured, build_row, clean_email, clean_path, clean_phone
 
 
 def test_clean_helpers():

@@ -43,10 +43,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: "scripts/requirements-dev.txt"
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
-        run: pip install -r scripts/requirements-dev.txt
+        run: pip install ".[dev]"
 
       - name: Unit tests (sanitize DFS)
         run: python3 -m pytest tests/test_dfs_common.py -q

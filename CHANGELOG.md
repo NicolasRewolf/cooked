@@ -3,6 +3,12 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-09-04] — Python d'ingest rangé dans `src/cooked/`
+
+- Un paquet importable (`cooked.gsc`, `cooked.dfs`, `cooked.gbp`, `cooked.secib`, `cooked.wix`, `cooked.store`).
+- Les commandes ne changent pas : `python3 scripts/gsc_ingest.py` (et les autres) restent les points d'entrée.
+- Une seule liste de dépendances : `pyproject.toml`. Les crons GitHub installent `pip install .`
+
 ## [2026-09-04] — `make check` : une commande = les gates CI locales
 
 - `Makefile` + `pyproject.toml` (ruff, pytest) + `.python-version` 3.12 + `.nvmrc` 22.

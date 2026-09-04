@@ -14,26 +14,20 @@ NPM   ?= npm
 
 help:
 	@echo "make check       — lint + tous les tests locaux (sans secret prod)"
-	@echo "make lint        — ruff (scripts/, tests/)"
+	@echo "make lint        — ruff (src/, scripts/, tests/)"
 	@echo "make test        — mêmes suites que la CI PR, hors prod-drift"
 	@echo "make check-prod  — T-12 / I12 / T-13 (DATABASE_URL ou DATABASE_URL_RO)"
-	@echo "make deps        — crée .venv et installe pytest, ruff, jsmin, requirements ingest"
+	@echo "make deps        — crée .venv et installe le paquet cooked + outils de check"
 
 $(PYTHON):
 	python3 -m venv .venv
-	$(PYTHON) -m pip install -q pytest ruff jsmin psycopg2-binary requests \
-		-r scripts/requirements-gsc.txt \
-		-r scripts/requirements-gbp.txt \
-		-r scripts/requirements-secib.txt
+	$(PYTHON) -m pip install -q -e ".[dev]"
 
 deps: $(PYTHON)
-	$(PYTHON) -m pip install -q pytest ruff jsmin psycopg2-binary requests \
-		-r scripts/requirements-gsc.txt \
-		-r scripts/requirements-gbp.txt \
-		-r scripts/requirements-secib.txt
+	$(PYTHON) -m pip install -q -e ".[dev]"
 
 lint: $(PYTHON)
-	$(PYTHON) -m ruff check scripts tests
+	$(PYTHON) -m ruff check src scripts tests
 
 test: test-sql test-python test-paths test-docs test-tracker test-edge test-dashboard
 

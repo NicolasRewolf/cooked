@@ -1,13 +1,7 @@
 """C7 — adaptateur store partagé GSC/DFS."""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-sys.path.insert(0, str(SCRIPTS))
-
-from cooked_store import FakeStore  # noqa: E402
+from cooked.store import FakeStore
 
 
 def test_fake_store_batches_upserts() -> None:

@@ -23,6 +23,7 @@ SELECT gsc_last_data_day();
 | Besoin | Fichier |
 |---|---|
 | Corps complets des RPC (138 routines `pg_proc` = 134 Cooked + 4 `unaccent`, régénéré depuis la prod en CI) | [supabase/rpcs.sql](supabase/rpcs.sql) |
+| Bibliothèques d'ingest Python | [src/cooked/](src/cooked/) |
 | Glossaire de domaine (conversions, attribution, lecture, fraîcheur, invariants) | [CONTEXT.md](CONTEXT.md) |
 | Décisions d'architecture (ADR) | [docs/adr/](docs/adr/) |
 | Sécurité : PII, secrets, surface d'attaque, invariant I1 | [SECURITY.md](SECURITY.md) |

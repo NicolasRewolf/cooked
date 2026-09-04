@@ -1,11 +1,7 @@
-"""T-16 — fonctions pures de scripts/gbp_ingest.py : queue rembourrée à zéro et lignes store."""
-import sys
+"""T-16 — fonctions pures de cooked.gbp : queue rembourrée à zéro et lignes store."""
 from datetime import date
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from gbp_ingest import _to_store_rows, _trim_unconsolidated  # noqa: E402
+from cooked.gbp import _to_store_rows, _trim_unconsolidated
 
 
 def test_trim_unconsolidated_cuts_trailing_zero_days_only():

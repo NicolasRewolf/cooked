@@ -17,8 +17,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-from cooked_path import canonical_path
-from cooked_store import CookedStore, SupabaseStore
+from cooked.path import canonical_path
+from cooked.store import CookedStore, SupabaseStore
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 

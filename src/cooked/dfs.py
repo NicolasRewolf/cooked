@@ -1,7 +1,7 @@
 """
 Shared DataForSEO → Supabase ingest (keyword volume + CPC).
 
-Aligné sur le pattern scripts/gsc_common.py : env vars, client singleton,
+Aligné sur le pattern cooked.gsc : env vars, client singleton,
 upsert batch. Source de keywords à syncer = RPC dfs_keywords_to_sync(N)
 (union top clics GSC 28j ∪ 90j).
 
@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from typing import Sequence
 
 import requests
-from cooked_store import CookedStore, SupabaseStore
+from cooked.store import CookedStore, SupabaseStore
 
 
 DFS_API_BASE         = "https://api.dataforseo.com/v3"
