@@ -661,10 +661,10 @@ Paris (première ingestion réelle).
 **Versions canoniques (repo `main`, 04/09/2026)** :
 - Tracker : **`sprint42`** (T-17, 04/09/2026 — CLS explicite : un chargement sans layout
   shift émet CLS = 0 quand l'observer est attaché, CLS à 3 décimales ; 14 820 / 15 000 chars ;
-  cliquet CI : aucun ajout net au-dessus de 14 500 sans le loader). **Déployé en prod :
-  `sprint41`** (12/07/2026) tant que Nicolas n'a pas collé `wix/tracker.min.html` — puis
-  migration `UPDATE cooked_config SET value='sprint42' WHERE key='expected_tracker_version'`.
-  sprint41 = ids auto-réparants (fin de la rotation aid/sid sur wipe de storage, ~22 % des
+  cliquet CI : aucun ajout net au-dessus de 14 500 sans le loader). **Déployé en prod le
+  04/09/2026 à 10:12 Paris** (collé par Nicolas ; `expected_tracker_version` basculée par la
+  migration `20260904081320`, `tracker_drift` = 0).
+  sprint41 (12/07/2026) = ids auto-réparants (fin de la rotation aid/sid sur wipe de storage, ~22 % des
   sessions), vérifié J+1 le 13/07/2026.
 - Edge `track` : **v30** (04/09/2026 — T-19/T-22 : `url` réduite à origine + chemin + paramètres
   de campagne/attribution (utm_*, gclid & co, cooked_aid/sid), `title` plus écrit (colonne conservée,

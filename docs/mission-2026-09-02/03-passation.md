@@ -33,7 +33,7 @@ et elle conditionne le DROP de `cpi_pre_restatement_20260903` (condition posée 
 
 | # | Action | Ticket / doc | Effet attendu |
 |---|---|---|---|
-| 1 | **Coller `wix/tracker.min.html`** (sprint42) dans le Custom Code Wix, puis `UPDATE cooked_config SET value='sprint42' WHERE key='expected_tracker_version'` (migration) | T-17 (#118) | CLS = 0 explicite ; sans le collage `tracker_drift` reste muet et la prod tourne en sprint41 (fonctionnellement équivalent) |
+| 1 | ~~**Coller `wix/tracker.min.html`** (sprint42)~~ **FAIT 04/09 10:12** — dans le Custom Code Wix, puis `UPDATE cooked_config SET value='sprint42' WHERE key='expected_tracker_version'` (migration) | T-17 (#118) | CLS = 0 explicite ; sans le collage `tracker_drift` reste muet et la prod tourne en sprint41 (fonctionnellement équivalent) |
 | 2 | Coller `wix/masterpage-cooked.js` (Velo) et `wix/http-functions.js` ; ajouter `cooked_aid`/`cooked_sid` + `page_source` aux formulaires qui en manquent | T-18 (#119), alerte `form_fields_missing` (warn, ouverte) | 6 formulaires / 28 j sans `page_source` deviennent attribuables |
 | 3 | Poser le secret GitHub `WIX_API_KEY` | T-15 (#116) | synchro hebdo `page_taxonomy` (lundi 05:00 UTC) ; sans lui l'alerte `page_taxonomy_gap` finira par sonner |
 | 4 | **T-02** : désactiver la clé `anon` legacy dans la console Supabase | #103 | ferme définitivement h‑01 ; puis rejouer l'annexe B du baseline (attendu : 401 partout) |
