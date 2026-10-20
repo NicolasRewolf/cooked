@@ -44,8 +44,13 @@ si ce refresh token venait à être révoqué.
 
 L'approbation Business Profile appartient au projet Google Cloud appelant.
 Un HTTP 429 avec `quota_limit_value=0` signifie que ce projet n'a pas accès
-à l'API : renouveler OAuth ne répare pas ce blocage. Demander l'accès de base
-pour le numéro de projet indiqué par Google, pas une hausse de quota.
+à l'API : renouveler OAuth ou demander une hausse de quota ne répare pas ce
+blocage. Rechercher d'abord un projet déjà approuvé et le dossier d'accès
+existant ; réutiliser ce projet si les droits le permettent. S'il est
+inaccessible ou supprimé, contacter le support Business Profile via
+« General API Question » pour rétablir ou transférer l'accès. Une première
+« Application for Basic API Access » ne convient que si aucune approbation
+antérieure n'est connue.
 
 Timezone
 --------
@@ -78,6 +83,7 @@ ADC_LOGIN_COMMAND = (
     "https://www.googleapis.com/auth/cloud-platform"
 )
 GBP_ACCESS_DOCS = "https://developers.google.com/my-business/content/prereqs"
+GBP_SUPPORT_URL = "https://support.google.com/business/contact/api_default"
 
 DEFAULT_CLIENT_SECRETS = Path.home() / ".claude" / "gbp-oauth-client.json"
 DEFAULT_TOKEN = Path.home() / ".claude" / "gbp-token.json"
@@ -214,8 +220,15 @@ def _http_failure_message(status_code: int, payload: object) -> str:
                 f"ERROR GBP_QUOTA_ZERO (HTTP 429) : quota Business Profile à 0 pour {project}.\n"
                 "L'accès à l'API n'est pas accordé à ce projet Google Cloud. "
                 "Une réauthentification OAuth ou une augmentation de quota ne "
-                "résout pas ce blocage. Demander « Application for Basic API Access » "
-                f"pour ce numéro de projet : {GBP_ACCESS_DOCS}\n"
+                "résout pas ce blocage.\n"
+                "Rechercher d'abord un projet déjà approuvé et le dossier d'accès "
+                "existant ; réutiliser ce projet si les droits le permettent. "
+                "S'il est inaccessible ou supprimé, contacter le support "
+                "Business Profile via « General API Question » pour rétablir "
+                f"ou transférer l'accès : {GBP_SUPPORT_URL}\n"
+                "Seulement si aucune approbation antérieure n'est connue, demander "
+                "« Application for Basic API Access » pour le projet appelant : "
+                f"{GBP_ACCESS_DOCS}\n"
                 "Aucune donnée n'a été ingérée ; conserver l'alerte de fraîcheur "
                 "jusqu'à un appel réussi et un rattrapage vérifié."
             )
