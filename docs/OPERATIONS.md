@@ -733,8 +733,9 @@ supabase functions deploy form-webhook --no-verify-jwt
 Versions vérifiées le 20/10/2026 à 11:49 Paris : **track v31 / Supabase 41**
 (UA iOS corrigé), **form-webhook v16 / Supabase 25** (livraison idempotente,
 HTTP 503 si incomplète), toutes deux ACTIVE. Le Custom Code Wix **sprint43**
-a été enregistré à 11:50 Paris ; sa réception dans les événements reste un
-contrôle distinct. La migration SQL `20261020094908` est appliquée.
+a été enregistré à 11:50 Paris ; le script servi dans le HTML public a été
+vérifié identique au minifié. Sa réception dans les événements reste un contrôle
+distinct. La migration SQL `20261020094908` est appliquée.
 Le déploiement v15 du 19/09/2026 avait réparé l'incident T-19 : l'ancien
 bundle écrivait encore `events.country` après sa suppression.
 Les protections d'ingestion restent la gate `x-cooked-key` fail-fast,
@@ -801,13 +802,16 @@ WHERE occurred_at > now() - interval '15 minutes'
 GROUP BY 1 ORDER BY 2 DESC;
 ```
 
-If the new version label never appears after 15 min, the paste was
-truncated or Wix didn't republish.
+If the new version label does not appear after 15 min, inspect the public HTML,
+the saved Custom Code and recent traffic before concluding deployment failed.
+Cached responses and tabs opened before the update can still serve or emit
+the previous version. Do not publish unrelated editor drafts to diagnose this.
 
 Version source : **`sprint43`**. Custom Code enregistré le 20/10/2026 à
-11:50 Paris après déploiement de la déduplication CWV SQL. La réception des
-nouveaux événements reste à contrôler ; la configuration Wix seule ne prouve
-pas que tous les visiteurs reçoivent déjà cette version.
+11:50 Paris après déploiement de la déduplication CWV SQL. Le HTML public
+contient le script exact de 14 460 caractères ; réponses avec et sans cache
+vérifiées `sprint43` à 13:17 Paris. La réception des nouveaux événements reste
+à contrôler ; les onglets déjà ouverts peuvent conserver l'ancienne version.
 
 Le tracker clôt la route précédente avec son contexte URL figé avant de
 créer la suivante. Les observers CWV restent attachés au **document** et
@@ -909,7 +913,8 @@ Defense-in-depth on the Supabase side:
 - **All RPCs are granted to `service_role` only** — `REVOKE … FROM PUBLIC, anon, authenticated` on every function (`FROM public` alone is defeated by Supabase default privileges : regressions on 25/07 and 31/08/2026). **Invariant I1** (T-01, 02/09/2026) : `alert_rule_exposure()` hourly + `check_prod_drift.py` in CI list any SECURITY DEFINER function or view readable by `anon`/`authenticated`. Exception : `cooked_ci_ro` (CI read-only role) may EXECUTE the 16 `dashboard_*` RPCs (T-13). Full picture : [SECURITY.md](../SECURITY.md).
 - **`SECURITY DEFINER` functions pin `search_path`** to prevent search_path injection.
 - **`security_invoker = true`** on views (`events_human`, `cpi_movers`, …) — enforces caller's RLS, not creator's.
-- Invariant de sortie de sprint : **advisors security = 0 WARN**.
+- Invariant de sortie de sprint : **advisors security = 0 ERROR**, chaque WARN
+  listé et justifié dans le bilan, conformément à `SECURITY.md`.
 
 ---
 

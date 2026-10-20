@@ -1,7 +1,17 @@
 """T-16 — fonctions pures de cooked.gbp : queue rembourrée à zéro et lignes store."""
 from datetime import date
+from unittest.mock import Mock
 
-from cooked.gbp import _to_store_rows, _trim_unconsolidated
+import pytest
+from google.auth.exceptions import RefreshError
+
+from cooked.gbp import (
+    ADC_LOGIN_COMMAND,
+    _get,
+    _http_failure_message,
+    _to_store_rows,
+    _trim_unconsolidated,
+)
 
 
 def test_trim_unconsolidated_cuts_trailing_zero_days_only():
@@ -22,3 +32,93 @@ def test_to_store_rows_is_long_format_sorted():
     assert [(r["day"], r["metric"], r["value"]) for r in out] == [
         ("2026-08-20", "CALL_CLICKS", 4), ("2026-08-20", "WEBSITE_CLICKS", 2)]
     assert all(r["location"] == "locations/1" and r["ingested_at"] for r in out)
+
+
+def quota_error(limit, consumer="projects/123456"):
+    return {
+        "error": {
+            "code": 429,
+            "status": "RESOURCE_EXHAUSTED",
+            "message": "raw diagnostic must not leak secret-sentinel",
+            "details": [{
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": "RATE_LIMIT_EXCEEDED",
+                "metadata": {
+                    "service": "businessprofileperformance.googleapis.com",
+                    "quota_limit_value": limit,
+                    "consumer": consumer,
+                },
+            }],
+        }
+    }
+
+
+@pytest.mark.parametrize("limit", ["0", 0])
+def test_zero_quota_requires_project_approval_not_oauth_retry(limit):
+    session = Mock()
+    session.get.return_value.status_code = 429
+    session.get.return_value.json.return_value = quota_error(limit)
+    with pytest.raises(SystemExit, match="GBP_QUOTA_ZERO") as error:
+        _get(session, "https://businessprofileperformance.googleapis.com/v1/test")
+    diagnostic = str(error.value)
+    assert "projects/123456" in diagnostic
+    assert "Application for Basic API Access" in diagnostic
+    assert "gcloud auth" not in diagnostic
+    assert "secret-sentinel" not in diagnostic
+    assert session.get.call_count == 1
+
+
+def test_nonzero_quota_is_not_reported_as_missing_approval():
+    diagnostic = _http_failure_message(429, quota_error("300"))
+    assert "GBP_RATE_LIMIT" in diagnostic
+    assert "GBP_QUOTA_ZERO" not in diagnostic
+    assert "Basic API Access" not in diagnostic
+
+
+def test_error_metadata_never_leaks_arbitrary_consumer_text():
+    diagnostic = _http_failure_message(429, quota_error("0", "secret-sentinel"))
+    assert "GBP_QUOTA_ZERO" in diagnostic
+    assert "secret-sentinel" not in diagnostic
+    assert "projet appelant" in diagnostic
+
+
+@pytest.mark.parametrize("payload", [None, [], {"error": None}, {"error": {"details": None}}])
+def test_unstructured_quota_error_remains_unclassified(payload):
+    assert "GBP_RATE_LIMIT" in _http_failure_message(429, payload)
+
+
+def test_refresh_error_has_specific_safe_diagnostic_and_both_adc_scopes():
+    session = Mock()
+    session.get.side_effect = RefreshError("secret-sentinel")
+    with pytest.raises(SystemExit, match="GBP_AUTH") as error:
+        _get(session, "https://businessprofileperformance.googleapis.com/v1/test")
+    diagnostic = str(error.value)
+    assert ADC_LOGIN_COMMAND in diagnostic
+    assert "auth/business.manage," in diagnostic
+    assert "auth/cloud-platform" in diagnostic
+    assert "GBP_CREDENTIALS_B64" in diagnostic
+    assert "secret-sentinel" not in diagnostic
+
+
+def test_http_auth_and_permission_failures_are_distinct():
+    assert "GBP_AUTH" in _http_failure_message(401, None)
+    assert "GBP_ACCESS_DENIED" in _http_failure_message(403, None)
+    assert "gcloud auth" not in _http_failure_message(403, None)
+
+
+def test_non_json_http_error_does_not_dump_response_body():
+    session = Mock()
+    session.get.return_value.status_code = 502
+    session.get.return_value.json.side_effect = ValueError("secret-sentinel")
+    session.get.return_value.text = "secret-sentinel"
+    with pytest.raises(SystemExit, match="GBP_HTTP_502") as error:
+        _get(session, "https://businessprofileperformance.googleapis.com/v1/test")
+    assert "secret-sentinel" not in str(error.value)
+
+
+def test_successful_get_keeps_payload_contract():
+    payload = {"multiDailyMetricTimeSeries": []}
+    session = Mock()
+    session.get.return_value.status_code = 200
+    session.get.return_value.json.return_value = payload
+    assert _get(session, "https://businessprofileperformance.googleapis.com/v1/test") == payload

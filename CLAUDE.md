@@ -596,7 +596,7 @@ RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
 - `gsc_pages_overview(max_rows)` — top pages SEO (tri clics) ; v3 contacts macro
 - `gsc_top_queries_global(period_kind, max_rows)` — top requêtes site (+ volume DFS)
 - `site_pulse` / `pages_pulse` — quadrants GSC 28v28 × Cooked 7v7 (`pulse_quadrant` helper)
-- `site_seo_funnel(period_kind)` — funnel impressions → contacts
+- `site_seo_funnel(period_kind)` — API historique désactivée ; utiliser `seo_to_contact_funnel`
 - `gsc_page_daily_series` / `cooked_page_daily_series` — séries quotidiennes (sparklines)
 - `dfs_keywords_to_sync(limit_n)` — liste keywords à syncer (union GSC 28j ∪ 90j)
 - `gsc_x_dfs_opportunities(...)` — quick wins SEO (volume DFS + position 5–15)
@@ -680,8 +680,9 @@ Paris (première ingestion réelle).
   durée visible résiduelle conservée, CWV attachés une fois au document.
   Les valeurs révisées portent `measurement_id`, `revision` et `scope=document` ;
   les lecteurs SQL dédupliquent avant percentile. Custom Code Wix mis à jour
-  le 20/10/2026 à 11:50 Paris ; réception des nouveaux événements encore
-  à vérifier. Succède au sprint42 publié le 04/09/2026.
+  le 20/10/2026 à 11:50 Paris ; script du HTML public vérifié identique
+  au minifié. Réception des nouveaux événements encore à vérifier.
+  Succède au sprint42 publié le 04/09/2026.
 - Edge `track` : **v31** — reconnaissance iPhone/iPad comme iOS avant le motif
   macOS. Les gardes existantes restent : `x-cooked-key` fail-fast, filtre bots,
   URL limitée aux campagnes/attribution, `title` non écrit, drops agrégés.

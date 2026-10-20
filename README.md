@@ -202,8 +202,9 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 **En production depuis le 06/05/2026.** Le 20/10/2026, la migration de
 fiabilité a été appliquée (définition CPI **2.2.6**) et les Edge **track v31** /
 **form-webhook v16** ont été déployées et vérifiées. Le Custom Code Wix a été
-mis à jour vers **sprint43** ; la réception des nouveaux événements reste
-un contrôle distinct. Les nouveaux snapshots et la publication du dashboard
+mis à jour vers **sprint43** ; le script servi dans le HTML public correspond
+exactement au minifié. La réception des nouveaux événements reste un contrôle
+distinct. Les nouveaux snapshots et la publication du dashboard
 sont suivis dans [RELIABILITY.md](docs/RELIABILITY.md).
 Les corps SQL sont dans `supabase/rpcs.sql`, régénéré depuis la production.
 Le **pont SECIB** conserve les identités dans des tables dédiées sous RLS ;

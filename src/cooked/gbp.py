@@ -29,7 +29,7 @@ cet ordre :
 
   1. ADC gcloud (le plus simple, rien à télécharger) :
          gcloud auth application-default login \\
-             --scopes=https://www.googleapis.com/auth/business.manage
+             --scopes=https://www.googleapis.com/auth/business.manage,https://www.googleapis.com/auth/cloud-platform
      → credentials dans ~/.config/gcloud/application_default_credentials.json
 
   2. Client OAuth téléchargé depuis la console, si l'ADC est refusé :
@@ -42,6 +42,11 @@ local est posé en secret (GBP_CREDENTIALS_B64), décodé sur le runner, et
 lu via GOOGLE_APPLICATION_CREDENTIALS. La voie 2 reste le filet de secours
 si ce refresh token venait à être révoqué.
 
+L'approbation Business Profile appartient au projet Google Cloud appelant.
+Un HTTP 429 avec `quota_limit_value=0` signifie que ce projet n'a pas accès
+à l'API : renouveler OAuth ne répare pas ce blocage. Demander l'accès de base
+pour le numéro de projet indiqué par Google, pas une hausse de quota.
+
 Timezone
 --------
 L'API renvoie des jours calendaires dans le fuseau de l'établissement
@@ -53,6 +58,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -60,12 +66,18 @@ from pathlib import Path
 
 import google.auth
 from cooked.store import SupabaseStore
-from google.auth.exceptions import DefaultCredentialsError
+from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from google.auth.transport.requests import AuthorizedSession, Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 SCOPES = ["https://www.googleapis.com/auth/business.manage"]
+ADC_LOGIN_COMMAND = (
+    "gcloud auth application-default login "
+    "--scopes=https://www.googleapis.com/auth/business.manage,"
+    "https://www.googleapis.com/auth/cloud-platform"
+)
+GBP_ACCESS_DOCS = "https://developers.google.com/my-business/content/prereqs"
 
 DEFAULT_CLIENT_SECRETS = Path.home() / ".claude" / "gbp-oauth-client.json"
 DEFAULT_TOKEN = Path.home() / ".claude" / "gbp-token.json"
@@ -144,7 +156,10 @@ def authorized_session() -> AuthorizedSession:
     if token_path.is_file():
         file_creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
         if file_creds and file_creds.expired and file_creds.refresh_token:
-            file_creds.refresh(Request())
+            try:
+                file_creds.refresh(Request())
+            except RefreshError:
+                sys.exit(_auth_failure_message())
 
     if not file_creds or not file_creds.valid:
         client_path = _path_from_env("GBP_CLIENT_SECRETS_PATH", DEFAULT_CLIENT_SECRETS)
@@ -152,8 +167,7 @@ def authorized_session() -> AuthorizedSession:
             sys.exit(
                 "ERROR: aucune credential utilisable.\n\n"
                 "  Voie 1 (la plus simple) :\n"
-                "    gcloud auth application-default login \\\n"
-                "        --scopes=https://www.googleapis.com/auth/business.manage\n\n"
+                f"    {ADC_LOGIN_COMMAND}\n\n"
                 f"  Voie 2 : client OAuth téléchargé, attendu ici : {client_path}\n"
                 "    (Ne jamais le committer : il vit hors du repo, dans ~/.claude/.)"
             )
@@ -169,10 +183,69 @@ def authorized_session() -> AuthorizedSession:
     return AuthorizedSession(file_creds)
 
 
+def _auth_failure_message() -> str:
+    return (
+        "ERROR GBP_AUTH : le credential OAuth utilisateur doit être renouvelé.\n"
+        f"  {ADC_LOGIN_COMMAND}\n"
+        "Puis mettre à jour le secret GitHub GBP_CREDENTIALS_B64 et vérifier "
+        "un appel API réussi. Cette opération ne change pas l'approbation "
+        "Business Profile du projet Google Cloud."
+    )
+
+
+def _http_failure_message(status_code: int, payload: object) -> str:
+    """Diagnostics bornés : aucun corps brut, token ou identité dans les logs."""
+    if status_code == 401:
+        return _auth_failure_message()
+
+    error = payload.get("error", {}) if isinstance(payload, dict) else {}
+    details = error.get("details", []) if isinstance(error, dict) else []
+    details = details if isinstance(details, list) else []
+    for detail in details:
+        metadata = detail.get("metadata", {}) if isinstance(detail, dict) else {}
+        if (
+            status_code == 429
+            and isinstance(metadata, dict)
+            and str(metadata.get("quota_limit_value")) == "0"
+        ):
+            consumer = str(metadata.get("consumer", ""))
+            project = consumer if re.fullmatch(r"projects/\d+", consumer) else "projet appelant"
+            return (
+                f"ERROR GBP_QUOTA_ZERO (HTTP 429) : quota Business Profile à 0 pour {project}.\n"
+                "L'accès à l'API n'est pas accordé à ce projet Google Cloud. "
+                "Une réauthentification OAuth ou une augmentation de quota ne "
+                "résout pas ce blocage. Demander « Application for Basic API Access » "
+                f"pour ce numéro de projet : {GBP_ACCESS_DOCS}\n"
+                "Aucune donnée n'a été ingérée ; conserver l'alerte de fraîcheur "
+                "jusqu'à un appel réussi et un rattrapage vérifié."
+            )
+    if status_code == 429:
+        return (
+            "ERROR GBP_RATE_LIMIT (HTTP 429) : limite d'appels atteinte, "
+            "sans preuve de quota nul dans la réponse. Vérifier les quotas du "
+            "projet puis réessayer avec temporisation ; ne pas renouveler OAuth "
+            "sur la seule base de ce statut."
+        )
+    if status_code == 403:
+        return (
+            "ERROR GBP_ACCESS_DENIED (HTTP 403) : vérifier l'activation et "
+            "l'approbation des API sur le projet, les scopes OAuth et les droits "
+            "du compte sur la fiche. Ce statut seul ne prouve pas une expiration OAuth."
+        )
+    return f"ERROR GBP_HTTP_{status_code} : requête Business Profile refusée."
+
+
 def _get(session: AuthorizedSession, url: str, params=None) -> dict:
-    resp = session.get(url, params=params, timeout=60)
+    try:
+        resp = session.get(url, params=params, timeout=60)
+    except RefreshError:
+        sys.exit(_auth_failure_message())
     if resp.status_code >= 400:
-        sys.exit(f"ERROR {resp.status_code} sur {url}\n{resp.text[:1000]}")
+        try:
+            payload = resp.json()
+        except ValueError:
+            payload = None
+        sys.exit(_http_failure_message(resp.status_code, payload))
     return resp.json()
 
 

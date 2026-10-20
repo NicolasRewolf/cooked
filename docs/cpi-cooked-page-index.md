@@ -55,7 +55,7 @@ SELECT path, cpi, zc, zr, zl, zv, momentum_badge, clics_perdus
 FROM cooked_page_index(28)
 WHERE grade IN ('S','A','B') AND cpi < 35 ORDER BY n_org DESC;
 
--- Trajectoire d'une page (snapshot quotidien, cron 07:30 UTC)
+-- Trajectoire d'une page (snapshot quotidien après un lot GSC complet)
 SELECT day, cpi, cpi_version, zc, zv, momentum FROM cpi_daily
 WHERE path = '/post/...' ORDER BY day;
 
