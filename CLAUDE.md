@@ -681,7 +681,7 @@ Paris (première ingestion réelle).
   Les valeurs révisées portent `measurement_id`, `revision` et `scope=document` ;
   les lecteurs SQL dédupliquent avant percentile. Custom Code Wix mis à jour
   le 20/10/2026 à 11:50 Paris ; script du HTML public vérifié identique
-  au minifié. Réception des nouveaux événements encore à vérifier.
+  au minifié. Réception des événements sprint43 vérifiée à 13:20 Paris.
   Succède au sprint42 publié le 04/09/2026.
 - Edge `track` : **v31** — reconnaissance iPhone/iPad comme iOS avant le motif
   macOS. Les gardes existantes restent : `x-cooked-key` fail-fast, filtre bots,
@@ -1181,7 +1181,11 @@ hebdo n'a pas tourné (secret absent ?) → `python3 scripts/wix_taxonomy_sync.p
     rebouché le trou toute seule. L'alerte de fraîcheur existe depuis le 10/08
     (kind **`gbp_daily_stale`** depuis le registre du 23/08 : warn > 7 j, critical
     > 14 j → ntfy) et sonne depuis le 28/08/2026 : la série s'arrête au **20/08**
-    (migration du projet Google, approbation API redemandée, verdict ~10-15/09).
+    (migration du projet Google). Au 20/10, OAuth est renouvelé et le secret
+    actualisé, mais l'API répond `GBP_QUOTA_ZERO` (HTTP 429, quota projet 0).
+    L'accès API de base de `rewolf-507310` doit être approuvé par Google ;
+    la demande préparée n'a pas été envoyée. Renouveler encore OAuth ou
+    demander une hausse de quota ne résout pas ce défaut d'approbation.
     Un chiffre GBP livré aujourd'hui porte sur une série arrêtée — le dire.
     Parade durable à la reauth : client OAuth dédié (voie 2 de `scripts/gbp_ingest.py`).
   - **Requêtes de recherche de la fiche** (sonde du 05/08/2026, endpoint

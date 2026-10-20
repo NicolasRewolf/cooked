@@ -3,7 +3,7 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
-## [Unreleased] — Correctifs de fiabilité préparés le 20/10/2026
+## [2026-10-20] — Correctifs de fiabilité livrés et contrôlés
 
 - Tracker sprint43 : URL de route figée pour la sortie SPA, prise en compte
   du temps visible résiduel, CWV au grain document avec révisions dédupliquées
@@ -14,7 +14,7 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
 - SQL : médianes sans referrer réintégrées, positions pondérées par impressions,
   badge `convertit` macro uniquement, bookings bornés à la fenêtre CPI,
   classification Ads avec URL, historique CPI versionné et révisions CWV
-  dédupliquées. Définition CPI 2.2.6 et annotation préparées ; historique conservé.
+  dédupliquées. Définition CPI 2.2.6 et annotation appliquées ; historique conservé.
 - Dashboard : retrait des gains SEO non qualifiés, du faux badge de source,
   du total visiteurs non additif et des diagnostics CTR non justifiés ;
   contrôle des redirections de callback, fraîcheur recalculée, dépendances
@@ -27,6 +27,11 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
 - Documentation : limites de mesure, horloges Pacifique/Paris,
   pseudonymisation et distinction sources préparées / production vérifiée.
   État de livraison : [docs/RELIABILITY.md](docs/RELIABILITY.md).
+- Livraison : tracker reçu, Edge ACTIVE, dashboard servi après fusion de #152,
+  recalcul complet terminé à 13:25 Paris et premier rapprochement Wix réussi.
+  Registre de fraîcheur corrigé (`20261020112802`) : le quota GBP nul
+  nécessite l'approbation API de base de Google ; la reprise GSC porte sur
+  les trois tables. L'accès GBP demeure bloqué malgré OAuth renouvelé.
 
 ## [2026-09-19] — Incident formulaires T-19 : webhook réparé et 33 soumissions restituées
 

@@ -55,7 +55,7 @@ SELECT gsc_last_data_day();
 
 | Composant | Version repo | Déploiement prod |
 |---|---|---|
-| Tracker | `sprint43` — contexte SPA, CWV document révisables ; minifier avant collage | Custom Code mis à jour le 20/10/2026 à 11:50 Paris ; HTML public conforme au minifié vérifié, événements sprint43 encore à vérifier |
+| Tracker | `sprint43` — contexte SPA, CWV document révisables ; minifier avant collage | Custom Code mis à jour le 20/10/2026 à 11:50 Paris ; HTML public conforme au minifié, événements sprint43 reçus et vérifiés à 13:20 Paris |
 | Edge `track` | v31 — iPhone/iPad reconnus iOS avant le motif macOS | Déployé le 20/10/2026 à 11:49 Paris, version Supabase 41 ACTIVE |
 | Edge `form-webhook` | `v16` — ID obligatoire, reprise idempotente des deux écritures, HTTP 503 si incomplètes | Déployé le 20/10/2026 à 11:49 Paris, version Supabase 25 ACTIVE ; succède au correctif T-19 `country` du 19/09/2026 (Supabase 24) |
 | RPC Postgres | 143 routines `pg_proc` (139 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`, comparé à la prod chaque matin) | migrations Supabase |
