@@ -27,7 +27,7 @@ src/
   app/                   / · /expertises · /seo · /article/[slug] · /login · /auth/{callback,signout}
 ```
 
-**Tests** : `npm test` — ≈ 145 tests vitest (view-models, chart-geometry, metric-columns, RPC schemas, contrat RPC ↔ prod…) ; 16 tests supplémentaires parsent des réponses prod réelles en CI (`prod-drift.yml`, T-13).
+**Tests** : `npm test` (view-models, chart-geometry, metric-columns, RPC schemas, contrat RPC ↔ prod, redirections et historique CPI…) ; 16 tests supplémentaires parsent des réponses prod réelles en CI (`prod-drift.yml`, T-13).
 
 ## Données (couche serveur, source de vérité)
 Le dashboard consomme **16 RPC `dashboard_*`** (`service_role` — corps complets dans
@@ -70,9 +70,9 @@ Paris : le matin le dashboard montre J-2, l'après-midi J-1 — le bandeau de fr
   (JOIN `page_taxonomy` ressources seulement). Pas d'objectif posé (`objectif_assistes_trimestre`
   absent).
 
-Garanties intégrées : visiteurs **uniques** (pas sessions), spam **Baidu exclu** (filtrage
+Garanties intégrées : visiteurs **uniques** par page ou périmètre du KPI (pas sessions, ni somme des lignes), spam **Baidu exclu** (filtrage
 inline dans les RPC `dashboard_*` ; la vue `events_human_clean` d'origine a été dropée), lecture sur
-**vrais lecteurs** (hors ré-ouvertures réseaux sociaux), totaux Google depuis `gsc_path_daily`,
+sorties de page par session×page (referrer Facebook/LinkedIn exclu pour Ressources), totaux Google depuis `gsc_path_daily`,
 requêtes **de marque exclues**, volume **DataForSEO** (France, 2250).
 
 ### Contacts assistés (v2, 12/07/2026)
@@ -97,26 +97,31 @@ visite appariée apparaissent sur la ligne **`(non attribuable)`** de `assisted_
 trimestre (JOIN `page_taxonomy` catégorie ressource). Phrase de lecture : « les formulaires sans
 identifiant sont désormais comptés à part ».
 
-### Facteurs de pilotage (migration `20260630133301_dashboard_pilotage_factors`, 30/06/2026)
+### Facteurs de pilotage (révision de lecture du 20/10/2026)
 Pour répondre à « est-ce que ça va ou pas ? » au niveau de chaque ligne (et pas juste des KPI
 d'en-tête), les tableaux croisent les sources existantes. Ajout **additif** : la table snapshot
 gagne des colonnes, `dashboard_resources_overview` (SETOF) les expose sans changement de signature.
 
-- **Tableau Articles** — colonnes snapshot ajoutées : `unique_visitors_prev`, `gsc_clicks_prev`
+- **Tableau Articles** — colonnes snapshot : `unique_visitors_prev`, `gsc_clicks_prev`
   (tendance N-1, déjà chargée par le refresh) ; `cpi`, `cpi_grade`, `momentum`, `potentiel`,
-  `convertit` (croisés depuis `cpi_daily` / `cpi_opportunite_contact` par `path`) ; `ctr_expected`
-  (= `ctr_for_position(position) × 100`, la courbe CTR du site). Rendu UI :
+  `convertit` (croisés depuis `cpi_daily` / `cpi_opportunite_contact` par `path`). Rendu UI :
   - **Santé** = verdict momentum relatif au site (monte / stable / ralentit) + ⭐ *opportunité de contact*
     (Fiabilité S/A/B mais sans contact). On affiche le **potentiel hors-conversion**, pas le CPI brut —
     le CPI complet est tiré vers le bas par la conversion, rare sur des articles éducatifs, et
     ferait passer une page saine pour malade (le score CPI reste en infobulle).
   - **Tendance ▲▼** inline sur Visiteurs et Clics Google.
-  - **CTR / attendu** : rouge si le CTR réel passe sous la courbe du site (titre/méta à retravailler).
-  - **Source** : part du trafic venant de Google vs réseaux/IA/direct (clics GSC ÷ visiteurs Cooked).
-- **Tableau SEO** — `dashboard_seo_by_query` recréée (RETURNS TABLE) avec `clicks_prev`,
-  `position_prev`, `ctr_expected`, `opportunity_clicks` (clics/mois estimés si la requête passait
-  en top 3 au CTR du site). Rendu UI : tendances ▲▼ (clics, places gagnées) + colonne **Gain pot.
-  / mois** qui trie les quick wins par enjeu réel plutôt que par volume brut.
+  - **CTR observé** = clics / impressions, sans attente ni prescription dérivée de la position moyenne.
+  - Aucun badge de source : clics GSC ÷ visiteurs Cooked ne mesure pas un canal d'acquisition.
+- **Tableau SEO** — clics, impressions, position pondérée, tendances, CTR observé et volume
+  national DFS de référence. Le filtre position 5–15 / volume ≥100 sert à explorer, sans qualifier
+  la pertinence métier. Le podium de gisements, le gain mensuel et la « captation » théorique
+  ont été retirés : un volume national ne prédit pas l'audience accessible à l'article.
+  Les champs RPC historiques `ctr_expected`, `capture_pct` et `opportunity_clicks` restent
+  acceptés par Zod pour compatibilité, mais ne sont plus affichés comme diagnostics.
+- **Fiche CPI** — `cpi_version` conservé sur le score et chaque point. La trajectoire ne relie
+  que la dernière séquence de jours consécutifs de la version courante ; elle est masquée avec
+  une explication si les versions sont absentes ou si moins de cinq points sont comparables.
+  L'écart au modèle CTR n'est pas présenté comme un gain récupérable.
 
 Composant `Trend` partagé dans `components/ui.tsx`. Le contrat typé de ces colonnes vit dans
 `lib/types.ts` (`ResourceRow`, `SeoQueryRow`).
@@ -171,8 +176,9 @@ colonne et ligne de totaux **collants** dans une zone de défilement plafonnée
 
 **Totaux** : une colonne peut déclarer `total: (rows) => …`, qui reçoit les lignes
 **visibles** (filtrées + triées) — le pied décrit ce qu'on regarde. Volontairement
-**sans total** : la position (une moyenne inter-pages est le piège n°2 du playbook) et
-la lecture (une médiane de médianes n'est pas une médiane). Le CTR, lui, s'agrège
+**sans total** : les visiteurs (les mêmes personnes peuvent visiter plusieurs pages), la position
+(une moyenne inter-pages est le piège n°2 du playbook) et la lecture (une médiane de médianes
+n'est pas une médiane). Le CTR, lui, s'agrège
 correctement : `aggregateCtrPct` = Σ clics / Σ impressions, testé.
 
 **Chips de santé** (`ResourcesTable`, d'après « Filter Table ») : remplacent le `<select>`.
@@ -181,6 +187,8 @@ un compteur annonce ce qu'on obtiendra en cliquant ; un seau vide s'affiche mais
 cliquable. `santeFromMomentum` étant exclusif, les 5 seaux partitionnent l'ensemble.
 
 ## Développement local
+Node 22.12+ ou 24 (Vitest 5). Next.js et `eslint-config-next` restent sur la même version.
+
 ```bash
 cp .env.local.example .env.local   # puis remplir les clés
 npm install
@@ -234,4 +242,21 @@ re-vérifie via `requireUser()` (`src/lib/auth.ts`). Côté Supabase (projet `mx
   hors allowlist ne crée pas de compte et ne consomme pas le quota d'e-mails, quel que soit le
   réglage console.
 - Le bandeau de fraîcheur affiche la fin des données site (`cooked_end`) et le décalage Google (lag J-3 normal) — le dashboard dit toujours à
-  quel point il est à jour.
+  quel point il est à jour. Ce décalage est recalculé à la lecture en jours calendaires Paris depuis
+  la date Google, jamais repris du lag figé dans le snapshot. Les journées Google (Pacifique)
+  et Cooked (Paris) ne couvrent pas exactement les mêmes heures.
+- Les contacts mesurent des **clics téléphone** et des formulaires hors recrutement. Ils
+  ne prouvent ni un appel abouti ni un nouveau client.
+- Le callback refuse les caractères de contrôle et vérifie l'origine de l'URL résolue pour
+  `next`. La destination normalisée reste interne même après une seconde résolution URL.
+
+### Maintenance des dépendances — 20/10/2026
+
+Next.js / configuration ESLint 16.4.2, React 19.3.1, Vitest 5.0.5. Après mise à jour
+des transitives compatibles, `npm audit --omit=dev` ne signale aucune vulnérabilité.
+L'audit complet conserve une cause amont de développement : `braces` 3.0.3, dernière
+version publiée, via `micromatch` → `fast-glob` → plugin ESLint Next (cinq paquets
+signalés « high »). [Avis amont](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+Cette chaîne sert au lint, pas au serveur déployé. Une rétrogradation vers la
+configuration Next 14 suggérée par `audit --force` n'est pas une correction
+compatible retenue ; réexaminer l'avis à la prochaine publication corrigée.

@@ -16,7 +16,7 @@ le repo.
 
 ```
 main                          — prod stable
-claude/<sujet> ou chore/…     — branche de travail
+codex/<sujet>                 — branche de travail (ou préfixe demandé)
   → commit(s)
   → git push -u origin HEAD
   → gh pr create
@@ -42,6 +42,24 @@ make check
 ```
 
 Python 3.12 (CI) / 3.12+ en local, Node 22 (dashboard), Deno 2. `make check` crée le `.venv` tout seul. `make check-prod` compare le repo à la prod (clé lecture seule).
+
+`make check` inclut les scénarios PostgreSQL embarqués PGlite de `tests/sql/`
+(migrations et jeux synthétiques), les lots GSC complets/partiels, le
+rapprochement de comptes Wix, la livraison idempotente du webhook, le tracker
+source/minifié et les contrats dashboard. PGlite ne remplace pas la vérification
+des extensions, privilèges, plans et volumes de production.
+
+Pour vérifier explicitement le nouveau contrat de livraison sans réseau métier :
+
+```bash
+deno test supabase/functions/_shared/form_delivery_test.ts
+```
+
+Les échantillons RPC de production ne sont pas embarqués dans le dépôt :
+les fournir via `DASHBOARD_RPC_SAMPLES` au test de contrat. Les tests ignorés
+faute d'échantillons ne comptent pas comme une validation des réponses réelles.
+Voir [tests/sql/README.md](tests/sql/README.md) et
+[docs/RELIABILITY.md](docs/RELIABILITY.md).
 
 Les workflows GitHub restent la source d'exécution CI — le Makefile les enveloppe, il ne les remplace pas.
 
@@ -84,15 +102,16 @@ Docs : synchro arch 10/07 + rpcs.sql
 
 | Workflow | Rôle |
 |---|---|
-| `sql-contracts` | C6 pas de cast Paris brut ; C6c pas de `current_date` / `now() - make_interval` (migrations ≥ 20260903093320) ; Arch #5 rpcs.sql à jour |
+| `sql-contracts` | Scénarios PostgreSQL PGlite ; C6 pas de cast Paris brut ; C6c pas de `current_date` / `now() - make_interval` (migrations ≥ 20260903093320) ; Arch #5 rpcs.sql à jour |
 | `canonical-path-contract` | SQL / Edge / Python alignés |
 | `python-ingest-contract` | Tests GSC/DFS |
-| `dashboard-contract` | Vitest dashboard (≈ 145 tests ; + contrat RPC ↔ Zod `rpc-contract.test.ts`, T-13) |
+| `dashboard-contract` | Vitest dashboard et contrat RPC ↔ Zod `rpc-contract.test.ts` ; aucun nombre figé de tests dans ce guide |
 | `prod-drift` | T-12 : migrations, `rpcs.sql`, crons, exposition anon = prod ; T-13 : contrat dashboard régénéré depuis la prod + échantillons réels parsés par Zod ; T-14 : compteurs de `doc_constants.json` = prod |
 | `docs-check` | T-14 / I13 : constantes, versions, objets fantômes et orphelins des docs vivants (`scripts/check_docs_constants.py`) |
 | `tracker-test` | Suite jsdom tracker |
-| `edge-shared-helpers` | Deno tests `_shared/` (events_row, track_row, form_row) |
+| `edge-shared-helpers` | Deno tests `_shared/` (events_row, track_row, form_row, form_delivery, gardes d'ingestion) |
 | `gsc-daily-ingest` / `dfs-weekly-sync` / `gbp-daily-ingest` | Crons ingestion (GitHub Actions) |
+| `wix-forms-reconcile` | Comptes Wix confirmés comparés à Cooked par jour Paris ; écart ou API inaccessible = échec, aucun rattrapage automatique |
 
 ## Issues
 

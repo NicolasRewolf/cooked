@@ -3,7 +3,7 @@ import type { AssistedQuarter } from "@/lib/types";
 import { jjmm } from "@/lib/dates";
 
 const TOOLTIP =
-  "Contacts (appel ou formulaire) de visiteurs entrés par un article ressource — " +
+  "Clics téléphone ou formulaires hors recrutement de visites entrées par un article ressource — " +
   "attribution page d'entrée, trimestre calendaire clos à hier. Pas d'objectif posé pour l'instant.";
 
 const TOOLTIP_UNAVAILABLE =

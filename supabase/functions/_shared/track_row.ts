@@ -122,8 +122,8 @@ export function parseUserAgent(ua: string) {
 
   let os = "unknown";
   if (/Windows/i.test(ua)) os = "Windows";
-  else if (/Mac OS X/i.test(ua)) os = "macOS";
   else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Mac OS X/i.test(ua)) os = "macOS";
   else if (/Android/i.test(ua)) os = "Android";
   else if (/Linux/i.test(ua)) os = "Linux";
 

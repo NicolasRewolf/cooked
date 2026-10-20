@@ -2,7 +2,8 @@ import { cn } from "@/lib/cn";
 import { Badge, ConfidenceBadge, SectionTitle } from "./ui";
 import { Sparkline } from "./Sparkline";
 import { Info } from "./Info";
-import { num } from "@/lib/format";
+import { num, dateFr } from "@/lib/format";
+import { comparableCpiHistory } from "@/lib/cpi-history";
 import { momentumDir, momentumBadgeFr } from "@/lib/momentum";
 import type { ArticleDetail } from "@/lib/types";
 
@@ -19,10 +20,10 @@ const AXES: {
   {
     key: "zc",
     label: "Capture",
-    good: "capte plus de clics que ce que Google lui offre",
-    mid: "capte à peu près ce que Google lui offre",
-    bad: "capte moins de clics que ce que Google lui offre",
-    lever: "levier : titre & méta-description",
+    good: "capte mieux les clics que ses pairs, après ajustement aux positions",
+    mid: "capture proche de ses pairs, après ajustement aux positions",
+    bad: "capte moins bien les clics que ses pairs, après ajustement aux positions",
+    lever: "piste à vérifier par requête : titre et méta-description",
   },
   {
     key: "zr",
@@ -43,9 +44,9 @@ const AXES: {
   {
     key: "zv",
     label: "Conversion",
-    good: "contribue aux contacts plus que ses pairs",
-    mid: "contribution aux contacts dans la moyenne",
-    bad: "contribue moins aux contacts que ses pairs",
+    good: "contribue aux contacts et intentions plus que ses pairs",
+    mid: "contribution aux contacts et intentions dans la moyenne",
+    bad: "contribue moins aux contacts et intentions que ses pairs",
     lever: "levier : pont vers le contact dans le corps",
   },
 ];
@@ -75,7 +76,7 @@ function AxisRow({ label, z, good, mid, bad, lever }: { label: string; z: number
       <span className="w-[86px] shrink-0 font-mono text-[10.5px] uppercase tracking-[0.04em] text-faint">
         {label}
       </span>
-      <div className="relative h-[5px] w-[110px] shrink-0 bg-field" title={`z = ${z.toFixed(1)} (vs pages du même type)`}>
+      <div className="relative h-[5px] w-[110px] shrink-0 bg-field" title={`z = ${z.toFixed(1)} (vs groupe de référence)`}>
         <span className="absolute top-[-2px] h-[9px] w-[2px] bg-line-strong" style={{ left: "50%" }} />
         <span className={cn("absolute top-[-2px] h-[9px] w-[9px] rounded-full", dot)} style={{ left: `calc(${pctPos}% - 4px)` }} />
       </div>
@@ -88,7 +89,8 @@ function AxisRow({ label, z, good, mid, bad, lever }: { label: string; z: number
 
 export function CpiHealthPanel({ detail }: { detail: ArticleDetail }) {
   const c = detail.cpi;
-  const series = detail.cpi_series.map((p) => p.cpi);
+  const history = comparableCpiHistory(detail.cpi_series, c?.cpi_version);
+  const series = history.map((p) => p.cpi);
   return (
     <section className="border border-line bg-panel px-4 py-3.5">
       <div className="flex items-start justify-between gap-4">
@@ -137,8 +139,8 @@ export function CpiHealthPanel({ detail }: { detail: ArticleDetail }) {
           )}
           <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-[10.5px] text-dim">
             {c.clics_perdus != null && c.clics_perdus > 0 && (
-              <span title="Clics Google estimés perdus vs le CTR attendu du site à ces positions">
-                ≈ {num(c.clics_perdus)} clics perdus / 28 j
+              <span title="Écart descriptif au modèle CTR du site, sur les requêtes connues ; pas une prévision de clics récupérables">
+                ≈ {num(c.clics_perdus)} clics sous le modèle / 28 j
               </span>
             )}
             {c.n_org != null && <span>{num(c.n_org)} entrées organiques (base du verdict)</span>}
@@ -149,7 +151,7 @@ export function CpiHealthPanel({ detail }: { detail: ArticleDetail }) {
             )}
             {series.length >= 5 && (
               <span className="inline-flex items-baseline gap-1.5">
-                trajectoire
+                trajectoire v{c.cpi_version} depuis le {dateFr(history[0].d)}
                 <span className="inline-block w-[120px]">
                   <Sparkline series={series} height={16} />
                 </span>
@@ -157,8 +159,18 @@ export function CpiHealthPanel({ detail }: { detail: ArticleDetail }) {
             )}
           </div>
           <p className="mt-2 font-mono text-[10px] leading-relaxed text-dim">
-            Chaque axe compare l&apos;article aux pages du même type (● au centre = dans la
-            moyenne).
+            Chaque axe compare l&apos;article aux pages du même type, ou à l&apos;ensemble si
+            ce groupe est trop petit (● au centre = médiane du groupe).
+            La capture ajuste les clics aux positions des requêtes que Google révèle, pas à
+            toute l&apos;audience accessible. La conversion inclut les intentions de rendez-vous ;
+            le badge de contact repose uniquement sur les contacts macro.
+          </p>
+          <p className="mt-1 font-mono text-[10px] leading-relaxed text-dim">
+            {series.length >= 5
+              ? "La trajectoire est limitée à des jours consécutifs de même version ; les anciennes définitions ne sont pas reliées."
+              : c.cpi_version
+                ? `Trajectoire masquée : moins de 5 jours consécutifs comparables avec la version ${c.cpi_version}.`
+                : "Trajectoire masquée : version de calcul inconnue, comparabilité non vérifiée."}
           </p>
         </>
       )}

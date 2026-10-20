@@ -12,6 +12,8 @@ on:
       - 'supabase/functions/_shared/track_row_test.ts'
       - 'supabase/functions/_shared/form_row.ts'
       - 'supabase/functions/_shared/form_row_test.ts'
+      - 'supabase/functions/_shared/form_delivery.ts'
+      - 'supabase/functions/_shared/form_delivery_test.ts'
       - 'supabase/functions/track/index.ts'
       - 'supabase/functions/form-webhook/index.ts'
       - '.github/workflows/edge-shared-helpers.yml'
@@ -21,6 +23,7 @@ on:
       - 'supabase/functions/_shared/events_row.ts'
       - 'supabase/functions/_shared/track_row.ts'
       - 'supabase/functions/_shared/form_row.ts'
+      - 'supabase/functions/_shared/form_delivery.ts'
       - 'supabase/functions/track/index.ts'
       - 'supabase/functions/form-webhook/index.ts'
 
@@ -37,5 +40,6 @@ jobs:
           deno test supabase/functions/_shared/events_row_test.ts
           deno test supabase/functions/_shared/track_row_test.ts
           deno test supabase/functions/_shared/form_row_test.ts
+          deno test supabase/functions/_shared/form_delivery_test.ts
           deno test supabase/functions/_shared/ingest_gate_test.ts
           deno test supabase/functions/_shared/ingest_drops_test.ts

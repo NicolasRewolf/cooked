@@ -3,6 +3,48 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [Unreleased] — Correctifs de fiabilité préparés le 20/10/2026
+
+- Tracker sprint43 : URL de route figée pour la sortie SPA, prise en compte
+  du temps visible résiduel, CWV au grain document avec révisions dédupliquées
+  en SQL. Tests source/minifié, navigation, visibilité et bfcache.
+- Edge track v31 : iPhone/iPad reconnus comme iOS. Form-webhook v16 :
+  identifiant stable obligatoire, reprise idempotente des écritures analytics
+  et CRM, HTTP 503 si livraison incomplète ; diagnostics sans identité.
+- SQL : médianes sans referrer réintégrées, positions pondérées par impressions,
+  badge `convertit` macro uniquement, bookings bornés à la fenêtre CPI,
+  classification Ads avec URL, historique CPI versionné et révisions CWV
+  dédupliquées. Définition CPI 2.2.6 et annotation préparées ; historique conservé.
+- Dashboard : retrait des gains SEO non qualifiés, du faux badge de source,
+  du total visiteurs non additif et des diagnostics CTR non justifiés ;
+  contrôle des redirections de callback, fraîcheur recalculée, dépendances
+  mises à niveau.
+- GSC : marqueur de lot terminé après les trois alimentations, modes
+  partiels bloquants, verrou partagé avec le refresh. Rapprochement quotidien
+  Wix/Cooked par comptes de formulaires confirmés, sans réimport automatique.
+- SECIB : production bloquée avant validation d'une synchronisation complète ;
+  un export financier borné n'est plus persisté comme cumul de facturation.
+- Documentation : limites de mesure, horloges Pacifique/Paris,
+  pseudonymisation et distinction sources préparées / production vérifiée.
+  État de livraison : [docs/RELIABILITY.md](docs/RELIABILITY.md).
+
+## [2026-09-19] — Incident formulaires T-19 : webhook réparé et 33 soumissions restituées
+
+- Cause : le bundle Supabase `form-webhook` v23 écrivait encore `events.country`
+  après la suppression de la colonne par T-19 ; PostgREST rejetait les events
+  avec `PGRST204`, tandis que `crm_prospects` survivait car inséré en premier.
+- Correctif : redéploiement ciblé du code `form-webhook` v15, désormais version
+  Supabase **24** ; bundle distant identique à `main`, sans `country`,
+  `verify_jwt=false`, sondes 405/401 conformes.
+- Rattrapage `20260919200206` : **33 `form_submit`** du 05 au 18/09 reconstruits
+  depuis `crm_prospects`, avec les vrais `wix_submission_id`, sans PII ni doublon :
+  **27 contacts macro** et **6 candidatures**. Les 27 macros sont attribuées
+  (25 `hidden_field`, 2 `temporal_unique`).
+- Exhaustivité : l'API Wix Forms retrouve exactement les mêmes 33 identifiants
+  confirmés (0 absent du CRM, 0 extra CRM). Annotation de restatement posée ;
+  23 anciennes alertes `form_submit_dropped` / `form_submit_stale` acquittées
+  après contrôle de fraîcheur ; aucune nouvelle erreur après v24.
+
 ## [2026-09-04] — Python d'ingest rangé dans `src/cooked/`
 
 - Un paquet importable (`cooked.gsc`, `cooked.dfs`, `cooked.gbp`, `cooked.secib`, `cooked.wix`, `cooked.store`).

@@ -62,17 +62,11 @@ jobs:
           # Sanity check (sans logger le contenu)
           test -s "$RUNNER_TEMP/gsc/credentials.json" || { echo "credentials.json vide ou base64 invalide" >&2; exit 1; }
 
-      - name: Run path-query ingest (mois courant + précédent)
+      - name: Ingest all three GSC sources and publish completed batch
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GSC_CREDENTIALS_PATH: ${{ runner.temp }}/gsc/credentials.json
-        run: python3 scripts/gsc_ingest.py path-query --daily
-
-      - name: Run query-page ingest (mois courant + précédent)
-        env:
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          GSC_CREDENTIALS_PATH: ${{ runner.temp }}/gsc/credentials.json
-        run: python3 scripts/gsc_ingest.py query-page --daily
+        run: python3 scripts/gsc_ingest.py all --daily
 
       - name: Cleanup credentials
         if: always()

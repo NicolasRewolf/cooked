@@ -38,15 +38,19 @@ test-sql: $(PYTHON)
 	GITHUB_ACTIONS=1 $(PYTHON) scripts/check_migration_paris_date.py
 	$(PYTHON) scripts/check_rpcs_sql_fresh.py
 	$(PYTHON) scripts/check_schema_migrations.py
+	@test -d tests/sql/node_modules/@electric-sql/pglite || $(NPM) ci --prefix tests/sql
+	$(NPM) test --prefix tests/sql
 
 test-python: $(PYTHON)
 	$(PYTHON) -m pytest \
 		tests/test_gsc_common.py \
+		tests/test_gsc_batch.py \
 		tests/test_dfs_common.py \
 		tests/test_cooked_store.py \
 		tests/test_wix_taxonomy_sync.py \
 		tests/test_secib_ingest.py \
 		tests/test_wix_forms_import.py \
+		tests/test_wix_forms_reconcile.py \
 		tests/test_gbp_ingest.py \
 		-q
 	$(PYTHON) scripts/check_normalize_vectors.py
@@ -72,6 +76,7 @@ test-edge:
 	$(DENO) test supabase/functions/_shared/events_row_test.ts
 	$(DENO) test supabase/functions/_shared/track_row_test.ts
 	$(DENO) test supabase/functions/_shared/form_row_test.ts
+	$(DENO) test supabase/functions/_shared/form_delivery_test.ts
 	$(DENO) test supabase/functions/_shared/ingest_gate_test.ts
 	$(DENO) test supabase/functions/_shared/ingest_drops_test.ts
 

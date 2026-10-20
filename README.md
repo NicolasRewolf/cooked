@@ -5,13 +5,14 @@ Il existe pour répondre à une seule question, déclinée à l'infini :
 qu'est-ce qui amène réellement des clients au cabinet — et que faut-il
 faire ensuite ?**
 
-Pas de cookies, pas de bandeau de consentement, pas d'échantillonnage,
+Pas de cookies ni d'échantillonnage volontaire,
 pas de gros tableau de bord BI. Une base de données qu'on possède, un traceur écrit
 sur mesure, Google Search Console ingéré dans la même base, un score de
 santé par page, et une IA qui interroge le tout en langage naturel.
 
 > **Mainteneurs & agents IA** — [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) ·
-> [CHANGELOG.md](CHANGELOG.md) · [.env.example](.env.example) · [SECURITY.md](SECURITY.md)
+> [CHANGELOG.md](CHANGELOG.md) · [.env.example](.env.example) · [SECURITY.md](SECURITY.md) ·
+> [État des corrections et limites](docs/RELIABILITY.md)
 
 ---
 
@@ -56,17 +57,20 @@ du système, c'est la conversation.
 
 ## Ce que fait le système
 
-**1. Mesurer — sans cookies, sans bandeau, sans trous.**
-Un traceur maison (~15 Ko dans le `<head>` Wix) capture chaque visite :
+**1. Mesurer — avec des bornes et une couverture explicites.**
+Un traceur maison dans le `<head>` Wix capture les visites observables :
 pages vues, profondeur de lecture (scroll, temps actif), performance
 technique (Web Vitals), clics sortants et internes, et les trois
-niveaux de conversion — appels téléphone, soumissions de formulaire
-(captées côté serveur, donc infalsifiables), intentions de rendez-vous.
-L'identité du visiteur est un identifiant aléatoire local, jamais une
-donnée personnelle : c'est le modèle « mesure d'audience exemptée »
-de la CNIL, le même que Plausible ou Fathom. Et comme il n'y a pas de
-bandeau, on mesure **tout le monde**, pas seulement ceux qui cliquent
-« accepter ».
+niveaux de conversion — clics sur un numéro, soumissions de formulaire
+(reçues côté serveur via une automatisation authentifiée), intentions de
+rendez-vous. Un clic téléphone n'atteste ni un appel abouti ni un client.
+Le navigateur utilise des identifiants aléatoires persistants : ils sont
+**pseudonymes**, notamment parce qu'une couture avec le CRM est possible.
+L'absence de cookies ne démontre ni l'anonymat ni une exemption de consentement.
+La qualification du traitement complet, l'information et la conservation
+restent à vérifier ; voir [SECURITY.md](SECURITY.md).
+Le chargement du script, les sorties de page et les webhooks peuvent échouer :
+la couverture et les rapprochements de sources font partie de la mesure.
 
 **2. Nettoyer — la donnée brute ment.** Les bots, les crawlers SEO,
 les sessions de préchargement, les clics dupliqués par un bug
@@ -78,12 +82,14 @@ rétroactivement (ça arrive — exemple : les contacts téléphone 28j sont
 passés de 110 à 95 en corrigeant un double-comptage), la correction est
 nommée, datée et expliquée : c'est un *restatement*, pas une baisse.
 
-**3. Croiser — la boucle complète, de la requête au client.** Google
+**3. Croiser — acquisition et contacts observés.** Google
 Search Console est ingéré chaque matin dans la même base (16 mois
 d'historique, 3 granularités, dont la brique critique requête × page),
 complété par les volumes de recherche DataForSEO. La chaîne entière
 devient interrogeable d'un seul tenant : **requête Google → impression
 → clic → page d'atterrissage → lecture → parcours → contact**.
+Les requêtes anonymisées restent absentes de l'attribution détaillée. Le pont
+SECIB reste un dispositif distinct, encore en environnement de test au dernier contrôle.
 
 **4. Noter — un score de santé par page.** Le CPI (*Cooked Page Index*)
 résume en un nombre de 0 à 100 ce qu'une page vaut vraiment : capte-t-elle
@@ -158,7 +164,7 @@ Navigateur (Wix)          Wix Automations (server-side)
   │  gsc_path_daily / gsc_query_daily / gsc_query_page_daily          │
   │  gbp_daily (fiche Google : appels, itinéraires, vues)             │
   │  snapshots nocturnes · CPI quotidien · alertes horaires           │
-  │  ~134 routines SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
+  │  routines SQL publiées (`supabase/rpcs.sql` = miroir lisible) │
   └───────────────────────────────────────────────────────────────────┘
       ↓
   Claude Code (MCP Supabase) — Nicolas pose des questions, en français
@@ -188,21 +194,20 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ---
 
-## Où en est le système (10/08/2026)
+## Où en est le système (20/10/2026)
 
 > Cette section est datée par construction : pour l'état le plus frais,
 > c'est le [CHANGELOG.md](CHANGELOG.md) qui fait foi.
 
-**En production depuis le 06/05/2026.** Tracker navigateur **`sprint41`**
-(déployé le 12/07/2026, vérifié J+1). Edge Functions **`track` v27** et
-**`form-webhook` v13** déployées — prod alignée avec le repo (contrôlé le
-10/08/2026 sur le code servi). Depuis le 10/08/2026, le **pont SECIB**
-rapproche les prospects web (796 identités dans `crm_prospects`, PII confinée
-RLS deny-all) des dossiers du cabinet — accès prod SECIB en attente de
-signature. ~1,05 M d'événements bruts (bruit > 28 j purgé
-chaque semaine), ~2 millions de lignes Search Console (16 mois), 18 mois de
-métriques de la fiche Google, ~190 pages scorées par le CPI chaque matin,
-**138 routines** (134 Cooked + 4 `unaccent`) documentées dans `supabase/rpcs.sql`, régénéré depuis la prod en CI.
+**En production depuis le 06/05/2026.** Le 20/10/2026, la migration de
+fiabilité a été appliquée (définition CPI **2.2.6**) et les Edge **track v31** /
+**form-webhook v16** ont été déployées et vérifiées. Le Custom Code Wix a été
+mis à jour vers **sprint43** ; la réception des nouveaux événements reste
+un contrôle distinct. Les nouveaux snapshots et la publication du dashboard
+sont suivis dans [RELIABILITY.md](docs/RELIABILITY.md).
+Les corps SQL sont dans `supabase/rpcs.sql`, régénéré depuis la production.
+Le **pont SECIB** conserve les identités dans des tables dédiées sous RLS ;
+aucune chaîne réelle jusqu'au dossier facturé n'est encore validée.
 
 **Fin juillet — trois angles morts fermés.**
 - **Revue d'architecture n°2 (25/07)** : les crawlers ne sont plus écrits du
@@ -309,6 +314,12 @@ L'outil CPI reste en prod opérationnelle sans complexification v2.3.
   jusqu'à ~94 % des requêtes d'une page — les totaux viennent toujours
   de `gsc_path_daily`, l'attribution requête → page reste partielle
   par construction.
+- **Les jours ne partagent pas une horloge unique** : GSC fournit des dates
+  en heure du Pacifique ; Cooked agrège les événements en heure de Paris.
+  Aligner les libellés de date ne rend pas leurs heures identiques.
+- **Le volume national d'un mot-clé n'est pas un gain accessible au cabinet.**
+  Il sert de contexte de recherche ; une priorité éditoriale demande une
+  qualification de l'intention et une décomposition par requête.
 - **Les volumes sont petits** (≈210 contacts macro/28 j, mesure 07/2026
   post-couture) : le système préfère dire « hypothèse » que
   sur-interpréter. C'est un choix.
@@ -324,6 +335,7 @@ L'outil CPI reste en prod opérationnelle sans complexification v2.3.
 | Historique des versions | [CHANGELOG.md](CHANGELOG.md) |
 | Variables d'environnement (modèle) | [.env.example](.env.example) |
 | Sécurité & secrets | [SECURITY.md](SECURITY.md) |
+| Corrections préparées, déploiements et limites de lecture | [docs/RELIABILITY.md](docs/RELIABILITY.md) |
 | Comprendre l'ambition et le système | ce fichier |
 | Opérer : déploiement, events, crons, dépannage | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
 | Lire le corps d'une RPC sans fouiller les migrations | [supabase/rpcs.sql](supabase/rpcs.sql) (généré, lecture seule) |

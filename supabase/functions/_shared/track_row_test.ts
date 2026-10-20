@@ -44,12 +44,12 @@ function baseEvent(overrides: Record<string, unknown> = {}) {
 
 // ---------------------------------------------------------------- UA parsing
 
-Deno.test("parseUserAgent — iPhone Safari (mobile ; os=macOS = comportement actuel, 'like Mac OS X' matche avant iOS)", () => {
+Deno.test("parseUserAgent — iPhone Safari : iOS prime sur « like Mac OS X »", () => {
   const ua =
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
   assertEquals(parseUserAgent(ua), {
     device_type: "mobile",
-    os: "macOS",
+    os: "iOS",
     browser: "Safari",
   });
 });
@@ -69,7 +69,7 @@ Deno.test("parseUserAgent — iPad = tablet", () => {
     "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
   assertEquals(parseUserAgent(ua), {
     device_type: "tablet",
-    os: "macOS",
+    os: "iOS",
     browser: "Safari",
   });
 });

@@ -241,26 +241,70 @@ CREATE OR REPLACE VIEW public.pont_prospects_dossiers AS
 -- ║ Format : nom(args) -> type de retour                                     ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
--- behavior_pages_for_period(date_from timestamp with time zone, date_to timestamp with time zone) -> TABLE(path text, sessions bigint, pages_per_session numeric, avg_session_duration_s numeric, bounce_rate numeric, scroll_depth_avg numeric, scroll_complete_pct numeric, lcp_p75_ms numeric, inp_p75_ms numeric, cls_p75 numeric, ttfb_p75_ms numeric, outbound_clicks bigint)
--- canonical_path(p text) -> text  (C3: decode → NFC → strip slash)
--- classify_channel(ref text, utm_source text, utm_medium text, self_host text) -> text
+-- ack_alerts(p_kinds text[]) -> integer
+-- alert_rule_contact_sans_amont() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_cpi_calibration() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_cpi_drop() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_cron_failed() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_double_embed_suspect() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_exposure() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_form_attribution_degraded() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_freshness() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_gsc_ingest_missed() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_identity_stitch() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_page_taxonomy_gap() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_pipeline_dead() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_refresh_after_gsc_stale() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_refresh_budget() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_rpc_health() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_spam_in_events_human() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_tracker_drift() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_volume_floor() -> TABLE(kind text, severity text, detail text)
+-- alert_rule_warn_escalation() -> TABLE(kind text, severity text, detail text)
+-- assisted_contacts_by_entry_path(p_start date, p_end date) -> TABLE(entry_path text, contacts bigint)
+-- behavior_pages_for_period(date_from timestamp with time zone, date_to timestamp with time zone) -> TABLE(path text, sessions bigint, pages_per_session numeric, avg_session_duration_s numeric, bounce_rate numeric, bounce_rate_pct numeric, scroll_depth_avg numeric, scroll_complete_pct numeric, lcp_p75_ms numeric, inp_p75_ms numeric, cls_p75 numeric, ttfb_p75_ms numeric, outbound_clicks bigint)
+-- canonical_path(p text) -> text
+-- classify_channel(ref text, utm_source text, utm_medium text, self_host text, url text) -> text
 -- content_performance(days_back integer) -> TABLE(page_type text, theme text, pages integer, sessions bigint, dwell_median numeric, scroll_median numeric, booking_intents bigint, contacts_assisted bigint, contact_rate_pct numeric)
--- conversion_journeys(days_back integer) -> TABLE(contact_kind text, occurred_at timestamp with time zone, contact_path text, objet text, anonymous_id text, attribution_method text, entry_path text, entry_channel text, pages_count integer, journey text[], device_type text)
+-- conversion_journeys(days_back integer, p_end date) -> TABLE(contact_kind text, occurred_at timestamp with time zone, contact_path text, objet text, anonymous_id text, attribution_method text, entry_path text, entry_channel text, pages_count integer, journey text[], device_type text, window_start date, window_end date)
+-- conversions_leaderboard(p_since date) -> TABLE(page text, conversions_sur_la_page bigint, appels bigint, formulaires bigint, conversions_attribuees_entree bigint, semaines_actives bigint, premiere_semaine date, derniere_semaine date)
 -- cooked_alerts_refresh() -> integer
+-- cooked_ci_cron_jobs() -> TABLE(jobname text, schedule text, active boolean)
 -- cooked_cpi_snapshot() -> void
--- cpi_compose(zc numeric, zr numeric, zl numeric, zv numeric, mm numeric, gg numeric, exclude_conversion boolean) -> numeric
 -- cooked_is_chrome_anchor(props jsonb) -> boolean
--- cooked_normalize_email(raw text) -> text  (pont SECIB — clé de matching)
--- cooked_normalize_phone_fr(raw text) -> text  (pont SECIB — E.164 FR)
+-- cooked_is_main_site(hostname text, props jsonb) -> boolean
+-- cooked_is_spam_referrer(p_hostname text) -> boolean
+-- cooked_normalize_email(raw text) -> text
+-- cooked_normalize_phone_fr(raw text) -> text
 -- cooked_page_daily_series(target_path text, days_back integer, end_date date) -> TABLE(day date, sessions bigint)
 -- cooked_page_index(p_days integer) -> TABLE(path text, ptype text, grade text, cpi integer, cpi_raw integer, momentum numeric, momentum_badge text, gate numeric, zc numeric, zr numeric, zl numeric, zv numeric, clics_perdus integer, n_org bigint, couv_gsc_pct integer, convertit boolean)
 -- cooked_page_type(p text) -> text
 -- cooked_pages_compare(period_kind text, data_lens text) -> TABLE(path text, sessions_n bigint, sessions_prev bigint, sessions_delta_pct numeric, contacts_n bigint, contacts_prev bigint, contacts_delta_pct numeric)
 -- cooked_pages_snapshot(p_period_kind text, max_rows integer) -> TABLE(path text, cooked_sessions bigint, cooked_contacts bigint, cooked_phone_clicks bigint, cooked_form_submits bigint)
+-- cooked_paris_hour(p_ts timestamp with time zone) -> integer
+-- cooked_paris_ts_end_exclusive(p_day date) -> timestamp with time zone
+-- cooked_paris_ts_start(p_day date) -> timestamp with time zone
 -- cooked_period_bounds(period_kind text, data_lens text) -> TABLE(period_kind_out text, label_fr text, n_start date, n_end date, prev_start date, prev_end date, day_count integer, paris_today date, gsc_last_day date, lag_days integer, data_lens_out text)
+-- cooked_refresh_after_gsc() -> text
+-- cooked_refresh_after_gsc_pending() -> TABLE(pending boolean, reason text, last_ingest timestamp with time zone, last_complete timestamp with time zone)
+-- cooked_site_scope(hostname text, props jsonb) -> text
+-- cooked_web_vitals_window(p_from timestamp with time zone, p_to timestamp with time zone) -> TABLE(id uuid, path text, device_type text, props jsonb, occurred_at timestamp with time zone)
+-- cooked_weekly_conversions_snapshot(p_week_start date) -> integer
+-- cpi_calibration_check() -> TABLE(day date, r2 numeric, pente numeric, n_buckets integer, mediane_ecart_pct numeric, max_ecart_pct numeric, ctr_pos1_pct numeric)
+-- cpi_compose(zc numeric, zr numeric, zl numeric, zv numeric, mm numeric, gg numeric, exclude_conversion boolean) -> numeric
 -- cta_breakdown_for_path(path text, days_back integer) -> TABLE(cta_type text, placement text, anchor_sample text, clicks bigint)
 -- ctr_for_position(pos numeric) -> numeric
--- dashboard_check_stale() -> void
+-- dashboard_annotations(period_kind text) -> TABLE(day date, kind text, label text, paths text[])
+-- dashboard_article_detail(p_path text, period_kind text) -> jsonb
+-- dashboard_assisted_quarter() -> jsonb
+-- dashboard_expertises_kpis(period_kind text) -> SETOF dashboard_expertises_kpis_snapshot
+-- dashboard_expertises_overview(period_kind text, max_rows integer) -> SETOF dashboard_expertises_snapshot
+-- dashboard_expertises_trend(period_kind text) -> TABLE(visitors_daily numeric[], pageviews_daily numeric[], contacts_daily numeric[], gsc_clicks_daily numeric[], gsc_impressions_daily numeric[])
+-- dashboard_honoraires_funnel(period_kind text) -> TABLE(booking_sessions bigint, honoraires_sessions bigint, booking_then_honoraires bigint, forms_after_booking_6h bigint, forms_on_honoraires bigint, forms_macro_total bigint, rate_booking_to_form numeric, cooked_start date, cooked_end date)
+-- dashboard_intervention_effect(p_path text, p_day date) -> jsonb
+-- dashboard_lab_gsc_weekly(p_weeks integer) -> jsonb
+-- dashboard_resources_assisted(period_kind text) -> TABLE(path text, assisted_contacts integer, assisted_prev integer)
+-- dashboard_resources_cohorts() -> jsonb
 -- dashboard_resources_kpis(period_kind text) -> SETOF dashboard_kpis_snapshot
 -- dashboard_resources_overview(period_kind text, max_rows integer) -> SETOF dashboard_resources_snapshot
 -- dashboard_resources_trend(period_kind text) -> TABLE(visitors_daily numeric[], pageviews_daily numeric[], contacts_daily numeric[], gsc_clicks_daily numeric[], gsc_impressions_daily numeric[])
@@ -268,9 +312,14 @@ CREATE OR REPLACE VIEW public.pont_prospects_dossiers AS
 -- dashboard_seo_kpis(period_kind text, scope text) -> TABLE(total_queries bigint, total_quick_wins bigint, clicks_named_nonbranded bigint, clicks_path_total bigint, impressions_path_total bigint, gsc_start date, gsc_end date)
 -- dfs_keywords_to_sync(limit_n integer) -> TABLE(keyword text, clicks_total bigint)
 -- engagement_density_for_path(target_path text, days integer) -> TABLE(sessions bigint, dwell_p25 numeric, dwell_median numeric, dwell_p75 numeric, evenness_score numeric)
+-- form_submission_counts_for_period(p_start date, p_end date) -> TABLE(day date, submissions bigint)
 -- form_submit_counts_as_macro(props jsonb) -> boolean
--- form_submits_attributed(days_back integer) -> TABLE(event_id uuid, occurred_at timestamp with time zone, form_path text, objet text, counts_as_macro boolean, resolved_anonymous_id text, resolved_session_id text, attribution_method text)
+-- form_submits_attributed(days_back integer, p_end date) -> TABLE(event_id uuid, occurred_at timestamp with time zone, form_path text, objet text, counts_as_macro boolean, resolved_anonymous_id text, resolved_session_id text, attribution_method text, window_start date, window_end date)
 -- form_submits_per_path(start_date date, end_date date) -> TABLE(path text, form_submits bigint)
+-- gsc_ingest_begin(p_run_id uuid, p_start date, p_end date) -> uuid
+-- gsc_ingest_complete(p_run_id uuid, p_row_counts jsonb) -> void
+-- gsc_ingest_fail(p_run_id uuid) -> void
+-- gsc_is_branded(p_query text) -> boolean
 -- gsc_last_data_day() -> date
 -- gsc_page_daily_series(target_path text, days_back integer, end_date date) -> TABLE(day date, clicks bigint)
 -- gsc_page_performance(target_path text, period_kind text) -> TABLE(path text, gsc_clicks bigint, gsc_impressions bigint, gsc_position_avg numeric, gsc_ctr_pct numeric, cooked_sessions bigint, cooked_views bigint, cooked_unique_visitors bigint, cooked_bounce_rate numeric, cooked_dwell_avg_s numeric, cooked_scroll_median numeric, cooked_phone_clicks bigint, cooked_form_submits bigint, cooked_contacts bigint, cooked_booking_intent bigint, cooked_pogo_rate numeric, cooked_google_sessions bigint, lcp_p75_ms numeric, inp_p75_ms numeric, cls_p75 numeric, top_referrer text, device_split jsonb)
@@ -284,37 +333,55 @@ CREATE OR REPLACE VIEW public.pont_prospects_dossiers AS
 -- latest_rpc_health() -> TABLE(rpc_name text, status text, detail text, rows_returned bigint, duration_ms numeric, checked_at timestamp with time zone, age_minutes numeric)
 -- macro_contacts_by_path(days_back integer) -> TABLE(path text, phone_clicks bigint, form_submits bigint, contacts bigint, booking_intent bigint)
 -- macro_contacts_by_path(start_date date, end_date date) -> TABLE(path text, phone_clicks bigint, form_submits bigint, contacts bigint, booking_intent bigint)
+-- math_internal_edges(days_back integer) -> TABLE(src text, dst text, kind text, placement text, weight bigint, dst_resolved boolean)
+-- math_refresh_snapshots(p_window_days integer) -> TABLE(sequences bigint, edges bigint)
+-- math_visit_sequences(days_back integer) -> TABLE(journey text[], converted boolean, entry_channel text, n bigint)
 -- outbound_destinations_for_path(path text, days_back integer) -> TABLE(hostname text, clicks bigint)
+-- page_taxonomy_sync_wix(p_posts jsonb, p_dry_run boolean) -> TABLE(inserted integer, updated integer, unpublished integer, inserted_paths text[], updated_paths text[])
+-- page_taxonomy_theme_from_slug(p_path text) -> text
 -- pages_overview_unified(period_kind text, max_rows integer) -> TABLE(path text, gsc_clicks bigint, gsc_impressions bigint, gsc_position_avg numeric, gsc_ctr_pct numeric, cooked_sessions bigint, cooked_dwell_avg_s numeric, cooked_bounce_rate numeric, cooked_phone_clicks bigint, cooked_form_submits bigint, cooked_contacts bigint, cooked_booking_intent bigint, cooked_pogo_rate numeric, has_cooked_data boolean)
 -- pages_pulse(period_kind text, delta_threshold_pct numeric) -> TABLE(path text, gsc_clicks_n bigint, gsc_clicks_prev bigint, gsc_delta_pct numeric, cooked_sessions_n bigint, cooked_sessions_prev bigint, cooked_sessions_delta_pct numeric, quadrant text)
 -- paris_date(ts timestamp with time zone) -> date
 -- paris_today() -> date
 -- pogo_rates_for_period(date_from timestamp with time zone, date_to timestamp with time zone) -> TABLE(path text, google_sessions bigint, pogo_sticks bigint, hard_pogo bigint, pogo_rate numeric)
+-- pont_prospects_dossiers_env(p_env text) -> TABLE(prospect_id bigint, prospect_le timestamp with time zone, source text, form_id text, objet text, page_source_path text, cooked_aid text, cooked_sid text, nom text, prenom text, email text, telephone text, secib_env text, dossier_id integer, dossier_code text, dossier_cree_le timestamp with time zone, matiere_libelle text, etat_facturable text, facture_total_ht numeric, statut text, delai_jours numeric, cle_match text, personne_key text, rang_personne integer, rang_dossier integer)
 -- pulse_quadrant(gsc_dir text, cooked_dir text) -> text
 -- pulse_status(gsc_n bigint, gsc_prev bigint, cooked_n bigint, cooked_prev bigint, delta_threshold numeric) -> text
+-- purge_cooked_noise(retain_days integer) -> TABLE(events_purged bigint, noise_sessions_purged bigint)
 -- purge_old_events() -> TABLE(deleted_rows bigint, size_before text, size_after text, duration_ms numeric)
 -- raise_cooked_alert(p_kind text, p_sev text, p_detail text) -> integer
+-- record_ingest_drop(p_reason text, p_n integer) -> void
 -- refresh_bot_fingerprints() -> void
+-- refresh_dashboard_assisted_quarter() -> void
+-- refresh_dashboard_expertises_snapshots(p_window text) -> void
+-- refresh_dashboard_resources_assisted(p_window text) -> void
 -- refresh_dashboard_snapshots(p_window text) -> void
+-- refresh_identity_stitch(p_days integer) -> void
 -- refresh_noise_sessions() -> void
 -- refresh_page_taxonomy_heuristic() -> integer
 -- refresh_pipeline_health() -> TABLE(status text, snapshot_refreshed_at timestamp with time zone, snapshot_age_hours numeric, cron_last_status text, cron_last_run timestamp with time zone, cron_age_hours numeric, last_event_at timestamp with time zone, last_event_age_minutes numeric, events_last_60min bigint, gsc_last_day date, gsc_data_age_days numeric, gsc_last_ingest timestamp with time zone, gsc_ingest_age_hours numeric, dfs_last_synced_at timestamp with time zone, dfs_row_count bigint, dfs_sync_age_hours numeric, issues text[])
 -- refresh_seo_url_snapshot() -> void
 -- rls_auto_enable() -> event_trigger
+-- rpc_contract_check(p_name text, p_sql text, p_min_rows integer, p_exact_rows integer) -> void
 -- run_rpc_contract_tests() -> void
--- seo_pages_overview(date_from timestamp with time zone, date_to timestamp with time zone) -> TABLE(path text, views bigint, unique_visitors bigint, sessions bigint, bounce_rate numeric, avg_dwell_seconds numeric, scroll_avg numeric, scroll_median numeric, scroll_complete_pct numeric, entry_count bigint, exit_count bigint, outbound_clicks bigint)
--- seo_to_contact_funnel(days_back integer) -> TABLE(entry_path text, page_type text, theme text, gsc_impressions bigint, gsc_clicks bigint, top_queries text[], organic_entries bigint, contacts bigint, contacts_phone bigint, contacts_form bigint, contact_rate_pct numeric)
+-- seo_pages_overview(date_from timestamp with time zone, date_to timestamp with time zone) -> TABLE(path text, views bigint, unique_visitors bigint, sessions bigint, bounce_rate numeric, bounce_rate_pct numeric, avg_dwell_seconds numeric, scroll_avg numeric, scroll_median numeric, scroll_complete_pct numeric, entry_count bigint, exit_count bigint, outbound_clicks bigint)
+-- seo_to_contact_funnel(days_back integer, p_end date) -> TABLE(entry_path text, page_type text, theme text, gsc_impressions bigint, gsc_clicks bigint, top_queries text[], organic_entries bigint, contacts bigint, contacts_phone bigint, contacts_form bigint, contact_rate_pct numeric, window_start date, window_end date)
 -- site_context_export() -> TABLE(global_sessions_28d bigint, global_bounce_rate_28d numeric, sessions_per_day_median_28d numeric, sessions_trend_pct_7d_vs_28d numeric, top_sources_28d jsonb, global_bounce_rate_pct numeric)
 -- site_gsc_kpis_compare(p_period_kind text) -> TABLE(period_kind text, period_label_fr text, period_n_start date, period_n_end date, paris_today date, gsc_last_day date, lag_days integer, period_prev_start date, period_prev_end date, clicks_n bigint, impressions_n bigint, ctr_pct_n numeric, position_avg_n numeric, clicks_prev bigint, impressions_prev bigint, ctr_pct_prev numeric, position_avg_prev numeric, clicks_delta_pct numeric, impressions_delta_pct numeric)
 -- site_kpis_compare(p_period_kind text) -> TABLE(period_kind text, period_label_fr text, period_n_start date, period_n_end date, tracker_first_seen date, is_partial_period boolean, sessions_n bigint, pageviews_n bigint, phone_clicks_n bigint, form_submits_n bigint, macro_conversions_n bigint, period_prev_start date, period_prev_end date, sessions_prev bigint, pageviews_prev bigint, phone_clicks_prev bigint, form_submits_prev bigint, macro_conversions_prev bigint, sessions_delta_pct numeric, pageviews_delta_pct numeric, phone_clicks_delta_pct numeric, form_submits_delta_pct numeric, macro_conversions_delta_pct numeric)
 -- site_macro_counts(start_date date, end_date date) -> TABLE(phone_clicks bigint, form_submits bigint, macro_conversions bigint)
 -- site_pulse(p_period_kind text, delta_threshold_pct numeric) -> TABLE(period_kind text, period_label_fr text, gsc_period_start date, gsc_period_end date, cooked_period_start date, cooked_period_end date, gsc_clicks_n bigint, gsc_clicks_prev bigint, gsc_delta_pct numeric, cooked_sessions_n bigint, cooked_sessions_prev bigint, cooked_sessions_delta_pct numeric, quadrant text)
 -- site_seo_funnel(period_kind text) -> TABLE(period_start date, period_end date, impressions bigint, clicks bigint, google_sessions bigint, macro_contacts bigint, impr_to_click_pct numeric, click_to_session_pct numeric, session_to_contact_pct numeric, overall_impr_to_contact_pct numeric)
--- snapshot_pages_export(paths text[]) -> TABLE(... 70 colonnes : 4 fenêtres × metrics + CWV + provenance + device + CTAs + pogo ; les colonnes email_clicks_* renvoient 0::bigint depuis le Sprint 30, conservées pour le contrat)
+-- snapshot_pages_export(paths text[]) -> TABLE(path text, views_7d bigint, unique_visitors_7d bigint, sessions_7d bigint, bounce_rate_7d numeric, avg_dwell_seconds_7d numeric, scroll_avg_7d numeric, scroll_median_7d numeric, scroll_complete_pct_7d numeric, entry_count_7d bigint, exit_count_7d bigint, outbound_clicks_7d bigint, views_28d bigint, unique_visitors_28d bigint, sessions_28d bigint, bounce_rate_28d numeric, avg_dwell_seconds_28d numeric, scroll_avg_28d numeric, scroll_median_28d numeric, scroll_complete_pct_28d numeric, entry_count_28d bigint, exit_count_28d bigint, outbound_clicks_28d bigint, views_90d bigint, unique_visitors_90d bigint, sessions_90d bigint, bounce_rate_90d numeric, avg_dwell_seconds_90d numeric, scroll_avg_90d numeric, scroll_median_90d numeric, scroll_complete_pct_90d numeric, entry_count_90d bigint, exit_count_90d bigint, outbound_clicks_90d bigint, views_365d bigint, unique_visitors_365d bigint, sessions_365d bigint, bounce_rate_365d numeric, avg_dwell_seconds_365d numeric, scroll_avg_365d numeric, scroll_median_365d numeric, scroll_complete_pct_365d numeric, entry_count_365d bigint, exit_count_365d bigint, outbound_clicks_365d bigint, lcp_p75_28d_ms numeric, inp_p75_28d_ms numeric, cls_p75_28d numeric, ttfb_p75_28d_ms numeric, top_referrer_28d text, top_source_28d text, top_medium_28d text, device_split_28d jsonb, refreshed_at timestamp with time zone, phone_clicks_7d bigint, phone_clicks_28d bigint, phone_clicks_90d bigint, phone_clicks_365d bigint, email_clicks_7d bigint, email_clicks_28d bigint, email_clicks_90d bigint, email_clicks_365d bigint, booking_cta_clicks_7d bigint, booking_cta_clicks_28d bigint, booking_cta_clicks_90d bigint, booking_cta_clicks_365d bigint, google_sessions_28d bigint, pogo_sticks_28d bigint, hard_pogo_28d bigint, pogo_rate_28d numeric, mobile_sessions_28d bigint, desktop_sessions_28d bigint, cta_rate_mobile_28d numeric, cta_rate_desktop_28d numeric)
 -- top_contact_pages(p_period_kind text, max_rows integer) -> TABLE(path text, cooked_contacts bigint, cooked_phone_clicks bigint, cooked_form_submits bigint, gsc_clicks bigint, cooked_sessions bigint)
 -- tracker_first_seen_global() -> timestamp with time zone
 -- tracker_version_distribution(hours_back integer) -> TABLE(version text, events bigint, sessions bigint, first_seen timestamp with time zone, last_seen timestamp with time zone, share_pct numeric)
+-- unaccent(regdictionary, text) -> text
+-- unaccent(text) -> text
+-- unaccent_init(internal) -> internal
+-- unaccent_lexize(internal, internal, internal, internal) -> internal
 -- url_decode(input text) -> text
+-- weekly_conversions_report(p_week_start date) -> TABLE(semaine date, page_entree text, page_conversion text, appels bigint, formulaires bigint, conversions bigint, canaux text)
 
 
 -- ============================================================================
@@ -335,5 +402,5 @@ CREATE OR REPLACE VIEW public.pont_prospects_dossiers AS
 --
 -- Pour le CORPS d'une fonction : supabase/rpcs.sql (généré, Arch #5)
 -- ou : SELECT pg_get_functiondef('public.<nom>(<args>)'::regprocedure);
--- Généré le 10/08/2026, retouché le 04/09/2026 (T-19 : colonne events.country amputée des 5 vues events_*, vue gsc_path_metrics_28d supprimée) — corps RPC : supabase/rpcs.sql (régénéré depuis la prod en CI, compte dans contracts/doc_constants.json).
+-- Signatures régénérées le 20/10/2026 ; vues générées le 10/08/2026, retouchées le 04/09/2026 (T-19 : colonne events.country amputée des 5 vues events_*, vue gsc_path_metrics_28d supprimée) — corps RPC : supabase/rpcs.sql (régénéré depuis la prod en CI, compte dans contracts/doc_constants.json).
 -- ============================================================================

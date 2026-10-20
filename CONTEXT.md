@@ -12,11 +12,13 @@ l'**attribution**.
 ### Conversions
 
 **Conversion** / **Contact** :
-Un **appel** (`cta_phone_click`) ou un **formulaire envoyé** (`form_submit`
+Un **clic sur un numéro** (`cta_phone_click`) ou un **formulaire envoyé** (`form_submit`
 comptant comme macro). Un seul concept, deux mots par convention :
 **« conversion »** est le terme technique (code, specs, RPC) ; **« contact »**
 est le mot **affiché** dans l'UI (plus lisible pour Me Plouton). = la
 macro-conversion de `CLAUDE.md`.
+Le clic n'atteste pas que l'appel a abouti ; ce compteur ne mesure ni les
+clients acquis ni les dossiers facturés.
 _Avoid_ : « lead », « conversion » comme libellé d'écran, « contact » dans
 le code. « **Prospect** » a un sens précis depuis le 10/08/2026 : une row de
 `crm_prospects` (identité issue d'un formulaire web, pont SECIB) — ne pas
@@ -27,6 +29,8 @@ Un clic « prendre RDV » (`cta_booking_click`) qui ne se matérialise pas.
 **N'est PAS une conversion / un contact.**
 _Avoid_ : compter une intention comme une conversion (erreur de l'audit du
 15/05/2026 : 157 « conversions » pour 37 vrais contacts).
+Le badge CPI `convertit` utilise les contacts macro directs ou assistés.
+La contribution pondérée des intentions au score reste distincte du badge.
 
 ### Attribution — deux vues d'une conversion, jamais fusionnées
 
@@ -97,6 +101,17 @@ _Avoid_ : présenter un dwell médian comme un fait sans sa couverture.
 
 ### Sources & fraîcheur (23/08/2026 — ADR-0002)
 
+**Horloge de source** :
+Cooked regroupe les événements par jour Paris ; la date GSC correspond au jour
+Pacifique fourni par Google. Les comparaisons affichent les bornes de chaque
+source. Une même date n'assure pas une même tranche de 24 heures.
+
+**Lot GSC terminé** :
+Une ingestion ne devient utilisable pour le refresh qu'après succès des trois
+tables sur une même fenêtre. `gsc_ingest_begin` ouvre le lot, `gsc_ingest_complete`
+le clôt ; erreur ou mode partiel impose `gsc_ingest_fail` et bloque le refresh.
+Un timestamp récent dans la seule table pages n'est pas une preuve d'exhaustivité.
+
 **Source** :
 Un flux qui alimente Cooked en données : tracker (events), formulaires
 (webhook Wix), GSC, GBP, DataForSEO, snapshots internes (CPI, SEO,
@@ -151,6 +166,15 @@ suspend l'escalade et le re-push : « vu, je gère ».
   jamais un libellé nu « contacts ». Toujours qualifier lequel des deux.
 - **Conversion = macro uniquement.** Le booking (micro, intention) n'entre
   jamais dans un décompte de conversions / contacts.
+- **Visiteurs distincts non additifs.** Le distinct d'un ensemble de pages ne
+  se déduit pas de la somme des distincts par page ; aucun footer filtré ne
+  remplace ce calcul par un total global.
+- **CWV au grain document.** Le tracker conserve le chemin du chargement
+  initial, y compris après navigation SPA. Une révision après retour d'onglet
+  remplace la précédente pour `measurement_id` × métrique avant percentile.
+  Les anciens événements sans identifiant gardent leur grain historique.
+- **Version CPI visible.** Deux définitions ne sont pas reliées comme une
+  série homogène. Le graphique conserve les ruptures et les annotations.
 - **Une seule source pour la profondeur de lecture : `page_exit.max_scroll`.**
   Voir [ADR-0001](docs/adr/0001-source-unique-profondeur-lecture.md).
   ⚠️ Au 28/07/2026, `seo_pages_overview` et `refresh_seo_url_snapshot` lisent

@@ -18,12 +18,12 @@ export type FreshnessInput = {
 
 export type FreshnessState = {
   level: FreshnessLevel;
-  reason: "stale_snapshot" | "cooked_end_late" | "gsc_late" | "fresh";
+  reason: "stale_snapshot" | "cooked_end_late" | "gsc_late" | "gsc_missing" | "fresh";
   /** Jours entre cooked_end et aujourd'hui (Paris) ; null si inconnu ou lens live. */
   cookedGap: number | null;
   /** Heures depuis le dernier calcul ; null si inconnu. */
   ageHours: number | null;
-  lag: number;
+  lag: number | null;
 };
 
 export const GSC_LAG_MAX_DAYS = 3;
@@ -38,7 +38,10 @@ export function parisHour(now: Date): number {
 }
 
 export function freshnessState(input: FreshnessInput): FreshnessState {
-  const lag = input.lagDays ?? 0;
+  // Le lag figé au calcul du snapshot vieillit ; la date de fin reste l'autorité.
+  const lag = input.gscLastDay
+    ? Math.max(0, dayDiff(input.gscLastDay, parisTodayISO(input.now)))
+    : null;
   const ageHours = input.refreshedAt
     ? Math.floor((input.now.getTime() - new Date(input.refreshedAt).getTime()) / 3_600_000)
     : null;
@@ -51,6 +54,9 @@ export function freshnessState(input: FreshnessInput): FreshnessState {
   // J-2 après 16 h Paris ou J-3 à toute heure = la séquence n'a pas suivi.
   if (cookedGap != null && (cookedGap >= 3 || (cookedGap === 2 && parisHour(input.now) >= COOKED_END_LATE_HOUR))) {
     return { level: "warn", reason: "cooked_end_late", cookedGap, ageHours, lag };
+  }
+  if (lag == null) {
+    return { level: "warn", reason: "gsc_missing", cookedGap, ageHours, lag };
   }
   if (lag > GSC_LAG_MAX_DAYS) {
     return { level: "warn", reason: "gsc_late", cookedGap, ageHours, lag };

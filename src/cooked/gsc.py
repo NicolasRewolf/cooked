@@ -16,6 +16,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
+from uuid import uuid4
 
 from cooked.path import canonical_path
 from cooked.store import CookedStore, SupabaseStore
@@ -164,7 +165,7 @@ def run_path_query(
     end_date: date,
     months_back: int = MONTHS_BACK,
     store: CookedStore | None = None,
-) -> None:
+) -> dict[str, int]:
     store = store or SupabaseStore.from_env()
     gsc, site = gsc_api_clients()
     months = list_months(end_date, months_back)
@@ -197,13 +198,14 @@ def run_path_query(
     print(f"\n=== path-query DONE in {time.time() - t0:.1f}s ===")
     print(f"  gsc_path_daily  : {total_p:,} rows upserted")
     print(f"  gsc_query_daily : {total_q:,} rows upserted")
+    return {"gsc_path_daily": total_p, "gsc_query_daily": total_q}
 
 
 def run_query_page(
     end_date: date,
     months_back: int = MONTHS_BACK,
     store: CookedStore | None = None,
-) -> None:
+) -> dict[str, int]:
     store = store or SupabaseStore.from_env()
     gsc, site = gsc_api_clients()
     months = list_months(end_date, months_back)
@@ -229,6 +231,63 @@ def run_query_page(
 
     print(f"\n=== query-page DONE in {time.time() - t0:.1f}s ===")
     print(f"  gsc_query_page_daily : {total:,} rows upserted")
+    return {"gsc_query_page_daily": total}
+
+
+def run_ingestion(
+    mode: str,
+    end_date: date,
+    months_back: int = MONTHS_BACK,
+    store: CookedStore | None = None,
+) -> None:
+    """Publie uniquement un lot dont les trois sources ont été ingérées.
+
+    Begin ferme le refresh aval AVANT la première écriture. Une interruption
+    laisse ce verrou logique fermé ; le prochain lot complet reprend la
+    fenêtre. Les anciens modes partiels restent utiles au diagnostic mais ne
+    peuvent jamais annoncer une photographie complète.
+    """
+    if mode not in {"all", "path-query", "query-page"}:
+        raise ValueError("Mode GSC inconnu")
+    if months_back < 1:
+        raise ValueError("months_back doit être positif")
+    store = store or SupabaseStore.from_env()
+    run_id = str(uuid4())
+    start_date = list_months(end_date, months_back)[0][0]
+    store.rpc("gsc_ingest_begin", {
+        "p_run_id": run_id,
+        "p_start": start_date.isoformat(),
+        "p_end": end_date.isoformat(),
+    })
+    try:
+        counts: dict[str, int] = {}
+        if mode in {"all", "path-query"}:
+            counts.update(run_path_query(end_date, months_back, store=store))
+        if mode in {"all", "query-page"}:
+            counts.update(run_query_page(end_date, months_back, store=store))
+        if mode != "all":
+            store.rpc("gsc_ingest_fail", {"p_run_id": run_id})
+            print(
+                "Lot GSC partiel : le rafraîchissement aval reste suspendu. "
+                "Exécuter `gsc_ingest.py all` avec la même fenêtre pour publier.",
+                flush=True,
+            )
+            return
+        if not any(counts.values()):
+            raise RuntimeError("Lot GSC entièrement vide : publication refusée")
+        store.rpc("gsc_ingest_complete", {
+            "p_run_id": run_id,
+            "p_row_counts": counts,
+        })
+    except BaseException:
+        # Un crash ne doit pas publier un lot partiel. Ne pas masquer l'erreur
+        # initiale si la base est elle-même indisponible : running reste fermé.
+        try:
+            store.rpc("gsc_ingest_fail", {"p_run_id": run_id})
+        except Exception:
+            print("Échec du signal de fin GSC : reprise explicite requise.", file=sys.stderr)
+        raise
+    print("Lot GSC complet : les trois sources sont prêtes pour le refresh.", flush=True)
 
 
 def _add_run_flags(p: argparse.ArgumentParser) -> None:
@@ -252,10 +311,11 @@ def _add_run_flags(p: argparse.ArgumentParser) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Ingestion GSC → Cooked (path-query | query-page)"
+        description="Ingestion GSC → Cooked (all ; modes partiels de diagnostic)"
     )
     sub = parser.add_subparsers(dest="mode", required=True)
 
+    _add_run_flags(sub.add_parser("all", help="Les trois sources, un seul lot publiable"))
     _add_run_flags(sub.add_parser("path-query", help="gsc_path_daily + gsc_query_daily"))
     _add_run_flags(sub.add_parser("query-page", help="gsc_query_page_daily"))
 
@@ -263,7 +323,6 @@ def main(argv: list[str] | None = None) -> None:
     end = parse_end_date(args.end_date)
     months_back = GSC_DAILY_MONTHS_BACK if args.daily else args.months
 
-    if args.mode == "path-query":
-        run_path_query(end, months_back)
-    else:
-        run_query_page(end, months_back)
+    if months_back < 1:
+        parser.error("--months doit être positif")
+    run_ingestion(args.mode, end, months_back)

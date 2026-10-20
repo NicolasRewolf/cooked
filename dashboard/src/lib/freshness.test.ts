@@ -61,6 +61,23 @@ describe("freshnessState — fin des données (g-03)", () => {
     expect(s.level).toBe("ok");
     expect(s.cookedGap).toBeNull();
   });
+  it("recalcule le lag courant au lieu de réutiliser celui du snapshot", () => {
+    const s = freshnessState({
+      gscLastDay: "2026-10-17", lagDays: 2, cookedEnd: "2026-10-18",
+      refreshedAt: "2026-10-19T12:00:00Z", now: paris("2026-10-20T09:00:00"),
+    });
+    expect(s.lag).toBe(3);
+    expect(s.level).toBe("ok");
+  });
+  it("change de date à minuit Paris, même avant minuit UTC", () => {
+    const s = freshnessState({ gscLastDay: "2026-10-17", lagDays: 2, live: true, now: new Date("2026-10-19T22:05:00Z") });
+    expect(s.lag).toBe(3);
+  });
+  it("ne présente pas une date Google inconnue comme J-0 normal", () => {
+    const s = freshnessState({ gscLastDay: null, lagDays: 0, live: true, now: paris("2026-10-20T09:00:00") });
+    expect(s.lag).toBeNull();
+    expect(s.reason).toBe("gsc_missing");
+  });
 });
 
 describe("parisHour", () => {

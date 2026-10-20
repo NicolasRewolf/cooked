@@ -1,0 +1,174 @@
+[
+  {
+    "name": "alerts",
+    "columns": "id bigint, created_at timestamp with time zone, kind text, severity text, detail text, acked boolean"
+  },
+  {
+    "name": "annotations",
+    "columns": "id bigint, day date, kind text, label text, paths text[], created_at timestamp with time zone"
+  },
+  {
+    "name": "bot_fingerprints",
+    "columns": "anonymous_id text, detected_at timestamp with time zone, reason text"
+  },
+  {
+    "name": "conversion_weekly",
+    "columns": "id bigint, week_start date, occurred_at timestamp with time zone, contact_kind text, contact_path text, entry_path text, entry_channel text, objet text, device_type text, attribution_method text, anonymous_id text, pages_count integer, journey text[], snapshot_at timestamp with time zone"
+  },
+  {
+    "name": "cooked_config",
+    "columns": "key text, value text, updated_at timestamp with time zone"
+  },
+  {
+    "name": "cpi_calibration_checks",
+    "columns": "day date, gsc_end date, r2 numeric, pente numeric, n_buckets integer, mediane_ecart_pct numeric, max_ecart_pct numeric, ctr_pos1_pct numeric, cpi_version text, created_at timestamp with time zone"
+  },
+  {
+    "name": "cpi_capture_perdue",
+    "columns": "path text, ptype text, grade text, clics_perdus integer, couv_gsc_pct integer, fiabilite_capture text, interpretable boolean, zc numeric, n_org bigint, day date"
+  },
+  {
+    "name": "cpi_daily",
+    "columns": "day date, path text, ptype text, grade text, cpi integer, cpi_raw integer, momentum numeric, gate numeric, zc numeric, zr numeric, zl numeric, zv numeric, clics_perdus integer, n_org bigint, couv_gsc_pct integer, created_at timestamp with time zone, convertit boolean, cpi_version text"
+  },
+  {
+    "name": "cpi_gisement",
+    "columns": "path text, ptype text, grade text, n_org bigint, cpi integer, potentiel integer, convertit boolean, zc numeric, zr numeric, zl numeric, zv numeric, day date"
+  },
+  {
+    "name": "cpi_movers",
+    "columns": "day_now date, day_ref date, ecart_jours integer, path text, ptype text, statut text, cpi_now integer, cpi_ref integer, delta_cpi integer, grade_now text, grade_ref text, fiable boolean, delta_zc numeric, delta_zr numeric, delta_zl numeric, delta_zv numeric, delta_momentum numeric, momentum_now numeric, n_org_now bigint, clics_perdus_now integer"
+  },
+  {
+    "name": "cpi_opportunite_contact",
+    "columns": "path text, ptype text, grade text, n_org bigint, cpi integer, potentiel integer, convertit boolean, zc numeric, zr numeric, zl numeric, zv numeric, day date"
+  },
+  {
+    "name": "cpi_pre_restatement_20260903",
+    "columns": "day date, path text, ptype text, grade text, cpi integer, cpi_raw integer, momentum numeric, gate numeric, zc numeric, zr numeric, zl numeric, zv numeric, clics_perdus integer, n_org bigint, couv_gsc_pct integer, created_at timestamp with time zone, convertit boolean, phase text"
+  },
+  {
+    "name": "cta_anchor_label_map",
+    "columns": "label text, cta_type text, notes text, created_at timestamp with time zone"
+  },
+  {
+    "name": "dashboard_assisted_quarter_snapshot",
+    "columns": "quarter text, quarter_start date, quarter_end date, value integer, target integer, refreshed_at timestamp with time zone"
+  },
+  {
+    "name": "dashboard_expertises_kpis_snapshot",
+    "columns": "window_kind text, label_fr text, cooked_start date, cooked_end date, gsc_start date, gsc_end date, gsc_last_day date, lag_days integer, is_partial boolean, visitors_n bigint, visitors_prev bigint, pageviews_n bigint, pageviews_prev bigint, contacts_n bigint, contacts_prev bigint, gsc_clicks_n bigint, gsc_clicks_prev bigint, gsc_impressions_n bigint, gsc_impressions_prev bigint, refreshed_at timestamp with time zone, current_day_partial boolean, no_prev_baseline boolean, paid_entries_n bigint, organic_entries_n bigint, total_entries_n bigint"
+  },
+  {
+    "name": "dashboard_expertises_snapshot",
+    "columns": "window_kind text, path text, theme text, unique_visitors bigint, pageviews bigint, dwell_median_s numeric, scroll_median numeric, gsc_clicks bigint, gsc_impressions bigint, gsc_position_avg numeric, gsc_ctr_pct numeric, best_query text, best_query_clicks bigint, best_query_volume_fr integer, best_query_cpc numeric, contacts bigint, booking_intent bigint, first_impression_day date, first_tracker_day date, days_live integer, confidence text, cooked_start date, cooked_end date, gsc_start date, gsc_end date, refreshed_at timestamp with time zone, unique_visitors_prev integer, gsc_clicks_prev integer, cpi integer, cpi_grade text, momentum numeric, potentiel integer, convertit boolean, ctr_expected numeric, paid_share_pct numeric"
+  },
+  {
+    "name": "dashboard_expertises_trend_snapshot",
+    "columns": "window_kind text, visitors_daily numeric[], pageviews_daily numeric[], contacts_daily numeric[], gsc_clicks_daily numeric[], gsc_impressions_daily numeric[], refreshed_at timestamp with time zone"
+  },
+  {
+    "name": "dashboard_kpis_snapshot",
+    "columns": "window_kind text, label_fr text, cooked_start date, cooked_end date, gsc_start date, gsc_end date, gsc_last_day date, lag_days integer, is_partial boolean, visitors_n bigint, visitors_prev bigint, pageviews_n bigint, pageviews_prev bigint, contacts_n bigint, contacts_prev bigint, gsc_clicks_n bigint, gsc_clicks_prev bigint, gsc_impressions_n bigint, gsc_impressions_prev bigint, refreshed_at timestamp with time zone, current_day_partial boolean, no_prev_baseline boolean"
+  },
+  {
+    "name": "dashboard_resources_assisted_snapshot",
+    "columns": "window_kind text, path text, assisted_contacts integer, assisted_prev integer, refreshed_at timestamp with time zone"
+  },
+  {
+    "name": "dashboard_resources_snapshot",
+    "columns": "window_kind text, path text, theme text, unique_visitors bigint, pageviews bigint, dwell_median_s numeric, scroll_median numeric, gsc_clicks bigint, gsc_impressions bigint, gsc_position_avg numeric, gsc_ctr_pct numeric, best_query text, best_query_clicks bigint, best_query_volume_fr integer, best_query_cpc numeric, contacts bigint, booking_intent bigint, first_impression_day date, first_tracker_day date, days_live integer, confidence text, cooked_start date, cooked_end date, gsc_start date, gsc_end date, refreshed_at timestamp with time zone, unique_visitors_prev integer, gsc_clicks_prev integer, cpi integer, cpi_grade text, momentum numeric, potentiel integer, convertit boolean, ctr_expected numeric"
+  },
+  {
+    "name": "dashboard_trend_snapshot",
+    "columns": "window_kind text, visitors_daily numeric[], pageviews_daily numeric[], contacts_daily numeric[], gsc_clicks_daily numeric[], gsc_impressions_daily numeric[], refreshed_at timestamp with time zone"
+  },
+  {
+    "name": "dfs_keyword_volume",
+    "columns": "keyword text, location_code integer, language_code text, search_volume integer, cpc numeric(10,2), competition numeric(4,3), competition_level text, monthly_searches jsonb, last_synced_at timestamp with time zone"
+  },
+  {
+    "name": "events",
+    "columns": "id uuid, anonymous_id text, session_id text, name text, url text, path text, hostname text, title text, referrer text, referrer_hostname text, utm_source text, utm_medium text, utm_campaign text, utm_term text, utm_content text, user_agent text, device_type text, os text, browser text, viewport_width integer, viewport_height integer, props jsonb, occurred_at timestamp with time zone, received_at timestamp with time zone"
+  },
+  {
+    "name": "events_human",
+    "columns": "id uuid, anonymous_id text, session_id text, name text, url text, path text, hostname text, title text, referrer text, referrer_hostname text, utm_source text, utm_medium text, utm_campaign text, utm_term text, utm_content text, user_agent text, device_type text, os text, browser text, viewport_width integer, viewport_height integer, props jsonb, occurred_at timestamp with time zone, received_at timestamp with time zone"
+  },
+  {
+    "name": "events_human_outremer",
+    "columns": "id uuid, anonymous_id text, session_id text, name text, url text, path text, hostname text, title text, referrer text, referrer_hostname text, utm_source text, utm_medium text, utm_campaign text, utm_term text, utm_content text, user_agent text, device_type text, os text, browser text, viewport_width integer, viewport_height integer, props jsonb, occurred_at timestamp with time zone, received_at timestamp with time zone"
+  },
+  {
+    "name": "events_main",
+    "columns": "id uuid, anonymous_id text, session_id text, name text, url text, path text, hostname text, title text, referrer text, referrer_hostname text, utm_source text, utm_medium text, utm_campaign text, utm_term text, utm_content text, user_agent text, device_type text, os text, browser text, viewport_width integer, viewport_height integer, props jsonb, occurred_at timestamp with time zone, received_at timestamp with time zone"
+  },
+  {
+    "name": "events_no_bots",
+    "columns": "id uuid, anonymous_id text, session_id text, name text, url text, path text, hostname text, title text, referrer text, referrer_hostname text, utm_source text, utm_medium text, utm_campaign text, utm_term text, utm_content text, user_agent text, device_type text, os text, browser text, viewport_width integer, viewport_height integer, props jsonb, occurred_at timestamp with time zone, received_at timestamp with time zone"
+  },
+  {
+    "name": "events_outremer",
+    "columns": "id uuid, anonymous_id text, session_id text, name text, url text, path text, hostname text, title text, referrer text, referrer_hostname text, utm_source text, utm_medium text, utm_campaign text, utm_term text, utm_content text, user_agent text, device_type text, os text, browser text, viewport_width integer, viewport_height integer, props jsonb, occurred_at timestamp with time zone, received_at timestamp with time zone"
+  },
+  {
+    "name": "freshness_contract",
+    "columns": "source text, label text, last_point_sql text, cadence text, normal_lag_days integer, warn_after_days integer, critical_after_days integer, gap_relation text, gap_day_column text, gap_window_days integer, repair_hint text, enabled boolean, created_at timestamp with time zone"
+  },
+  {
+    "name": "gbp_daily",
+    "columns": "day date, location text, metric text, value integer, ingested_at timestamp with time zone"
+  },
+  {
+    "name": "gsc_path_daily",
+    "columns": "day date, path text, impressions integer, clicks integer, \"position\" numeric(6,2), ctr numeric(7,6), ingested_at timestamp with time zone"
+  },
+  {
+    "name": "gsc_query_daily",
+    "columns": "day date, query text, impressions integer, clicks integer, \"position\" numeric(6,2), ctr numeric(7,6), ingested_at timestamp with time zone"
+  },
+  {
+    "name": "gsc_query_page_daily",
+    "columns": "day date, path text, query text, impressions integer, clicks integer, \"position\" numeric(6,2), ctr numeric(7,6), ingested_at timestamp with time zone"
+  },
+  {
+    "name": "identity_stitch",
+    "columns": "kind text, key text, visitor_key text"
+  },
+  {
+    "name": "ingest_drops",
+    "columns": "day date, reason text, n bigint"
+  },
+  {
+    "name": "math_internal_edges_snapshot",
+    "columns": "computed_at timestamp with time zone, window_days integer, src text, dst text, kind text, placement text, weight bigint, dst_resolved boolean"
+  },
+  {
+    "name": "math_visit_sequences_snapshot",
+    "columns": "computed_at timestamp with time zone, window_days integer, journey text[], converted boolean, entry_channel text, n bigint"
+  },
+  {
+    "name": "noise_sessions",
+    "columns": "session_id text, detected_at timestamp with time zone, reason text"
+  },
+  {
+    "name": "page_taxonomy",
+    "columns": "path text, category text, theme text, source text, updated_at timestamp with time zone"
+  },
+  {
+    "name": "refresh_runs",
+    "columns": "id bigint, run_id uuid, orchestrator text, step_no integer, step text, started_at timestamp with time zone, finished_at timestamp with time zone, duration_ms integer, ok boolean, sqlstate text, error text, trigger_ingest_at timestamp with time zone"
+  },
+  {
+    "name": "rpc_health",
+    "columns": "id bigint, rpc_name text, status text, detail text, rows_returned bigint, duration_ms numeric, checked_at timestamp with time zone"
+  },
+  {
+    "name": "seo_url_snapshot",
+    "columns": "path text, views_7d bigint, unique_visitors_7d bigint, sessions_7d bigint, bounce_rate_7d numeric, avg_dwell_seconds_7d numeric, scroll_avg_7d numeric, scroll_median_7d numeric, scroll_complete_pct_7d numeric, entry_count_7d bigint, exit_count_7d bigint, outbound_clicks_7d bigint, views_28d bigint, unique_visitors_28d bigint, sessions_28d bigint, bounce_rate_28d numeric, avg_dwell_seconds_28d numeric, scroll_avg_28d numeric, scroll_median_28d numeric, scroll_complete_pct_28d numeric, entry_count_28d bigint, exit_count_28d bigint, outbound_clicks_28d bigint, views_90d bigint, unique_visitors_90d bigint, sessions_90d bigint, bounce_rate_90d numeric, avg_dwell_seconds_90d numeric, scroll_avg_90d numeric, scroll_median_90d numeric, scroll_complete_pct_90d numeric, entry_count_90d bigint, exit_count_90d bigint, outbound_clicks_90d bigint, views_365d bigint, unique_visitors_365d bigint, sessions_365d bigint, bounce_rate_365d numeric, avg_dwell_seconds_365d numeric, scroll_avg_365d numeric, scroll_median_365d numeric, scroll_complete_pct_365d numeric, entry_count_365d bigint, exit_count_365d bigint, outbound_clicks_365d bigint, lcp_p75_28d_ms numeric, inp_p75_28d_ms numeric, cls_p75_28d numeric, ttfb_p75_28d_ms numeric, top_referrer_28d text, top_source_28d text, top_medium_28d text, device_split_28d jsonb, refreshed_at timestamp with time zone, phone_clicks_7d bigint, phone_clicks_28d bigint, phone_clicks_90d bigint, phone_clicks_365d bigint, booking_cta_clicks_7d bigint, booking_cta_clicks_28d bigint, booking_cta_clicks_90d bigint, booking_cta_clicks_365d bigint, google_sessions_28d bigint, pogo_sticks_28d bigint, hard_pogo_28d bigint, pogo_rate_28d numeric, mobile_sessions_28d bigint, desktop_sessions_28d bigint, cta_rate_mobile_28d numeric, cta_rate_desktop_28d numeric"
+  },
+  {
+    "name": "serp_features",
+    "columns": "day date, query text, device text, location_name text, has_ai_overview boolean, has_people_also_ask boolean, has_local_pack boolean, has_knowledge_graph boolean, first_organic_absolute integer, our_rank_absolute integer, our_rank_organic integer, gsc_impressions_28j integer, gsc_clicks_28j integer, measured_at timestamp with time zone"
+  }
+]

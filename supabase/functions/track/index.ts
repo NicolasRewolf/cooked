@@ -1,4 +1,4 @@
-// COOKED — track Edge Function (v30 — 04/09/2026 : T-19/T-22 — url réduite aux paramètres de campagne,
+// COOKED — track Edge Function (v31 — 20/10/2026 : iOS détecté avant macOS ; v30 — 04/09/2026 : T-19/T-22 — url réduite aux paramètres de campagne,
 // title plus écrit, ingest_drops agrégés (1 appel / 100 drops ou / minute) ; v29 — 04/09/2026 : gate x-cooked-key fail-fast, T-18 mission 02/09 —
 // COOKED_INGEST_KEY absent ⇒ le boot échoue au lieu d'ouvrir la porte ; v28 — 03/09/2026 : bot UA « pc »/SEBot droppés à l'ingestion, T-04 mission 02/09 ;
 // v27 — 25/07/2026 : x-cooked-key ingest gate, audit n°3)

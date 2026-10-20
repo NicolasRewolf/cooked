@@ -28,7 +28,6 @@ function PosTrend({ now, prev }: { now: number | null; prev: number | null }) {
 export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
   const [quickOnly, setQuickOnly] = useState(false);
   const filtered = quickOnly ? rows.filter((r) => r.is_quick_win) : rows;
-  const maxCapture = Math.max(1, ...rows.map((r) => r.capture_pct ?? 0));
 
   const columns: Column<SeoQueryRow>[] = [
     {
@@ -40,7 +39,7 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
         <div className="max-w-[300px]">
           <div className="flex items-center gap-2">
             <span className="truncate text-[13px] font-medium text-ink">{r.query}</span>
-            {r.is_quick_win && <Badge tone="good">quick win</Badge>}
+            {r.is_quick_win && <Badge tone="neutral">à examiner</Badge>}
           </div>
           {r.top_page && (
             <div className="truncate font-mono text-[10.5px] text-dim">
@@ -75,13 +74,12 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
       header: "position",
       align: "right",
       headerInfo:
-        "Position moyenne Google, pondérée par impressions. ▲▼ = places gagnées/perdues vs période précédente (survol : CTR attendu à cette position).",
+        "Position moyenne Google, pondérée par impressions. ▲▼ = places gagnées/perdues vs période précédente. La moyenne peut varier avec les pages ou les jours observés.",
       sortValue: (r) => r.position_avg,
       render: (r) => (
         <div className="flex flex-col items-end leading-tight">
           <span
             className="font-mono text-[12px] text-ink-2"
-            title={r.ctr_expected != null ? `CTR attendu à cette position : ${pct(r.ctr_expected)}` : undefined}
           >
             {dec(r.position_avg)}
           </span>
@@ -94,7 +92,7 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
       header: "vol. dfs",
       align: "right",
       headerInfo:
-        "Volume de recherche mensuel France (DataForSEO). n.d. = requête trop rare pour être répertoriée.",
+        "Estimation du volume mensuel en France (DataForSEO), distincte des impressions du site. Ne mesure pas l'audience accessible à l'article. n.d. = volume indisponible.",
       sortValue: (r) => r.volume_fr,
       render: (r) =>
         r.volume_fr != null ? (
@@ -104,44 +102,13 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
         ),
     },
     {
-      key: "capture",
-      header: "captation",
+      key: "ctr",
+      header: "ctr",
       align: "right",
       headerInfo:
-        "Part des clics de la requête captée par le site (clics / clics théoriques à cette position). La barre situe la requête vs la meilleure capture du tableau.",
-      sortValue: (r) => r.capture_pct,
-      render: (r) => (
-        <div className="flex flex-col items-end gap-1">
-          <span className="font-mono text-[11.5px] text-ink-2">{pct(r.capture_pct)}</span>
-          <span className="block h-[2px] w-12 bg-field">
-            <span
-              className="block h-[2px] bg-dim"
-              style={{ width: `${Math.round(((r.capture_pct ?? 0) / maxCapture) * 100)}%` }}
-            />
-          </span>
-        </div>
-      ),
-    },
-    {
-      key: "opportunity",
-      header: "gain pot.",
-      align: "right",
-      headerInfo:
-        "Clics/mois estimés si la requête atteignait le top 3 au CTR moyen du site (combine gain de classement et gain de CTR). — = déjà bien placée ou sans gisement.",
-      sortValue: (r) => r.opportunity_clicks,
-      render: (r) =>
-        r.opportunity_clicks == null || r.opportunity_clicks <= 0 ? (
-          <span className="text-dim">—</span>
-        ) : (
-          <span
-            className={cn(
-              "font-mono text-[12.5px] font-semibold",
-              r.is_quick_win ? "text-up" : "text-ink-2",
-            )}
-          >
-            +{num(r.opportunity_clicks)}
-          </span>
-        ),
+        "CTR observé = clics / impressions sur la période. Il ne mesure ni la part du marché national ni les clics encore accessibles.",
+      sortValue: (r) => r.impressions > 0 ? r.clicks / r.impressions : null,
+      render: (r) => <span className="font-mono text-[11.5px] text-ink-2">{pct(r.impressions > 0 ? 100 * r.clicks / r.impressions : null)}</span>,
     },
   ];
 
@@ -158,7 +125,7 @@ export function SeoTable({ rows }: { rows: SeoQueryRow[] }) {
             onChange={(e) => setQuickOnly(e.target.checked)}
             className="accent-accent"
           />
-          quick wins seulement (position 5–15 · volume ≥ 100)
+          position 5–15 · volume ≥ 100 seulement
         </label>
       </div>
       <SortableTable columns={columns} rows={filtered} initialSortKey="clicks" initialDir="desc" minWidth={900} />

@@ -6,14 +6,22 @@
 > ⚠️ **Ce document n'est pas un avis juridique.** Il rassemble les textes à
 > publier et les décisions à prendre. Le responsable de traitement est le
 > cabinet ; Me Plouton, avocat, valide avant publication.
+>
+> **Statut au 20/10/2026 : brouillon, validation et publication non vérifiées.**
+> Les bases légales, transferts, durées proposées et modalités d'opposition
+> ci-dessous ne sont pas des faits techniques acquis. L'identifiant
+> navigateur est pseudonyme et peut être recoupé avec le CRM ; le traitement
+> complet doit être évalué avant toute affirmation d'exemption de consentement.
 
 ---
 
 ## Le traitement en une phrase
 
-Le cabinet rapproche les demandes de contact reçues via le site web des
-dossiers effectivement ouverts et facturés dans SECIB, afin de savoir quels
-canaux et quels contenus produisent de vrais dossiers, par matière.
+Le dispositif vise à rapprocher les demandes de contact reçues via le site
+des dossiers ouverts et facturés dans SECIB. La capture des prospects existe ;
+le volet SECIB reste en test au dernier contrôle. La production est bloquée
+tant qu'une synchronisation complète n'est pas validée. Aucune mesure réelle
+de dossiers facturés attribués au site n'est attestée par ce document.
 
 **Décision produit du 10/08/2026** : le rapprochement se fait sur l'identité
 **en clair** (nom, prénom, email, téléphone). Le hachage a été proposé et
@@ -23,10 +31,10 @@ canaux et quels contenus produisent de vrais dossiers, par matière.
 
 | Élément | Réalité vérifiée le 10/08/2026 |
 |---|---|
-| Tables portant la PII | `crm_prospects`, `secib_dossiers` — **uniquement** |
+| Tables portant l'identité en clair | `crm_prospects`, `secib_dossiers` |
 | Protection | RLS deny-all (aucune policy) + REVOKE anon/authenticated → accès clé de service seule |
-| Hébergement | Supabase région **`eu-west-1` (Irlande, UE)** — pas de transfert hors UE |
-| Analytics | `events` / `events_human` et toutes les RPC restent **sans PII** (invariant testé en CI) |
+| Hébergement | Supabase région **`eu-west-1` (Irlande, UE)** ; les transferts et garanties de la chaîne de sous-traitance nécessitent une vérification distincte |
+| Analytics | Pas de nom/email/téléphone ni texte libre des formulaires dans `events` / `events_human` et les RPC ; identifiants pseudonymes persistants, couture possible avec `cooked_aid`/`cooked_sid` côté CRM |
 | Texte libre | Le message du formulaire n'est **jamais** importé |
 | Volume au 10/08/2026 | 796 prospects (795 historiques 03/2025→08/2026 + 1 test) |
 
@@ -34,7 +42,9 @@ canaux et quels contenus produisent de vrais dossiers, par matière.
 
 ## 1. À publier sur le site
 
-Bloc à insérer dans les mentions légales / la politique de confidentialité.
+Proposition de travail à valider avant insertion dans les mentions légales /
+la politique de confidentialité. La durée de 24 mois et les bases légales
+restent des propositions ; le code de purge ne suffit pas à les valider.
 
 > **Données collectées via les formulaires de contact**
 >
@@ -64,8 +74,7 @@ Bloc à insérer dans les mentions légales / la politique de confidentialité.
 >
 > **Hébergement.** Le site est hébergé par Wix.com Ltd. Les données issues des
 > formulaires sont enregistrées sur une infrastructure Supabase située dans
-> l'Union européenne (Irlande). Aucun transfert hors de l'Union européenne
-> n'est effectué dans le cadre de ce traitement.
+> l'Union européenne (Irlande).
 >
 > **Durée de conservation.** Les données issues des formulaires sont
 > conservées 24 mois à compter de votre dernier contact avec le cabinet, puis
@@ -114,9 +123,9 @@ Constaté sur `/mentions-legales` le 10/08/2026 :
 | Personnes concernées | Visiteurs ayant soumis un formulaire de contact ; clients du cabinet pour la partie dossiers |
 | Données | Identité (nom, prénom), coordonnées (email, téléphone), objet de la demande, page et canal d'origine ; côté dossier : matière, dates, montant facturé |
 | Destinataires | Cabinet + REWOLF (sous-traitant) |
-| Hébergement | Supabase, Irlande (UE) — pas de transfert hors UE |
-| Conservation | 24 mois après le dernier contact |
-| Sécurité | Tables isolées (RLS deny-all), accès clé de service uniquement, aucune exposition publique ni dans le tableau de bord, PII absente des statistiques de fréquentation |
+| Hébergement | Région principale Supabase en Irlande ; transferts et garanties à confirmer |
+| Conservation | Proposition : 24 mois après le dernier contact, à valider |
+| Sécurité | Tables d'identité isolées (RLS deny-all), accès clé de service ; analytics sans identité explicite, mais pseudonymes et techniquement recoupables |
 | Date de mise en œuvre | 10/08/2026 |
 
 ---

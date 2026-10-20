@@ -5,7 +5,6 @@ import {
   interventionEffectSchema,
   periodSchema,
   resourceRowSchema,
-  resourcesTrendRowSchema,
   resourcesTrendRpcSchema,
   resourceKpisSchema,
 } from "./rpc-schemas";
@@ -59,8 +58,9 @@ describe("resourceRowSchema", () => {
     expect(resourceRowSchema.parse(resourceRowFixture).path).toBe("/post/test");
   });
   it("rejette un champ manquant", () => {
-    const { path: _p, ...rest } = resourceRowFixture;
-    expect(resourceRowSchema.safeParse(rest).success).toBe(false);
+    const missingPath: Partial<typeof resourceRowFixture> = { ...resourceRowFixture };
+    delete missingPath.path;
+    expect(resourceRowSchema.safeParse(missingPath).success).toBe(false);
   });
 });
 

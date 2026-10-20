@@ -15,6 +15,7 @@
 //      leur assertion : wipe de storage en cours de page (sprint41), page_exit
 //      ré-armé au retour d'onglet (sprint40), chrome Cookiebot hors anchor
 //      (sprint35) ; et CLS = 0 émis quand l'observer est attaché (sprint42)
+//   7. sprint43 : fin de route SPA, visibilité et CWV document révisables
 const { JSDOM, VirtualConsole } = require('jsdom');
 const fs = require('fs');
 const path = require('path');
@@ -30,19 +31,36 @@ function makeDom(opts = {}) {
     <a id="out" href="https://example.com/x">O</a>
     <div id="CybotCookiebotDialog"><a id="cb" href="#accept">Tout accepter</a></div>
     <a id="anc" href="#formulaire">Demander un RDV</a>
-  </body>`, { url: 'https://www.jplouton-avocat.fr/article-test', pretendToBeVisual: true, runScripts: 'dangerously', virtualConsole: vc });
+  </body>`, { url: opts.url || 'https://www.jplouton-avocat.fr/article-test', pretendToBeVisual: true, runScripts: 'dangerously', virtualConsole: vc });
   const w = dom.window;
   w.eval(`window.__SENT=[];navigator.sendBeacon=undefined;
     window.fetch=function(u,o){window.__SENT.push(JSON.parse(o.body));return Promise.resolve({ok:true});};
     window.PerformanceObserver=undefined;`);
   if (opts.vitals)
     w.eval(`window.PerformanceObserver=function(cb){this.observe=function(o){if(o.type!=='layout-shift')throw new Error('unsupported');};this.disconnect=function(){};};`);
+  if (opts.performanceTimeline) {
+    // Conformant subset: observe(buffered) enqueues historical records;
+    // takeRecords empties the queue, and callbacks deliver new records.
+    w.eval(`window.__observers=[];window.__history={'largest-contentful-paint':[{startTime:2400}]};
+      window.PerformanceObserver=function(cb){this.cb=cb;this.records=[];
+        this.observe=function(o){this.type=o.type;this.active=true;__observers.push(this);
+          if(o.buffered)this.records=(__history[o.type]||[]).slice();};
+        this.takeRecords=function(){return this.records.splice(0);};
+        this.disconnect=function(){this.active=false;this.records=[];};};
+      window.__perf=function(type,entries,pending){__history[type]=(__history[type]||[]).concat(entries);
+        __observers.filter(o=>o.active&&o.type===type).forEach(o=>{
+          if(pending)o.records.push(...entries);else o.cb({getEntries:()=>entries});});};`);
+  }
   if (opts.blockLocalStorage)
     w.eval(`Object.defineProperty(window,'localStorage',{get(){throw new Error('blocked');}});`);
   if (opts.mockClock)
     w.eval(`window.__NOW=1000000;Date.now=function(){return window.__NOW;};
-      window.__intervals=[];const o=window.setInterval;
-      window.setInterval=function(fn,ms){window.__intervals.push({fn,ms});return o(fn,1e9);};`);
+      window.__intervals=[];
+      window.setInterval=function(fn,ms){window.__intervals.push({fn,ms});return window.__intervals.length;};
+      window.__hidden=false;Object.defineProperty(document,'hidden',{get:()=>window.__hidden,configurable:true});
+      window.__visibility=function(hidden){__hidden=hidden;document.dispatchEvent(new Event('visibilitychange'));};
+      window.__advance=function(ms){__NOW+=ms;window.dispatchEvent(new Event('mousemove'));
+        __intervals.find(i=>i.ms===1000).fn();};`);
   return w;
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -149,6 +167,115 @@ async function suite(label, js) {
   w.eval(`window.dispatchEvent(new Event('pagehide'));`);
   await wait(80);
   ok(events(w).filter(e => e.name === 'web_vitals' && e.props.metric === 'CLS').length === 0, 'sans PerformanceObserver : aucun CLS (métrique Chromium-only, jamais un faux 0)');
+  w = makeDom({ mockClock: true, performanceTimeline: true });
+  w.eval(`PerformanceObserver.supportedEntryTypes=['largest-contentful-paint'];`);
+  w.eval(js);
+  w.eval(`window.dispatchEvent(new Event('pagehide'));`);
+  ok(events(w).filter(e => e.name === 'web_vitals' && e.props.metric === 'CLS').length === 0,
+    'observer présent mais layout-shift absent des types supportés : aucun faux CLS nul');
+  w.close();
+
+  // 7a : closing a route uses the route's original URL/campaign, including
+  // its sub-second active-time remainder. Neither History API call is async.
+  for (const method of ['pushState', 'replaceState']) {
+    w = makeDom({ mockClock: true, url: 'https://www.jplouton-avocat.fr/article-a?utm_source=source-a' });
+    w.eval(js);
+    w.eval(`__advance(7000);__NOW+=250;history.${method}({},'', '/article-b?utm_source=source-b');`);
+    ev = events(w);
+    const oldExit = ev.find(e => e.name === 'page_exit');
+    const oldTick = ev.find(e => e.name === 'engagement_tick');
+    const newView = ev.filter(e => e.name === 'pageview')[1];
+    ok(oldExit?.path === '/article-a' && oldExit.utm_source === 'source-a'
+      && new w.URL(oldExit.url).pathname === '/article-a'
+      && oldTick?.path === '/article-a' && oldTick.props.active_ms === 7250
+      && oldExit.props.duration_seconds === 7,
+      `${method} : sortie, URL, campagne et 7 250 ms restent sur A`);
+    ok(newView?.path === '/article-b' && newView.utm_source === 'source-b'
+      && ev.indexOf(oldExit) < ev.indexOf(newView),
+      `${method} : pageview B après la sortie A`);
+    w.document.getElementById('tel').click();
+    ok(events(w).find(e => e.name === 'cta_phone_click')?.path === '/article-b',
+      `${method} : clic immédiat après navigation attribué à B`);
+    w.close();
+  }
+
+  w = makeDom({ mockClock: true });
+  w.eval(js);
+  w.eval(`history.pushState({},'', '/b');history.pushState({},'', '/c');`);
+  ok(events(w).filter(e => e.name === 'pageview').map(e => e.path).join(',') === '/article-test,/b,/c',
+    'SPA : deux navigations dans la même tâche conservent la route intermédiaire');
+  w.eval(`__advance(3000);history.back();`);
+  await wait(80);
+  ev = events(w);
+  ok(ev.filter(e => e.name === 'page_exit').at(-1)?.path === '/c'
+    && ev.filter(e => e.name === 'page_exit').at(-1)?.props.duration_seconds === 3
+    && ev.filter(e => e.name === 'pageview').at(-1)?.path === '/b',
+    'popstate réel : la sortie de C précède le nouveau pageview B');
+  const viewCount = ev.filter(e => e.name === 'pageview').length;
+  w.eval(`history.replaceState({},'', '/b/?x=1#section');window.dispatchEvent(new PopStateEvent('popstate'));`);
+  ok(events(w).filter(e => e.name === 'pageview').length === viewCount,
+    'SPA : hash, query et slash final ne créent pas de fausse page');
+  w.close();
+
+  w = makeDom({ mockClock: true });
+  w.eval(js);
+  w.eval(`__NOW+=31*60*1000;history.pushState({},'', '/b');`);
+  ok(events(w).filter(e => e.name === 'pageview').map(e => e.path).join(',') === '/article-test,/b',
+    'SPA : ré-exposer un sid expiré pendant la sortie ne duplique pas B');
+  w.close();
+
+  // 7b : fractional time before hiding is kept; hidden/bfcache time is
+  // excluded and duplicate lifecycle notifications do not add another exit.
+  w = makeDom({ mockClock: true });
+  w.eval(js);
+  w.eval(`__advance(7000);__NOW+=250;__visibility(true);
+    window.dispatchEvent(new Event('pagehide'));__NOW+=120000;
+    __visibility(false);__advance(5000);__visibility(true);`);
+  ev = events(w);
+  ok(ev.filter(e => e.name === 'page_exit').map(e => e.props.duration_seconds).join(',') === '7,12'
+    && ev.filter(e => e.name === 'engagement_tick').reduce((sum,e)=>sum+e.props.active_ms,0) === 12250,
+    'hide/resume : 12 250 ms visibles conservées, 120 s cachées exclues, sorties non doublées');
+  w.eval(`__NOW+=60000;__hidden=false;window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));
+    __advance(2000);window.dispatchEvent(new Event('pagehide'));`);
+  ok(events(w).filter(e => e.name === 'page_exit').at(-1)?.props.duration_seconds === 14,
+    'bfcache : reprise du document sans compter le temps figé');
+  w.close();
+
+  // 7c : one document/metric can be revised, not counted twice by SQL.
+  // Pending observer records must be drained before the first hide.
+  w = makeDom({ mockClock: true, performanceTimeline: true });
+  w.eval(js);
+  w.eval(`__perf('layout-shift',[{hadRecentInput:false,startTime:100,value:0.1}],true);
+    __perf('event',[{duration:100}],true);__visibility(true);__visibility(false);
+    __perf('layout-shift',[{hadRecentInput:false,startTime:200,value:0.3}]);
+    __perf('event',[{duration:200}]);__visibility(true);__visibility(false);__visibility(true);`);
+  const revised = events(w).filter(e => e.name === 'web_vitals');
+  const revisedCls = revised.filter(e => e.props.metric === 'CLS');
+  ok(revisedCls.map(e => e.props.value).join(',') === '0.1,0.4'
+    && revised.filter(e => e.props.metric === 'INP').map(e => e.props.value).join(',') === '100,200',
+    'CWV : records en attente drainés puis valeurs CLS/INP révisées après reprise');
+  ok(new Set(revised.map(e => e.props.measurement_id)).size === 1
+    && /^[a-z0-9]+$/.test(revised[0]?.props.measurement_id || '')
+    && revised.every((e,i) => e.props.scope === 'document' && e.props.revision > (revised[i-1]?.props.revision || 0)),
+    'CWV : même measurement_id document, révision croissante, aucune réémission inchangée');
+  w.close();
+
+  // 7d : SPA neither re-attaches observers nor reattributes the initial
+  // document LCP/CLS to B. A bfcache restore retains this document identity.
+  w = makeDom({ mockClock: true, performanceTimeline: true });
+  w.eval(js);
+  w.eval(`history.pushState({},'', '/b');__perf('layout-shift',[{hadRecentInput:false,startTime:300,value:0.2}]);
+    window.dispatchEvent(new Event('pagehide'));`);
+  const docVitals = events(w).filter(e => e.name === 'web_vitals');
+  ok(w.__observers.length === 3 && docVitals.every(e => e.path === '/article-test')
+    && docVitals.filter(e => e.props.metric === 'LCP').length === 1,
+    'CWV SPA : un seul observer par type, ancien LCP jamais rejoué sur B');
+  const beforeRestore = docVitals.length;
+  w.eval(`window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));
+    window.dispatchEvent(new Event('pagehide'));`);
+  ok(events(w).filter(e => e.name === 'web_vitals').length === beforeRestore,
+    'CWV bfcache : pas de nouvel échantillon pour une valeur document inchangée');
+  w.close();
 }
 
 (async () => {

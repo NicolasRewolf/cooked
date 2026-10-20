@@ -4,6 +4,14 @@ Score de santé 0-100 par page, calculé sur 28 jours glissants. Croise GSC
 (capture) et Cooked (rétention, lecture, conversion), avec momentum relatif
 au site et gate technique LCP.
 
+> **Correctif SQL appliqué le 20/10/2026 : définition 2.2.6.** Le badge
+> `convertit` est réservé aux contacts macro organiques directs ou assistés.
+> Le score conserve le poids 0,25 des intentions de rendez-vous, mais les
+> bookings sont explicitement bornés à la fenêtre canonique du score.
+> Les CWV révisés sont dédupliqués par document et métrique avant le gate.
+> Code SQL appliqué, nouveau tracker et premier snapshot restent des preuves
+> distinctes : état vérifié dans [RELIABILITY.md](RELIABILITY.md).
+
 > **Fenêtres (depuis le 03/09/2026, ticket T-05 de la mission du 02/09)** —
 > une seule fenêtre pour tout le score : **28 jours calendaires clos à
 > `gsc_last_data_day()`** (le dernier jour livré par Google, lag J-3/J-4).
@@ -20,6 +28,10 @@ au site et gate technique LCP.
 > fenêtre du score — et le CPI n'a **plus aucune borne d'horloge**. Invariant :
 > contract-test `cpi_sans_horloge` (0 borne d'horloge dans le corps de
 > `cooked_page_index`).
+
+Les bornes calendaires sont alignées par libellé, pas par heure absolue :
+GSC définit ses jours en heure du Pacifique ; les événements Cooked en heure
+de Paris. L'écart de fuseau doit rester explicite dans une analyse journalière.
 
 > **v2.2 (16/06/2026)** — deux raffinements adoptés après revue mathématique
 > externe (corr 0,9855 avec v2.1, aucun verdict fiable A/B déplacé de ≥5 pts) :
@@ -44,7 +56,7 @@ FROM cooked_page_index(28)
 WHERE grade IN ('S','A','B') AND cpi < 35 ORDER BY n_org DESC;
 
 -- Trajectoire d'une page (snapshot quotidien, cron 07:30 UTC)
-SELECT day, cpi, zc, zv, momentum FROM cpi_daily
+SELECT day, cpi, cpi_version, zc, zv, momentum FROM cpi_daily
 WHERE path = '/post/...' ORDER BY day;
 
 -- La dérivée ~7j : qui chute, qui monte, qui disparaît (Sprint 38)
@@ -78,6 +90,9 @@ voir la requête ci-dessus. Elle ne recalcule rien : elle relit le dernier
 `cpi_daily`. Une **opportunité de contact** (potentiel haut + ne convertit
 pas) = les pages où agir, à croiser avec l'intention du sujet
 (indemnisation > pénal éducatif).
+Une intention seule ne suffit pas au badge. La fiche ne relie pas deux
+versions du score : elle présente seulement la dernière séquence consécutive
+de la définition courante et masque un historique sans version exploitable.
 
 ## Grille de lecture
 
@@ -286,6 +301,11 @@ versionnée dans `cooked_config.cpi_definition_version`, écrite par
 | 2.2.3 | 25/07 → 26/07 | momentum sur `gsc_query_page_daily` non brandé ; badge `convertit` |
 | 2.2.4 | 27/07 → 02/09 | `classify_channel` v3 : GMB hors `organic_google` |
 | 2.2.5 | 03/09 → | fenêtres closes à `gsc_last_data_day()` (T-05), momentum sur `gsc_path_daily` (T-06), zv sur la fenêtre du score (T-09) |
+| 2.2.6 | Migration appliquée le 20/10/2026 ; premier snapshot à vérifier | Badge macro distinct des intentions, application de la fenêtre aux bookings, dernière révision CWV par document/métrique. Poids du modèle et fenêtre canonique conservés. |
+
+L'annotation de la migration du 20/10 décrit la rupture. Les anciens
+snapshots gardent leur version ; le correctif de sortie SPA affecte les
+nouveaux événements et ne reconstruit pas l'historique brut.
 
 **Invariant I10** : toute migration qui restate le CPI **bumpe la clé et pose
 l'annotation** dans la même migration. Deux lignes de `cpi_daily` de versions

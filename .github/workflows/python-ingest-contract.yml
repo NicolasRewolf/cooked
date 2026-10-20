@@ -38,11 +38,13 @@ jobs:
         run: |
           python3 -m pytest \
             tests/test_gsc_common.py \
+            tests/test_gsc_batch.py \
             tests/test_dfs_common.py \
             tests/test_cooked_store.py \
             tests/test_wix_taxonomy_sync.py \
             tests/test_secib_ingest.py \
             tests/test_wix_forms_import.py \
+            tests/test_wix_forms_reconcile.py \
             tests/test_gbp_ingest.py \
             -q
       - name: I12 — vecteurs de normalisation (Python ; SQL dans prod-drift)

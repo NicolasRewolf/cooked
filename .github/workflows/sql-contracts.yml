@@ -14,6 +14,7 @@ on:
       - 'supabase/migrations/**'
       - 'supabase/rpcs.sql'
       - 'contracts/rpc_snapshot_meta.json'
+      - 'tests/sql/**'
       - 'scripts/check_migration_paris_date.py'
       - 'scripts/check_rpcs_sql_fresh.py'
       - 'scripts/check_schema_migrations.py'
@@ -27,6 +28,20 @@ on:
       - 'scripts/check_rpcs_sql_fresh.py'
 
 jobs:
+  postgres-behavior:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/sql/package-lock.json
+      - run: npm ci
+        working-directory: tests/sql
+      - run: npm test
+        working-directory: tests/sql
+
   paris-date-contract:
     runs-on: ubuntu-latest
     steps:

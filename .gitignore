@@ -56,3 +56,5 @@ node_modules/
 # node_modules/ et .env.local restent ignorés.
 !dashboard/package.json
 !dashboard/package-lock.json
+!tests/sql/package.json
+!tests/sql/package-lock.json

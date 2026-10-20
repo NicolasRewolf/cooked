@@ -13,13 +13,13 @@ import type { ResourceRow } from "@/lib/types";
 const row = (partial: Partial<ResourceRow>): ResourceRow => partial as ResourceRow;
 
 describe("ctrColumn.sortValue", () => {
-  it("trie par écart CTR réel − attendu", () => {
-    expect(ctrColumn.sortValue!(row({ gsc_ctr_pct: 3, ctr_expected: 5 }))).toBe(-2);
-    expect(ctrColumn.sortValue!(row({ gsc_ctr_pct: 8, ctr_expected: 5 }))).toBe(3);
+  it("trie par CTR observé indépendamment d'une attente non standardisée", () => {
+    expect(ctrColumn.sortValue!(row({ gsc_ctr_pct: 3, ctr_expected: 5 }))).toBe(3);
+    expect(ctrColumn.sortValue!(row({ gsc_ctr_pct: 8, ctr_expected: 50 }))).toBe(8);
   });
-  it("null si l'un des deux manque (nulls last dans SortableTable)", () => {
+  it("null uniquement quand le CTR observé manque", () => {
     expect(ctrColumn.sortValue!(row({ gsc_ctr_pct: null, ctr_expected: 5 }))).toBeNull();
-    expect(ctrColumn.sortValue!(row({ gsc_ctr_pct: 3, ctr_expected: null }))).toBeNull();
+    expect(ctrColumn.sortValue!(row({ gsc_ctr_pct: 3, ctr_expected: null }))).toBe(3);
   });
 });
 
@@ -60,11 +60,12 @@ describe("totaux de pied de tableau", () => {
     expect(aggregateCtrPct([])).toBeNull();
   });
 
-  it("les colonnes qui NE totalisent pas restent sans total (position, lecture)", () => {
+  it("les mesures non additives restent sans total (position, lecture, visiteurs)", () => {
     // Garde-fou : une position moyenne inter-pages est le piège n°2 du playbook,
     // une médiane de médianes n'est pas une médiane. Ne pas « compléter » le pied.
     expect(positionColumn.total).toBeUndefined();
     expect(dwellColumn("x").total).toBeUndefined();
+    expect(visitorsColumn.total).toBeUndefined();
   });
 });
 

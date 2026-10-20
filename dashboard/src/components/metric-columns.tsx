@@ -38,21 +38,12 @@ export function HealthCell({ r }: { r: ResourceRow }) {
   );
 }
 
-// ── CTR réel vs CTR attendu à la position (courbe du site) ────────────────────
-// Démasque un bon classement qui ne ramène pas de clics (titre / méta à revoir).
+// CTR observé uniquement : une courbe appliquée à la position moyenne ne
+// constitue pas une attente valide pour un mélange de requêtes.
 export function CtrCell({ r }: { r: ResourceRow }) {
   if (r.gsc_ctr_pct == null) return <span className="text-dim">—</span>;
-  const exp = r.ctr_expected;
-  let cls = "text-ink-2";
-  if (exp != null) {
-    if (r.gsc_ctr_pct >= exp) cls = "text-up";
-    else if (r.gsc_ctr_pct < exp * 0.7) cls = "text-alert";
-  }
   return (
-    <span className="whitespace-nowrap">
-      <span className={cn("font-mono text-[11.5px] font-medium", cls)}>{pct(r.gsc_ctr_pct)}</span>
-      {exp != null && <span className="font-mono text-[9.5px] text-dim"> / {pct(exp, 0)}</span>}
-    </span>
+    <span className="whitespace-nowrap font-mono text-[11.5px] font-medium text-ink-2">{pct(r.gsc_ctr_pct)}</span>
   );
 }
 
@@ -64,6 +55,7 @@ export function CtrCell({ r }: { r: ResourceRow }) {
 //  · position — une position moyenne inter-pages est le piège n°2 du playbook
 //    (pondérée impressions, elle mélange des requêtes sans rapport) ;
 //  · lecture — une médiane de médianes n'est pas une médiane.
+//  · visiteurs — une personne peut visiter plusieurs pages.
 // Le CTR, lui, s'agrège correctement : Σ clics / Σ impressions.
 /** Somme d'un champ sur les lignes visibles (null / undefined comptent pour 0). */
 export function sumBy(
@@ -105,8 +97,8 @@ export const visitorsColumn: Column<ResourceRow> = {
   key: "visitors",
   header: "visiteurs",
   align: "right",
+  headerInfo: "Visiteurs uniques de chaque page. Ils ne s'additionnent pas entre pages : le distinct du périmètre complet figure dans le KPI supérieur.",
   sortValue: (r) => r.unique_visitors,
-  total: (rows) => <Total>{num(sum(rows, (r) => r.unique_visitors))}</Total>,
   render: (r) => (
     <div className="flex flex-col items-end leading-tight">
       <span className="font-mono text-[12.5px] font-medium text-ink">{num(r.unique_visitors)}</span>
@@ -144,13 +136,12 @@ export const gscClicksColumn: Column<ResourceRow> = {
 
 export const ctrColumn: Column<ResourceRow> = {
   key: "ctr",
-  header: "ctr / att.",
+  header: "ctr",
   align: "right",
-  subHeader: "réel / attendu",
+  subHeader: "observé",
   headerInfo:
-    "CTR réel vs CTR attendu à cette position (courbe de clics du site). En orange : bien classé mais peu cliqué → titre et méta-description à retravailler.",
-  sortValue: (r) =>
-    r.gsc_ctr_pct != null && r.ctr_expected != null ? r.gsc_ctr_pct - r.ctr_expected : null,
+    "Clics Google / impressions Google. Ce taux décrit les requêtes observées ; il ne suffit pas à conclure qu'un titre ou une méta-description doit changer.",
+  sortValue: (r) => r.gsc_ctr_pct,
   render: (r) => <CtrCell r={r} />,
   total: (rows) => {
     const ctr = aggregateCtrPct(rows);
@@ -193,7 +184,7 @@ export const contactsColumn: Column<ResourceRow> = {
   align: "right",
   subHeader: "sur la page",
   headerInfo:
-    "Appels ou formulaires effectués PENDANT la visite de cette page. C'est l'endroit du geste qui reçoit le crédit.",
+    "Clics sur un lien téléphone ou formulaires hors recrutement, attribués à la page du geste. Un clic téléphone ne confirme pas un appel abouti.",
   sortValue: (r) => r.contacts,
   total: (rows) => <Total>{num(sum(rows, (r) => r.contacts))}</Total>,
   render: (r) => (
