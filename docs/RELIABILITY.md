@@ -6,18 +6,21 @@ données reçues sont trois preuves distinctes.
 
 ## État de livraison
 
-| Composant | Source | État vérifié le 20/10/2026, après livraison SQL/Edge/Wix |
+| Composant | Source | État vérifié le 20/10/2026, après livraison et recalcul |
 |---|---|---|
 | Tracker Wix | `sprint43`, tests source et minifié ; contexte SPA et CWV document | Custom Code enregistré à 11:50 Paris ; HTML public vérifié identique au minifié, avec et sans cache ; événements sprint43 reçus en production |
 | Edge track | v31, classement iPhone/iPad iOS corrigé | Déployé à 11:49 Paris, Supabase 41 ACTIVE |
 | Edge form-webhook | v16, livraison idempotente et diagnostics sans identité | Déployé à 11:49 Paris, Supabase 25 ACTIVE |
-| SQL / CPI | Migration `20261020094908`, définition CPI 2.2.6 | Migration appliquée et miroirs régénérés ; nouveaux snapshots encore à vérifier |
-| Dashboard | Diagnostics et agrégats corrigés, dépendances mises à niveau | Nouvelle version servie à vérifier |
-| GSC | Ingestion `all`, protocole begin/complete/fail | Lot des trois tables clôturé à 11:55 Paris ; recalcul aval en cours |
-| Rapprochement Wix | Workflow quotidien, agrégats sur 28 jours Paris clos | Permission Forms et premier run à vérifier |
+| SQL / CPI | Migration `20261020094908`, définition CPI 2.2.6 | Migration appliquée et miroirs régénérés ; snapshots du 20/10 en 2.2.6, recalcul complet terminé à 13:25 Paris |
+| Dashboard | Diagnostics et agrégats corrigés, dépendances mises à niveau | PR #152 fusionnée ; Vercel READY sur `2ac95ad`, servi sur data.rewolf.studio ; navigation et redirections contrôlées |
+| GSC | Ingestion `all`, protocole begin/complete/fail | Lot des trois tables clôturé à 11:55 Paris ; cinq étapes aval réussies, aucun lot en attente de refresh |
+| Rapprochement Wix | Workflow quotidien, agrégats sur 28 jours Paris clos | Premier run réussi sur les 28 jours du 22/09 au 19/10 ; permission Forms et égalité des comptes vérifiées |
 
 Mettre à jour cette table uniquement avec une preuve correspondante.
 L'absence d'erreur locale ne suffit pas à marquer une ligne « déployée ».
+Preuves publiques : [PR #152](https://github.com/NicolasRewolf/cooked/pull/152)
+et [rapprochement Wix](https://github.com/NicolasRewolf/cooked/actions/runs/39414716394).
+La CI de la PR a aussi validé le miroir SQL et les contrats RPC contre la production.
 
 Le 20/10, le HTML canonique public contenait le script exact de 14 460 caractères
 (SHA-256 `3296d3bb0f759a9898b4ce672ef61cdf986eddf4e4a624b23a2eab35eeb60a40`).
@@ -91,6 +94,10 @@ continuité de la période manquante. Des données périmées ne sont pas des z�
 l’appel Performance confirme un quota projet égal à zéro : Google doit approuver
 l’accès API de base du projet appelant. Le diagnostic distingue ce cas d’une
 expiration OAuth et ne recommande plus une réauthentification sans preuve.
+La migration `20261020112802` aligne aussi les conseils du registre de fraîcheur :
+quota nul et authentification ont des remèdes distincts ; la reprise GSC doit
+porter sur les trois tables et être suivie du refresh complet. La demande Google
+d'accès API de base reste à envoyer ; aucun rattrapage GBP n'est confirmé.
 
 **Taxonomie et alertes.** Une page sans catégorie nécessite une vérification
 du chemin, d'une éventuelle redirection et de la source Wix. Le contrôle du
