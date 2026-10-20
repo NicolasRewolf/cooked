@@ -1,5 +1,9 @@
 <!--
-  COOKED — first-party SEO tracker (cookieless, RGPD-exempt)
+  COOKED — first-party SEO tracker (cookieless)
+  Version: sprint43 (20/10/2026) — contexte URL figé par route pour finir A
+    avant B ; CWV au grain document, sans rejouer les buffers sur les routes
+    SPA. Les valeurs révisées après reprise portent measurement_id + revision :
+    les lecteurs SQL gardent une seule observation finale par document/métrique.
   Version: sprint42 (04/09/2026, mission T-17) — CLS explicite : un chargement
     sans layout shift émet CLS = 0 quand l'observer est attaché (Chromium) ;
     CLS arrondi à 3 décimales. Aucun autre changement de comportement.
@@ -88,7 +92,7 @@
   // version label never appears after a Wix republish, the paste
   // failed or was truncated. Bump this string on every meaningful
   // tracker change.
-  var COOKED_VERSION       = 'sprint42';
+  var COOKED_VERSION       = 'sprint43';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -150,9 +154,9 @@
   // directly if it looks valid; otherwise it falls back to the IP hash
   // (backward-compat for old events already stored).
   //
-  // Privacy: a random UUID is not personal data and is RGPD-exempt —
-  // it cannot be linked to an individual without additional context.
-  // This is the same approach used by Plausible, Fathom, and Pirsch.
+  // Privacy: identifiant pseudonyme persistant, pas une preuve d'anonymat
+  // ni d'exemption de consentement. Le rapprochement CRM et la durée de
+  // conservation doivent être pris en compte (voir SECURITY.md).
   // ==============================================================
   // Sprint 25 — closure cache. Without it, when localStorage is blocked
   // (Safari ITP strict, Firefox private "strict", privacy extensions —
@@ -345,9 +349,9 @@
     }
   }
 
-  function parseQuery() {
+  function parseQuery(search) {
     var out = {};
-    var q = location.search.replace(/^\?/, '');
+    var q = search.replace(/^\?/, '');
     if (!q) return out;
     q.split('&').forEach(function (kv) {
       var i = kv.indexOf('=');
@@ -359,14 +363,18 @@
     return out;
   }
 
-  function basePayload() {
-    var qp = parseQuery();
+  // History change already updated location when onPMC runs (including
+  // popstate). Keep the route's URL object until its final events are queued.
+  var pageURL = new URL(location.href);
+  var docURL = pageURL;
+  function basePayload(context) {
+    var u = context || pageURL;
+    var qp = parseQuery(u.search);
     return {
       anonymous_id:     getAnonymousId(),
       session_id:       getSessionId(),
-      url:              location.href,
-      path:             location.pathname || '/',
-      title:            document.title || null,
+      url:              u.href,
+      path:             u.pathname || '/',
       referrer:         document.referrer || null,
       utm_source:       qp.utm_source   || null,
       utm_medium:       qp.utm_medium   || null,
@@ -435,8 +443,8 @@
     }
   }
 
-  function send(name, props) {
-    var p = basePayload();
+  function send(name, props, context) {
+    var p = basePayload(context);
     p.name  = name;
     p.props = props || {};
     p.props._v = COOKED_VERSION; // Sprint 26 — version stamp for monitoring
@@ -471,6 +479,9 @@
   function onPMC() {
     var newPath = normPC(location.pathname);
     if (newPath !== currentPath) {
+      // Set only the dedup key first: exposeIds may replaceState while
+      // flushing a rotated session. Re-entrant onPMC must not restart it.
+      currentPath = newPath;
       // Flush previous page's exit data first
       flushExit();
       // Sprint 30 — reset exitSent so the new SPA page can emit its own
@@ -479,21 +490,14 @@
       // and after pushState `exitSent` stayed true → page 2's exit was
       // silently dropped on tab close.
       exitSent = false;
-      currentPath = newPath;
+      pageURL = new URL(location.href);
       // Reset per-page state
+      clearTimeout(scrollTimer);
       scrollHits = { 25: false, 50: false, 75: false, 100: false };
       maxScroll  = 0;
-      pageStart     = performance.now();
       activeMs      = 0;
       totAMs = 0;
-      lastTick      = Date.now();
-      vitals.lcp = 0; vitals.cls = 0; vitals.inp = 0; vitals.ttfb = 0;
-      vitEm = { LCP: false, CLS: false, INP: false, TTFB: false };
-      // Sprint 30 — disconnect & reattach PerformanceObservers so LCP/CLS
-      // from page N don't leak into page N+1 (observers keep firing on
-      // detached document otherwise). See attachVO() below.
-      try { discVO(); } catch (e) {}
-      try { attachVO(); } catch (e) {}
+      lastTick = lastActivity = Date.now();
       emitPageview();
       // Sprint 38 — ré-expose les ids sur la nouvelle URL (la nav SPA
       // remplace la query). Pas de boucle : le replaceState interne
@@ -512,7 +516,7 @@
       exitSent      = false;
       lastTick      = Date.now();     // bfcache pause invisible
       lastActivity  = Date.now();
-      pageStart     = performance.now();
+      visible = !document.hidden;
     }
   });
 
@@ -522,7 +526,9 @@
     if (typeof orig !== 'function') return;
     history[m] = function () {
       var ret = orig.apply(this, arguments);
-      setTimeout(onPMC, 0);
+      // Synchronous: two route changes in one task must not erase the
+      // intermediate page or let its first click inherit the previous URL.
+      onPMC();
       return ret;
     };
   });
@@ -570,27 +576,22 @@
   var lastTick      = Date.now();
   var activeMs      = 0;
   var totAMs = 0;
-  var pageStart     = performance.now();
+  var visible = !document.hidden;
 
   ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (ev) {
     window.addEventListener(ev, function () { lastActivity = Date.now(); }, { passive: true });
   });
 
-  document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) {
-      lastActivity = Date.now();
-      lastTick     = Date.now();
-    }
-  });
-
-  setInterval(function () {
+  function tickTime() {
     var now = Date.now();
-    if (!document.hidden && (now - lastActivity) < IDLE_THRESHOLD_MS) {
-      activeMs      += (now - lastTick);
-      totAMs += (now - lastTick);
+    if (visible) {
+      var delta = Math.max(0, Math.min(now, lastActivity + IDLE_THRESHOLD_MS) - lastTick);
+      activeMs += delta;
+      totAMs += delta;
     }
     lastTick = now;
-  }, 1000);
+  }
+  setInterval(tickTime, 1000);
 
   setInterval(function () {
     if (activeMs > 0) {
@@ -952,56 +953,58 @@
   });
 
   // ==============================================================
-  // 5. Core Web Vitals — LCP, CLS, INP, TTFB (p75 in SQL views)
+  // 5. Core Web Vitals — one document, attributed to its initial route.
+  // SPA routes are not new Performance Timelines. Observers remain attached;
+  // their buffered records are consumed once, never replayed for another path.
+  // A hidden tab can resume, so emit changed values with a stable document ID.
+  // SQL MUST select the last revision per measurement_id + metric before p75.
+  // bfcache keeps the same document/measurement; it creates no extra sample.
   // ==============================================================
-  var vitals         = { lcp: 0, cls: 0, inp: 0, ttfb: 0 };
-  var vitEm  = { LCP: false, CLS: false, INP: false, TTFB: false };
+  var vitals         = { lcp: 0, cls: 0, inp: 0 };
+  var vitEm = {}, docId = rid(), revision = 0;
 
   function emitVital(metric, value) {
-    if (vitEm[metric]) return;
-    vitEm[metric] = true;
     // sprint42 — CLS à 3 décimales (seuil « bon » 0,1 : 0,01 = 1/10 du seuil)
     var k = metric === 'CLS' ? 1000 : 100;
-    send('web_vitals', { metric: metric, value: Math.round(value * k) / k });
+    value = Math.round(value * k) / k;
+    if (vitEm[metric] === value) return;
+    vitEm[metric] = value;
+    send('web_vitals', { metric: metric, value: value, measurement_id: docId,
+      revision: ++revision, scope: 'document' }, docURL);
   }
 
   // TTFB (one-shot, not observer-based)
   try {
     var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
     if (nav && nav.responseStart > 0) {
-      vitals.ttfb = nav.responseStart;
-      emitVital('TTFB', vitals.ttfb);
+      emitVital('TTFB', nav.responseStart);
     }
   } catch (e) {}
 
-  // Sprint 30 — wrap LCP / CLS / INP observers in (re)attachable helpers
-  // so they can be disconnected on SPA navigation. Previously the
-  // observers stayed attached to the detached document and continued
-  // writing into the new page's `vitals` object, leaking metrics from
-  // page N into page N+1. See onPMC() above.
-  var lcpObs = null, clsObs = null, inpObs = null;
+  // Drain pending entries before a lifecycle flush: an observer callback
+  // queued after visibilitychange might never run before the tab is frozen.
+  var observers = [];
+  function observe(type, receive) {
+    try {
+      var types = PerformanceObserver.supportedEntryTypes;
+      if (types && types.indexOf(type) < 0) return false;
+      var observer = new PerformanceObserver(function (list) { receive(list.getEntries()); });
+      observer.observe({ type: type, buffered: true, durationThreshold: 40 });
+      observers.push({ observer: observer, receive: receive });
+      return true;
+    } catch (e) { return false; }
+  }
   var clsSV   = 0;
   var clsSE = [];
   var clsOn = false; // sprint42 — observer layout-shift attaché : un CLS nul est un vrai 0
 
-  function attachVO() {
-    if (typeof PerformanceObserver === 'undefined') return;
+  if (typeof PerformanceObserver !== 'undefined') {
+    observe('largest-contentful-paint', function (entries) {
+      if (entries.length) vitals.lcp = entries[entries.length - 1].startTime;
+    });
 
-    // LCP
-    try {
-      lcpObs = new PerformanceObserver(function (list) {
-        var entries = list.getEntries();
-        if (entries.length) vitals.lcp = entries[entries.length - 1].startTime;
-      });
-      lcpObs.observe({ type: 'largest-contentful-paint', buffered: true });
-    } catch (e) {}
-
-    // CLS — reset session-window state each (re)attach
-    clsSV   = 0;
-    clsSE = [];
-    try {
-      clsObs = new PerformanceObserver(function (list) {
-        list.getEntries().forEach(function (entry) {
+    clsOn = observe('layout-shift', function (entries) {
+        entries.forEach(function (entry) {
           if (entry.hadRecentInput) return;
           var first = clsSE[0];
           var last  = clsSE[clsSE.length - 1];
@@ -1018,35 +1021,22 @@
           }
           if (clsSV > vitals.cls) vitals.cls = clsSV;
         });
-      });
-      clsObs.observe({ type: 'layout-shift', buffered: true });
-      clsOn = true;
-    } catch (e) {}
+    });
 
     // INP — Sprint 30 : durationThreshold raised from 16 to 40 (spec).
     // At 16 the observer silently returned nothing on most engines, so
     // we were emitting LCP/CLS but not INP for the vast majority of pages.
-    try {
-      inpObs = new PerformanceObserver(function (list) {
-        list.getEntries().forEach(function (entry) {
+    observe('event', function (entries) {
+        entries.forEach(function (entry) {
           if (entry.duration > vitals.inp) vitals.inp = entry.duration;
         });
-      });
-      inpObs.observe({ type: 'event', buffered: true, durationThreshold: 40 });
-    } catch (e) {}
+    });
   }
-
-  function discVO() {
-    try { lcpObs && lcpObs.disconnect(); } catch (e) {}
-    try { clsObs && clsObs.disconnect(); } catch (e) {}
-    try { inpObs && inpObs.disconnect(); } catch (e) {}
-    lcpObs = clsObs = inpObs = null;
-  }
-
-  // Initial attach for the first page load.
-  attachVO();
 
   function flushVitals() {
+    observers.forEach(function (o) {
+      try { o.receive(o.observer.takeRecords()); } catch (e) {}
+    });
     if (vitals.lcp)  emitVital('LCP', vitals.lcp);
     // sprint42 (T-17, a-03) — un chargement sans layout shift émet CLS = 0
     // (avant : « absent » et « zéro » indiscernables, p75 Chrome surestimé de 33 %).
@@ -1063,17 +1053,13 @@
     if (exitSent) return;
     exitSent = true;
 
+    tickTime();
     if (activeMs > 0) {
       send('engagement_tick', { active_ms: activeMs });
       activeMs = 0;
     }
     flushVitals();
 
-    var now2 = Date.now();
-    if (!document.hidden && (now2 - lastActivity) < IDLE_THRESHOLD_MS) {
-      totAMs += (now2 - lastTick);
-    }
-    lastTick = now2; // Sprint 37 — évite le double comptage du résiduel
     var duration = Math.round(totAMs / 1000);
     send('page_exit', {
       duration_seconds: duration,
@@ -1082,20 +1068,24 @@
     flushQ(); // Sprint 37 — vider la file avant la mort de la page
   }
 
-  function resetExitFlag() { exitSent = false; }
-  window.addEventListener('popstate', resetExitFlag);
-
   window.addEventListener('pagehide',    flushExit);
   window.addEventListener('beforeunload', flushExit);
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) flushExit();
+    if (document.hidden) {
+      flushExit();
+      visible = false;
+    }
     // T-14 (sprint40) — ré-arme page_exit au retour d'onglet : sinon un visiteur
     // qui masque puis revient lire n'émet JAMAIS de page_exit final (dwell/scroll
     // figés au 1er masquage, ~10-13 % des pages engagées sous-comptées). totAMs
     // continue → le page_exit final portera le dwell TOTAL. Corollaire SQL :
     // max(duration) par session×path côté lecture (une session peut émettre
     // plusieurs page_exit à durées croissantes).
-    else exitSent = false;
+    else {
+      exitSent = false;
+      visible = true;
+      lastTick = lastActivity = Date.now();
+    }
   });
 
   // ==============================================================

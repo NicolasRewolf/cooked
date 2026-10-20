@@ -43,7 +43,7 @@ const columns: Column<QueryRow>[] = [
     header: "vol. / mois",
     align: "right",
     headerInfo:
-      "Volume de recherche mensuel France (DataForSEO). n.d. = requête trop rare pour être répertoriée.",
+      "Estimation du volume mensuel en France (DataForSEO), pas un gain de clics accessible à l'article. n.d. = volume indisponible.",
     sortValue: (r) => r.volume_fr,
     render: (r) => (
       <span className="font-mono text-[11px] text-faint">

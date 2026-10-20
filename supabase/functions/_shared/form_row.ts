@@ -77,9 +77,7 @@ export function resolvePageSource(raw: string | null): {
   try {
     const u = new URL(raw, "https://www.jplouton-avocat.fr");
     if (!ALLOWED_PAGE_SOURCE_HOSTS.has(u.hostname)) {
-      console.warn(
-        `[form-webhook] page_source hostname rejected: ${u.hostname}`,
-      );
+      console.warn("[form-webhook] page_source hostname rejected");
       return { url: raw, path: null, hostname: null };
     }
     // T-18 (b-06) : même canonicalisation que le tracker et le SQL (decode → NFC → slash),
@@ -174,14 +172,7 @@ export function buildFormSubmitRow(
   );
   const countsAsMacro = !isRecruitmentObjet(objetDeMaDemande);
   if (!objetDeMaDemande) {
-    const fieldKeys = Object.keys((d ?? {}) as Record<string, unknown>).filter(
-      (k) => k.toLowerCase().startsWith("field:"),
-    );
-    console.log(
-      `[form-webhook] objet_de_ma_demande absent — field:* keys=${
-        fieldKeys.join(",") || "(none)"
-      }`,
-    );
+    console.log("[form-webhook] objet_de_ma_demande absent");
   }
 
   const safePayloadMeta = stripPii(body);

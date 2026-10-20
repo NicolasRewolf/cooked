@@ -154,7 +154,7 @@ describe("buildResourcesView", () => {
     expect(view.items[0].series).toBe(trend.visitors_daily);
     expect(view.items[1].delta?.dir).toBe("flat"); // 950 vs 950
     expect(view.items[2].delta).toMatchObject({ dir: "na", label: "—" }); // prev = 0
-    expect(view.items[2].tooltip).toBe("Actions faites sur la page (appel ou formulaire).");
+    expect(view.items[2].tooltip).toContain("Un clic ne confirme pas un appel abouti");
     expect(view.items[3].delta?.dir).toBe("down"); // 320 vs 400
     expect(view.items[4].series).toBe(trend.gsc_impressions_daily);
   });
@@ -280,10 +280,10 @@ describe("buildSeoView", () => {
       ["Clics Google", "610"],
       ["Affichages Google", "999"],
       ["Requêtes connues", "180"],
-      ["Quick wins", "14"],
+      ["À examiner", "14"],
     ]);
     expect(view.items[0].hint).toBe("toutes requêtes · marque incluse");
-    expect(view.items[3].hint).toBe("position 5–15 · volume ≥ 100");
+    expect(view.items[3].hint).toBe("filtre position 5–15 · volume ≥ 100");
     expect(view.clicksPathTotalLabel).toBe("610");
     expect(view.clicksNamedNonbrandedLabel).toBe("260");
   });
@@ -291,6 +291,9 @@ describe("buildSeoView", () => {
   it("horloge en avance sur gsc_end ⇒ lag borné à 0", () => {
     const now = Date.parse("2026-07-04T10:00:00Z");
     expect(buildSeoView(seoKpis, now).lagDays).toBe(0);
+  });
+  it("calcule le jour courant à Paris, y compris avant minuit UTC", () => {
+    expect(buildSeoView(seoKpis, Date.parse("2026-07-07T22:15:00Z")).lagDays).toBe(3);
   });
 
   it("seo null ⇒ lag null et KPIs à zéro (rendu identique à l'existant)", () => {

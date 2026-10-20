@@ -1,0 +1,11 @@
+{
+  "name": "cooked-sql-contracts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node audit-integrity.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.10"
+  }
+}

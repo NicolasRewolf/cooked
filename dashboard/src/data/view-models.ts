@@ -6,6 +6,7 @@
 import type { KpiItem } from "@/components/KpiHeader";
 import { buildMarkers } from "@/lib/annotations";
 import { num, pct, delta } from "@/lib/format";
+import { dayDiff, parisTodayISO } from "@/lib/dates";
 import type {
   Annotation,
   AssistedRow,
@@ -58,7 +59,7 @@ export function buildResourcesView(input: {
           value: num(kpis.contacts_n),
           delta: delta(kpis.contacts_n, kpis.contacts_prev),
           series: trend?.contacts_daily,
-          tooltip: "Actions faites sur la page (appel ou formulaire).",
+          tooltip: "Clics sur un lien téléphone ou formulaires hors recrutement, sur les pages de ce périmètre. Un clic ne confirme pas un appel abouti.",
         },
         { label: "Clics Google", value: num(kpis.gsc_clicks_n), delta: delta(kpis.gsc_clicks_n, kpis.gsc_clicks_prev), series: trend?.gsc_clicks_daily },
         { label: "Affichages Google", value: num(kpis.gsc_impressions_n), delta: delta(kpis.gsc_impressions_n, kpis.gsc_impressions_prev), series: trend?.gsc_impressions_daily },
@@ -102,7 +103,7 @@ export function buildExpertisesView(input: {
           value: num(kpis.contacts_n),
           delta: delta(kpis.contacts_n, kpis.contacts_prev),
           series: trend?.contacts_daily,
-          tooltip: "Actions faites sur la page (appel ou formulaire).",
+          tooltip: "Clics sur un lien téléphone ou formulaires hors recrutement, sur les pages de ce périmètre. Un clic ne confirme pas un appel abouti.",
         },
         { label: "Clics Google", value: num(kpis.gsc_clicks_n), delta: delta(kpis.gsc_clicks_n, kpis.gsc_clicks_prev), series: trend?.gsc_clicks_daily },
         { label: "Affichages Google", value: num(kpis.gsc_impressions_n), delta: delta(kpis.gsc_impressions_n, kpis.gsc_impressions_prev), series: trend?.gsc_impressions_daily },
@@ -129,7 +130,7 @@ export interface SeoView {
  *  (Server Component rendu à la requête : heure courante lue une fois). */
 export function buildSeoView(seo: SeoKpis | null, now: number = Date.now()): SeoView {
   const lagDays = seo
-    ? Math.max(0, Math.floor((now - new Date(seo.gsc_end).getTime()) / 86_400_000))
+    ? Math.max(0, dayDiff(seo.gsc_end, parisTodayISO(new Date(now))))
     : null;
 
   // B2/B3 : total quick wins calculé SQL (indépendant du cap du tableau) ; 2 niveaux de clics distincts.
@@ -137,7 +138,7 @@ export function buildSeoView(seo: SeoKpis | null, now: number = Date.now()): Seo
     { label: "Clics Google", value: num(seo?.clicks_path_total ?? 0), hint: "toutes requêtes · marque incluse" },
     { label: "Affichages Google", value: num(seo?.impressions_path_total ?? 0), hint: "niveau page" },
     { label: "Requêtes connues", value: num(seo?.total_queries ?? 0), hint: "hors marque (fraction nommée par Google)" },
-    { label: "Quick wins", value: num(seo?.total_quick_wins ?? 0), hint: "position 5–15 · volume ≥ 100" },
+    { label: "À examiner", value: num(seo?.total_quick_wins ?? 0), hint: "filtre position 5–15 · volume ≥ 100", tooltip: "Filtre descriptif, sans validation de pertinence ni prédiction de gain." },
   ];
 
   return {

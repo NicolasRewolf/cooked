@@ -289,9 +289,10 @@ export const articleDetailSchema = z.object({
       clics_perdus: numNull,
       n_org: numNull,
       couv_gsc_pct: numNull,
+      cpi_version: z.string().nullish(),
     })
     .nullable(),
-  cpi_series: z.array(z.object({ d: isoDate, cpi: num })),
+  cpi_series: z.array(z.object({ d: isoDate, cpi: num, cpi_version: z.string().nullish() })),
   assisted: z.object({ n: num, prev: num }).nullable(),
   bounds: boundsSchema,
 });

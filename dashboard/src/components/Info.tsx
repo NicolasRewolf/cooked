@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 import { createPortal } from "react-dom";
 
 // M1 — explication visible à UN CLIC (tactile d'abord, pas au survol). Aucune lib
@@ -14,6 +14,7 @@ import { createPortal } from "react-dom";
 // (children = texte) : ce composant est client, rendu par un parent client
 // (SortableTable) ou serveur (KpiHeader) avec du texte, jamais une fonction.
 export function Info({ children }: { children: React.ReactNode }) {
+  const tooltipId = useId();
   const [open, setOpen] = useState(false);
   const [style, setStyle] = useState<React.CSSProperties>({});
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -28,18 +29,18 @@ export function Info({ children }: { children: React.ReactNode }) {
         btnRef.current?.focus();
       }
     }
-    function onDown(e: MouseEvent) {
+    function onDown(e: PointerEvent) {
       const t = e.target as Node;
       if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return;
       setOpen(false);
     }
     document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown);
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
     };
@@ -53,8 +54,8 @@ export function Info({ children }: { children: React.ReactNode }) {
       return;
     }
     const r = btnRef.current!.getBoundingClientRect();
-    const W = 280;
     const vw = window.innerWidth;
+    const W = Math.min(280, vw - 16);
     const vh = window.innerHeight;
     const openLeft = vw - r.left < W + 12; // proche du bord droit → ouvre vers la gauche
     let left = openLeft ? r.right - W : r.left;
@@ -85,14 +86,16 @@ export function Info({ children }: { children: React.ReactNode }) {
         onClick={toggle}
         aria-label="explication"
         aria-expanded={open}
-        className="inline-flex h-[13px] w-[13px] items-center justify-center rounded-full border border-current text-[8px] font-bold not-italic leading-none text-dim transition-colors hover:text-accent focus-visible:text-accent focus-visible:outline-none"
+        aria-describedby={open ? tooltipId : undefined}
+        className="inline-flex h-6 w-6 items-center justify-center text-muted transition-colors hover:text-accent focus-visible:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
-        i
+        <span aria-hidden="true" className="inline-flex h-[13px] w-[13px] items-center justify-center rounded-full border border-current text-[8px] font-bold not-italic leading-none">i</span>
       </button>
       {open
         ? createPortal(
             <div
               ref={popRef}
+              id={tooltipId}
               role="tooltip"
               style={style}
               className="z-50 bg-panel px-3 py-2.5 text-left font-sans text-[11.5px] font-normal normal-case leading-snug tracking-normal text-muted shadow-overlay"

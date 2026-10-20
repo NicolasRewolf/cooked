@@ -17,12 +17,25 @@ Contacter **Nicolas Rewolf** directement (pas d'issue publique pour les failles 
 | `crm_prospects` (formulaires Wix → `form-webhook` v13+, backfill 03/2025→08/2026) | **oui, en clair** : nom, prénom, email, téléphone (+ colonnes `*_norm`) — décision produit du 10/08/2026, hachage refusé | RLS deny-all sans policy | `service_role` uniquement (webhook, `scripts/secib_ingest.py`, `wix_forms_import.py`) |
 | `secib_dossiers` (API SECIB — bac à sable, 49 lignes `env = 'test'` au 03/09/2026) | **oui, en clair** | RLS deny-all | `service_role` |
 | `pont_prospects_dossiers` (vue de rapprochement) | oui (jointure des deux) | vue `security_invoker` sur tables deny-all | `service_role` |
-| `events`, `events_human`, RPC analytics, tables `dashboard_*`, `gsc_*`, `cpi_*` | **non** — identifiants aléatoires, IP hachée + sel, `form_submit` sans champs libres ni identité (Sprint 30) | RLS deny-all + `REVOKE` | `service_role` ; le dashboard lit via sa clé service côté serveur |
+| `events`, `events_human`, RPC analytics, tables `dashboard_*`, `gsc_*`, `cpi_*` | sans nom/email/téléphone ni texte libre de formulaire ; les événements restent **pseudonymes**, avec identifiants persistants et possibilités de couture CRM | RLS deny-all + `REVOKE` | `service_role` ; le dashboard lit via sa clé service côté serveur |
 
 **Règle absolue** : `crm_prospects` / `secib_dossiers` ne transitent jamais dans une vue analytics,
 une RPC `dashboard_*`, un export, un rapport, un journal, une issue, un commit. Le texte libre des
 formulaires n'est pas stocké. Cadre RGPD (textes, registre, arbitrages ouverts) :
 [docs/rgpd-pont-secib.md](docs/rgpd-pont-secib.md).
+
+Un identifiant aléatoire ou une IP hachée ne démontre pas l'anonymat.
+`localStorage._ckd_aid` n'a pas d'expiration propre et `cooked_aid` /
+`cooked_sid` sont aussi présents côté CRM. L'exemption de consentement doit
+être évaluée sur le traitement complet (finalités, rapprochements, information,
+accès et durées), pas déduite de l'absence de cookies. Référence :
+[conditions CNIL pour la mesure d'audience](https://www.cnil.fr/fr/cookies-solutions-pour-les-outils-de-mesure-daudience).
+Ce dossier ne certifie ni cette exemption ni la publication des textes du site.
+Le Custom Code Wix était classé `ESSENTIAL` au contrôle du 20/10/2026 ; cette
+catégorie a été conservée lors de la correction technique. Nicolas a demandé
+explicitement le maintien de la collecte le 20/10 pour préserver sa qualité.
+Cette décision n'établit pas l'exemption de consentement ni la conformité du
+traitement ; la qualification juridique reste ouverte.
 
 ## Ce qui ne doit jamais entrer dans le repo
 
@@ -51,7 +64,7 @@ rejouer les déploiements qui portent la valeur (Edge, Velo, GitHub Actions, Ver
 | `NTFY_TOPIC` / `cooked_config.ntfy_topic` | canal de push des alertes `critical` et des échecs de workflows | GitHub Actions ; table `cooked_config` (service_role) |
 | `DASHBOARD_ALLOWED_EMAILS` | allowlist du dashboard (après magic-link) | Vercel |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clé publishable) | flux d'authentification seulement — **ne doit lire aucune donnée** (voir surface d'attaque) | Vercel, navigateur (publique par construction) |
-| `WIX_API_KEY` | clé API du compte Wix, permission Blog (lecture) — synchro hebdo `page_taxonomy` (T-15) | GitHub Actions (**posé le 04/09/2026** ; dry-run `wix-taxonomy-sync` 33854781065 OK) |
+| `WIX_API_KEY` | clé API Wix : Blog en lecture pour `page_taxonomy` ; lecture des soumissions Forms requise pour le rapprochement quotidien | GitHub Actions (clé posée le 04/09/2026 ; l'accès Forms doit être vérifié lors de la première exécution du nouveau workflow) |
 | Credentials SECIB (client_credentials, GUID cabinet) | API SECIB — bac à sable Septeo tant que le devis SECIB+ n'est pas signé | `~/.claude/secib-credentials.json` (local) — pas de secret CI tant qu'il n'y a pas d'ingestion prod |
 
 Modèle sans valeurs : [.env.example](.env.example) · dashboard : [dashboard/.env.local.example](dashboard/.env.local.example).
@@ -65,6 +78,15 @@ Modèle sans valeurs : [.env.example](.env.example) · dashboard : [dashboard/.e
   bloqué (décision §7.5 de la mission : verrou HMAC avec le loader tracker, T-17).
 - **Formulaires** (`form-webhook`) : token dans l'URL, `submissionTime` validé (v11), insert échoué →
   alerte `form_submit_dropped` (v14).
+  Le correctif v16 exige un `submission_id` stable avant écriture. HTTP 200
+  signifie que l'événement et le prospect extrait ont été insérés ou sont
+  déjà présents (`23505`). Erreur DB/réseau sur l'un des deux → HTTP 503 ;
+  aucune identité ni message DB brut dans les logs/alertes. Ce contrat rend
+  la reprise idempotente, sans garantir que Wix la déclenchera.
+- **Rapprochement Forms** : le workflow quotidien compare les nombres de
+  soumissions confirmées par jour Paris sur une fenêtre close. Les sorties
+  restent agrégées, sans contenu personnel ; un écart déclenche une alerte,
+  sans réimportation automatique ni suppression de données.
 - **Postgres** : RLS activée sans policy sur toutes les tables `public` (`rls_auto_enable()` sur les
   nouvelles) ; **toute fonction `SECURITY DEFINER` est `REVOKE … FROM PUBLIC, anon, authenticated`** —
   `REVOKE … FROM public` seul ne suffit pas (default privileges Supabase : récidives du 25/07 et du 31/08).
@@ -74,6 +96,8 @@ Modèle sans valeurs : [.env.example](.env.example) · dashboard : [dashboard/.e
 - **Dashboard** (data.rewolf.studio) : magic-link Supabase (`shouldCreateUser: false` depuis T-13 — un
   e-mail hors allowlist ne crée pas de compte) + allowlist `DASHBOARD_ALLOWED_EMAILS` ; toutes les
   lectures passent par la clé service côté serveur (RPC `dashboard_*`, `service_role` only).
+  Les destinations de callback sont limitées à l'origine attendue après
+  rejet des caractères de contrôle et résolution de l'URL.
 - **CI** : le rôle `cooked_ci_ro` ne peut ni écrire ni lire `events`/`crm_prospects`/`secib_dossiers`.
 - Sortie de sprint : `get_advisors(security)` → 0 ERROR, chaque WARN listé et justifié.
 

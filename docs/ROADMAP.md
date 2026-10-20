@@ -1,11 +1,33 @@
 # Roadmap Cooked — reste à faire courant
 
-État des lieux au **04/09/2026 matin** (mission précision/fiabilité/hygiène du 02/09/2026 :
+Mise à jour technique du **20/10/2026** : corrections et preuves de livraison
+dans [RELIABILITY.md](RELIABILITY.md). Les tableaux de mission ci-dessous
+conservent leur contexte de septembre ; une échéance passée n'atteste pas sa réalisation.
+
+État de référence au **04/09/2026 matin** (mission précision/fiabilité/hygiène du 02/09/2026 :
 **Phases 0-4 livrées** — 20 tickets agent faits ; bilan [mission-2026-09-02/02-apres.md](mission-2026-09-02/02-apres.md),
 passation [03-passation.md](mission-2026-09-02/03-passation.md) ; restes Nicolas ci-dessous).
 Court par construction : une ligne de contexte par item. Les décisions produit restent chez
 **Nicolas** — ce fichier liste, il ne décide pas. Historique :
 [ROADMAP-sprint38-handoff.md](ROADMAP-sprint38-handoff.md) (archive) et [HISTORY-sprints.md](HISTORY-sprints.md).
+
+## Vérifications de livraison du 20/10/2026
+
+- Appliquer et contrôler la migration SQL, régénérer les miroirs/contrats,
+  obtenir un lot GSC complet puis les snapshots attendus.
+- Déployer les Edge et le dashboard ; publier le tracker après le SQL,
+  vérifier le code servi et les versions réellement reçues.
+- Rétablir GBP par réauthentification et ingestion avec rattrapage ; exiger
+  la fraîcheur et la continuité, pas seulement la réussite du login.
+- Activer le rapprochement Wix quotidien avec permission Forms et vérifier
+  un run réel. Un écart ne déclenche pas de réimport automatique.
+- Conserver le garde-fou SECIB production jusqu'à validation d'une
+  synchronisation complète des dossiers, modifications et facturation.
+- Traiter la source du lien vers le chemin 404 signalé par la taxonomie ;
+  ne pas inventer une catégorie pour acquitter l'alerte.
+- Faire valider les conditions de traitement des identifiants pseudonymes,
+  la couture CRM, les durées et les textes juridiques ; aucune publication
+  n'est déduite de la mise à jour documentaire.
 
 ## Mission 02/09/2026 — tickets encore ouverts
 
@@ -25,13 +47,13 @@ Court par construction : une ligne de contexte par item. Les décisions produit 
 | # | Quoi | Échéance | Contexte (une ligne) |
 |---|---|---|---|
 | 1 | Harmonisation UI des deux compteurs contacts (fiche article) | — | L'issue #45 a été fermée le 30/08 sans action (constat g-05) : la fiche n'affiche que les « assistés », le tableau les « sur la page ». Commentaire posé sur #45 le 03/09 ; à rouvrir si Nicolas le décide. |
-| 3 | Re-test diagnostic CPI 56 j | **29/10/2026** (56 j de `cpi_version` 2.2.5, depuis le 03/09) | Suite de la validation J+28 du 11/07 (VALIDÉE). Depuis, trois restatements CPI le 03/09 (fenêtres, momentum, contacts) : refaire la grille sur `cpi_daily` ≥ 04/09. |
+| 3 | Re-test diagnostic CPI sur une définition homogène | Replanifier selon la première série 2.2.6 vérifiée | L'ancienne échéance du 29/10 supposait 56 jours homogènes en 2.2.5 ; ne pas franchir la nouvelle rupture de définition dans le même diagnostic. |
 | 4 | ~~Issue #19 — biais de taille CPI~~ | fermée le 30/08/2026 | Limite connue, documentée dans `cpi-cooked-page-index.md` ; pas de v2.3 (décision 18/06 et 11/07). |
-| 5 | Cron GBP : accès API après la migration GCP + client OAuth dédié | **action Nicolas** — verdict Google ≈ 10-15/09 | `gbp_daily` s'arrête au **20/08/2026** (13 j au 03/09) : le projet Google a migré vers `rewolf-507310` le 01/09, l'approbation Business Profile est redemandée (n° 2-9425000042353). L'alerte `gbp_daily_stale` (registre : warn > 7 j, critical > 14 j) sonne depuis le 28/08 — échec attendu jusqu'au verdict, plan B « projet plouton » avant le 19/09. |
+| 5 | Cron GBP : réauthentifier, reprendre et vérifier la continuité | Reprise à confirmer | Le run contrôlé le 20/10 demande une réauthentification Google. L'ancienne attente d'approbation de septembre ne suffit plus à expliquer l'échec courant ; ne pas classer la panne comme normale. |
 | 6 | Ingestion mensuelle `gbp_search_keywords` | go de Nicolas | Sonde du 05/08 : fiche quasi invisible sur l'indemnisation (≤75 impressions/12 mois vs ~2 100 pénal) ; lag ≈ 1 mois → cadence mensuelle. Conditionné au #5. |
 | 7 | Renommage de la fiche Google Business | décision Julien/Nicolas | Seul signal encore 100 % pénal : le nom. Ne pas toucher la catégorie principale. Annotation à poser le jour J. |
 | 8 | Boucle 3 — Google Ads | à lancer (hors mission) | MCP connecté (01/07) mais sans developer token en session : coût par campagne → coût par contact macro. ~71 % du trafic expertise est paid. |
-| 9 | SECIB — passage en prod | **devis non signé au 03/09** (valable ~17/08, à renégocier) | 49 dossiers `env = 'test'`, dernière synchro 10/08 ; fondations livrées (PR #93). Après signature : T-16 d'abord, puis swap credentials, `secib_ingest.py ingest --secib-env prod`, cron GitHub Actions. |
+| 9 | SECIB — passage en prod | Bloqué techniquement avant validation de la synchronisation complète | `--secib-env prod` refuse l'ingestion avant credentials/API. Une signature ou un changement de credentials ne suffit pas : couvrir les dossiers anciens modifiés et valider le périmètre financier. |
 | 10 | RGPD du pont SECIB | **en retard** (annoncé « cette semaine » le 10/08) | `crm_prospects` = **858** lignes au 03/09 (796 le 10/08), dernier ajout 03/09 13:28. Textes prêts : [rgpd-pont-secib.md](rgpd-pont-secib.md) — relecture Julien, publication, 3 arbitrages (art. 28, durée de conservation, champ « objet »). |
 | 11 | Pont téléphone (3CX ↔ SECIB ↔ Cooked) | chantier Easylia en cours | Le jour où le journal d'appels est accessible : matcher avec `secib_dossiers`, corréler avec `cta_phone_click` (les appels ≈ 50 % du contact que les formulaires ne voient pas). |
 | 12 | Chute de ~40 % des clics GSC depuis fin juillet | à instruire | 2 155 → ~1 350 clics/semaine depuis le 27/07, portée par les ressources à impressions constantes (CTR 2,14 → 1,14 %) : la SERP bouge (AI Overview ?), pas le classement. Lecture du 03/09 dans l'onglet Lab. |

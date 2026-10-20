@@ -7,7 +7,7 @@
 -- Ce fichier = instantané lisible pour humains et agents (Arch #5, 10/07/2026).
 --
 -- Régénérer : python3 scripts/generate_rpcs_sql.py  (DATABASE_URL requis)
--- Généré le 04/09/2026 — projet mxycmjkeotrycyneacje.
+-- Généré le 20/10/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
 -- ═══ public.ack_alerts(p_kinds text[]) ═══
@@ -548,7 +548,7 @@ BEGIN
       'page_taxonomy_gap'::text,
       CASE WHEN v_n >= 10 THEN 'critical' ELSE 'warn' END::text,
       format(
-        '%s article(s) avec du trafic (≥ 5 vues/30 j, vus depuis > 8 j) sans catégorie Wix dans page_taxonomy — toute lecture par catégorie (dashboard Articles Ressources, content_performance, contrat éditorial) les ignore. La synchro hebdomadaire wix-taxonomy-sync (GitHub Actions, lundi 05:00 UTC) n''a pas tourné ou le secret WIX_API_KEY manque : relancer `python3 scripts/wix_taxonomy_sync.py`. Concernés : %s',
+        '%s article(s) avec du trafic (≥ 5 vues/30 j, vus depuis > 8 j) sans catégorie Wix dans page_taxonomy — toute lecture par catégorie (dashboard Articles Ressources, content_performance, contrat éditorial) les ignore. Vérifier les chemins (page réelle, redirection ou URL tronquée), leur catégorie Wix et le dernier workflow wix-taxonomy-sync (lundi 05:00 UTC). Une synchro réussie peut conserver une URL sans catégorie ; ne pas déduire un secret manquant de cette seule alerte. Concernés : %s',
         v_n, left(coalesce(v_ex, ''), 400)
       );
   END IF;
@@ -617,8 +617,17 @@ CREATE OR REPLACE FUNCTION public.alert_rule_refresh_after_gsc_stale()
 AS $function$
 DECLARE
   v_pending record;
+  v_batch public.gsc_ingest_batches%ROWTYPE;
   v_hour    integer := extract(hour FROM (now() AT TIME ZONE 'UTC'))::int;
 BEGIN
+  SELECT * INTO v_batch FROM public.gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1;
+  IF v_batch.status IN ('running','failed') AND v_batch.started_at < now() - interval '3 hours' THEN
+    kind:='refresh_after_gsc_stale'; severity:='critical';
+    detail:=format('Lot GSC %s incomplet depuis le %s : refresh volontairement bloqué. Vérifier le workflow puis relancer une ingestion complète des trois tables ; ne pas forcer le marqueur.',
+      v_batch.run_id,to_char(v_batch.started_at AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'));
+    RETURN NEXT;
+    RETURN;
+  END IF;
   -- Jugé dans la fenêtre du cron aval (6h-21h UTC), après au moins deux ticks.
   IF v_hour < 8 OR v_hour > 23 THEN
     RETURN;
@@ -1023,8 +1032,8 @@ AS $function$
         FILTER (WHERE props->>'metric' = 'CLS'))::numeric AS cls_p75,
       (percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric)
         FILTER (WHERE props->>'metric' = 'TTFB'))::numeric AS ttfb_p75
-    FROM we
-    WHERE name = 'web_vitals' AND path IS NOT NULL
+    FROM public.cooked_web_vitals_window(date_from,date_to)
+    WHERE path IS NOT NULL
     GROUP BY path
   ),
   oc AS (
@@ -1382,7 +1391,7 @@ BEGIN
       CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
         SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path,
                e.referrer_hostname, e.utm_source, e.utm_medium, e.user_agent,
-               e.device_type, e.props, e.occurred_at,
+               e.device_type, e.props, e.occurred_at, e.url,
                public.paris_date(e.occurred_at) AS d
         FROM public.events_main e
         WHERE e.occurred_at >= p_occurred_from
@@ -1391,7 +1400,7 @@ BEGIN
       CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
         SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path,
                e.referrer_hostname, e.utm_source, e.utm_medium, e.user_agent,
-               e.device_type, e.props, e.occurred_at,
+               e.device_type, e.props, e.occurred_at, e.url,
                public.paris_date(e.occurred_at) AS d
         FROM public.events_outremer e
         WHERE e.occurred_at >= p_occurred_from
@@ -1403,7 +1412,7 @@ BEGIN
       CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
         SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path,
                e.referrer_hostname, e.utm_source, e.utm_medium, e.user_agent,
-               e.device_type, e.props, e.occurred_at,
+               e.device_type, e.props, e.occurred_at, e.url,
                public.paris_date(e.occurred_at) AS d
         FROM public.events_main e
         WHERE e.occurred_at >= p_occurred_from
@@ -1421,7 +1430,7 @@ BEGIN
       CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
         SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path,
                e.referrer_hostname, e.utm_source, e.utm_medium, e.user_agent,
-               e.device_type, e.props, e.occurred_at,
+               e.device_type, e.props, e.occurred_at, e.url,
                public.paris_date(e.occurred_at) AS d
         FROM public.events_outremer e
         WHERE e.occurred_at >= p_occurred_from
@@ -1441,7 +1450,7 @@ BEGIN
     CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
       SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path,
              e.referrer_hostname, e.utm_source, e.utm_medium, e.user_agent,
-             e.device_type, e.props, e.occurred_at,
+             e.device_type, e.props, e.occurred_at, e.url,
              public.paris_date(e.occurred_at) AS d
       FROM public.events_main e
       WHERE e.occurred_at >= p_occurred_from
@@ -1478,7 +1487,7 @@ BEGIN
     CREATE TEMP TABLE _cooked_ev ON COMMIT DROP AS
       SELECT e.id, e.anonymous_id, e.session_id, e.name, e.path,
              e.referrer_hostname, e.utm_source, e.utm_medium, e.user_agent,
-             e.device_type, e.props, e.occurred_at,
+             e.device_type, e.props, e.occurred_at, e.url,
              public.paris_date(e.occurred_at) AS d
       FROM public.events_outremer e
       WHERE e.occurred_at >= p_occurred_from
@@ -1693,8 +1702,12 @@ ebk AS (
 jx AS (SELECT * FROM public.conversion_journeys(p_days, (SELECT g_end FROM w)) WHERE entry_channel LIKE 'organic%'),
 direct AS (SELECT entry_path path, count(*)::numeric v FROM jx WHERE entry_path IS NOT NULL GROUP BY 1),
 assist AS (SELECT jp.path, sum(1.0/greatest(j.pages_count,1)) v FROM jx j CROSS JOIN LATERAL unnest(j.journey) jp(path) WHERE jp.path <> j.entry_path GROUP BY jp.path),
-book AS (SELECT o.path, 0.25*count(*)::numeric v FROM orge o JOIN public.events_human b ON b.session_id=o.session_id AND b.path=o.path AND b.name='cta_booking_click' GROUP BY o.path),
-convv AS (SELECT n.path, n.n_org, coalesce(d.v,0)+coalesce(a.v,0)+coalesce(b.v,0) val
+book AS (SELECT o.path, 0.25*count(*)::numeric v FROM orge o
+  JOIN public.events_human b ON b.session_id=o.session_id AND b.path=o.path AND b.name='cta_booking_click'
+  WHERE b.occurred_at >= (SELECT t0 FROM w) AND b.occurred_at < (SELECT t1 FROM w)
+  GROUP BY o.path),
+convv AS (SELECT n.path, n.n_org, coalesce(d.v,0)+coalesce(a.v,0)+coalesce(b.v,0) val,
+    coalesce(d.v,0)+coalesce(a.v,0) macro_val
   FROM norg n LEFT JOIN direct d ON d.path=n.path LEFT JOIN assist a ON a.path=n.path LEFT JOIN book b ON b.path=n.path),
 tconv AS (SELECT public.cooked_page_type(convv.path) ptype, coalesce(sum(val)/nullif(sum(convv.n_org),0),0) nu FROM convv GROUP BY 1),
 xs AS (
@@ -1750,8 +1763,8 @@ mom AS (SELECT f.path,
   FROM momf f LEFT JOIN momb b ON b.path = f.path LEFT JOIN momp p ON p.path = f.path),
 site AS (SELECT sum(c1) s1, sum(c0) s0 FROM mom),
 lcp AS (SELECT eh.path, percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric) lcp75
-  FROM public.events_human eh WHERE name='web_vitals' AND props->>'metric'='LCP' AND device_type='mobile'
-    AND occurred_at >= (SELECT t0 FROM w) AND occurred_at < (SELECT t1 FROM w) GROUP BY eh.path),
+  FROM public.cooked_web_vitals_window((SELECT t0 FROM w),(SELECT t1 FROM w)) eh
+  WHERE props->>'metric'='LCP' AND device_type='mobile' GROUP BY eh.path),
 scored AS (
   SELECT x.path, x.ptype, x.n_org, round(greatest(coalesce(x.e,0)-x.o,0))::int clics_perdus,
     CASE WHEN coalesce(x.i_nb,0)>0 THEN round(100.0*x.i_qpd/x.i_nb)::int ELSE 0 END couv,
@@ -1770,7 +1783,7 @@ scored AS (
       WHEN x.n_org >= 30 AND coalesce(x.e,0) >= 5 THEN 'B'
       ELSE 'C'
     END grade,
-    coalesce(cv.val, 0) > 0 AS convertit
+    coalesce(cv.macro_val, 0) > 0 AS convertit
   FROM xs x LEFT JOIN medt mt ON mt.ptype=x.ptype LEFT JOIN madt dt ON dt.ptype=x.ptype
   CROSS JOIN medg mg CROSS JOIN madg dg LEFT JOIN mom m ON m.path=x.path CROSS JOIN site s LEFT JOIN lcp l ON l.path=x.path
   LEFT JOIN convv cv ON cv.path=x.path
@@ -2097,10 +2110,12 @@ BEGIN
 
   IF cardinality(v_failures) = 0 THEN
     BEGIN
-      -- now() = début de la transaction, volontairement : une ingestion arrivée PENDANT
-      -- la séquence reste « plus récente que le dernier refresh complet » → rejouée.
+      -- Begin prend le même verrou : aucune ingestion conforme ne peut écrire
+      -- pendant ce refresh. Le lot exact consommé est mémorisé, pas une horloge.
       INSERT INTO public.cooked_config (key, value, updated_at)
-      VALUES ('last_full_refresh_after_gsc_at', now()::text, now())
+      VALUES ('last_full_refresh_after_gsc_at', clock_timestamp()::text, now()),
+             ('last_full_refresh_gsc_batch_id',
+               (SELECT run_id::text FROM public.gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1), now())
       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;
     EXCEPTION WHEN OTHERS OR query_canceled THEN
       NULL;
@@ -2123,26 +2138,28 @@ CREATE OR REPLACE FUNCTION public.cooked_refresh_after_gsc_pending()
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
+DECLARE v_latest public.gsc_ingest_batches%ROWTYPE; v_refreshed_id uuid;
 BEGIN
-  SELECT max(g.ingested_at) INTO last_ingest FROM public.gsc_path_daily g;
-
-  SELECT c.value::timestamptz INTO last_complete
-  FROM public.cooked_config c
-  WHERE c.key = 'last_full_refresh_after_gsc_at';
-
-  IF last_ingest IS NULL THEN
-    pending := false;
-    reason  := 'aucune ingestion GSC en base';
-  ELSIF last_complete IS NOT NULL AND last_complete >= last_ingest THEN
-    pending := false;
-    reason  := format('séquence complète le %s après l''ingestion du %s',
-                      to_char(last_complete AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'),
-                      to_char(last_ingest   AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'));
+  SELECT * INTO v_latest FROM public.gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1;
+  SELECT c.value::timestamptz INTO last_complete FROM public.cooked_config c
+    WHERE c.key='last_full_refresh_after_gsc_at';
+  SELECT c.value::uuid INTO v_refreshed_id FROM public.cooked_config c
+    WHERE c.key='last_full_refresh_gsc_batch_id';
+  last_ingest := v_latest.completed_at;
+  IF v_latest.run_id IS NULL THEN
+    pending:=false; reason:='aucun lot GSC complet : lancer une ingestion complète des trois tables';
+  ELSIF v_latest.status <> 'completed' THEN
+    pending:=false;
+    reason:=format('lot GSC %s incomplet depuis le %s ; refresh bloqué jusqu''à reprise complète',
+                   v_latest.run_id,to_char(v_latest.started_at AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'));
+  ELSIF v_refreshed_id=v_latest.run_id THEN
+    pending:=false;
+    reason:=format('lot GSC %s suivi d''un refresh complet le %s',v_latest.run_id,
+                   to_char(last_complete AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'));
   ELSE
-    pending := true;
-    reason  := format('ingestion GSC du %s non suivie d''un refresh complet (dernier complet : %s)',
-                      to_char(last_ingest AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'),
-                      coalesce(to_char(last_complete AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'), 'jamais'));
+    pending:=true;
+    reason:=format('lot GSC complet du %s non suivi d''un refresh complet',
+                   to_char(v_latest.completed_at AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'));
   END IF;
   RETURN NEXT;
 END;
@@ -2196,6 +2213,29 @@ BEGIN
   );
 END;
 $procedure$
+
+
+-- ═══ public.cooked_web_vitals_window(p_from timestamp with time zone, p_to timestamp with time zone) ═══
+CREATE OR REPLACE FUNCTION public.cooked_web_vitals_window(p_from timestamp with time zone, p_to timestamp with time zone)
+ RETURNS TABLE(id uuid, path text, device_type text, props jsonb, occurred_at timestamp with time zone)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT DISTINCT ON (
+    CASE WHEN nullif(e.props->>'measurement_id','') IS NOT NULL
+      THEN 'document:' || (e.props->>'measurement_id') ELSE 'event:' || e.id::text END,
+    e.props->>'metric')
+    e.id,e.path,e.device_type,e.props,e.occurred_at
+  FROM public.events_human e
+  WHERE e.name='web_vitals' AND e.occurred_at>=p_from AND e.occurred_at<p_to
+  ORDER BY
+    CASE WHEN nullif(e.props->>'measurement_id','') IS NOT NULL
+      THEN 'document:' || (e.props->>'measurement_id') ELSE 'event:' || e.id::text END,
+    e.props->>'metric',
+    CASE WHEN e.props->>'revision' ~ '^[0-9]{1,9}$' THEN (e.props->>'revision')::int ELSE 0 END DESC,
+    e.occurred_at DESC,e.id DESC;
+$function$
 
 
 -- ═══ public.cooked_weekly_conversions_snapshot(p_week_start date) ═══
@@ -2410,9 +2450,9 @@ BEGIN
       ) FROM page_taxonomy pt WHERE pt.path=p_path),
     'gsc', (SELECT jsonb_build_object(
         'clicks', COALESCE(sum(clicks),0), 'impressions', COALESCE(sum(impressions),0),
-        'position', round(avg(position)::numeric,1),
+        'position', round((sum(position*impressions)/nullif(sum(impressions),0))::numeric,1),
         'ctr_pct', CASE WHEN COALESCE(sum(impressions),0)>0 THEN round(100.0*sum(clicks)/sum(impressions),2) END,
-        'ctr_expected', CASE WHEN avg(position) IS NOT NULL THEN round(ctr_for_position(avg(position))*100,2) END,
+        'ctr_expected', NULL::numeric,
         'clicks_prev', (SELECT COALESCE(sum(clicks),0) FROM gsc_path_daily g2 WHERE g2.path=p_path AND g2.day BETWEEN gps AND gpe)
       ) FROM gsc_path_daily g WHERE g.path=p_path AND g.day BETWEEN gns AND gne),
     'gsc_daily', (SELECT COALESCE(jsonb_agg(jsonb_build_object('d', ds.d, 'clicks', COALESCE(g.clicks,0), 'impressions', COALESCE(g.impressions,0)) ORDER BY ds.d), '[]'::jsonb)
@@ -2431,12 +2471,12 @@ BEGIN
     'top_queries', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
         'query', q.query, 'clicks', q.clicks, 'impressions', q.impressions, 'position', q.pos,
         'volume_fr', dfs.search_volume, 'cpc', dfs.cpc) ORDER BY q.impressions DESC), '[]'::jsonb)
-      FROM (SELECT query, sum(clicks) clicks, sum(impressions) impressions, round(avg(position)::numeric,1) pos
+      FROM (SELECT query, sum(clicks) clicks, sum(impressions) impressions, round((sum(position*impressions)/nullif(sum(impressions),0))::numeric,1) pos
             FROM gsc_query_page_daily WHERE path=p_path AND day BETWEEN gns AND gne AND NOT public.gsc_is_branded(query)
             GROUP BY query ORDER BY sum(impressions) DESC LIMIT 10) q
       LEFT JOIN dfs_keyword_volume dfs ON dfs.keyword=q.query AND dfs.location_code=2250),
     'cpi', (SELECT to_jsonb(c) - 'created_at' FROM cpi_daily c WHERE c.path=p_path AND c.day=(SELECT max(day) FROM cpi_daily) ),
-    'cpi_series', (SELECT COALESCE(jsonb_agg(jsonb_build_object('d', day, 'cpi', cpi) ORDER BY day), '[]'::jsonb)
+    'cpi_series', (SELECT COALESCE(jsonb_agg(jsonb_build_object('d', day, 'cpi', cpi, 'cpi_version', cpi_version) ORDER BY day), '[]'::jsonb)
       FROM cpi_daily WHERE path=p_path),
     'assisted', (SELECT jsonb_build_object('n', s.assisted_contacts, 'prev', s.assisted_prev)
       FROM dashboard_resources_assisted_snapshot s WHERE s.path=p_path AND s.window_kind=period_kind),
@@ -2992,6 +3032,32 @@ AS $function$
 $function$
 
 
+-- ═══ public.form_submission_counts_for_period(p_start date, p_end date) ═══
+CREATE OR REPLACE FUNCTION public.form_submission_counts_for_period(p_start date, p_end date)
+ RETURNS TABLE(day date, submissions bigint)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  IF p_start IS NULL OR p_end IS NULL OR p_start>p_end OR p_end-p_start>=93 THEN
+    RAISE EXCEPTION 'form count window must contain 1 to 93 inclusive calendar days' USING ERRCODE='22023';
+  END IF;
+  RETURN QUERY
+    SELECT ds.d::date,coalesce(c.n,0)::bigint
+    FROM generate_series(p_start::timestamp,p_end::timestamp,interval '1 day') ds(d)
+    LEFT JOIN (
+      SELECT public.paris_date(e.occurred_at) AS d,count(*) AS n
+      FROM public.events_human e WHERE e.name='form_submit'
+        AND e.occurred_at>=public.cooked_paris_ts_start(p_start)
+        AND e.occurred_at<public.cooked_paris_ts_end_exclusive(p_end)
+      GROUP BY public.paris_date(e.occurred_at)
+    ) c ON c.d=ds.d::date
+    ORDER BY ds.d;
+END;
+$function$
+
+
 -- ═══ public.form_submit_counts_as_macro(props jsonb) ═══
 CREATE OR REPLACE FUNCTION public.form_submit_counts_as_macro(props jsonb)
  RETURNS boolean
@@ -3087,6 +3153,99 @@ AS $function$
 $function$
 
 
+-- ═══ public.gsc_ingest_begin(p_run_id uuid, p_start date, p_end date) ═══
+CREATE OR REPLACE FUNCTION public.gsc_ingest_begin(p_run_id uuid, p_start date, p_end date)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_existing public.gsc_ingest_batches%ROWTYPE;
+BEGIN
+  IF p_run_id IS NULL OR p_start IS NULL OR p_end IS NULL OR p_start > p_end THEN
+    RAISE EXCEPTION 'invalid GSC batch id or date range' USING ERRCODE = '22023';
+  END IF;
+  IF NOT pg_try_advisory_xact_lock(782026) THEN
+    RAISE EXCEPTION 'GSC refresh is running; retry the full ingestion later' USING ERRCODE = '55P03';
+  END IF;
+  SELECT * INTO v_existing FROM public.gsc_ingest_batches WHERE run_id=p_run_id;
+  IF FOUND THEN
+    IF v_existing.status='running' AND v_existing.day_start=p_start AND v_existing.day_end=p_end
+       AND v_existing.batch_no=(SELECT max(batch_no) FROM public.gsc_ingest_batches) THEN
+      RETURN p_run_id; -- retry après réponse réseau perdue : idempotent
+    END IF;
+    RAISE EXCEPTION 'GSC batch id already used; start a new full batch' USING ERRCODE = '22023';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.gsc_ingest_batches WHERE status='running') THEN
+    RAISE EXCEPTION 'another GSC ingestion is running; stop it before marking its batch failed' USING ERRCODE='55P03';
+  END IF;
+  INSERT INTO public.gsc_ingest_batches(run_id,day_start,day_end) VALUES(p_run_id,p_start,p_end);
+  RETURN p_run_id;
+END;
+$function$
+
+
+-- ═══ public.gsc_ingest_complete(p_run_id uuid, p_row_counts jsonb) ═══
+CREATE OR REPLACE FUNCTION public.gsc_ingest_complete(p_run_id uuid, p_row_counts jsonb)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_latest public.gsc_ingest_batches%ROWTYPE; v_key text; v_total numeric := 0;
+BEGIN
+  IF NOT pg_try_advisory_xact_lock(782026) THEN
+    RAISE EXCEPTION 'GSC refresh is running; retry batch completion later' USING ERRCODE = '55P03';
+  END IF;
+  IF p_row_counts IS NULL OR jsonb_typeof(p_row_counts) <> 'object'
+     OR (SELECT count(*) FROM jsonb_object_keys(p_row_counts)) <> 3 THEN
+    RAISE EXCEPTION 'row counts must contain exactly the three GSC tables' USING ERRCODE = '22023';
+  END IF;
+  FOREACH v_key IN ARRAY ARRAY['gsc_path_daily','gsc_query_daily','gsc_query_page_daily'] LOOP
+    IF NOT (p_row_counts ? v_key) OR jsonb_typeof(p_row_counts->v_key) <> 'number'
+       OR (p_row_counts->>v_key) !~ '^[0-9]+$' THEN
+      RAISE EXCEPTION 'invalid row count for %', v_key USING ERRCODE = '22023';
+    END IF;
+    v_total := v_total + (p_row_counts->>v_key)::numeric;
+  END LOOP;
+  IF v_total=0 THEN
+    RAISE EXCEPTION 'cannot mark an entirely empty GSC batch complete' USING ERRCODE = '22023';
+  END IF;
+  SELECT * INTO v_latest FROM public.gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1;
+  IF NOT FOUND OR v_latest.run_id IS DISTINCT FROM p_run_id OR v_latest.status NOT IN ('running','completed') THEN
+    RAISE EXCEPTION 'only the latest running GSC batch may complete' USING ERRCODE = '22023';
+  END IF;
+  IF v_latest.status='completed' THEN
+    IF v_latest.row_counts=p_row_counts THEN RETURN; END IF;
+    RAISE EXCEPTION 'completed GSC batch has different row counts' USING ERRCODE = '22023';
+  END IF;
+  UPDATE public.gsc_ingest_batches SET status='completed', completed_at=clock_timestamp(), row_counts=p_row_counts
+    WHERE run_id=p_run_id;
+END;
+$function$
+
+
+-- ═══ public.gsc_ingest_fail(p_run_id uuid) ═══
+CREATE OR REPLACE FUNCTION public.gsc_ingest_fail(p_run_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE v_batch public.gsc_ingest_batches%ROWTYPE;
+BEGIN
+  IF NOT pg_try_advisory_xact_lock(782026) THEN
+    RAISE EXCEPTION 'GSC refresh is running; retry failure marker later' USING ERRCODE='55P03';
+  END IF;
+  SELECT * INTO v_batch FROM public.gsc_ingest_batches WHERE run_id=p_run_id;
+  IF NOT FOUND OR v_batch.status='completed' THEN
+    RAISE EXCEPTION 'only a running or already failed GSC batch may fail' USING ERRCODE='22023';
+  END IF;
+  UPDATE public.gsc_ingest_batches SET status='failed' WHERE run_id=p_run_id;
+END;
+$function$
+
+
 -- ═══ public.gsc_is_branded(p_query text) ═══
 CREATE OR REPLACE FUNCTION public.gsc_is_branded(p_query text)
  RETURNS boolean
@@ -3150,8 +3309,8 @@ AS $function$
   b AS (SELECT n_start, n_end FROM bounds),
   ts AS (
     SELECT
-      (b.n_start::timestamp AT TIME ZONE 'Europe/Paris') AS date_from,
-      ((b.n_end + 1)::timestamp AT TIME ZONE 'Europe/Paris') AS date_to
+      public.cooked_paris_ts_start(b.n_start) AS date_from,
+      public.cooked_paris_ts_end_exclusive(b.n_end) AS date_to
     FROM b
   ),
   cp AS (SELECT public.canonical_path(target_path) AS p),
@@ -3228,9 +3387,8 @@ AS $function$
         FILTER (WHERE props->>'metric' = 'INP') AS inp,
       percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric)
         FILTER (WHERE props->>'metric' = 'CLS') AS cls
-    FROM public.events_human e, cp, ts
-    WHERE e.path = cp.p AND e.name = 'web_vitals'
-      AND e.occurred_at >= ts.date_from AND e.occurred_at < ts.date_to
+    FROM public.cooked_web_vitals_window((SELECT date_from FROM ts),(SELECT date_to FROM ts)) e, cp
+    WHERE e.path = cp.p
   )
   SELECT
     cp.p,
@@ -4642,7 +4800,7 @@ BEGIN
     DROP TABLE IF EXISTS _fp;
     CREATE TEMP TABLE _fp ON COMMIT DROP AS
       SELECT DISTINCT ON (e.session_id) e.session_id, e.path AS entry_path,
-        public.classify_channel(e.referrer_hostname,e.utm_source,e.utm_medium,'www.jplouton-avocat.fr') AS chan
+        public.classify_channel(e.referrer_hostname,e.utm_source,e.utm_medium,'www.jplouton-avocat.fr',e.url) AS chan
       FROM _cooked_ev e
       WHERE e.name='pageview'
         AND e.session_id IN (SELECT DISTINCT session_id FROM _evx WHERE name='pageview' AND d BETWEEN lns AND lne)
@@ -4710,7 +4868,7 @@ BEGIN
       lns, lne, gns, gne, now(),
       COALESCE(v.uv_prev,0)::int, COALESCE(gp.clicks_prev,0)::int,
       cd.cpi, cd.grade, cd.momentum, gi.potentiel, gi.convertit,
-      CASE WHEN g.position_avg IS NOT NULL THEN ROUND(ctr_for_position(g.position_avg)*100,2) END,
+      NULL::numeric,
       CASE WHEN pc.tot>0 THEN ROUND(100.0*pc.paid/pc.tot,1) END
     FROM _xp x
     LEFT JOIN vis v      ON v.path=x.path
@@ -4856,7 +5014,7 @@ BEGIN
         SELECT path, session_id, max(dur) AS dur, max(scr) AS scr
         FROM _evc
         WHERE name='page_exit' AND d BETWEEN lns AND lne
-          AND ref NOT ILIKE '%linkedin%' AND ref NOT ILIKE '%facebook%'
+          AND coalesce(ref,'') NOT ILIKE '%linkedin%' AND coalesce(ref,'') NOT ILIKE '%facebook%'
         GROUP BY path, session_id
       ) a GROUP BY path
     ),
@@ -4899,7 +5057,7 @@ BEGIN
       lns, lne, gns, gne, now(),
       COALESCE(c.uv_prev,0)::int, COALESCE(gp.clicks_prev,0)::int,
       cd.cpi, cd.grade, cd.momentum, gi.potentiel, gi.convertit,
-      CASE WHEN g.position_avg IS NOT NULL THEN ROUND(ctr_for_position(g.position_avg)*100, 2) END
+      NULL::numeric
     FROM res
     LEFT JOIN cooked c ON c.path=res.path
     LEFT JOIN dwx dw ON dw.path=res.path
@@ -5064,7 +5222,7 @@ begin
   insert into public.noise_sessions (session_id, reason)
   select
     session_id,
-    'prefetch: 0 ref + 0 tick + 0 scroll + 1 pv + <10s'
+    'prefetch: 0 ref + 0 tick + 0 scroll + 0 intentional action + 1 pv + <10s'
   from _no_bots
   where session_id is not null
     and device_type is distinct from 'server'
@@ -5072,6 +5230,8 @@ begin
   having max(referrer_hostname) is null
      and count(*) filter (where name = 'engagement_tick') = 0
      and count(*) filter (where name = 'scroll_depth')    = 0
+     and count(*) filter (where name IN ('cta_phone_click','cta_booking_click','cta_anchor_click',
+                                         'click_internal','click_outbound','form_submit')) = 0
      and count(*) filter (where name = 'pageview')        = 1
      and extract(epoch from (max(occurred_at) - min(occurred_at))) < 10
   on conflict (session_id) do nothing;
@@ -5527,7 +5687,7 @@ begin
         (percentile_cont(0.75) within group (order by (props->>'value')::numeric) filter (where props->>'metric'='INP'))::numeric  as inp_p75,
         (percentile_cont(0.75) within group (order by (props->>'value')::numeric) filter (where props->>'metric'='CLS'))::numeric  as cls_p75,
         (percentile_cont(0.75) within group (order by (props->>'value')::numeric) filter (where props->>'metric'='TTFB'))::numeric as ttfb_p75
-      from _eh where name='web_vitals' and path is not null and occurred_at >= now_ts - interval '28 days' group by path
+      from public.cooked_web_vitals_window(now_ts - interval '28 days',now_ts) where path is not null group by path
     ),
     top_ref as (select distinct on (path) path, referrer_hostname as top_referrer from (
         select path, referrer_hostname, count(*) as c from _eh
@@ -6439,52 +6599,9 @@ CREATE OR REPLACE FUNCTION public.site_seo_funnel(period_kind text DEFAULT 'roll
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE
-  b RECORD;
-  v_impressions bigint;
-  v_clicks bigint;
-  v_google_sessions bigint;
-  v_macro bigint;
 BEGIN
-  SELECT * INTO b FROM public.cooked_period_bounds(period_kind, 'cross') LIMIT 1;
-
-  SELECT
-    coalesce(sum(g.impressions), 0)::bigint,
-    coalesce(sum(g.clicks), 0)::bigint
-  INTO v_impressions, v_clicks
-  FROM public.gsc_path_daily g
-  WHERE g.day >= b.n_start AND g.day <= b.n_end;
-
-  SELECT count(DISTINCT e.session_id) FILTER (
-           WHERE e.name = 'pageview'
-             AND e.device_type IS DISTINCT FROM 'server'
-             AND (
-               e.referrer_hostname LIKE '%google.%'
-               OR (e.utm_source = 'google' AND e.utm_medium IN ('organic', 'cpc'))
-             )
-         )::bigint INTO v_google_sessions
-  FROM public.events_human e
-  WHERE public.paris_date(e.occurred_at) >= b.n_start
-    AND public.paris_date(e.occurred_at) <= b.n_end;
-
-  SELECT m.macro_conversions INTO v_macro
-  FROM public.site_macro_counts(b.n_start, b.n_end) m;
-
-  RETURN QUERY SELECT
-    b.n_start,
-    b.n_end,
-    v_impressions,
-    v_clicks,
-    v_google_sessions,
-    coalesce(v_macro, 0),
-    CASE WHEN v_impressions > 0
-         THEN round((100.0 * v_clicks / v_impressions)::numeric, 2) ELSE NULL END,
-    CASE WHEN v_clicks > 0
-         THEN round((100.0 * v_google_sessions / v_clicks)::numeric, 2) ELSE NULL END,
-    CASE WHEN v_google_sessions > 0
-         THEN round((100.0 * v_macro / v_google_sessions)::numeric, 2) ELSE NULL END,
-    CASE WHEN v_impressions > 0
-         THEN round((100.0 * v_macro / v_impressions)::numeric, 4) ELSE NULL END;
+  RAISE EXCEPTION 'site_seo_funnel is deprecated: its former rates mixed incompatible acquisition scopes'
+    USING ERRCODE='0A000', HINT='Use public.seo_to_contact_funnel(days_back, p_end), with its explicit organic_entries, contacts and window bounds.';
 END;
 $function$
 

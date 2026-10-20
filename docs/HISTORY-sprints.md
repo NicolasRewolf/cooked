@@ -5,6 +5,7 @@ docs/audits. Les sprints non listés n'ont pas laissé de trace durable.
 
 | Quand | Sprint | Quoi |
 |---|---|---|
+| 20/10/2026 | **fiabilité — correctifs préparés** | Tracker sprint43 (contexte SPA, CWV document révisables), Edge v31/v16 (iOS, livraison idempotente), SQL/CPI 2.2.6, sorties dashboard corrigées, lots GSC complets, rapprochement Wix quotidien et garde-fou SECIB. État prêt/déployé suivi dans `RELIABILITY.md`. |
 | 05-06/05/2026 | bootstrap | Tracker live (première ingestion réelle 06/05 19:14 Paris) ; schéma `events` ; proxy Velo same-origin |
 | ~08-10/05 | 12-13 | Retex fondateur : critères de validation explicites, math nudge, mode itératif ; canonicalPath (decode+NFC+slash) ; `tracker_first_seen_global()` |
 | ~12/05 | 17 | Bot filtering : `bot_fingerprints` + vue `events_human` (= events − bots − noise) |
@@ -38,6 +39,7 @@ docs/audits. Les sprints non listés n'ont pas laissé de trace durable.
 | 30-31/08 | **taxonomie** | 12 articles jamais ingérés dans `page_taxonomy` (dont 5 ressources publiées en juin) : synchro Wix rejouée (63 ressources / 374 classiques), alerte `page_taxonomy_gap` ; issues #19 et #45 fermées en lot |
 | 01/09 | **migration GCP** | Tout centralisé sur `rewolf-507310` : nouveau service account GSC (réparé, vérifié), accès Business Profile à redemander (cron GBP en échec attendu, série arrêtée au 20/08) |
 | 02-04/09 | **mission précision / fiabilité / hygiène** | Prompt Fable 5.1 : 20 tickets agent livrés (#102-#123 hors T-02 parké). Clôture 04/09 après-midi : collages Wix (sprint42, masterPage, http-functions, champs Divorce/dossier), `WIX_API_KEY`, CNIL 13 mois, dédup CRM, ntfy vérifié. Restent : T-02 (ne pas tuer les JWT), CPI J+1 puis DROP photo 03/09, overloads 01/10, GBP ~10-15/09. Détail : `docs/mission-2026-09-02/` |
+| 19/09 | **incident formulaires T-19** | `form-webhook` Supabase v23 écrivait encore `events.country` après son DROP : 33 events rejetés du 05 au 18/09. Redéploiement v24, rapprochement Wix↔CRM exhaustif 33/33, backfill sans PII (`20260919200206`) : 27 macros + 6 candidatures, 27/27 macros attribuées ; annotation et alertes closes. |
 | 10/08 | **pont SECIB (pivot PII)** | Décision produit : rapprochement prospects web ↔ dossiers SECIB **en clair**. Livré le jour même (PR #93) : `crm_prospects` + `secib_dossiers` (RLS deny-all) + vue `pont_prospects_dossiers`, **form-webhook v13** déployé (extraction identité vérifiée sur un form réel), backfill 795 prospects Wix (03/2025→08/2026), `secib_ingest.py` validé sur le bac à sable Septeo. Prod SECIB = signature devis SECIB+ (120 €HT/mois). Rangement : drop `cpi_pre_restatement_*`, VACUUM FULL annuel désarmé, alerte `gbp_gap` créée |
 
 ## Constantes du projet

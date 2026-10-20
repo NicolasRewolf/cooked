@@ -16,7 +16,7 @@ import { InterventionsTimeline } from "@/components/InterventionsTimeline";
 import { InterventionEffects } from "@/components/InterventionEffects";
 import { buildMarkers, annotationsForPath, uncoveredByGsc, dayShort } from "@/lib/annotations";
 import { num, dec, pct, delta, dateFr, prettyPath } from "@/lib/format";
-import type { ArticleDetail, Period } from "@/lib/types";
+import type { Period } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -94,16 +94,16 @@ async function Content({ path, period }: { path: string; period: Period }) {
       tooltip: "Pondérée par impressions, toutes requêtes confondues — à lire avec les requêtes ci-dessous.",
     },
     {
-      label: "CTR réel / attendu",
-      value: g?.ctr_pct != null ? `${pct(g.ctr_pct)} / ${pct(g.ctr_expected, 0)}` : "—",
-      tooltip: "CTR attendu = courbe de clics du site à cette position. En-dessous : titre/méta à retravailler.",
+      label: "CTR observé",
+      value: g?.ctr_pct != null ? pct(g.ctr_pct) : "—",
+      tooltip: "Clics Google / impressions Google sur la fenêtre. À décomposer par requête avant de conclure sur le titre ou la méta-description.",
     },
     {
       label: "Contacts assistés",
       value: num(detail.assisted?.n ?? 0),
       delta: detail.assisted ? delta(detail.assisted.n, detail.assisted.prev) : undefined,
       tooltip:
-        "Contacts (appel ou formulaire) de visiteurs ENTRÉS par cet article — même visite. Attribution page d'entrée.",
+        "Clics téléphone ou formulaires hors recrutement de visites ENTRÉES par cet article. Attribution page d'entrée, sans preuve d'appel abouti ni de nouveau client.",
     },
   ];
 

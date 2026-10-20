@@ -8,12 +8,24 @@
 
 ## Identité du projet
 
-`cooked` est un **système d'analytics first-party** (cookieless,
-RGPD-exempt, non échantillonné) pour le site `jplouton-avocat.fr`
+`cooked` est un **système d'analytics first-party** (sans cookies,
+sans échantillonnage volontaire) pour le site `jplouton-avocat.fr`
 (Wix Studio). Depuis Sprint 31-32 (21-22/05/2026), Cooked ingère
 **aussi Google Search Console** pour les analyses cross-source
 acquisition × comportement on-page. Tout dans le même projet
 Supabase, plus de pipeline séparé. Stack :
+
+**Qualification des données** : les identifiants navigateur sont pseudonymes,
+persistants et peuvent être rapprochés des clés stockées dans le CRM.
+L'absence de nom/email/téléphone dans les sorties analytics ne prouve ni
+l'anonymat ni l'exemption de consentement. Lire `SECURITY.md` et
+`docs/rgpd-pont-secib.md` ; ne jamais annoncer de conformité ou de publication
+des mentions légales non vérifiée.
+
+**Remise en état du 20/10/2026** : `docs/RELIABILITY.md` décrit les correctifs,
+leurs dépendances de déploiement et leurs limites. Les versions préparées
+ne remplacent les observations de production qu'après vérification du code
+servi, des métadonnées et des nouveaux événements.
 
 ```
 tracker.html (Wix Custom Code)
@@ -211,8 +223,8 @@ après C1–C9 ; tue les fuites SQL restantes :
   `contracts/branded_query_vectors.json`).
 - **`cooked_snapshot_window(w, grain)`** : driver bornes `live_j1` + GSC +
   `cooked_events_window` pour les 3 refreshers dashboard.
-- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 138 routines au
-  03/09/2026, régénéré depuis la prod par le workflow `rpcs-regenerate`) ; gate CI
+- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 143 routines au
+  20/10/2026, régénéré depuis la prod par le workflow `rpcs-regenerate`) ; gate CI
   `check_rpcs_sql_fresh.py` si migration redéfinit une RPC + prod-drift (sha = prod).
 
 **Revue architecture D4–D9 (10/07 soir, PRs #57–#65)** — chantiers opportunistes
@@ -332,11 +344,12 @@ jour, à instruire séparément.
   facture→dossier UNIQUEMENT via `ExportComptable/ExportFinancier`
   (`DossierCode`, `DossierMatiereId`). `InfoComplementaire` : écrivable par
   l'API mais PAS lisible (question posée à Septeo) — le pont n'en dépend pas.
-- **Prod en attente** : GUID reçu = cabinet de démo Septeo. Accès au cabinet
-  Plouton réel conditionné à la **signature du devis SECIB+** (120 €HT/mois,
-  12 mois min, devis du 07/08 valable ~10 j). Après signature : swap des
-  credentials, `secib_ingest.py ingest --secib-env prod`, cron GitHub Actions
-  à créer (patron gsc/gbp).
+- **Prod SECIB bloquée** : GUID reçu = cabinet de démo Septeo. Les conditions
+  commerciales restent à confirmer, mais elles ne suffisent pas à activer
+  l'ingestion : `--secib-env prod` refuse avant credentials/API tant que la
+  synchronisation complète des dossiers anciens modifiés et de la facturation
+  n'est pas validée. L'ingestion test ne persiste pas un export financier borné
+  comme cumul ; le probe financier reste séparé, borné et en lecture seule.
 - **RGPD (action Nicolas, engagée)** : registre des traitements + politique de
   confidentialité du site à mettre à jour ; durée de conservation à fixer ;
   secret professionnel → périmètre validé avec Julien.
@@ -382,7 +395,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (138 routines au 04/09/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
+| Corps complets des RPC (143 routines au 20/10/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
 | Glossaire de domaine et invariants (conversions, attribution, lecture, fraîcheur) | `CONTEXT.md` |
 | Décisions d'architecture | `docs/adr/` |
 | PII, secrets, surface d'attaque, invariant I1 | `SECURITY.md` |
@@ -391,6 +404,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Ce qui reste à faire | `docs/ROADMAP.md` |
 | RGPD du pont SECIB (textes à publier, registre, arbitrages ouverts) | `docs/rgpd-pont-secib.md` |
 | État de fiabilité des données (audits) | `docs/audit-fable5-2026-07-02.md` (historique : `docs/data-quality-audit-2026-06-10.md`) |
+| Corrections courantes, déploiement et limites de lecture | `docs/RELIABILITY.md` |
 | Revue d'architecture (48 constats, 25/07/2026 — lire l'avertissement de fiabilité en tête) | `docs/audit-architecture-2026-07-25.md` |
 | Framework d'analyse mathématique (Markov, Shapley, causal…) | `docs/analyse-mathematique-avancee-2026-07-29.md` |
 | Chronologie des sprints | `docs/HISTORY-sprints.md` |
@@ -582,7 +596,7 @@ RPCs publiées — cross-source GSC × Cooked (Sprint 33+, migrations) :
 - `gsc_pages_overview(max_rows)` — top pages SEO (tri clics) ; v3 contacts macro
 - `gsc_top_queries_global(period_kind, max_rows)` — top requêtes site (+ volume DFS)
 - `site_pulse` / `pages_pulse` — quadrants GSC 28v28 × Cooked 7v7 (`pulse_quadrant` helper)
-- `site_seo_funnel(period_kind)` — funnel impressions → contacts
+- `site_seo_funnel(period_kind)` — API historique désactivée ; utiliser `seo_to_contact_funnel`
 - `gsc_page_daily_series` / `cooked_page_daily_series` — séries quotidiennes (sparklines)
 - `dfs_keywords_to_sync(limit_n)` — liste keywords à syncer (union GSC 28j ∪ 90j)
 - `gsc_x_dfs_opportunities(...)` — quick wins SEO (volume DFS + position 5–15)
@@ -654,42 +668,37 @@ le `dfs_sync.py` hebdo rattraper. Après changement RPC/script : relancer
 Source SQL unique : `macro_contacts_by_path(days_back)` — utilisée par
 `pages_overview_unified`, `gsc_pages_overview`, `gsc_page_performance`.
 Pour ajouter un signal macro futur (ex. SMS), ne modifier que cette fonction.
+Un `cta_phone_click` atteste un clic sur le numéro, pas un appel abouti.
+`convertit` ne doit pas hériter du quart de clic de rendez-vous inclus dans
+la composante valeur du CPI : score et badge ont deux rôles distincts.
 
 Pre-deployment date "tracker live" : 05/05/2026 → 06/05/2026 19:14
 Paris (première ingestion réelle).
 
-**Versions canoniques (repo `main`, 04/09/2026)** :
-- Tracker : **`sprint42`** (T-17, 04/09/2026 — CLS explicite : un chargement sans layout
-  shift émet CLS = 0 quand l'observer est attaché, CLS à 3 décimales ; 14 820 / 15 000 chars ;
-  cliquet CI : aucun ajout net au-dessus de 14 500 sans le loader). **Déployé en prod le
-  04/09/2026 à 10:12 Paris** (collé par Nicolas ; `expected_tracker_version` basculée par la
-  migration `20260904081320`, `tracker_drift` = 0).
-  sprint41 (12/07/2026) = ids auto-réparants (fin de la rotation aid/sid sur wipe de storage, ~22 % des
-  sessions), vérifié J+1 le 13/07/2026.
-- Edge `track` : **v30** (04/09/2026 — T-19/T-22 : `url` réduite à origine + chemin + paramètres
-  de campagne/attribution (utm_*, gclid & co, cooked_aid/sid), `title` plus écrit (colonne conservée,
-  NULL), `ingest_drops` agrégés (1 appel / 100 drops ou / minute au lieu d'1 par requête de bot) ;
-  v29 = 03/09/2026 — T-18 : gate `x-cooked-key` **fail-fast** — sans
-  `COOKED_INGEST_KEY` le boot échoue au lieu d'ouvrir la porte, `_shared/ingest_gate.ts` testé ;
-  v28 = 03/09/2026 — T-04 : UA littéral « pc » (bot Baidu,
-  13,8 % des pageviews d'`events_human` pendant 4 mois) et SEBot-WA droppés à
-  l'ingestion, miroir SQL dans `refresh_noise_sessions` + règle
-  `spam_referrer`, `classify_channel` v4 renvoie `spam` ; v27 = 25/07/2026 —
-  gate `x-cooked-key` à l'ingestion,
-  constat n°3 de la revue d'architecture ; v26 = filtre bots à l'ingestion,
-  constat n°5/R2 — la taxonomie ua_bot est appliquée AVANT l'INSERT, drops
-  comptés dans `ingest_drops` ; v25 = D4 `track_row` + C5 `events_row` ;
-  clamp horloge v23). Détail des constats :
-  `docs/audit-architecture-2026-07-25.md`.
-- Edge `form-webhook` : **v15** (03/09/2026 — T-18 : `page_source` canonicalisé (decode → NFC),
-  `form_id` trimé — Wix envoyait « Prise de contact site-web » avec un espace final ;
-  v14 = 03/09/2026 — T-07 : `form_submit_dropped` via
-  `raise_cooked_alert` ; v13 = Pont SECIB ; v12 = D4 ; v11 = drop alert).
-  Déployée le 03/09/2026 16:30 Paris (version Supabase 22).
+**Versions canoniques (20/10/2026)** :
+- Tracker : **`sprint43`** — contexte de route figé, navigation SPA synchrone,
+  durée visible résiduelle conservée, CWV attachés une fois au document.
+  Les valeurs révisées portent `measurement_id`, `revision` et `scope=document` ;
+  les lecteurs SQL dédupliquent avant percentile. Custom Code Wix mis à jour
+  le 20/10/2026 à 11:50 Paris ; script du HTML public vérifié identique
+  au minifié. Réception des nouveaux événements encore à vérifier.
+  Succède au sprint42 publié le 04/09/2026.
+- Edge `track` : **v31** — reconnaissance iPhone/iPad comme iOS avant le motif
+  macOS. Les gardes existantes restent : `x-cooked-key` fail-fast, filtre bots,
+  URL limitée aux campagnes/attribution, `title` non écrit, drops agrégés.
+  **Déployé le 20/10/2026 à 11:49 Paris**, version Supabase 41 ACTIVE.
+- Edge `form-webhook` : **v16** — identifiant de soumission stable obligatoire,
+  deux écritures idempotentes (analytics + prospect extrait), HTTP 503 si
+  l'une reste incomplète ou incertaine ; aucun message DB/identité dans les
+  diagnostics. **Déployé le 20/10/2026 à 11:49 Paris**, version Supabase 25
+  ACTIVE. Succède à v15 / Supabase 24, redéployée le 19/09/2026 à 21:47 Paris
+  après l'incident T-19 : la version 23 écrivait encore `events.country`.
 
-Prod peut lagger : vérifier la version déployée avant d'annoncer un changement
-Edge. Dernier contrôle le 04/09/2026 00:35 Paris : `track` **v30** + `form-webhook` **v15**
-(déployées par la CLI, sondes 405/401 relues) — prod = repo.
+Le statut distingue les sources, les configurations publiées et les données
+réellement reçues. Lire `docs/RELIABILITY.md`, puis vérifier à chaque livraison :
+code Edge téléchargé, version des événements navigateur, contrat SQL,
+état des workflows et contrôles après déploiement. Ne pas avancer
+`expected_tracker_version` avant le collage effectif du tracker.
 
 **Couture d'identité (12/07/2026)** : table `identity_stitch` (sid|aid →
 `visitor_key`, composantes connexes du graphe aid↔sid, cron nocturne 03:40 UTC,

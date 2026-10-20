@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { SortableTable, type Column } from "./SortableTable";
-import { Badge, ConfidenceBadge } from "./ui";
+import { ConfidenceBadge } from "./ui";
 import {
   bestQueryColumn,
   contactsColumn,
@@ -20,20 +20,6 @@ import { cn } from "@/lib/cn";
 import type { ResourceRow } from "@/lib/types";
 import { num, prettyPath } from "@/lib/format";
 import { santeFromMomentum } from "@/lib/momentum";
-
-// ── Source : part du trafic venant de Google (clics GSC vs visiteurs Cooked) ──
-// Faible = l'article vit sur réseaux / IA / direct (plus volatil que la recherche).
-function MixBadge({ r }: { r: ResourceRow }) {
-  if (r.unique_visitors === 0) return <span className="text-dim">—</span>;
-  const ratio = r.gsc_clicks / r.unique_visitors;
-  const [tone, label] =
-    ratio >= 0.8
-      ? (["info", "Google"] as const)
-      : ratio >= 0.35
-        ? (["neutral", "Mixte"] as const)
-        : (["warn", "Hors-Google"] as const);
-  return <Badge tone={tone}>{label}</Badge>;
-}
 
 // Colonnes distinctives des articles (le reste vient de metric-columns).
 // periodQ = « ?period=… » à propager aux liens de fiche (vide si période par défaut).
@@ -92,20 +78,11 @@ function buildColumns(periodQ: string): Column<ResourceRow>[] {
   },
   visitorsColumn,
   dwellColumn(
-    "Temps de lecture médian (réseaux sociaux exclus — leurs passages d'1 s faussent la médiane).",
+    "Temps médian des sorties de page, par session et page ; passages avec referrer Facebook ou LinkedIn exclus. Ce temps mesuré ne prouve pas une lecture attentive.",
   ),
   gscClicksColumn,
   ctrColumn,
   positionColumn,
-  {
-    key: "mix",
-    header: "source",
-    align: "left",
-    headerInfo:
-      "Part du trafic venant de Google (clics Google / visiteurs). Faible = l'article vit sur réseaux / IA / direct, plus volatil que la recherche.",
-    sortValue: (r) => (r.unique_visitors > 0 ? r.gsc_clicks / r.unique_visitors : null),
-    render: (r) => <MixBadge r={r} />,
-  },
   bestQueryColumn,
   contactsColumn,
   {
@@ -114,7 +91,7 @@ function buildColumns(periodQ: string): Column<ResourceRow>[] {
     align: "right",
     subHeader: "entrés par l'article",
     headerInfo:
-      "Contacts (appel ou formulaire) de visiteurs dont la session a COMMENCÉ par cet article — même visite. Le contenu qui a gagné le prospect reçoit le crédit.",
+      "Clics téléphone ou formulaires hors recrutement de visites commencées par cet article, après couture d'identité. Attribution à l'entrée de visite, sans preuve d'appel abouti ni de nouveau client.",
     sortValue: (r) => r.assisted_contacts ?? null,
     total: (rows) => {
       const t = rows.reduce((a, r) => a + (r.assisted_contacts ?? 0), 0);
@@ -361,7 +338,7 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
         rows={filtered}
         initialSortKey={sortKey}
         initialDir={sortDir}
-        minWidth={1160}
+        minWidth={1060}
         onSortChange={onSortChange}
       />
       <p className="mt-[11px] font-mono text-[10.5px] leading-relaxed text-dim">

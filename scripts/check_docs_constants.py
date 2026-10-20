@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -94,7 +95,16 @@ def check_crons(failures: list[str]) -> None:
 
 def check_orphans(failures: list[str]) -> None:
     index_text = "\n".join(read(p) for p in INDEXES)
-    candidates = list(ROOT.glob("*.md")) + list((ROOT / "docs").rglob("*.md"))
+    # Les rapports privés et autres artefacts ignorés ne font pas partie de la
+    # documentation publiée. Inclure les nouveaux fichiers non ignorés aussi.
+    published = subprocess.check_output(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "*.md"],
+        cwd=ROOT,
+    ).decode().split("\0")
+    candidates = [
+        ROOT / rel for rel in set(published)
+        if rel and ("/" not in rel or rel.startswith("docs/"))
+    ]
     for md in sorted(candidates):
         rel = md.relative_to(ROOT).as_posix()
         if any(rel.startswith(x) for x in DOCS["orphan_check_exclude_prefixes"]):

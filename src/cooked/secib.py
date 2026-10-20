@@ -16,10 +16,10 @@ client (nom, prénom, email, téléphones) + les métadonnées dossier (dates,
 matière, état facturable, facturation agrégée). Tout le reste — n° de
 sécurité sociale, adresses, contenu du dossier — n'est JAMAIS lu ni stocké.
 
-Deux modes :
+Prototype de test uniquement — deux modes :
 
-    python3 scripts/secib_ingest.py probe  --days 120        # lecture seule, résumé masqué
-    python3 scripts/secib_ingest.py ingest --days 120        # → secib_dossiers
+    python3 scripts/secib_ingest.py probe  --days 120        # lecture seule, résumé borné
+    python3 scripts/secib_ingest.py ingest --days 120        # métadonnées test uniquement
 
 `ingest` demande SUPABASE_SECRET_KEY (absente en local, posée en CI).
 
@@ -33,9 +33,14 @@ Credentials résolus dans cet ordre :
   1. env : SECIB_CLIENT_ID / SECIB_CLIENT_SECRET / SECIB_CABINET_GUID (CI)
   2. fichier local ~/.claude/secib-credentials.json (JAMAIS committé)
 
-`--secib-env` marque la colonne env de secib_dossiers : `test` = cabinet bac
-à sable Septeo (défaut tant que le devis SECIB+ n'est pas signé), `prod` =
-cabinet Plouton réel (changer aussi les credentials).
+`--secib-env prod` est refusé AVANT chargement des credentials/appels réseau.
+L'API vérifiée filtre les créations, pas les dernières modifications. Un
+export financier borné ne constitue pas le cumul d'un dossier. Les champs
+facture_total_ht / premiere_facture / derniere_facture sont donc écrits NULL
+sur les lignes test relues ; le résumé financier reste réservé à `probe`.
+Les dossiers plus anciens hors fenêtre ne sont pas synchronisés. Avant toute
+activation prod, il faut valider une reprise complète des dossiers modifiés
+et de la facturation, avec périmètre et complétude contrôlables.
 
 Pièges connus
 -------------
@@ -65,6 +70,27 @@ PARIS = ZoneInfo("Europe/Paris")
 DEFAULT_CREDENTIALS = Path.home() / ".claude" / "secib-credentials.json"
 API_BASE = "https://api.secib.fr/forward"
 PAGE_SIZE = 50  # maximum accepté par l'API
+MAX_DOSSIER_PAGES = 1000  # garde-fou : un dépassement échoue, jamais un succès partiel
+
+
+class SecibResponseError(ValueError):
+    """Réponse incompatible avec le contrat vérifié ; ne jamais inclure le DTO/PII."""
+
+
+def require_test_environment(secib_env: str) -> None:
+    if secib_env != "test":
+        raise ValueError(
+            "SECIB prod bloqué : synchronisation des modifications et cumul de "
+            "facturation non validés. Ce prototype accepte uniquement env=test."
+        )
+
+
+def creation_window(days: int, today: date | None = None) -> tuple[date, date]:
+    if days < 1:
+        raise ValueError("--days doit être strictement positif")
+    date_to = today or datetime.now(tz=PARIS).date()
+    # `days` jours calendaires inclusifs ; aujourd'hui peut être incomplet.
+    return date_to - timedelta(days=days - 1), date_to
 
 # ---------------------------------------------------------------------------
 # Normalisation — MIROIR STRICT des fonctions SQL cooked_normalize_email /
@@ -141,10 +167,11 @@ class SecibClient:
         self.session.headers["Authorization"] = "Bearer " + resp.json()["access_token"]
 
     def dossiers(self, date_from: date, date_to: date) -> list[dict]:
-        """Tous les dossiers créés dans [date_from, date_to] (POST paginé)."""
+        """Créations dans [date_from, date_to] ; pas une synchronisation des modifications."""
         out: list[dict] = []
-        start = 0
-        while True:
+        seen_ids: set[int | str] = set()
+        for page_number in range(MAX_DOSSIER_PAGES):
+            start = page_number * PAGE_SIZE
             resp = self.session.post(
                 f"{self.base}/Dossier/Get",
                 params={"range": f"{start}-{start + PAGE_SIZE - 1}"},
@@ -156,10 +183,19 @@ class SecibClient:
             )
             resp.raise_for_status()
             page = resp.json()
+            if not isinstance(page, list) or len(page) > PAGE_SIZE:
+                raise SecibResponseError("Dossier/Get : forme ou taille de page inattendue")
+            for item in page:
+                dossier_id = item.get("DossierId") if isinstance(item, dict) else None
+                if isinstance(dossier_id, bool) or not isinstance(dossier_id, (int, str)) or dossier_id == "":
+                    raise SecibResponseError("Dossier/Get : identifiant absent ou invalide")
+                if dossier_id in seen_ids:
+                    raise SecibResponseError("Dossier/Get : pagination répétée ou incohérente")
+                seen_ids.add(dossier_id)
             out.extend(page)
             if len(page) < PAGE_SIZE:
                 return out
-            start += PAGE_SIZE
+        raise SecibResponseError("Dossier/Get : plafond de pagination atteint, résultat incomplet")
 
     def export_financier(self, date_from: date, date_to: date) -> dict:
         resp = self.session.post(
@@ -225,37 +261,31 @@ def dossier_row(d: dict, secib_env: str) -> dict | None:
         "client_telephones": telephones,
         "client_emails_norm": sorted({n for n in map(normalize_email, emails) if n}),
         "client_tels_norm": sorted({n for n in map(normalize_phone_fr, telephones) if n}),
+        # Une fenêtre de factures n'est ni un cumul ni la première/dernière
+        # facture d'un dossier. NULL évite aussi de conserver un ancien extrait
+        # trompeur lors de la relecture d'une ligne du bac à sable.
+        "facture_total_ht": None,
+        "premiere_facture": None,
+        "derniere_facture": None,
         "synced_at": datetime.now(tz=PARIS).isoformat(),
     }
 
 
-def billing_by_code(export: dict) -> dict[str, dict]:
-    """Agrège l'export financier par DossierCode : total HT + bornes de dates."""
-    agg: dict[str, dict] = defaultdict(lambda: {"total_ht": 0.0, "dates": []})
-    for f in export.get("ListFactureExport") or []:
+def billing_codes(export: dict) -> set[str]:
+    """Codes renseignés de l'EXTRAIT, pour probe uniquement ; aucun montant cumulé."""
+    if not isinstance(export, dict) or not isinstance(export.get("ListFactureExport"), list):
+        raise SecibResponseError("ExportFinancier : liste des factures absente ou invalide")
+    codes: set[str] = set()
+    for f in export["ListFactureExport"]:
+        if not isinstance(f, dict):
+            raise SecibResponseError("ExportFinancier : facture invalide")
         code = f.get("DossierCode")
         if not code:
             continue
-        ht = f.get("MontantHt") or 0.0
-        agg[code]["total_ht"] += -ht if f.get("IsAvoir") else ht
-        day = (f.get("Date") or "")[:10]
-        if day:
-            agg[code]["dates"].append(day)
-    return dict(agg)
-
-
-def apply_billing(rows: list[dict], billing: dict[str, dict]) -> int:
-    hits = 0
-    for row in rows:
-        b = billing.get(row.get("code") or "")
-        if not b:
-            continue
-        hits += 1
-        row["facture_total_ht"] = round(b["total_ht"], 2)
-        if b["dates"]:
-            row["premiere_facture"] = min(b["dates"])
-            row["derniere_facture"] = max(b["dates"])
-    return hits
+        if not isinstance(code, str):
+            raise SecibResponseError("ExportFinancier : code dossier invalide")
+        codes.add(code)
+    return codes
 
 
 # ---------------------------------------------------------------------------
@@ -263,40 +293,47 @@ def apply_billing(rows: list[dict], billing: dict[str, dict]) -> int:
 # ---------------------------------------------------------------------------
 
 
-def fetch_rows(client: SecibClient, days: int, secib_env: str) -> list[dict]:
-    date_to = datetime.now(tz=PARIS).date()
-    date_from = date_to - timedelta(days=days)
-    print(f"Fenêtre dossiers : {date_from.isoformat()} → {date_to.isoformat()} (env={secib_env})")
+def fetch_rows(client: SecibClient, days: int, secib_env: str, *, today: date | None = None) -> list[dict]:
+    require_test_environment(secib_env)
+    date_from, date_to = creation_window(days, today)
+    print(f"Fenêtre de CRÉATION : {date_from.isoformat()} → {date_to.isoformat()} inclus (env=test)")
+    print("Métadonnées partielles : anciens dossiers modifiés hors fenêtre non relus.")
     dossiers = client.dossiers(date_from, date_to)
     rows = [r for r in (dossier_row(d, secib_env) for d in dossiers) if r]
     print(f"Dossiers reçus : {len(dossiers)} — rows construites : {len(rows)}")
 
-    export = client.export_financier(date_from, date_to)
-    billing = billing_by_code(export)
-    hits = apply_billing(rows, billing)
-    print(f"Facturation : {len(billing)} codes facturés dans la fenêtre, {hits} dossiers enrichis")
     return rows
 
 
 def cmd_probe(client: SecibClient, days: int, secib_env: str) -> None:
-    rows = fetch_rows(client, days, secib_env)
+    require_test_environment(secib_env)
+    date_from, date_to = creation_window(days)
+    rows = fetch_rows(client, days, secib_env, today=date_to)
+    billing = billing_codes(client.export_financier(date_from, date_to))
+    current_codes = {r["code"] for r in rows if r["code"]}
+    in_window = len(current_codes.intersection(billing))
+    outside_window = len(set(billing).difference(current_codes))
     with_email = sum(1 for r in rows if r["client_emails_norm"])
     with_tel = sum(1 for r in rows if r["client_tels_norm"])
     with_any = sum(1 for r in rows if r["client_emails_norm"] or r["client_tels_norm"])
-    facture = sum(1 for r in rows if r.get("facture_total_ht"))
     matieres = defaultdict(int)
     for r in rows:
         matieres[r["matiere_libelle"] or "(sans matière)"] += 1
     print()
     print(f"Clés de matching : email {with_email}/{len(rows)}, téléphone {with_tel}/{len(rows)}, "
           f"au moins une {with_any}/{len(rows)}")
-    print(f"Dossiers avec facturation dans la fenêtre : {facture}")
+    print(f"Extrait financier : {date_from.isoformat()} → {date_to.isoformat()} inclus "
+          "(journée courante potentiellement partielle ; complétude de l'export non certifiée)")
+    print(f"Codes renseignés facturés dans cet extrait : {len(billing)} ; "
+          f"{in_window} dans les créations relues ; {outside_window} hors de ces créations.")
+    print("Aucun cumul ni première/dernière facture d'un dossier déduit de cet extrait.")
     print("Par matière :", dict(sorted(matieres.items(), key=lambda kv: -kv[1])))
     print()
     print("(probe = lecture seule, aucune écriture Supabase)")
 
 
 def cmd_ingest(client: SecibClient, days: int, secib_env: str) -> None:
+    require_test_environment(secib_env)
     from cooked.store import SupabaseStore  # import tardif : exige supabase-py
 
     rows = fetch_rows(client, days, secib_env)
@@ -305,18 +342,24 @@ def cmd_ingest(client: SecibClient, days: int, secib_env: str) -> None:
         return
     store = SupabaseStore.from_env()
     store.upsert_batches("secib_dossiers", rows, on_conflict="env,dossier_id")
-    print(f"Upsert OK : {len(rows)} rows → secib_dossiers (env={secib_env})")
+    print(f"Upsert métadonnées test : {len(rows)} rows → secib_dossiers (env=test). "
+          "Facturation cumulée inconnue (NULL) ; aucune synchronisation des anciens dossiers.")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="SECIB → secib_dossiers (pont prospects)")
+    parser = argparse.ArgumentParser(description="Prototype SECIB test : créations récentes, facturation cumulée inconnue")
     parser.add_argument("mode", choices=["probe", "ingest"])
     parser.add_argument("--days", type=int, default=120,
-                        help="fenêtre de création des dossiers (défaut 120)")
+                        help="jours calendaires de création, aujourd'hui inclus (défaut 120)")
     parser.add_argument("--secib-env", choices=["test", "prod"], default="test",
-                        help="valeur de la colonne env (test = bac à sable Septeo)")
+                        help="test uniquement ; prod refusé tant que la synchronisation complète n'est pas validée")
     args = parser.parse_args()
 
+    try:
+        require_test_environment(args.secib_env)
+        creation_window(args.days)
+    except ValueError as exc:
+        parser.error(str(exc))
     client = SecibClient(load_credentials())
     if args.mode == "probe":
         cmd_probe(client, args.days, args.secib_env)

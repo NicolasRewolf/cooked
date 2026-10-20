@@ -7,7 +7,7 @@ import { KpiHeader } from "@/components/KpiHeader";
 import { FreshnessBanner } from "@/components/FreshnessBanner";
 import { PeriodSelector } from "@/components/PeriodSelector";
 import { SeoTable } from "@/components/SeoTable";
-import { GisementsPanel } from "@/components/GisementsPanel";
+import { SeoReadingGuide } from "@/components/SeoReadingGuide";
 import type { Period } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ async function Content({ period }: { period: Period }) {
     <div className="space-y-[18px]">
       {seo && <FreshnessBanner gscLastDay={seo.gsc_end} lagDays={view.lagDays} live />}
       <KpiHeader items={view.items} />
-      <GisementsPanel rows={rows} />
+      <SeoReadingGuide />
       <section>
         <SeoTable rows={rows} />
         <p className="mt-[11px] max-w-[920px] font-mono text-[10.5px] leading-relaxed text-dim">

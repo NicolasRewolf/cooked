@@ -8,9 +8,10 @@ Carte de la documentation. **Racine du repo** (standard mainteneur) :
 ## Docs vivants (font foi)
 
 ### Opérer & analyser
+- [`RELIABILITY.md`](RELIABILITY.md) — corrections du 20/10/2026, contrats de mesure, états de déploiement et limites.
 - [`OPERATIONS.md`](OPERATIONS.md) — architecture, events captés, RPCs publiées, crons, déploiement, dépannage.
 - [`PLAYBOOK-analyse-seo.md`](PLAYBOOK-analyse-seo.md) — recettes d'analyse SEO × GSC et les pièges déjà payés.
-- [`../supabase/rpcs.sql`](../supabase/rpcs.sql) — miroir lecture des **138 corps de RPC** (régénéré depuis la prod par le workflow `rpcs-regenerate`, gate CI Arch #5 + prod-drift T-12).
+- [`../supabase/rpcs.sql`](../supabase/rpcs.sql) — miroir lecture des **143 corps de RPC** (régénéré depuis la prod par le workflow `rpcs-regenerate`, gate CI Arch #5 + prod-drift T-12).
 - [`rgpd-pont-secib.md`](rgpd-pont-secib.md) — RGPD du pont SECIB : textes à publier, registre, arbitrages ouverts.
 - [`adr/`](adr/) — décisions d'architecture (ADR-0001 source unique de la profondeur de lecture, ADR-0002 registre des contrats de fraîcheur).
 - [`mission-2026-09-02/`](mission-2026-09-02/) — mission précision/fiabilité/hygiène : [`00-baseline.md`](mission-2026-09-02/00-baseline.md), [`01-audit.md`](mission-2026-09-02/01-audit.md) (86 constats, 7 causes racines, 13 invariants), [`02-plan.md`](mission-2026-09-02/02-plan.md) (22 tickets), [`journal.md`](mission-2026-09-02/journal.md), [`02-apres.md`](mission-2026-09-02/02-apres.md) (re-mesure du 04/09, 14 invariants), [`03-passation.md`](mission-2026-09-02/03-passation.md) (finale, 04/09).
@@ -21,9 +22,9 @@ Carte de la documentation. **Racine du repo** (standard mainteneur) :
 - [`cpi-modele-mathematique.md`](cpi-modele-mathematique.md) — formules détaillées (support de relecture experte).
 
 ### Mémoire & suivi
-- [`HISTORY-sprints.md`](HISTORY-sprints.md) — chronologie (à jour **03/09/2026**, mission précision/fiabilité).
+- [`HISTORY-sprints.md`](HISTORY-sprints.md) — chronologie et corrections préparées le **20/10/2026**.
 - [`../CHANGELOG.md`](../CHANGELOG.md) — jalons par date (Keep a Changelog).
-- [`ROADMAP.md`](ROADMAP.md) — **reste à faire courant** (état des lieux du 03/09/2026 au soir).
+- [`ROADMAP.md`](ROADMAP.md) — **reste à faire courant** et vérifications de livraison.
 - [`JOURNAL-actions-contenu.md`](JOURNAL-actions-contenu.md) — archive des vagues contenu 1-2 (source canonique depuis le 11/06/2026 : table `annotations`).
 
 ## Archives datées (contexte historique, ne font plus foi)
