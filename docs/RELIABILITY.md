@@ -96,8 +96,12 @@ l’accès API de base du projet appelant. Le diagnostic distingue ce cas d’un
 expiration OAuth et ne recommande plus une réauthentification sans preuve.
 La migration `20261020112802` aligne aussi les conseils du registre de fraîcheur :
 quota nul et authentification ont des remèdes distincts ; la reprise GSC doit
-porter sur les trois tables et être suivie du refresh complet. La demande Google
-d'accès API de base reste à envoyer ; aucun rattrapage GBP n'est confirmé.
+porter sur les trois tables et être suivie du refresh complet.
+Si une autorisation existe sur un autre projet, vérifier ce projet et reprendre
+le dossier auprès du support (« General API Question ») pour rétablissement ou
+transfert. Ne pas créer une demande d'accès en double. Au contrôle final du
+20/10, l'ancien projet autorisé est inutilisable ; la reprise de son dossier
+reste nécessaire et aucun rattrapage GBP n'est confirmé.
 
 **Taxonomie et alertes.** Une page sans catégorie nécessite une vérification
 du chemin, d'une éventuelle redirection et de la source Wix. Le contrôle du

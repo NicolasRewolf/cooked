@@ -32,6 +32,9 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
   Registre de fraîcheur corrigé (`20261020112802`) : le quota GBP nul
   nécessite l'approbation API de base de Google ; la reprise GSC porte sur
   les trois tables. L'accès GBP demeure bloqué malgré OAuth renouvelé.
+- GBP : rechercher une autorisation et un dossier existants avant de déposer
+  une première demande. En cas de migration avec ancien projet inaccessible,
+  reprendre le dossier auprès du support pour rétablissement ou transfert.
 
 ## [2026-09-19] — Incident formulaires T-19 : webhook réparé et 33 soumissions restituées
 

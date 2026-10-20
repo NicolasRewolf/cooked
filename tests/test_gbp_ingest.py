@@ -54,7 +54,7 @@ def quota_error(limit, consumer="projects/123456"):
 
 
 @pytest.mark.parametrize("limit", ["0", 0])
-def test_zero_quota_requires_project_approval_not_oauth_retry(limit):
+def test_zero_quota_prioritizes_existing_approval_not_oauth_retry(limit):
     session = Mock()
     session.get.return_value.status_code = 429
     session.get.return_value.json.return_value = quota_error(limit)
@@ -62,10 +62,26 @@ def test_zero_quota_requires_project_approval_not_oauth_retry(limit):
         _get(session, "https://businessprofileperformance.googleapis.com/v1/test")
     diagnostic = str(error.value)
     assert "projects/123456" in diagnostic
-    assert "Application for Basic API Access" in diagnostic
+    assert "un projet déjà approuvé et le dossier d'accès existant" in diagnostic
+    assert "réutiliser ce projet si les droits le permettent" in diagnostic
+    assert "inaccessible ou supprimé" in diagnostic
+    assert "General API Question" in diagnostic
+    assert "rétablir ou transférer l'accès" in diagnostic
+    assert "https://support.google.com/business/contact/api_default" in diagnostic
     assert "gcloud auth" not in diagnostic
     assert "secret-sentinel" not in diagnostic
     assert session.get.call_count == 1
+
+
+def test_zero_quota_only_suggests_first_application_without_known_approval():
+    diagnostic = _http_failure_message(429, quota_error("0"))
+    previous_approval, application = diagnostic.split(
+        "Seulement si aucune approbation antérieure n'est connue, demander ", 1
+    )
+    assert "General API Question" in previous_approval
+    assert "Application for Basic API Access" not in previous_approval
+    assert "Application for Basic API Access" in application
+    assert "https://developers.google.com/my-business/content/prereqs" in application
 
 
 def test_nonzero_quota_is_not_reported_as_missing_approval():
