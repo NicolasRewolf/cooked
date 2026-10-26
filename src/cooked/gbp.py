@@ -22,25 +22,26 @@ n'écrit JAMAIS la queue de fenêtre rembourrée à zéro par l'API.
 
 Auth
 ----
-Les APIs Business Profile n'acceptent PAS les comptes de service —
-contrairement à l'ingest GSC. Il faut un consentement OAuth utilisateur,
-une fois, avec un compte qui gère la fiche. Deux voies, essayées dans
-cet ordre :
+Cooked utilise un consentement OAuth utilisateur avec un compte qui gère
+la fiche. Depuis le 26/10/2026, la CI utilise le client OAuth dédié
+« Cooked - collecte Business Profile », avec le seul scope business.manage.
+Son JSON authorized_user est stocké en base64 dans GBP_CREDENTIALS_B64,
+décodé sur le runner puis chargé par google.auth.default via
+GOOGLE_APPLICATION_CREDENTIALS. Il ne porte ni scope cloud-platform ni
+quota_project_id. Le refresh token permet le renouvellement automatique,
+mais peut toujours être révoqué.
 
-  1. ADC gcloud (le plus simple, rien à télécharger) :
-         gcloud auth application-default login \\
-             --scopes=https://www.googleapis.com/auth/business.manage,https://www.googleapis.com/auth/cloud-platform
-     → credentials dans ~/.config/gcloud/application_default_credentials.json
+L'ordre de résolution du code reste inchangé :
+  1. google.auth.default (GOOGLE_APPLICATION_CREDENTIALS, puis ADC global).
+  2. Fichiers OAuth locaux si aucun credential ADC utilisable n'est trouvé :
+         client OAuth  : ~/.claude/gbp-oauth-client.json
+         refresh token : ~/.claude/gbp-token.json
+     Hors dépôt, permissions 0600, JAMAIS committés ; surchargeables via
+     GBP_CLIENT_SECRETS_PATH / GBP_TOKEN_PATH.
 
-  2. Client OAuth téléchargé depuis la console, si l'ADC est refusé :
-         client OAuth  : ~/.claude/gbp-oauth-client.json  (JAMAIS committé)
-         refresh token : ~/.claude/gbp-token.json         (JAMAIS committé)
-     Surchargeables via GBP_CLIENT_SECRETS_PATH / GBP_TOKEN_PATH.
-
-En CI (GitHub Actions), c'est encore la voie 1 : le fichier ADC produit en
-local est posé en secret (GBP_CREDENTIALS_B64), décodé sur le runner, et
-lu via GOOGLE_APPLICATION_CREDENTIALS. La voie 2 reste le filet de secours
-si ce refresh token venait à être révoqué.
+L'ADC global gcloud n'a pas été remplacé. Pour utiliser le client dédié en
+local, pointer explicitement GOOGLE_APPLICATION_CREDENTIALS vers
+~/.claude/gbp-token.json. Procédure de reprise : docs/OPERATIONS.md.
 
 L'approbation Business Profile appartient au projet Google Cloud appelant.
 Un HTTP 429 avec `quota_limit_value=0` signifie que ce projet n'a pas accès
@@ -134,11 +135,11 @@ def _path_from_env(var: str, default: Path) -> Path:
 
 
 def _creds_from_adc() -> Credentials | None:
-    """Credentials posées par `gcloud auth application-default login`.
+    """Charge les credentials via le résolveur standard google.auth.default.
 
-    Voie préférée : aucun fichier à télécharger depuis la console. On exige
-    le scope business.manage — si gcloud a été lancé sans, on retombe sur la
-    voie 2 plutôt que d'échouer en 403 plus loin.
+    En CI, GOOGLE_APPLICATION_CREDENTIALS désigne le JSON authorized_user du
+    client OAuth dédié. Sans cette variable, l'ADC global reste prioritaire
+    sur les fichiers de repli ; des scopes déclarés incompatibles l'écartent.
     """
     try:
         creds, _ = google.auth.default(scopes=SCOPES)
@@ -192,9 +193,12 @@ def authorized_session() -> AuthorizedSession:
 def _auth_failure_message() -> str:
     return (
         "ERROR GBP_AUTH : le credential OAuth utilisateur doit être renouvelé.\n"
-        f"  {ADC_LOGIN_COMMAND}\n"
+        "Réautoriser le client OAuth dédié existant « Cooked - collecte Business Profile » "
+        "avec le seul scope https://www.googleapis.com/auth/business.manage "
+        "(procédure : docs/OPERATIONS.md).\n"
         "Puis mettre à jour le secret GitHub GBP_CREDENTIALS_B64 et vérifier "
-        "un appel API réussi. Cette opération ne change pas l'approbation "
+        "un appel API réussi et le rattrapage des jours manquants. "
+        "Cette opération ne change pas l'approbation "
         "Business Profile du projet Google Cloud."
     )
 

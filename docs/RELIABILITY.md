@@ -103,6 +103,19 @@ transfert. Ne pas créer une demande d'accès en double. Au contrôle final du
 20/10, l'ancien projet autorisé est inutilisable ; la reprise de son dossier
 reste nécessaire et aucun rattrapage GBP n'est confirmé.
 
+**Mise à jour GBP du 26/10/2026.** L'approbation Google du 21/10 pour
+`rewolf-507310` a permis la reprise : [rattrapage réussi](https://github.com/NicolasRewolf/cooked/actions/runs/40370720729),
+64 jours récupérés du 21/08 au 23/10, neuf mesures chaque jour et historique
+conservé. Une connexion OAuth dédiée à Cooked (audience Interne, seul scope
+`business.manage`) remplace ensuite l'ADC gcloud dans le secret GitHub.
+Le [run avec cette connexion](https://github.com/NicolasRewolf/cooked/actions/runs/40379206471)
+a renouvelé son accès automatiquement et écrit 252 lignes sur 28 jours,
+du 26/09 au 23/10, à 19:36 Paris. Valeurs recoupées API/base ; aucune alerte
+GBP renvoyée par la règle de fraîcheur après reprise. Le workflow quotidien
+est actif ; son prochain déclenchement planifié n'a pas encore été observé.
+L'autorisation reste révocable. L'ADC global local n'a pas été remplacé ;
+voir [la procédure dédiée](OPERATIONS.md#google-business-profile--connexion-dédiée-et-reprise-26102026).
+
 **Taxonomie et alertes.** Une page sans catégorie nécessite une vérification
 du chemin, d'une éventuelle redirection et de la source Wix. Le contrôle du
 20/10 trouve une réponse 404 pour le chemin signalé : il ne faut pas inventer

@@ -6,7 +6,6 @@ import pytest
 from google.auth.exceptions import RefreshError
 
 from cooked.gbp import (
-    ADC_LOGIN_COMMAND,
     _get,
     _http_failure_message,
     _to_store_rows,
@@ -103,16 +102,18 @@ def test_unstructured_quota_error_remains_unclassified(payload):
     assert "GBP_RATE_LIMIT" in _http_failure_message(429, payload)
 
 
-def test_refresh_error_has_specific_safe_diagnostic_and_both_adc_scopes():
+def test_refresh_error_guides_dedicated_oauth_reauthorization_without_gcloud():
     session = Mock()
     session.get.side_effect = RefreshError("secret-sentinel")
     with pytest.raises(SystemExit, match="GBP_AUTH") as error:
         _get(session, "https://businessprofileperformance.googleapis.com/v1/test")
     diagnostic = str(error.value)
-    assert ADC_LOGIN_COMMAND in diagnostic
-    assert "auth/business.manage," in diagnostic
-    assert "auth/cloud-platform" in diagnostic
+    assert "Réautoriser le client OAuth dédié existant" in diagnostic
+    assert "https://www.googleapis.com/auth/business.manage" in diagnostic
+    assert "auth/cloud-platform" not in diagnostic
+    assert "gcloud auth" not in diagnostic
     assert "GBP_CREDENTIALS_B64" in diagnostic
+    assert "appel API réussi et le rattrapage des jours manquants" in diagnostic
     assert "secret-sentinel" not in diagnostic
 
 
