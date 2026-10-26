@@ -3,6 +3,23 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-10-26] — GBP repris et connexion OAuth dédiée validée
+
+- Projet `rewolf-507310` approuvé par Google le 21/10 ; [rattrapage du 26/10](https://github.com/NicolasRewolf/cooked/actions/runs/40370720729) :
+  64 jours récupérés (21/08–23/10), neuf mesures par jour, historique conservé
+  et valeurs recoupées contre l'API.
+- Secret `GBP_CREDENTIALS_B64` remplacé par l'autorisation du client OAuth
+  dédié Cooked, audience Interne et seul scope `business.manage`, sans
+  `cloud-platform` ni `quota_project_id`. Le collecteur charge toujours le
+  JSON via `GOOGLE_APPLICATION_CREDENTIALS` ; logique d'auth et d'ingestion inchangée.
+- [Renouvellement automatique vérifié en CI](https://github.com/NicolasRewolf/cooked/actions/runs/40379206471)
+  à 19:36 Paris : 252 lignes du 26/09 au 23/10, valeurs API/base concordantes,
+  règle de fraîcheur GBP sans alerte. Workflow quotidien actif ; prochain
+  départ planifié non observé. Autorisation toujours révocable.
+- Diagnostic `GBP_AUTH` et procédure orientés vers la réautorisation du
+  client dédié existant ; plus de commande gcloud systématique. L'ADC global
+  local reste inchangé ; les fichiers OAuth dédiés restent privés hors dépôt.
+
 ## [2026-10-20] — Correctifs de fiabilité livrés et contrôlés
 
 - Tracker sprint43 : URL de route figée pour la sortie SPA, prise en compte

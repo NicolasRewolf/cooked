@@ -429,7 +429,7 @@ Référence : [Search Analytics query](https://developers.google.com/webmaster-t
 
 ### Auth
 
-Service Account Google Cloud `gsc-cooked@rewolf-507310.iam.gserviceaccount.com` (projet GCP central `rewolf-507310` depuis le 01/09/2026 — l'ancien projet `plouton-472207` et son SA `gsc-mcp-claude@…` ont été supprimés lors du ménage GCP), credentials JSON en `~/.claude/gsc-credentials.json` (NON commité, miroir base64 dans le secret GitHub `GSC_CREDENTIALS_B64`). Ajouté comme utilisateur sur la propriété GSC `https://www.jplouton-avocat.fr/`. ⚠️ Même migration côté GBP : l'approbation Business Profile est liée au projet et ne migre pas avec les credentials. Au contrôle du 20/10, une autorisation existe sur l'ancien projet, mais celui-ci est inutilisable ; le nouveau projet reste à quota 0. Reprendre le dossier existant auprès du support (« General API Question ») pour rétablissement ou transfert, sans déposer une nouvelle demande standard en double.
+Service Account Google Cloud `gsc-cooked@rewolf-507310.iam.gserviceaccount.com` (projet GCP central `rewolf-507310` depuis le 01/09/2026 — l'ancien projet `plouton-472207` et son SA `gsc-mcp-claude@…` ont été supprimés lors du ménage GCP), credentials JSON en `~/.claude/gsc-credentials.json` (NON commité, miroir base64 dans le secret GitHub `GSC_CREDENTIALS_B64`). Ajouté comme utilisateur sur la propriété GSC `https://www.jplouton-avocat.fr/`. Côté GBP, l'approbation est liée au projet et ne migre pas avec les credentials. Le quota nul constaté le 20/10 est résolu : Google a approuvé `rewolf-507310` (numéro `1005289878572`) le 21/10/2026, et la collecte a repris le 26/10. Voir la procédure GBP ci-dessous.
 
 ### Re-ingestion / refresh
 
@@ -570,7 +570,7 @@ et comparée à la prod par la gate `prod-drift` (T-12) : 10 jobs. Source de vé
 | `refresh_noise_filters_hourly` | `5 * * * *` | Bot fingerprints + noise sessions, **incrémental 48 h depuis T-08 (02/07)** : ~4 s/run (155 s avant ; fingerprints historiques conservés, noise = delete-récent + réinsertion) |
 | `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — v4 (T-07, 03/09/2026) : voir § Alertes ci-dessous. Les `critical` **poussent sur ntfy** (≤ 2 par épisode, topic dans `cooked_config`) |
 | `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien **planifié** 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) — **départ réel +4 à +12 h** depuis le 27/08/2026 (ordonnanceur GitHub) : l'aval `cooked-refresh-after-gsc` suit seul jusqu'à 21:00 UTC, l'alerte `gsc_ingest_missed` sonne à 12:00 UTC (T-11) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
-| `gbp-daily-ingest` | GitHub Actions | Google Business Profile quotidien 05:30 UTC, fenêtre 30 j (lag ~J-4, la queue rembourrée à zéro est coupée par le script) → `gbp_daily`. Notifie ntfy en échec. ⚠️ **Le credential est un ADC utilisateur : Google exige une reauth périodique** — panne silencieuse de 6 jours du 30/07 au 04/08/2026, réparée le 05/08 (`gcloud auth application-default login --scopes=…business.manage,…cloud-platform` puis secret `GBP_CREDENTIALS_B64` re-poussé). Alerte de fraîcheur **`gbp_daily_stale`** (registre `freshness_contract` : normal J-4, warn > 7 j, critical > 14 j → ntfy). **Depuis le 21/08/2026 la série s'arrête au 20/08** : migration du projet Google vers `rewolf-507310` (01/09). **Contrôle du 20/10 : OAuth renouvelé et secret actualisé, mais HTTP 429 `GBP_QUOTA_ZERO`**. Une autorisation existe sur un ancien projet que l'API déclare « introuvable ou supprimé ». Reprendre le dossier existant auprès du support (« General API Question ») pour rétablissement ou transfert, sans nouvelle demande standard en double. Après accès rétabli, relancer une fenêtre couvrant tout le retard et vérifier les jours reçus. Un client OAuth dédié réduit la fragilité de réauthentification, sans contourner l'approbation API |
+| `gbp-daily-ingest` | GitHub Actions | Google Business Profile quotidien planifié à 05:30 UTC, fenêtre 30 j (lag ~J-4, queue finale à zéro coupée par le script) → `gbp_daily`. Notifie ntfy en échec ; alerte `gbp_daily_stale` (normal J-4, warn > 7 j, critical > 14 j). Depuis le 26/10/2026 : client OAuth dédié, renouvellement automatique vérifié en CI, données jusqu'au 23/10 et 64 jours manquants récupérés. Configuration et reprise ci-dessous. |
 | `math-refresh-snapshots-weekly` | `10 5 * * 0` (07:10 Paris, dimanche) | `math_refresh_snapshots(28)` — snapshots `math_*_snapshot` du framework d'analyse mathématique (PR #91, 29/07/2026) ; registre `math_visit_sequences_snapshot` (warn > 9 j) |
 | `cpi-calibration-monthly` | `0 5 1 * *` (07:00 Paris, le 1er du mois) | **T-20 (04/09/2026)** : `cpi_calibration_check()` — rejoue le §3 du harnais `scripts/cpi_validation_j28.sql` (loi de puissance CTR × position, 90 j clos à `gsc_last_data_day()`, brandé exclu) → `cpi_calibration_checks` ; registre `cpi_calibration_checks` (warn > 35 j) + alerte `cpi_calibration` (critical R² < 0,85, warn médiane \|écart\| > 30 %) · `SET statement_timeout='300s'` · premier point 04/09/2026 : R² 0,913, médiane 25,5 % |
 | `wix-taxonomy-sync` | GitHub Actions | **T-15 (03/09/2026)** : lundi 05:00 UTC, `scripts/wix_taxonomy_sync.py` lit la liste **publiée** du blog (API Wix, secret `WIX_API_KEY`) et appelle `page_taxonomy_sync_wix(jsonb)` — insère les articles absents (category + theme, source `wix_api`), corrige `category` seule, ne supprime jamais. Sans secret : sort sans écrire (avertissement) ; filets : registre `page_taxonomy` (warn 21 j) + alerte `page_taxonomy_gap` (dès 1 article vu > 8 j) |
@@ -584,6 +584,60 @@ l'appel** de la fonction (cf. `cron.job` en prod).
 ---
 
 ## Recettes & garde-fous (audit 01-03/07/2026)
+
+### Google Business Profile — connexion dédiée et reprise (26/10/2026)
+
+Le client **« Cooked - collecte Business Profile »** appartient au projet
+`rewolf-507310`, approuvé par Google le 21/10/2026. Son audience **Interne**
+a été vérifiée dans la console le 26/10. L'autorisation porte uniquement sur
+`https://www.googleapis.com/auth/business.manage` : ce droit permet de gérer
+les fiches, mais le collecteur Cooked effectue des lectures API seulement.
+
+Le secret GitHub `GBP_CREDENTIALS_B64` contient le JSON `authorized_user`
+du client dédié, encodé en base64, avec son refresh token. Il ne contient
+ni scope `cloud-platform` ni `quota_project_id`. Le workflow le décode dans
+un fichier temporaire privé (0600), le désigne par
+`GOOGLE_APPLICATION_CREDENTIALS`, puis le supprime. Le résolveur
+`google.auth.default` sait charger ce format sans changement du collecteur.
+
+Les fichiers locaux `~/.claude/gbp-oauth-client.json` et
+`~/.claude/gbp-token.json` restent hors dépôt, en permissions 0600. L'ADC
+global gcloud n'a pas été modifié et reste prioritaire en l'absence de
+configuration explicite. Pour tester la connexion dédiée en lecture seule :
+
+```bash
+GOOGLE_APPLICATION_CREDENTIALS="$HOME/.claude/gbp-token.json" python3 scripts/gbp_ingest.py probe --days 30
+```
+
+En cas de diagnostic `GBP_AUTH`, réautoriser **ce client existant** avec le
+compte gestionnaire de la fiche et le seul scope `business.manage`, en
+demandant l'accès hors connexion pour obtenir un refresh token. Mettre à
+jour le fichier local puis `GBP_CREDENTIALS_B64`, sans afficher leur contenu
+dans les logs ou le dépôt. Ne pas recréer un client ni repasser par la
+connexion gcloud par défaut. Vérifier un renouvellement et un appel API,
+puis déclencher `gbp-daily-ingest` avec une fenêtre `days` couvrant tout le
+retard, et contrôler les jours et les neuf mesures en base. L'upsert par
+`day,location,metric` permet le chevauchement avec les jours déjà présents.
+
+**Preuves du 26/10/2026 :** le [rattrapage](https://github.com/NicolasRewolf/cooked/actions/runs/40370720729)
+a écrit 792 lignes sur 88 jours (28/07–23/10) et récupéré les 64 jours du
+21/08 au 23/10. L'historique contrôlé contient 5 652 cellules, sans trou.
+La [bascule sur le client dédié](https://github.com/NicolasRewolf/cooked/actions/runs/40379206471)
+a réussi à 19:36 Paris : 252 lignes, neuf mesures par jour sur les 28 jours
+du 26/09 au 23/10. Le JSON fourni à ce run ne contenait aucun access token
+préenregistré : la CI a donc renouvelé l'accès depuis le refresh token.
+Les valeurs API et base concordent ; la règle de fraîcheur ne signale plus
+GBP. Les trois jours finaux à zéro ont été écartés par l'heuristique du
+collecteur, pas certifiés comme journées sans activité.
+
+Le workflow quotidien est actif, mais ces exécutions manuelles ne prouvent
+pas un futur déclenchement planifié. Le renouvellement automatique réduit
+la dépendance à la session Google Cloud ; une révocation ou un changement
+de politique Google peut encore imposer une autorisation. Conserver les
+alertes. Un quota nul (`GBP_QUOTA_ZERO`) relève de l'approbation du projet,
+pas d'un renouvellement OAuth. Références :
+[OAuth Business Profile](https://developers.google.com/my-business/content/implement-oauth)
+et [expiration des refresh tokens](https://developers.google.com/identity/protocols/oauth2#expiration).
 
 ### One-shot pg_cron (exécuter du SQL lourd côté serveur, > 60 s MCP)
 

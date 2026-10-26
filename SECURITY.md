@@ -40,7 +40,8 @@ traitement ; la qualification juridique reste ouverte.
 ## Ce qui ne doit jamais entrer dans le repo
 
 - Clés Supabase (`sb_secret_*`, `service_role`, tokens `sbp_*`), `DATABASE_URL*`
-- Credentials Google (service account GSC JSON, ADC gcloud, `GBP_CREDENTIALS_B64`)
+- Credentials Google (service account GSC JSON, ADC gcloud, client OAuth GBP,
+  refresh tokens, `GBP_CREDENTIALS_B64`)
 - Identifiants DataForSEO, SECIB (`~/.claude/secib-credentials.json`)
 - `FORM_WEBHOOK_SECRET`, `ANON_SALT`, `COOKED_INGEST_KEY`, topic ntfy
 - Fichiers `.env`, `.env.local`, `*credentials*.json`
@@ -48,7 +49,7 @@ traitement ; la qualification juridique reste ouverte.
 En cas de fuite : **révoquer / régénérer** immédiatement (Supabase, Google, DataForSEO, Septeo), puis
 rejouer les déploiements qui portent la valeur (Edge, Velo, GitHub Actions, Vercel).
 
-## Où vivent les secrets (inventaire complet au 03/09/2026)
+## Où vivent les secrets (inventaire du 03/09/2026, GBP actualisé le 26/10/2026)
 
 | Secret | Protège | Emplacement |
 |---|---|---|
@@ -58,7 +59,7 @@ rejouer les déploiements qui portent la valeur (Edge, Velo, GitHub Actions, Ver
 | `ALLOWED_ORIGIN` | garde d'origine du proxy Velo → Edge | Supabase Edge secrets (`track`) |
 | `FORM_WEBHOOK_SECRET` | token `?token=` de l'Edge `form-webhook` (Wix Automation) | Supabase Edge secrets ; Wix Automation (URL du webhook) |
 | `GSC_CREDENTIALS_B64` / `~/.claude/gsc-credentials.json` | service account `gsc-cooked@rewolf-507310` (Search Console) | GitHub Actions ; local |
-| `GBP_CREDENTIALS_B64` / ADC gcloud | OAuth utilisateur Google Business Profile (reauth périodique exigée par Google) | GitHub Actions ; `~/.config/gcloud/application_default_credentials.json` |
+| `GBP_CREDENTIALS_B64` / client OAuth GBP dédié | OAuth utilisateur, seul scope `business.manage`, renouvellement automatique par refresh token (révocable) ; sans `cloud-platform` ni `quota_project_id` | GitHub Actions : JSON `authorized_user` en base64 ; local hors dépôt : `~/.claude/gbp-oauth-client.json` et `~/.claude/gbp-token.json`, permissions 0600 |
 | `DFS_USERNAME` / `DFS_PASSWORD` | DataForSEO (`dfs_sync.py`) | GitHub Actions uniquement (absents en local) |
 | `DATABASE_URL_RO` | rôle Postgres `cooked_ci_ro` — **lecture seule** (catalogue, `cron.job`, `schema_migrations`, `freshness_contract`, `cooked_config`, EXECUTE sur les 16 RPC `dashboard_*` pour le contrat T-13 ; `statement_timeout` 30 s, `default_transaction_read_only`) | GitHub Actions (prod-drift, rpcs-regenerate) |
 | `NTFY_TOPIC` / `cooked_config.ntfy_topic` | canal de push des alertes `critical` et des échecs de workflows | GitHub Actions ; table `cooked_config` (service_role) |
@@ -68,6 +69,14 @@ rejouer les déploiements qui portent la valeur (Edge, Velo, GitHub Actions, Ver
 | Credentials SECIB (client_credentials, GUID cabinet) | API SECIB — bac à sable Septeo tant que le devis SECIB+ n'est pas signé | `~/.claude/secib-credentials.json` (local) — pas de secret CI tant qu'il n'y a pas d'ingestion prod |
 
 Modèle sans valeurs : [.env.example](.env.example) · dashboard : [dashboard/.env.local.example](dashboard/.env.local.example).
+
+Le client GBP dédié est configuré en audience Interne dans le projet
+`rewolf-507310` (vérifié le 26/10/2026). Son scope permet techniquement de
+gérer les fiches ; Cooked l'utilise uniquement en lecture. La CI charge le
+JSON via `GOOGLE_APPLICATION_CREDENTIALS` et supprime le fichier temporaire
+après exécution. L'ADC global local reste inchangé : pointer explicitement
+vers le token dédié pour le tester. Procédure de renouvellement et limites :
+[docs/OPERATIONS.md](docs/OPERATIONS.md#google-business-profile--connexion-dédiée-et-reprise-26102026).
 
 ## Surface d'attaque et ce qui la vérifie
 

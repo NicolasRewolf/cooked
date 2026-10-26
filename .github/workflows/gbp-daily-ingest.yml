@@ -13,15 +13,15 @@ name: GBP Daily Ingest
 # script coupe systématiquement la queue de fenêtre rembourrée à zéro par
 # l'API — un zéro récent n'est pas un vrai zéro.
 #
-# Auth : les APIs Business Profile REFUSENT les comptes de service. Il faut
-# un refresh token utilisateur. Celui du secret est le fichier ADC produit
-# en local par :
-#   gcloud auth application-default login \
-#       --scopes=https://www.googleapis.com/auth/business.manage
+# Auth depuis le 26/10/2026 : client OAuth utilisateur dédié Cooked, audience
+# interne, seul scope business.manage. Son JSON authorized_user contient le
+# refresh token ; google.auth.default le charge via GOOGLE_APPLICATION_CREDENTIALS.
+# Aucun scope cloud-platform ni quota_project_id. Réautorisation et reprise :
+# docs/OPERATIONS.md. Le renouvellement automatique reste révocable.
 #
 # Secrets à configurer dans GitHub
 # (Settings → Secrets and variables → Actions → New repository secret) :
-#   GBP_CREDENTIALS_B64   : base64 de ~/.config/gcloud/application_default_credentials.json
+#   GBP_CREDENTIALS_B64   : base64 du JSON authorized_user du client OAuth dédié
 #   SUPABASE_SECRET_KEY   : déjà posé pour l'ingest GSC, rien à refaire
 
 on:
