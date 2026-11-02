@@ -52,6 +52,9 @@ test-python: $(PYTHON)
 		tests/test_wix_forms_import.py \
 		tests/test_wix_forms_reconcile.py \
 		tests/test_gbp_ingest.py \
+		tests/test_rpcs_sql_fresh.py \
+		tests/test_migration_paris_date.py \
+		tests/test_check_prod_command.py \
 		-q
 	$(PYTHON) scripts/check_normalize_vectors.py
 
@@ -85,7 +88,7 @@ test-dashboard:
 	cd dashboard && $(NPM) test
 
 check-prod: $(PYTHON)
-	@url="$${DATABASE_URL_RO:-$$DATABASE_URL}"; \
+	@set -e; url="$${DATABASE_URL_RO:-$$DATABASE_URL}"; \
 	if [ -z "$$url" ]; then \
 		echo "DATABASE_URL_RO (ou DATABASE_URL) requis — rôle cooked_ci_ro, lecture seule."; \
 		exit 1; \

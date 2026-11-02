@@ -3,6 +3,19 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [Unreleased] — Fiabilité des contrôles locaux et CI
+
+- Les gardes RPC et dates SQL échouent explicitement si Git ne peut pas
+  établir le diff. Sur un push, la comparaison couvre les bornes de
+  l'événement, y compris un envoi de plusieurs commits.
+- `make check-prod` s'arrête dès le premier contrôle en échec ; une réussite
+  ultérieure ne peut plus masquer l'échec précédent.
+- La CI Edge se déclenche pour tous les helpers partagés et leurs tests,
+  ainsi que pour les vecteurs de filtrage des formulaires.
+- Tests de régression locaux sur dépôts Git temporaires et commandes
+  factices, intégrés à `make check` et à la CI Python. Aucun changement de
+  métrique, de schéma ou de déploiement métier dans ce lot.
+
 ## [2026-10-26] — GBP repris et connexion OAuth dédiée validée
 
 - Projet `rewolf-507310` approuvé par Google le 21/10 ; [rattrapage du 26/10](https://github.com/NicolasRewolf/cooked/actions/runs/40370720729) :

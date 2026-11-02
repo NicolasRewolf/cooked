@@ -43,6 +43,13 @@ make check
 
 Python 3.12 (CI) / 3.12+ en local, Node 22 (dashboard), Deno 2. `make check` crée le `.venv` tout seul. `make check-prod` compare le repo à la prod (clé lecture seule).
 
+`make check-prod` s'arrête au premier contrôle en échec. Les gardes SQL
+échouent aussi si Git ne peut pas établir le diff : récupérer la référence
+de base ou l'historique manquant avant de relancer. En CI, un push est
+comparé entre les révisions `before` et `after` de son événement ; les
+tests locaux des gardes utilisent uniquement des dépôts temporaires et
+des commandes factices, sans accès production.
+
 `make check` inclut les scénarios PostgreSQL embarqués PGlite de `tests/sql/`
 (migrations et jeux synthétiques), les lots GSC complets/partiels, le
 rapprochement de comptes Wix, la livraison idempotente du webhook, le tracker
