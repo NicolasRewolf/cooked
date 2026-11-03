@@ -61,13 +61,6 @@ def gsc_api_clients() -> tuple:
     return gsc, site
 
 
-def clients() -> tuple:
-    """Rétrocompat : (client Supabase brut, gsc, site). Préférer store + gsc_api_clients."""
-    store = SupabaseStore.from_env()
-    gsc, site = gsc_api_clients()
-    return store.client, gsc, site
-
-
 def fetch_gsc(
     gsc,
     site: str,

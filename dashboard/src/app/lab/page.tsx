@@ -66,9 +66,9 @@ export default async function LabPage() {
       </section>
 
       <p className="mt-[11px] max-w-[920px] font-mono text-[10.5px] leading-relaxed text-dim">
-        ⚠ Un clic GSC n&apos;est pas une visite Cooked (sous-comptage ×2,4 mesuré le 11/06/2026). Clics en baisse à
-        impressions constantes = la page de résultats bouge, pas le classement (piège n°4 du playbook) — le CTR des
-        notes de marge est là pour ça. Lecture Lieflat F16 « Stream Ribbon », rendue avec les tokens Cooked.
+        Un clic Google et une visite Cooked mesurent des événements différents : aucun multiplicateur fixe
+        ne permet de passer de l&apos;un à l&apos;autre. À impressions comparables, une variation du CTR peut venir
+        du classement, du mélange de requêtes ou de la présentation des résultats. Décomposer avant de conclure.
       </p>
     </main>
   );

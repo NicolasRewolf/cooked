@@ -15,6 +15,7 @@ on:
       - 'supabase/rpcs.sql'
       - 'contracts/rpc_snapshot_meta.json'
       - 'tests/sql/**'
+      - 'docs/proposals/analytics-overviews.sql'
       - 'scripts/check_migration_paris_date.py'
       - 'scripts/check_rpcs_sql_fresh.py'
       - 'scripts/git_changes.py'

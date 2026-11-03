@@ -13,8 +13,8 @@ import { num, seconds, dec, pct, delta } from "@/lib/format";
 import { momentumDir, momentumLabelFr, isScored, isOpportuniteContact } from "@/lib/momentum";
 
 // ── Verdict de santé : momentum (relatif au site) + Fiabilité CPI ────────────
-// Pour les pages sans conversion (articles éducatifs), le potentiel
-// hors-conversion est le bon repère — d'où la ★ opportunité de contact.
+// L'étoile décrit l'absence de contact organique dans le CPI pour les grades S/A/B ;
+// elle ne teste ni le potentiel hors conversion ni l'intention de la page.
 export function HealthCell({ r }: { r: ResourceRow }) {
   if (!isScored(r.cpi_grade, r.momentum)) {
     return (
@@ -30,7 +30,7 @@ export function HealthCell({ r }: { r: ResourceRow }) {
       <span className={cn("h-[7px] w-[7px] shrink-0 rounded-full", dot)} />
       <span className="text-[11.5px] text-ink-2">{word}</span>
       {opportunite && (
-        <span aria-label="opportunité de contact" className="text-[11px] text-accent">
+        <span aria-label="sans contact organique dans le CPI" title="Aucun contact organique dans l’instantané CPI sur 28 jours · grade S/A/B · fenêtre indépendante de celle du tableau" className="text-[11px] text-accent">
           ★
         </span>
       )}
@@ -88,7 +88,7 @@ export const santeColumn: Column<ResourceRow> = {
   header: "santé",
   align: "left",
   headerInfo:
-    "Momentum des clics Google relatif au site : ● monte / ● stable / ● ralentit. ★ opportunité de contact = fort potentiel (capture + lecture) mais pas encore de contact → poser un pont. — = trop peu de trafic organique pour un verdict (Fiabilité C).",
+    "Momentum des clics Google relatif au site : ● monte / ● stable / ● ralentit. ★ sans contact organique dans l'instantané CPI sur 28 jours, avec un grade S/A/B, indépendamment de la période du tableau. Ce repère ne mesure pas le potentiel de la page ; qualifier son intention avant de décider d'une action. — = données insuffisantes pour ce repère.",
   sortValue: (r) => r.momentum,
   render: (r) => <HealthCell r={r} />,
 };

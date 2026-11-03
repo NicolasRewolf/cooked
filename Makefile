@@ -21,10 +21,10 @@ help:
 
 $(PYTHON):
 	python3 -m venv .venv
-	$(PYTHON) -m pip install -q -e ".[dev]"
+	$(PYTHON) -m pip install -q -e ".[dev,math]"
 
 deps: $(PYTHON)
-	$(PYTHON) -m pip install -q -e ".[dev]"
+	$(PYTHON) -m pip install -q -e ".[dev,math]"
 
 lint: $(PYTHON)
 	$(PYTHON) -m ruff check src scripts tests
@@ -55,6 +55,7 @@ test-python: $(PYTHON)
 		tests/test_rpcs_sql_fresh.py \
 		tests/test_migration_paris_date.py \
 		tests/test_check_prod_command.py \
+		tests/test_advanced_math_analytics.py \
 		-q
 	$(PYTHON) scripts/check_normalize_vectors.py
 

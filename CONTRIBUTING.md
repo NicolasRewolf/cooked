@@ -43,6 +43,10 @@ make check
 
 Python 3.12 (CI) / 3.12+ en local, Node 22 (dashboard), Deno 2. `make check` crée le `.venv` tout seul. `make check-prod` compare le repo à la prod (clé lecture seule).
 
+`make deps` installe les extras `dev,math`, nécessaires aux tests du CLI
+d'analyse. Après récupération d'un changement de dépendances, relancer cette
+commande même si le `.venv` existe déjà.
+
 `make check-prod` s'arrête au premier contrôle en échec. Les gardes SQL
 échouent aussi si Git ne peut pas établir le diff : récupérer la référence
 de base ou l'historique manquant avant de relancer. En CI, un push est

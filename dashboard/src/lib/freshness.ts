@@ -9,7 +9,6 @@ export type FreshnessLevel = "ok" | "warn" | "alert";
 
 export type FreshnessInput = {
   gscLastDay: string | null;
-  lagDays: number | null;
   cookedEnd?: string;
   refreshedAt?: string | null;
   live?: boolean;

@@ -76,10 +76,6 @@ class SupabaseStore:
     def __init__(self, client: Client) -> None:
         self._client = client
 
-    @property
-    def client(self) -> Client:
-        return self._client
-
     @classmethod
     def from_env(cls) -> SupabaseStore:
         url = os.environ.get("SUPABASE_URL", DEFAULT_SUPABASE_URL)

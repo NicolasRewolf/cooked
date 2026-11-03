@@ -35,7 +35,7 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install test deps
-        run: pip install ".[dev]"
+        run: pip install ".[dev,math]"
       - name: Ingestion et gardes CI — tests locaux
         run: |
           python3 -m pytest \
@@ -51,6 +51,7 @@ jobs:
             tests/test_rpcs_sql_fresh.py \
             tests/test_migration_paris_date.py \
             tests/test_check_prod_command.py \
+            tests/test_advanced_math_analytics.py \
             -q
       - name: I12 — vecteurs de normalisation (Python ; SQL dans prod-drift)
         run: python3 scripts/check_normalize_vectors.py

@@ -83,7 +83,7 @@ async function Content({ path, period }: { path: string; period: Period }) {
     },
     {
       label: "Clics Google",
-      value: num(g?.clicks ?? 0),
+      value: num(g?.clicks),
       delta: g ? delta(g.clicks, g.clicks_prev) : undefined,
       series: clicks,
       tooltip: "Clics organiques venus de la recherche Google vers cet article sur la fenêtre.",
@@ -100,7 +100,7 @@ async function Content({ path, period }: { path: string; period: Period }) {
     },
     {
       label: "Contacts assistés",
-      value: num(detail.assisted?.n ?? 0),
+      value: num(detail.assisted?.n),
       delta: detail.assisted ? delta(detail.assisted.n, detail.assisted.prev) : undefined,
       tooltip:
         "Clics téléphone ou formulaires hors recrutement de visites ENTRÉES par cet article. Attribution page d'entrée, sans preuve d'appel abouti ni de nouveau client.",
@@ -145,7 +145,21 @@ async function Content({ path, period }: { path: string; period: Period }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <AskClaude path={detail.path} period={period} />
+          <AskClaude
+            path={detail.path}
+            period={period}
+            bounds={detail.bounds}
+            cpiDay={detail.cpi?.day ?? null}
+            cpiVersions={[
+              ...(detail.cpi ? [detail.cpi.cpi_version] : []),
+              ...detail.cpi_series.map((point) => point.cpi_version),
+            ]}
+            missingSources={[
+              ...(!detail.gsc ? ["résumé Google"] : []),
+              ...(!detail.assisted ? ["contacts assistés"] : []),
+              ...(!detail.cpi ? ["score CPI courant"] : []),
+            ]}
+          />
           <PeriodSelector value={period} />
         </div>
       </div>

@@ -43,16 +43,13 @@ export function isScored(
   return isFiabiliteFiable(cpiGrade) && momentum != null;
 }
 
-/** Opportunité de contact (ex-gisement) : Fiabilité S/A/B + pas encore de contact. */
+/** Grade S/A/B sans contact organique dans le CPI. Nom historique conservé pour les filtres URL. */
 export function isOpportuniteContact(
   cpiGrade: string | null | undefined,
   convertit: boolean | null | undefined,
 ): boolean {
   return isFiabiliteFiable(cpiGrade) && convertit === false;
 }
-
-/** @deprecated alias — préférer isOpportuniteContact */
-export const isGisement = isOpportuniteContact;
 
 export function santeFromMomentum(
   momentum: number | null | undefined,

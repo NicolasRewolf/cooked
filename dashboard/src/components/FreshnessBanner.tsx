@@ -11,21 +11,19 @@ const GLOW: Record<string, string> = {
 
 export function FreshnessBanner({
   gscLastDay,
-  lagDays,
   cookedEnd,
   refreshedAt,
   noPrevBaseline = false,
   live = false,
 }: {
   gscLastDay: string | null;
-  lagDays: number | null;
   cookedEnd?: string;
   refreshedAt?: string | null;
   noPrevBaseline?: boolean;
   live?: boolean;
 }) {
   // Server Component : horloge lue une fois ; la logique de niveau est pure (lib/freshness, testée).
-  const state = freshnessState({ gscLastDay, lagDays, cookedEnd, refreshedAt, live, now: new Date() });
+  const state = freshnessState({ gscLastDay, cookedEnd, refreshedAt, live, now: new Date() });
   const { lag, ageHours, cookedGap } = state;
 
   let dot: string;

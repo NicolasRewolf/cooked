@@ -1,8 +1,24 @@
-# Régressions SQL du 20/10/2026
+# Régressions SQL
 
 `audit-integrity.test.mjs` exécute les véritables fonctions SQL dans PostgreSQL
 embarqué (PGlite), en mémoire, avec des événements et volumes **synthétiques**.
 Il ne se connecte jamais à Supabase et ne contient aucune clé.
+
+`npm test` exécute également les scénarios du 02/11/2026 :
+
+- `analytics-windows.test.mjs` : jours Paris clos, parcours et URL Ads,
+  contenu et provenance commune des snapshots ;
+- `proposed-overviews.test.mjs` : bornes GSC et calculs des trois récapitulatifs
+  par page, depuis `docs/proposals/analytics-overviews.sql` uniquement.
+  Cette proposition n'est pas appliquée en production ;
+- `analytics-cleanup.test.mjs` : résultats conservés après retrait du travail
+  SQL redondant, ACL et validation des fenêtres ;
+- `alert-clock.test.mjs` : heures civiles Paris et exécution des véritables
+  règles d'alerte aux deux changements d'heure, avec horloge synthétique.
+
+`helpers.mjs` prépare une base jetable commune aux nouveaux scénarios.
+Les vues de base sont simplifiées dans ce harnais ; les tests qui dépendent
+de leur déduplication doivent installer explicitement les définitions utiles.
 
 ```sh
 cd tests/sql

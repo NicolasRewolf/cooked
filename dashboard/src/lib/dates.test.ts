@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   dateFr,
   dayDiff,
-  dayGap,
   jjmm,
   jjmmForIndex,
   lastDayLabel,
@@ -24,10 +23,9 @@ describe("dateFr", () => {
   });
 });
 
-describe("dayDiff / dayGap", () => {
+describe("dayDiff", () => {
   it("compte les jours entre deux ISO", () => {
     expect(dayDiff("2026-06-30", "2026-07-01")).toBe(1);
-    expect(dayGap("2026-06-30", "2026-07-02")).toBe(2);
   });
 });
 

@@ -3,7 +3,29 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
-## [Unreleased] — Fiabilité des contrôles locaux et CI
+## [Unreleased] — Périodes cohérentes, lecture des mesures et contrôles fiables
+
+- Les analyses de parcours et de contenu utilisent des jours Paris clos.
+  Les snapshots maths portent leurs bornes,
+  leur version de calcul et un horodatage commun ; les anciennes lignes
+  restent de provenance inconnue jusqu'à un nouveau calcul.
+- L'alignement des trois synthèses par page sur les dates GSC reste une
+  [proposition non déployée](docs/proposals/analytics-overviews.sql) :
+  les résultats synthétiques concordent, mais la latence mesurée sur les
+  volumes réels ne permet pas de remplacer le chemin actuel.
+- Une source de contacts indisponible produit un rapport maths partiel
+  avec valeurs `null` et code de sortie 2. Un vrai zéro nécessite une
+  lecture complète sur des dates connues ; des générations de snapshots
+  différentes ne sont plus combinées.
+- Le dashboard précise le périmètre organique du badge CPI sur 28 jours,
+  distingue les totaux SEO de la table filtrée et présente les variations
+  après intervention avec leurs limites. Retrait du multiplicateur fixe
+  du Lab ; les prompts copiés incluent dates, versions et données absentes.
+- Les alertes utilisent l'heure civile de Paris, y compris aux deux
+  changements d'heure. Les seuils et la politique d'acquittement sont conservés.
+- Retrait des alias et accès Python sans appelant, de l'option de cache
+  sans effet, de matérialisations et verrous vides. Aucun historique
+  métier supprimé, aucune définition du CPI modifiée.
 
 - Les gardes RPC et dates SQL échouent explicitement si Git ne peut pas
   établir le diff. Sur un push, la comparaison couvre les bornes de
@@ -13,8 +35,7 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
 - La CI Edge se déclenche pour tous les helpers partagés et leurs tests,
   ainsi que pour les vecteurs de filtrage des formulaires.
 - Tests de régression locaux sur dépôts Git temporaires et commandes
-  factices, intégrés à `make check` et à la CI Python. Aucun changement de
-  métrique, de schéma ou de déploiement métier dans ce lot.
+  factices, intégrés à `make check` et à la CI Python.
 
 ## [2026-10-26] — GBP repris et connexion OAuth dédiée validée
 

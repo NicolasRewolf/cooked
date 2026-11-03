@@ -43,15 +43,16 @@ async function Content({ period }: { period: Period }) {
 
   return (
     <div className="space-y-[18px]">
-      {seo && <FreshnessBanner gscLastDay={seo.gsc_end} lagDays={view.lagDays} live />}
+      {seo && <FreshnessBanner gscLastDay={seo.gsc_end} live />}
       <KpiHeader items={view.items} />
       <SeoReadingGuide />
       <section>
         <SeoTable rows={rows} />
         <p className="mt-[11px] max-w-[920px] font-mono text-[10.5px] leading-relaxed text-dim">
           ⚠ Deux univers de clics : le KPI « Clics Google » ({view.clicksPathTotalLabel}) est au
-          niveau page, marque incluse ; le tableau somme {view.clicksNamedNonbrandedLabel} clics
-          sur les requêtes <em>connues hors marque</em>. Volume DataForSEO (France) = référence.
+          niveau page, marque incluse. Le total global des requêtes <em>connues hors marque</em> est
+          de {view.clicksNamedNonbrandedLabel} clics. Le tableau contient au plus 200 requêtes avant
+          filtrage ; ses filtres ne modifient pas ces totaux globaux. Volume DataForSEO (France) = référence.
         </p>
       </section>
     </div>

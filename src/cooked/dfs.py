@@ -131,10 +131,6 @@ def dfs_auth_from_env() -> str:
     return base64.b64encode(f"{dfs_username}:{dfs_password}".encode()).decode()
 
 
-def clients() -> tuple[CookedStore, str]:
-    return SupabaseStore.from_env(), dfs_auth_from_env()
-
-
 def fetch_keywords_to_sync(store: CookedStore, limit_n: int) -> list[str]:
     """Lit les top N keywords (union GSC 28j ∪ 90j) via RPC dfs_keywords_to_sync."""
     resp = store.rpc("dfs_keywords_to_sync", {"limit_n": limit_n})
