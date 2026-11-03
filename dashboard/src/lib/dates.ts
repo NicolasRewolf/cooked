@@ -34,6 +34,15 @@ export function dayDiff(fromISO: string, toISO: string): number {
   return Math.round((b - a) / MS_PER_DAY);
 }
 
+/** Retrouve la semaine contenant ce jour, y compris dans une série discontinue. */
+export function weekIndexOf(weekStarts: string[], dayISO: string): number | null {
+  const index = weekStarts.findIndex((start) => {
+    const offset = dayDiff(start, dayISO);
+    return offset >= 0 && offset < 7;
+  });
+  return index === -1 ? null : index;
+}
+
 /** "2026-06-29" → "29/06/2026" */
 export function dateFr(iso: string | null | undefined): string {
   if (!iso) return "—";

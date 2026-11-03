@@ -3,6 +3,11 @@
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 
+## [2026-11-03] — Lab éditorial
+
+- Le Lab présente les clics hebdomadaires de Google Search Console en volume et en répartition. Les filtres recalculent les indicateurs sur les catégories visibles. Le curseur et le journal ouvrent le détail d’une semaine.
+- Le filtre des articles indique directement « 0 contact via la recherche · 28 j ». Une fois activé, il précise que les colonnes de contacts couvrent tous les canaux sur la période choisie.
+
 ## [Unreleased] — Périodes cohérentes, lecture des mesures et contrôles fiables
 
 - Les analyses de parcours et de contenu utilisent des jours Paris clos.

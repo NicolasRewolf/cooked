@@ -1,39 +1,20 @@
-// Lab — view-model PUR du Stream Ribbon « clics Google par type de page ».
-// Entrée = contrat Zod de dashboard_lab_gsc_weekly ; sortie = props PLATES pour le
-// composant client (frontière RSC : jamais de fonction dans les props).
-
-import { weekIndexOf } from "@/lib/stream-geometry";
-import type { LabGscWeek, LabGscWeekly } from "@/lib/types";
+import { dayDiff, weekIndexOf } from "@/lib/dates";
+import type { LabGscWeekly } from "@/lib/types";
 
 export type LabBandKey = "ressource" | "classique" | "expertise" | "divers";
 
-/** Nuance d'encre (token globals.css) : la bande la plus large aujourd'hui est la plus noire. */
-export type LabTone = "ink" | "muted" | "faint" | "dim";
-const TONES: LabTone[] = ["ink", "muted", "faint", "dim"];
-
 export const LAB_BAND_LABELS: Record<LabBandKey, string> = {
-  ressource: "Articles ressources",
-  classique: "Articles classiques",
-  expertise: "Pages expertise",
+  ressource: "Ressources",
+  classique: "Classiques",
+  expertise: "Expertises",
   divers: "Cabinet & divers",
 };
 
 export interface LabBand {
   key: LabBandKey;
-  label: string;
-  tone: LabTone;
-  /** Clics par semaine (même longueur que `weeks`). */
   clicks: number[];
-  /** Impressions par semaine. */
-  impressions: number[];
-  /** Moyenne hebdo des 4 dernières semaines closes. */
-  last4: number;
-  /** Moyenne hebdo des 4 semaines closes 8 semaines plus tôt (référence). */
-  ref4: number;
-  /** CTR (0-100) sur les mêmes blocs de 4 semaines ; null si 0 impression. */
+  /** Σ clics / Σ impressions sur les quatre dernières semaines de la fenêtre. */
   ctrLast4Pct: number | null;
-  ctrRef4Pct: number | null;
-  /** Pic hebdo et sa semaine (ISO lundi). */
   peak: number;
   peakWeek: string;
 }
@@ -46,102 +27,83 @@ export interface LabMarker {
 }
 
 export interface LabGscView {
-  /** Lundis ISO, ordre chronologique. */
+  /** Lundis ISO réellement présents dans la réponse, par ordre chronologique. */
   weeks: string[];
   gscEnd: string;
   windowStart: string;
   windowEnd: string;
-  /** Bandes triées : la plus large sur les 4 dernières semaines en premier (= en haut, encre la plus noire). */
   bands: LabBand[];
-  totals: number[];
-  peakTotal: number;
-  peakTotalWeek: string;
-  lastTotal: number;
   markers: LabMarker[];
 }
 
-const KEYS: LabBandKey[] = ["ressource", "classique", "expertise", "divers"];
-const CLICK_COL: Record<LabBandKey, keyof LabGscWeek> = {
-  ressource: "c_ressource",
-  classique: "c_classique",
-  expertise: "c_expertise",
-  divers: "c_divers",
-};
-const IMPR_COL: Record<LabBandKey, keyof LabGscWeek> = {
-  ressource: "i_ressource",
-  classique: "i_classique",
-  expertise: "i_expertise",
-  divers: "i_divers",
-};
+const KEYS: LabBandKey[] = ["ressource", "classique", "divers", "expertise"];
 
-/** Moyenne des `len` valeurs se terminant à l'index `end` (inclus) ; 0 si la fenêtre sort du tableau. */
-export function meanBlock(values: number[], end: number, len: number): number {
-  const start = end - len + 1;
-  if (start < 0 || end >= values.length || len <= 0) return 0;
-  let s = 0;
-  for (let i = start; i <= end; i++) s += values[i];
-  return s / len;
+type WeekBlock = { start: string; end: string; first: number; last: number };
+
+/** La RPC groupe uniquement les semaines présentes. Ne pas remplacer une semaine manquante par une autre. */
+function completeBlock(weeks: string[], windowEnd: string, size: number, weeksAgo = 0): WeekBlock | null {
+  const last = weeks.findIndex((week) => dayDiff(week, windowEnd) === 6 + 7 * weeksAgo);
+  const first = last - size + 1;
+  if (first < 0) return null;
+  for (let i = first; i < last; i++) {
+    if (dayDiff(weeks[i], weeks[i + 1]) !== 7) return null;
+  }
+  const sunday = new Date(`${weeks[last]}T00:00:00Z`);
+  sunday.setUTCDate(sunday.getUTCDate() + 6);
+  return { start: weeks[first], end: sunday.toISOString().slice(0, 10), first, last };
 }
 
-function sumBlock(values: number[], end: number, len: number): number {
-  return meanBlock(values, end, len) * len;
+function sumBlock(values: number[], block: WeekBlock) {
+  return values.slice(block.first, block.last + 1).reduce((sum, n) => sum + n, 0);
 }
 
-function ctrPct(clicks: number, impressions: number): number | null {
-  return impressions > 0 ? (clicks / impressions) * 100 : null;
+function measuredBlock(values: number[], block: WeekBlock | null) {
+  return block && { start: block.start, end: block.end, clicks: sumBlock(values, block) };
+}
+
+/** Agrège exclusivement les catégories visibles, sur les semaines closes de la fenêtre fournie par Cooked. */
+export function summarizeLabSelection(view: LabGscView, selected: readonly LabBandKey[]) {
+  const bands = view.bands.filter((band) => selected.includes(band.key));
+  const totals = bands.length ? view.weeks.map((_, i) => bands.reduce((sum, band) => sum + band.clicks[i], 0)) : [];
+  const currentBlock = bands.length ? completeBlock(view.weeks, view.windowEnd, 4) : null;
+  const previousBlock = bands.length ? completeBlock(view.weeks, view.windowEnd, 4, 4) : null;
+  const latest = measuredBlock(totals, bands.length ? completeBlock(view.weeks, view.windowEnd, 1) : null);
+  const current = measuredBlock(totals, currentBlock);
+  const previous = measuredBlock(totals, previousBlock);
+  const changePct = current && previous && previous.clicks > 0
+    ? ((current.clicks - previous.clicks) / previous.clicks) * 100 : null;
+
+  const leaders: LabBandKey[] = [];
+  let leaderSharePct: number | null = null;
+  if (currentBlock && current && current.clicks > 0) {
+    const entries = bands.map((band) => ({ key: band.key, clicks: sumBlock(band.clicks, currentBlock) }));
+    const maxClicks = Math.max(...entries.map((entry) => entry.clicks));
+    leaders.push(...entries.filter((entry) => entry.clicks === maxClicks).map((entry) => entry.key));
+    leaderSharePct = (maxClicks / current.clicks) * 100;
+  }
+  return { totals, latest, current, previous, changePct, leaders, leaderSharePct };
 }
 
 export function buildLabGscView(data: LabGscWeekly): LabGscView {
   const weeks = data.weeks.map((w) => w.week_start);
-  const n = weeks.length;
-  const last = n - 1;
-  const ref = last - 8; // bloc de 4 semaines qui se termine 8 semaines avant le dernier bloc
-
-  const raw = KEYS.map((key) => {
-    const clicks = data.weeks.map((w) => Number(w[CLICK_COL[key]]));
-    const impressions = data.weeks.map((w) => Number(w[IMPR_COL[key]]));
-    let peakIdx = 0;
-    for (let i = 1; i < n; i++) if (clicks[i] > clicks[peakIdx]) peakIdx = i;
+  const current = completeBlock(weeks, data.window_end, 4);
+  const bands = KEYS.map((key) => {
+    const clicks = data.weeks.map((w) => w[`c_${key}`]);
+    const impressions = data.weeks.map((w) => w[`i_${key}`]);
+    const currentImpressions = current ? sumBlock(impressions, current) : 0;
+    const peak = clicks.length ? Math.max(...clicks) : 0;
     return {
       key,
-      label: LAB_BAND_LABELS[key],
       clicks,
-      impressions,
-      last4: meanBlock(clicks, last, 4),
-      ref4: meanBlock(clicks, ref, 4),
-      ctrLast4Pct: ctrPct(sumBlock(clicks, last, 4), sumBlock(impressions, last, 4)),
-      ctrRef4Pct: ctrPct(sumBlock(clicks, ref, 4), sumBlock(impressions, ref, 4)),
-      peak: n ? clicks[peakIdx] : 0,
-      peakWeek: n ? weeks[peakIdx] : "",
+      ctrLast4Pct: current && currentImpressions > 0 ? (100 * sumBlock(clicks, current)) / currentImpressions : null,
+      peak,
+      peakWeek: weeks[clicks.indexOf(peak)] ?? "",
     };
   });
-  // Tri stable : plus large aujourd'hui en premier ; égalité → ordre canonique.
-  const sorted = raw
-    .map((b, i) => ({ b, i }))
-    .sort((a, z) => z.b.last4 - a.b.last4 || a.i - z.i)
-    .map(({ b }, rank) => ({ ...b, tone: TONES[Math.min(rank, TONES.length - 1)] }));
-
-  const totals = weeks.map((_, i) => raw.reduce((s, b) => s + b.clicks[i], 0));
-  let peakIdx = 0;
-  for (let i = 1; i < n; i++) if (totals[i] > totals[peakIdx]) peakIdx = i;
-
   const markers: LabMarker[] = [];
-  for (const a of data.annotations) {
-    const index = weekIndexOf(weeks, a.day);
-    if (index === null) continue;
-    markers.push({ index, day: a.day, kind: a.kind, label: a.label });
+  for (const annotation of data.annotations) {
+    const index = weekIndexOf(weeks, annotation.day);
+    if (index !== null) markers.push({ index, day: annotation.day, kind: annotation.kind, label: annotation.label });
   }
-
-  return {
-    weeks,
-    gscEnd: data.gsc_end,
-    windowStart: data.window_start,
-    windowEnd: data.window_end,
-    bands: sorted,
-    totals,
-    peakTotal: n ? totals[peakIdx] : 0,
-    peakTotalWeek: n ? weeks[peakIdx] : "",
-    lastTotal: n ? totals[last] : 0,
-    markers,
-  };
+  return { weeks, gscEnd: data.gsc_end, windowStart: data.window_start, windowEnd: data.window_end, bands, markers };
 }
