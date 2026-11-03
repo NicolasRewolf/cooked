@@ -185,27 +185,33 @@ def analytics():
     return module
 
 
-@pytest.mark.parametrize("data", [None, []])
-def test_supabase_contacts_use_explicit_dates_and_distinguish_null_response(
-    analytics, monkeypatch, data,
+@pytest.mark.parametrize(("data", "total", "expected"), [
+    (None, 0, None),
+    ([], None, None),
+    ([{"path": "/a", "contacts": 2}], 2, None),
+    ([], 0, {}),
+    ([{"path": "/a", "contacts": 2}], 1, {"/a": 2}),
+])
+def test_supabase_contacts_require_a_complete_result_for_the_requested_dates(
+    analytics, monkeypatch, data, total, expected,
 ):
     calls = []
 
     class Postgrest:
-        def rpc(self, name, params):
-            calls.append((name, params))
-            return SimpleNamespace(execute=lambda: SimpleNamespace(data=data))
+        def rpc(self, name, params, *, count=None):
+            calls.append((name, params, count))
+            return SimpleNamespace(execute=lambda: SimpleNamespace(data=data, count=total))
 
     monkeypatch.setattr("supabase.create_client", lambda _url, _key: Postgrest())
     source = analytics.SupabaseSource("https://example.invalid", "synthetic")
-    if data is None:
+    if expected is None:
         with pytest.raises(analytics.DataUnavailable):
             source.macro_contacts(date(2026, 10, 1), date(2026, 10, 28))
     else:
-        assert source.macro_contacts(date(2026, 10, 1), date(2026, 10, 28)) == {}
+        assert source.macro_contacts(date(2026, 10, 1), date(2026, 10, 28)) == expected
     assert calls == [("macro_contacts_by_path", {
         "start_date": "2026-10-01", "end_date": "2026-10-28",
-    })]
+    }, "exact")]
 
 
 def test_supabase_report_reads_snapshot_metadata_and_exact_contact_period(
@@ -242,9 +248,9 @@ def test_supabase_report_reads_snapshot_metadata_and_exact_contact_period(
         def table(self, name):
             return TableQuery(tables[name])
 
-        def rpc(self, name, params):
+        def rpc(self, name, params, *, count):
             calls.append((name, params))
-            return SimpleNamespace(execute=lambda: SimpleNamespace(data=[]))
+            return SimpleNamespace(execute=lambda: SimpleNamespace(data=[], count=0))
 
     monkeypatch.setenv("SUPABASE_SECRET_KEY", "synthetic-test-key")
     monkeypatch.setenv("SUPABASE_URL", "https://example.invalid")

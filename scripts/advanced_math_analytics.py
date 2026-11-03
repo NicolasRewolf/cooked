@@ -297,11 +297,15 @@ class SupabaseSource(DataSource):
         return self._select_all("annotations", "day,kind,label,paths")
 
     def macro_contacts(self, start_date: date, end_date: date) -> dict[str, int]:
-        res = self._client.rpc("macro_contacts_by_path",
-                               {"start_date": start_date.isoformat(),
-                                "end_date": end_date.isoformat()}).execute()
+        res = self._client.rpc(
+            "macro_contacts_by_path",
+            {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            count="exact",
+        ).execute()
         if res.data is None:
             raise DataUnavailable("Réponse contacts absente.")
+        if res.count != len(res.data):
+            raise DataUnavailable("La lecture ne confirme pas la totalité des pages de contacts.")
         return {r["path"]: int(r["contacts"]) for r in res.data}
 
 
