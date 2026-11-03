@@ -20,6 +20,7 @@ import { cn } from "@/lib/cn";
 import type { ResourceRow } from "@/lib/types";
 import { num, prettyPath } from "@/lib/format";
 import { santeFromMomentum } from "@/lib/momentum";
+import { parsePeriod } from "@/lib/periods";
 
 // Colonnes distinctives des articles (le reste vient de metric-columns).
 // periodQ = « ?period=… » à propager aux liens de fiche (vide si période par défaut).
@@ -174,7 +175,7 @@ const SANTE_CHIPS: { key: SanteFilter; label: string; dot?: string; star?: boole
   { key: "monte", label: "monte", dot: "bg-up" },
   { key: "stable", label: "stable", dot: "bg-faint" },
   { key: "ralentit", label: "ralentit", dot: "bg-warn" },
-  { key: "opportunite_contact", label: "sans contact organique (CPI)", star: true },
+  { key: "opportunite_contact", label: "0 contact via la recherche · 28 j", star: true },
   { key: "nonscore", label: "non scoré", dot: "bg-dim" },
 ];
 
@@ -235,7 +236,8 @@ function SanteChips({
 export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
   const searchParams = useSearchParams();
   // Période courante → propagée aux liens de fiche (sauf défaut rolling_90).
-  const periodQ = searchParams.get("period") === "rolling_28" ? "?period=rolling_28" : "";
+  const period = parsePeriod(searchParams.get("period") ?? undefined);
+  const periodQ = period === "rolling_28" ? "?period=rolling_28" : "";
 
   // État de vue (filtres + tri) ⇄ URL — machine partagée, débounce 300 ms.
   const { sortKey, sortDir, onSortChange, filters, setFilter } = useTableViewState({
@@ -332,6 +334,13 @@ export function ResourcesTable({ rows }: { rows: ResourceRow[] }) {
           counts={santeCounts}
           onChange={(v) => setFilter("sante", v)}
         />
+        {sante === "opportunite_contact" && (
+          <p className="mt-2 border-l-2 border-accent pl-3 text-[12px] leading-relaxed text-ink-2">
+            Le filtre couvre la recherche non payante (moteurs et assistants IA reconnus) sur les 28 jours du score CPI.
+            <br />
+            Les colonnes « Contacts » et « Assistés » couvrent <strong>tous les canaux sur {period === "rolling_28" ? 28 : 90} jours</strong>.
+          </p>
+        )}
       </div>
       <SortableTable
         columns={columns}

@@ -10,7 +10,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line-strong bg-white/90 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-[1240px] items-center justify-between gap-6 px-8">
+      <div className="mx-auto grid max-w-[1240px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-4 pt-2 lg:flex lg:h-14 lg:justify-between lg:gap-6 lg:px-8 lg:pt-0">
         <div className="flex items-center gap-3">
           {/* marque rewolf : « R » inversé (rewolf = flower à l'envers) */}
           <span
@@ -25,7 +25,7 @@ export function Header() {
         </div>
 
         {/* Nav lit useSearchParams (period) → Suspense requis (build prod). */}
-        <Suspense fallback={<nav className="flex h-14 items-stretch gap-1" aria-hidden />}>
+        <Suspense fallback={<nav className="order-last col-span-2 h-11 lg:order-none lg:h-14" aria-hidden />}>
           <Nav />
         </Suspense>
 

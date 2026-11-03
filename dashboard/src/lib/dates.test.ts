@@ -6,6 +6,7 @@ import {
   jjmmForIndex,
   lastDayLabel,
   parisTodayISO,
+  weekIndexOf,
 } from "./dates";
 
 describe("jjmm", () => {
@@ -15,6 +16,15 @@ describe("jjmm", () => {
   it("retourne tiret si vide", () => {
     expect(jjmm(null)).toBe("—");
   });
+});
+
+it("associe un repère uniquement à une semaine réellement disponible", () => {
+  const weeks = ["2026-08-03", "2026-08-17"];
+  expect(weekIndexOf(weeks, "2026-08-03")).toBe(0);
+  expect(weekIndexOf(weeks, "2026-08-09")).toBe(0);
+  expect(weekIndexOf(weeks, "2026-08-12")).toBeNull();
+  expect(weekIndexOf(weeks, "2026-08-23")).toBe(1);
+  expect(weekIndexOf(weeks, "2026-08-24")).toBeNull();
 });
 
 describe("dateFr", () => {

@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Stable across filters and weeks, including SVG attributes built at runtime. */
+@theme static {
+  --color-lab-ressource: #bc4820;
+  --color-lab-classique: #262922;
+  --color-lab-divers: #69715d;
+  --color-lab-expertise: #787690;
+}
+
 /* ── Cooked · redesign « Instrument » (d'après Dieter Rams) ────────────────
    Thème clair uniquement. Accent = orange rewolf #FF4F04 (≈ orange Braun).
 

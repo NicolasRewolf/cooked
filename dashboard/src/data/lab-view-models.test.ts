@@ -1,89 +1,93 @@
 import { describe, expect, it } from "vitest";
-import { buildLabGscView, meanBlock } from "./lab-view-models";
+import { buildLabGscView, summarizeLabSelection } from "./lab-view-models";
 import type { LabGscWeekly } from "@/lib/types";
-
-function week(week_start: string, c: [number, number, number, number], i: [number, number, number, number]) {
-  return {
-    week_start,
-    c_ressource: c[0], c_classique: c[1], c_expertise: c[2], c_divers: c[3],
-    i_ressource: i[0], i_classique: i[1], i_expertise: i[2], i_divers: i[3],
-  };
-}
-
-// 14 lundis consécutifs à partir du 01/06/2026.
-const WEEKS = Array.from({ length: 14 }, (_, k) => {
-  const d = new Date(Date.UTC(2026, 5, 1 + 7 * k));
-  return d.toISOString().slice(0, 10);
-});
 
 function fixture(): LabGscWeekly {
   return {
-    gsc_end: "2026-09-07",
-    window_start: WEEKS[0],
-    window_end: "2026-09-06",
-    // Ressources : 200/sem sur les 4 premières puis 100 ; classiques constants 50 ; expertise 10 ; divers 5.
-    weeks: WEEKS.map((w, k) => week(w, [k < 6 ? 200 : 100, 50, 10, 5], [10_000, 1_000, 1_000, 100])),
+    gsc_end: "2026-11-02",
+    window_start: "2026-08-24",
+    window_end: "2026-11-01",
+    weeks: Array.from({ length: 10 }, (_, i) => ({
+      week_start: new Date(Date.UTC(2026, 7, 24 + i * 7)).toISOString().slice(0, 10),
+      // Les deux premières semaines seraient une mauvaise référence pour l'évolution.
+      c_ressource: i < 2 ? 400 : i < 6 ? 10 : 20,
+      c_classique: 10, c_expertise: 5, c_divers: 0,
+      // Dernier bloc : 80 clics / 200 impressions, malgré des CTR hebdomadaires différents.
+      i_ressource: i === 9 ? 140 : 20,
+      i_classique: 100, i_expertise: 100, i_divers: 0,
+    })),
     annotations: [
-      { day: "2026-07-15", kind: "site_change", label: "Refonte", paths: null },
-      { day: "2025-01-01", kind: "autre", label: "hors fenêtre", paths: null },
+      { day: "2026-10-26", kind: "site_change", label: "Mise en ligne", paths: null },
+      { day: "2026-10-30", kind: "note", label: "Relecture", paths: null },
+      { day: "2026-11-02", kind: "note", label: "Hors fenêtre", paths: null },
     ],
   };
 }
 
-describe("meanBlock", () => {
-  it("moyenne des len valeurs finissant à end, 0 si la fenêtre déborde", () => {
-    expect(meanBlock([1, 2, 3, 4], 3, 2)).toBe(3.5);
-    expect(meanBlock([1, 2, 3, 4], 0, 2)).toBe(0);
-    expect(meanBlock([1, 2], 5, 1)).toBe(0);
-  });
-});
+describe("indicateurs du Lab", () => {
+  it("compare les blocs contigus des catégories visibles en indiquant leurs dates réelles", () => {
+    const view = buildLabGscView(fixture());
+    const summary = summarizeLabSelection(view, ["ressource", "classique"]);
+    expect(summary.latest).toEqual({ start: "2026-10-26", end: "2026-11-01", clicks: 30 });
+    expect(summary.current).toEqual({ start: "2026-10-05", end: "2026-11-01", clicks: 120 });
+    expect(summary.previous).toEqual({ start: "2026-09-07", end: "2026-10-04", clicks: 80 });
+    expect(summary.changePct).toBe(50);
+    expect(summary.totals).toEqual([410, 410, 20, 20, 20, 20, 30, 30, 30, 30]);
+    expect(summary.leaders).toEqual(["ressource"]);
+    expect(summary.leaderSharePct).toBeCloseTo(100 * 80 / 120);
 
-describe("buildLabGscView", () => {
-  it("trie les bandes par largeur actuelle et attribue les encres du plus noir au plus clair", () => {
-    const v = buildLabGscView(fixture());
-    expect(v.bands.map((b) => b.key)).toEqual(["ressource", "classique", "expertise", "divers"]);
-    expect(v.bands.map((b) => b.tone)).toEqual(["ink", "muted", "faint", "dim"]);
-  });
-
-  it("last4 / ref4 : blocs de 4 semaines, le second 8 semaines plus tôt", () => {
-    const v = buildLabGscView(fixture());
-    const res = v.bands[0];
-    // Dernier bloc = semaines 10..13 → 100 ; référence = semaines 2..5 → 200.
-    expect(res.last4).toBe(100);
-    expect(res.ref4).toBe(200);
-    expect(res.ctrLast4Pct).toBeCloseTo(1);
-    expect(res.ctrRef4Pct).toBeCloseTo(2);
-    expect(res.peak).toBe(200);
-    expect(res.peakWeek).toBe(WEEKS[0]);
+    const single = summarizeLabSelection(view, ["classique"]);
+    expect(single.latest?.clicks).toBe(10);
+    expect(single.changePct).toBe(0);
+    expect(single.leaderSharePct).toBe(100);
   });
 
-  it("totaux = Σ des bandes ; pic et dernière valeur", () => {
-    const v = buildLabGscView(fixture());
-    expect(v.totals[0]).toBe(265);
-    expect(v.totals[13]).toBe(165);
-    expect(v.peakTotal).toBe(265);
-    expect(v.peakTotalWeek).toBe(WEEKS[0]);
-    expect(v.lastTotal).toBe(165);
+  it("préserve toutes les premières catégories ex æquo", () => {
+    const input = fixture();
+    for (const w of input.weeks) w.c_ressource = w.c_classique;
+    const result = summarizeLabSelection(buildLabGscView(input), ["classique", "ressource", "expertise"]);
+    expect(result.leaders).toEqual(["ressource", "classique"]);
+    expect(result.leaderSharePct).toBe(40);
   });
 
-  it("annotations → marqueurs indexés à la semaine ; hors fenêtre ignorées", () => {
-    const v = buildLabGscView(fixture());
-    expect(v.markers).toHaveLength(1);
-    expect(v.markers[0]).toMatchObject({ index: 6, day: "2026-07-15", kind: "site_change" });
+  it("distingue un bloc mesuré à zéro d'une évolution ou d'une part indéfinie", () => {
+    const view = buildLabGscView(fixture());
+    const zero = summarizeLabSelection(view, ["divers"]);
+    expect(zero.current?.clicks).toBe(0);
+    expect(zero.latest?.clicks).toBe(0);
+    expect(zero.changePct).toBeNull();
+    expect(zero.leaders).toEqual([]);
+    expect(zero.leaderSharePct).toBeNull();
+    expect(summarizeLabSelection(view, []).latest).toBeNull();
   });
 
-  it("CTR null quand aucune impression", () => {
-    const f = fixture();
-    f.weeks = f.weeks.map((w) => ({ ...w, i_divers: 0 }));
-    const v = buildLabGscView(f);
-    const divers = v.bands.find((b) => b.key === "divers")!;
-    expect(divers.ctrLast4Pct).toBeNull();
+  it("suspend le calcul si une semaine manque dans le bloc ou en fin de fenêtre", () => {
+    const input = fixture();
+    input.weeks.splice(7, 1);
+    const summary = summarizeLabSelection(buildLabGscView(input), ["ressource"]);
+    expect(summary.latest?.clicks).toBe(20);
+    expect(summary.current).toBeNull();
+    expect(summary.changePct).toBeNull();
+    expect(summary.leaders).toEqual([]);
+    expect(summary.previous?.clicks).toBe(40);
+    input.weeks.pop();
+    const missingLast = summarizeLabSelection(buildLabGscView(input), ["ressource"]);
+    expect(missingLast.latest).toBeNull();
+    expect(missingLast.current).toBeNull();
+    const empty = summarizeLabSelection(buildLabGscView({ ...input, weeks: [] }), ["ressource"]);
+    expect(empty.totals).toEqual([]);
+    expect(empty.previous).toBeNull();
   });
 
-  it("fenêtre vide → vue vide sans NaN", () => {
-    const v = buildLabGscView({ ...fixture(), weeks: [], annotations: [] });
-    expect(v.bands[0].last4).toBe(0);
-    expect(v.peakTotal).toBe(0);
-    expect(v.totals).toEqual([]);
+  it("conserve le CTR pondéré du bloc, le pic et tous les repères d'une même semaine", () => {
+    const view = buildLabGscView(fixture());
+    const resources = view.bands.find((band) => band.key === "ressource")!;
+    expect(resources.ctrLast4Pct).toBe(40);
+    expect(resources.peak).toBe(400);
+    expect(resources.peakWeek).toBe("2026-08-24");
+    expect(view.bands.find((band) => band.key === "divers")?.ctrLast4Pct).toBeNull();
+    expect(view.markers.map(({ index, label }) => [index, label])).toEqual([
+      [9, "Mise en ligne"], [9, "Relecture"],
+    ]);
   });
 });
