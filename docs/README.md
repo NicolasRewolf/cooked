@@ -8,6 +8,7 @@ Carte de la documentation. **Racine du repo** (standard mainteneur) :
 ## Docs vivants (font foi)
 
 ### Opérer & analyser
+- [Fenêtres d’analyse et provenance des snapshots](ANALYTICS_WINDOWS.md) — dates comparées, cache et interprétation d’un rapport maths partiel.
 - [`RELIABILITY.md`](RELIABILITY.md) — corrections du 20/10/2026, contrats de mesure, états de déploiement et limites.
 - [`OPERATIONS.md`](OPERATIONS.md) — architecture, events captés, RPCs publiées, crons, déploiement, dépannage.
 - [`PLAYBOOK-analyse-seo.md`](PLAYBOOK-analyse-seo.md) — recettes d'analyse SEO × GSC et les pièges déjà payés.

@@ -6,7 +6,6 @@
 import type { KpiItem } from "@/components/KpiHeader";
 import { buildMarkers } from "@/lib/annotations";
 import { num, pct, delta } from "@/lib/format";
-import { dayDiff, parisTodayISO } from "@/lib/dates";
 import type {
   Annotation,
   AssistedRow,
@@ -119,32 +118,24 @@ export function buildExpertisesView(input: {
 
 export interface SeoView {
   items: KpiItem[];
-  /** Décalage Google en jours entiers (≥ 0), null si KPIs indisponibles. */
-  lagDays: number | null;
   /** Libellés formatés du pied de tableau (deux univers de clics). */
   clicksPathTotalLabel: string;
   clicksNamedNonbrandedLabel: string;
 }
 
-/** `now` injectable pour les tests — les pages laissent le défaut
- *  (Server Component rendu à la requête : heure courante lue une fois). */
-export function buildSeoView(seo: SeoKpis | null, now: number = Date.now()): SeoView {
-  const lagDays = seo
-    ? Math.max(0, dayDiff(seo.gsc_end, parisTodayISO(new Date(now))))
-    : null;
+export function buildSeoView(seo: SeoKpis | null): SeoView {
 
   // B2/B3 : total quick wins calculé SQL (indépendant du cap du tableau) ; 2 niveaux de clics distincts.
   const items: KpiItem[] = [
-    { label: "Clics Google", value: num(seo?.clicks_path_total ?? 0), hint: "toutes requêtes · marque incluse" },
-    { label: "Affichages Google", value: num(seo?.impressions_path_total ?? 0), hint: "niveau page" },
-    { label: "Requêtes connues", value: num(seo?.total_queries ?? 0), hint: "hors marque (fraction nommée par Google)" },
-    { label: "À examiner", value: num(seo?.total_quick_wins ?? 0), hint: "filtre position 5–15 · volume ≥ 100", tooltip: "Filtre descriptif, sans validation de pertinence ni prédiction de gain." },
+    { label: "Clics Google", value: num(seo?.clicks_path_total), hint: "toutes requêtes · marque incluse" },
+    { label: "Affichages Google", value: num(seo?.impressions_path_total), hint: "niveau page" },
+    { label: "Requêtes connues", value: num(seo?.total_queries), hint: "hors marque (fraction nommée par Google)" },
+    { label: "À examiner", value: num(seo?.total_quick_wins), hint: "filtre position 5–15 · volume ≥ 100", tooltip: "Filtre descriptif, sans validation de pertinence ni prédiction de gain." },
   ];
 
   return {
     items,
-    lagDays,
-    clicksPathTotalLabel: num(seo?.clicks_path_total ?? 0),
-    clicksNamedNonbrandedLabel: num(seo?.clicks_named_nonbranded ?? 0),
+    clicksPathTotalLabel: num(seo?.clicks_path_total),
+    clicksNamedNonbrandedLabel: num(seo?.clicks_named_nonbranded),
   };
 }

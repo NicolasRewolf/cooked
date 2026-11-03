@@ -3,11 +3,51 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SeoTable } from "./SeoTable";
 import { SeoReadingGuide } from "./SeoReadingGuide";
-import { CtrCell } from "./metric-columns";
+import { CtrCell, HealthCell, santeColumn } from "./metric-columns";
+import { InterventionEffects } from "./InterventionEffects";
 import { articleDetailSchema, seoQueryRowSchema } from "@/data/rpc-schemas";
-import type { ResourceRow } from "@/lib/types";
+import type { InterventionEffect, ResourceRow } from "@/lib/types";
 
 describe("sorties sans prédiction non qualifiée", () => {
+  it("décrit l'absence de contact observé sans promettre un potentiel", () => {
+    const html = renderToStaticMarkup(createElement(HealthCell, {
+      r: { cpi_grade: "A", momentum: 1.1, convertit: false, contacts: 9, window_kind: "rolling_90" } as ResourceRow,
+    }));
+    expect(html).toContain("sans contact organique dans le CPI");
+    expect(html).toContain("28 jours");
+    expect(santeColumn.headerInfo).toContain("indépendamment de la période du tableau");
+    expect(santeColumn.headerInfo).not.toMatch(/fort potentiel|poser un pont/);
+    const unknown = renderToStaticMarkup(createElement(HealthCell, {
+      r: { cpi_grade: "A", momentum: 1.1, convertit: null } as ResourceRow,
+    }));
+    expect(unknown).not.toContain("★");
+  });
+
+  it("décrit un avant/après relatif au site sans en faire une preuve causale", () => {
+    const effect = {
+      days_post: 28, confidence: "verdict", base_trop_faible: false,
+      clics_pct: 50, maree_pct: 25, effet_net_pct: 20,
+      pos_pre: 8, pos_post: 7, article_jeune: false,
+    } as InterventionEffect;
+    const html = renderToStaticMarkup(createElement(InterventionEffects, {
+      items: [{ label: "Titre modifié", day: "2026-10-01", effect }],
+    }));
+    expect(html).toContain("variation relative au site");
+    expect(html).toContain("recul de 28 j");
+    expect(html).toContain("ne démontre pas");
+    expect(html).not.toMatch(/effet net|verdict complet|lecture fiable/);
+  });
+
+  it("ne remplace pas une tendance du site absente par une variation nulle", () => {
+    const html = renderToStaticMarkup(createElement(InterventionEffects, {
+      items: [{ label: "Titre modifié", day: "2026-10-01", effect: {
+        days_post: 28, confidence: "verdict", base_trop_faible: false,
+        clics_pct: 50, maree_pct: null, effet_net_pct: 20,
+      } as InterventionEffect }],
+    }));
+    expect(html).toContain("comparaison indisponible");
+    expect(html).not.toContain("site 0 %");
+  });
   it("montre les observations de « oui » sans transformer son volume national en gain", () => {
     const row = seoQueryRowSchema.parse({
       query: "oui", clicks: 3, impressions: 355, position_avg: 3.5, ctr_pct: 0.85,

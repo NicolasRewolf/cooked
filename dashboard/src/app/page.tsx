@@ -78,7 +78,6 @@ async function Content({ period }: { period: Period }) {
         <FreshnessBanner
           cookedEnd={kpis.cooked_end}
           gscLastDay={kpis.gsc_last_day}
-          lagDays={kpis.lag_days}
           refreshedAt={kpis.refreshed_at}
           noPrevBaseline={kpis.no_prev_baseline}
         />

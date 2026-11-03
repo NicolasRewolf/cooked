@@ -272,10 +272,8 @@ const seoKpis: SeoKpis = {
 };
 
 describe("buildSeoView", () => {
-  it("cas nominal : 4 KPIs + lag en jours entiers", () => {
-    const now = Date.parse("2026-07-08T10:00:00Z"); // 3 j + 10 h après gsc_end
-    const view = buildSeoView(seoKpis, now);
-    expect(view.lagDays).toBe(3);
+  it("cas nominal : 4 KPIs et totaux par périmètre", () => {
+    const view = buildSeoView(seoKpis);
     expect(view.items.map((i) => [i.label, i.value])).toEqual([
       ["Clics Google", "610"],
       ["Affichages Google", "999"],
@@ -288,19 +286,10 @@ describe("buildSeoView", () => {
     expect(view.clicksNamedNonbrandedLabel).toBe("260");
   });
 
-  it("horloge en avance sur gsc_end ⇒ lag borné à 0", () => {
-    const now = Date.parse("2026-07-04T10:00:00Z");
-    expect(buildSeoView(seoKpis, now).lagDays).toBe(0);
-  });
-  it("calcule le jour courant à Paris, y compris avant minuit UTC", () => {
-    expect(buildSeoView(seoKpis, Date.parse("2026-07-07T22:15:00Z")).lagDays).toBe(3);
-  });
-
-  it("seo null ⇒ lag null et KPIs à zéro (rendu identique à l'existant)", () => {
-    const view = buildSeoView(null, Date.parse("2026-07-08T10:00:00Z"));
-    expect(view.lagDays).toBeNull();
-    expect(view.items.map((i) => i.value)).toEqual(["0", "0", "0", "0"]);
-    expect(view.clicksPathTotalLabel).toBe("0");
-    expect(view.clicksNamedNonbrandedLabel).toBe("0");
+  it("seo null ⇒ valeurs indisponibles, jamais de faux zéros", () => {
+    const view = buildSeoView(null);
+    expect(view.items.map((i) => i.value)).toEqual(["—", "—", "—", "—"]);
+    expect(view.clicksPathTotalLabel).toBe("—");
+    expect(view.clicksNamedNonbrandedLabel).toBe("—");
   });
 });

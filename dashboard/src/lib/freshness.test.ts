@@ -8,7 +8,7 @@ describe("freshnessState — fin des données (g-03)", () => {
   it("rejeu du 28/08/2026 : données à J-2 après 16 h Paris → orange", () => {
     // Le 28/08 la séquence est partie à 21:00 Paris ; jusque-là cooked_end = 26/08.
     const s = freshnessState({
-      gscLastDay: "2026-08-25", lagDays: 3, cookedEnd: "2026-08-26",
+      gscLastDay: "2026-08-25", cookedEnd: "2026-08-26",
       refreshedAt: "2026-08-27T18:05:00Z", now: paris("2026-08-28T17:00:00"),
     });
     expect(s.level).toBe("warn");
@@ -17,7 +17,7 @@ describe("freshnessState — fin des données (g-03)", () => {
   });
   it("rejeu du 28/08/2026 : le matin, J-2 est l'état normal → vert", () => {
     const s = freshnessState({
-      gscLastDay: "2026-08-25", lagDays: 3, cookedEnd: "2026-08-26",
+      gscLastDay: "2026-08-25", cookedEnd: "2026-08-26",
       refreshedAt: "2026-08-27T18:05:00Z", now: paris("2026-08-28T09:00:00"),
     });
     expect(s.level).toBe("ok");
@@ -25,7 +25,7 @@ describe("freshnessState — fin des données (g-03)", () => {
   });
   it("J-3 à toute heure → orange, même si le calcul est récent", () => {
     const s = freshnessState({
-      gscLastDay: "2026-08-31", lagDays: 3, cookedEnd: "2026-08-31",
+      gscLastDay: "2026-08-31", cookedEnd: "2026-08-31",
       refreshedAt: "2026-09-03T00:30:00Z", now: paris("2026-09-03T03:00:00"),
     });
     expect(s.level).toBe("warn");
@@ -34,7 +34,7 @@ describe("freshnessState — fin des données (g-03)", () => {
   });
   it("après la séquence : J-1 → vert", () => {
     const s = freshnessState({
-      gscLastDay: "2026-08-31", lagDays: 3, cookedEnd: "2026-09-02",
+      gscLastDay: "2026-08-31", cookedEnd: "2026-09-02",
       refreshedAt: "2026-09-03T15:00:00Z", now: paris("2026-09-03T22:00:00"),
     });
     expect(s.level).toBe("ok");
@@ -42,7 +42,7 @@ describe("freshnessState — fin des données (g-03)", () => {
   });
   it("calcul > 36 h prime (rouge)", () => {
     const s = freshnessState({
-      gscLastDay: "2026-08-31", lagDays: 3, cookedEnd: "2026-09-01",
+      gscLastDay: "2026-08-31", cookedEnd: "2026-09-01",
       refreshedAt: "2026-09-01T15:00:00Z", now: paris("2026-09-03T22:00:00"),
     });
     expect(s.level).toBe("alert");
@@ -50,31 +50,31 @@ describe("freshnessState — fin des données (g-03)", () => {
   });
   it("Google en retard > 3 j → orange (gsc_late)", () => {
     const s = freshnessState({
-      gscLastDay: "2026-08-28", lagDays: 5, cookedEnd: "2026-09-02",
+      gscLastDay: "2026-08-28", cookedEnd: "2026-09-02",
       refreshedAt: "2026-09-03T15:00:00Z", now: paris("2026-09-03T22:00:00"),
     });
     expect(s.level).toBe("warn");
     expect(s.reason).toBe("gsc_late");
   });
   it("lens live : pas de cooked_end, seul Google compte", () => {
-    const s = freshnessState({ gscLastDay: "2026-08-31", lagDays: 3, live: true, now: paris("2026-09-03T22:00:00") });
+    const s = freshnessState({ gscLastDay: "2026-08-31", live: true, now: paris("2026-09-03T22:00:00") });
     expect(s.level).toBe("ok");
     expect(s.cookedGap).toBeNull();
   });
   it("recalcule le lag courant au lieu de réutiliser celui du snapshot", () => {
     const s = freshnessState({
-      gscLastDay: "2026-10-17", lagDays: 2, cookedEnd: "2026-10-18",
+      gscLastDay: "2026-10-17", cookedEnd: "2026-10-18",
       refreshedAt: "2026-10-19T12:00:00Z", now: paris("2026-10-20T09:00:00"),
     });
     expect(s.lag).toBe(3);
     expect(s.level).toBe("ok");
   });
   it("change de date à minuit Paris, même avant minuit UTC", () => {
-    const s = freshnessState({ gscLastDay: "2026-10-17", lagDays: 2, live: true, now: new Date("2026-10-19T22:05:00Z") });
+    const s = freshnessState({ gscLastDay: "2026-10-17", live: true, now: new Date("2026-10-19T22:05:00Z") });
     expect(s.lag).toBe(3);
   });
   it("ne présente pas une date Google inconnue comme J-0 normal", () => {
-    const s = freshnessState({ gscLastDay: null, lagDays: 0, live: true, now: paris("2026-10-20T09:00:00") });
+    const s = freshnessState({ gscLastDay: null, live: true, now: paris("2026-10-20T09:00:00") });
     expect(s.lag).toBeNull();
     expect(s.reason).toBe("gsc_missing");
   });

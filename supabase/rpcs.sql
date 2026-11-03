@@ -7,7 +7,7 @@
 -- Ce fichier = instantané lisible pour humains et agents (Arch #5, 10/07/2026).
 --
 -- Régénérer : python3 scripts/generate_rpcs_sql.py  (DATABASE_URL requis)
--- Généré le 20/10/2026 — projet mxycmjkeotrycyneacje.
+-- Généré le 03/11/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
 -- ═══ public.ack_alerts(p_kinds text[]) ═══
@@ -841,7 +841,10 @@ BEGIN
     RETURN;
   END IF;
 
-  t0 := public.cooked_paris_ts_start(v_prev_day) + make_interval(hours => v_prev_hour);
+  -- Construire l'heure murale avant conversion en instant absolu.
+  -- Minuit Paris + N heures écoulées se décale les jours de 23/25 heures.
+  t0 := (v_prev_day::timestamp + make_interval(hours => v_prev_hour))
+        AT TIME ZONE 'Europe/Paris';
   t1 := t0 + interval '1 hour';
 
   SELECT count(*) FILTER (WHERE name = 'pageview') INTO v_n
@@ -1129,11 +1132,17 @@ CREATE OR REPLACE FUNCTION public.content_performance(days_back integer DEFAULT 
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  with base as (
+  with w as (
+    select b.n_end as d_end, b.n_end - (days_back - 1) as d_start
+    from public.cooked_period_bounds('rolling_28', 'live_j1') b
+  ),
+  base as (
     select e.path, public.cooked_page_type(e.path) as ptype, t.theme, e.session_id, e.name, e.props
     from public.events_human e
     left join public.page_taxonomy t on t.path = e.path
-    where e.occurred_at > now() - make_interval(days => days_back) and e.path is not null
+    where e.occurred_at >= public.cooked_paris_ts_start((select d_start from w))
+      and e.occurred_at < public.cooked_paris_ts_end_exclusive((select d_end from w))
+      and e.path is not null
   ),
   grp as (
     select ptype, theme, count(distinct path) as pages,
@@ -1156,7 +1165,7 @@ AS $function$
   assists as (
     select public.cooked_page_type(jp.path) as ptype, t.theme,
       count(distinct (j.anonymous_id, j.occurred_at)) as contacts_assisted
-    from public.conversion_journeys(days_back) j
+    from public.conversion_journeys(days_back, (select d_end from w)) j
     cross join lateral unnest(j.journey) as jp(path)
     left join public.page_taxonomy t on t.path = jp.path
     group by 1, 2
@@ -1948,9 +1957,7 @@ CREATE OR REPLACE FUNCTION public.cooked_paris_hour(p_ts timestamp with time zon
  STABLE
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  SELECT floor(extract(epoch FROM (
-    p_ts - public.cooked_paris_ts_start(public.paris_date(p_ts))
-  )) / 3600)::int;
+  SELECT extract(hour FROM p_ts AT TIME ZONE 'Europe/Paris')::integer;
 $function$
 
 
@@ -2956,45 +2963,14 @@ CREATE OR REPLACE FUNCTION public.dfs_keywords_to_sync(limit_n integer DEFAULT 5
  RETURNS TABLE(keyword text, clicks_total bigint)
  LANGUAGE sql
  STABLE SECURITY DEFINER
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  WITH bounds AS (
-    SELECT
-      (now() AT TIME ZONE 'Europe/Paris')::date AS today,
-      (now() AT TIME ZONE 'Europe/Paris')::date - 27 AS start_28d,
-      (now() AT TIME ZONE 'Europe/Paris')::date - 89 AS start_90d
-  ),
-  clicks_90 AS (
-    SELECT q.query, SUM(q.clicks)::bigint AS clicks_90d
-    FROM gsc_query_daily q, bounds b
-    WHERE q.day >= b.start_90d
-      AND q.day <= b.today
-      AND q.query IS NOT NULL
-      AND q.query != ''
-    GROUP BY q.query
-  ),
-  clicks_28 AS (
-    SELECT q.query, SUM(q.clicks)::bigint AS clicks_28d
-    FROM gsc_query_daily q, bounds b
-    WHERE q.day >= b.start_28d
-      AND q.day <= b.today
-      AND q.query IS NOT NULL
-      AND q.query != ''
-    GROUP BY q.query
-  ),
-  combined AS (
-    SELECT
-      COALESCE(a.query, c.query) AS query,
-      COALESCE(a.clicks_90d, 0) AS clicks_90d,
-      COALESCE(c.clicks_28d, 0) AS clicks_28d
-    FROM clicks_90 a
-    FULL OUTER JOIN clicks_28 c ON c.query = a.query
-  )
-  SELECT
-    query AS keyword,
-    GREATEST(clicks_90d, clicks_28d) AS clicks_total
-  FROM combined
-  ORDER BY GREATEST(clicks_90d, clicks_28d) DESC, clicks_90d DESC
+  SELECT q.query AS keyword, SUM(q.clicks)::bigint AS clicks_total
+  FROM public.gsc_query_daily q
+  WHERE q.day BETWEEN public.paris_today()-89 AND public.paris_today()
+    AND q.query IS NOT NULL AND q.query <> ''
+  GROUP BY q.query
+  ORDER BY SUM(q.clicks) DESC
   LIMIT limit_n;
 $function$
 
@@ -3824,11 +3800,16 @@ CREATE OR REPLACE FUNCTION public.math_internal_edges(days_back integer DEFAULT 
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  with ev as materialized (
+  with w as (
+    select b.n_end as d_end, b.n_end - (days_back - 1) as d_start
+    from public.cooked_period_bounds('rolling_28', 'live_j1') b
+  ),
+  ev as materialized (
     select e.anonymous_id, e.session_id, e.name, e.path, e.occurred_at, e.props
     from public.events_human e
     where e.name in ('pageview', 'click_internal')
-      and e.occurred_at > now() - make_interval(days => days_back)
+      and e.occurred_at >= public.cooked_paris_ts_start((select d_start from w))
+      and e.occurred_at < public.cooked_paris_ts_end_exclusive((select d_end from w))
       and e.path is not null
   ),
   seen as (
@@ -3914,18 +3895,27 @@ AS $function$
 DECLARE
   v_seq bigint;
   v_edg bigint;
+  v_start date;
+  v_end date;
+  v_computed_at timestamptz := now();
 BEGIN
+  IF p_window_days IS NULL OR p_window_days < 1 THEN
+    RAISE EXCEPTION 'window_days must be a positive integer' USING ERRCODE = '22023';
+  END IF;
+  SELECT b.n_end - (p_window_days - 1), b.n_end INTO v_start, v_end
+  FROM public.cooked_period_bounds('rolling_28', 'live_j1') b;
+
   DELETE FROM public.math_visit_sequences_snapshot WHERE window_days = p_window_days;
   INSERT INTO public.math_visit_sequences_snapshot
-    (window_days, journey, converted, entry_channel, n)
-  SELECT p_window_days, s.journey, s.converted, s.entry_channel, s.n
+    (computed_at, window_days, window_start, window_end, calculation_version, journey, converted, entry_channel, n)
+  SELECT v_computed_at, p_window_days, v_start, v_end, 'paris_j1_v1', s.journey, s.converted, s.entry_channel, s.n
   FROM public.math_visit_sequences(p_window_days) s;
   GET DIAGNOSTICS v_seq = ROW_COUNT;
 
   DELETE FROM public.math_internal_edges_snapshot WHERE window_days = p_window_days;
   INSERT INTO public.math_internal_edges_snapshot
-    (window_days, src, dst, kind, placement, weight, dst_resolved)
-  SELECT p_window_days, e.src, e.dst, e.kind, e.placement, e.weight, e.dst_resolved
+    (computed_at, window_days, window_start, window_end, calculation_version, src, dst, kind, placement, weight, dst_resolved)
+  SELECT v_computed_at, p_window_days, v_start, v_end, 'paris_j1_v1', e.src, e.dst, e.kind, e.placement, e.weight, e.dst_resolved
   FROM public.math_internal_edges(p_window_days) e;
   GET DIAGNOSTICS v_edg = ROW_COUNT;
 
@@ -3941,19 +3931,24 @@ CREATE OR REPLACE FUNCTION public.math_visit_sequences(days_back integer DEFAULT
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  with ev as materialized (
+  with w as (
+    select b.n_end as d_end, b.n_end - (days_back - 1) as d_start
+    from public.cooked_period_bounds('rolling_28', 'live_j1') b
+  ),
+  ev as materialized (
     select e.anonymous_id, e.session_id, e.name, e.path, e.occurred_at,
-           e.referrer_hostname, e.utm_source, e.utm_medium
+           e.referrer_hostname, e.utm_source, e.utm_medium, e.url
     from public.events_human e
     where e.name in ('pageview', 'cta_phone_click')
-      and e.occurred_at > now() - make_interval(days => days_back)
+      and e.occurred_at >= public.cooked_paris_ts_start((select d_start from w))
+      and e.occurred_at < public.cooked_paris_ts_end_exclusive((select d_end from w))
   ),
   pv as materialized (
     select
       coalesce(ss.visitor_key, sa.visitor_key,
                'sid:' || coalesce(e.session_id, e.anonymous_id, 'inconnu')) as vk,
       e.path, e.occurred_at as t,
-      e.referrer_hostname, e.utm_source, e.utm_medium
+      e.referrer_hostname, e.utm_source, e.utm_medium, e.url
     from ev e
     left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = e.session_id
     left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = e.anonymous_id
@@ -3969,7 +3964,7 @@ AS $function$
       from ev e where e.name = 'cta_phone_click'
       union all
       select f.occurred_at, f.resolved_anonymous_id, f.resolved_session_id
-      from public.form_submits_attributed(days_back) f
+      from public.form_submits_attributed(days_back, (select d_end from w)) f
       where f.counts_as_macro
     ) c
     left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = c.session_id
@@ -4008,7 +4003,7 @@ AS $function$
   ),
   kept as materialized (
     select v.vk, v.visit_no, v.path, v.t,
-           v.referrer_hostname, v.utm_source, v.utm_medium,
+           v.referrer_hostname, v.utm_source, v.utm_medium, v.url,
            (vc.contact_at is not null) as converted
     from vis v
     left join vc on vc.vk = v.vk and vc.visit_no = v.visit_no
@@ -4017,7 +4012,7 @@ AS $function$
   ),
   entry as materialized (
     select distinct on (k.vk, k.visit_no)
-           k.vk, k.visit_no, k.referrer_hostname, k.utm_source, k.utm_medium
+           k.vk, k.visit_no, k.referrer_hostname, k.utm_source, k.utm_medium, k.url
     from kept k
     order by k.vk, k.visit_no, k.t
   ),
@@ -4033,15 +4028,15 @@ AS $function$
   ),
   raw_grouped as (
     select p.journey, p.converted,
-           e.referrer_hostname, e.utm_source, e.utm_medium,
+           e.referrer_hostname, e.utm_source, e.utm_medium, e.url,
            count(*)::bigint as n
     from per_visit p
     join entry e on e.vk = p.vk and e.visit_no = p.visit_no
-    group by 1, 2, 3, 4, 5
+    group by 1, 2, 3, 4, 5, 6
   )
   select g.journey, g.converted,
          public.classify_channel(g.referrer_hostname, g.utm_source, g.utm_medium,
-                                 'www.jplouton-avocat.fr'),
+                                 'www.jplouton-avocat.fr', g.url),
          sum(g.n)::bigint
   from raw_grouped g
   group by 1, 2, 3;
@@ -4573,11 +4568,6 @@ begin
 
   get diagnostics v_deleted = row_count;
 
-  if v_deleted > 1000 then
-    perform pg_advisory_lock(hashtext('purge_old_events_vacuum'));
-    perform pg_advisory_unlock(hashtext('purge_old_events_vacuum'));
-  end if;
-
   v_after := pg_size_pretty(pg_total_relation_size('public.events'));
 
   return query select
@@ -4944,13 +4934,17 @@ CREATE OR REPLACE FUNCTION public.refresh_dashboard_resources_assisted(p_window 
 AS $function$
 DECLARE
   windows text[] := CASE WHEN p_window IS NULL THEN ARRAY['rolling_28','rolling_90'] ELSE ARRAY[p_window] END;
-  w text; lbl text; lns date; lne date; lps date; lpe date; lpt date; ld int;
-  gns date; gne date; gps date; gpe date; glast date; glag int;
+  w text; lns date; lne date; lps date; lpe date;
 BEGIN
+  IF p_window IS NOT NULL AND p_window NOT IN ('rolling_28','rolling_90') THEN
+    RAISE EXCEPTION 'refresh_dashboard_resources_assisted: unsupported window %', p_window;
+  END IF;
   DELETE FROM public.dashboard_resources_assisted_snapshot WHERE window_kind = ANY(windows);
 
   FOREACH w IN ARRAY windows LOOP
-    CALL public.cooked_snapshot_window(w, 'human', lbl, lns, lne, lps, lpe, lpt, ld, gns, gne, gps, gpe, glast, glag);
+    SELECT b.n_start, b.n_end, b.prev_start, b.prev_end
+      INTO lns, lne, lps, lpe
+    FROM public.cooked_period_bounds(w, 'live_j1') b;
 
     INSERT INTO public.dashboard_resources_assisted_snapshot
       (window_kind, path, assisted_contacts, assisted_prev, refreshed_at)

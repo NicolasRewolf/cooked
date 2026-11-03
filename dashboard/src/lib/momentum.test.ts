@@ -5,7 +5,6 @@ import {
   santeFromMomentum,
   isScored,
   isOpportuniteContact,
-  isGisement,
 } from "./momentum";
 
 describe("momentumDir / label", () => {
@@ -48,8 +47,5 @@ describe("isOpportuniteContact", () => {
     expect(isOpportuniteContact("C", false)).toBe(false);
     expect(isOpportuniteContact("A", null)).toBe(false);
     expect(isOpportuniteContact(null, false)).toBe(false);
-  });
-  it("alias isGisement", () => {
-    expect(isGisement("A", false)).toBe(true);
   });
 });

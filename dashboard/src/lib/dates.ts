@@ -34,9 +34,6 @@ export function dayDiff(fromISO: string, toISO: string): number {
   return Math.round((b - a) / MS_PER_DAY);
 }
 
-/** Alias historique (FreshnessBanner). */
-export const dayGap = dayDiff;
-
 /** "2026-06-29" → "29/06/2026" */
 export function dateFr(iso: string | null | undefined): string {
   if (!iso) return "—";

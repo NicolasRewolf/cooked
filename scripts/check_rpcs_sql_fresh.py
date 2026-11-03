@@ -3,16 +3,16 @@
 
 Règle :
   • CREATE OR REPLACE (FUNCTION|PROCEDURE) public.<name> dans une migration modifiée
-    → supabase/rpcs.sql doit figurer dans le même diff PR
+    → supabase/rpcs.sql doit figurer dans le même diff PR/push
     → chaque <name> doit avoir un marqueur dans rpcs.sql
 """
 from __future__ import annotations
 
-import os
 import re
-import subprocess
 import sys
 from pathlib import Path
+
+from git_changes import changed_paths
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "supabase" / "migrations"
@@ -23,33 +23,6 @@ RPC_DEF = re.compile(
     re.IGNORECASE,
 )
 MARKER = re.compile(r"^-- ═══ public\.(\w+)\(", re.MULTILINE)
-
-
-def git_diff_paths(spec: str) -> list[Path]:
-    result = subprocess.run(
-        ["git", "diff", "--name-only", spec, "--"],
-        capture_output=True,
-        text=True,
-        cwd=ROOT,
-        check=False,
-    )
-    if result.returncode != 0:
-        return []
-    return [ROOT / line.strip() for line in result.stdout.splitlines() if line.strip()]
-
-
-def changed_migration_files() -> list[Path]:
-    event = os.environ.get("GITHUB_EVENT_NAME", "")
-    if event == "push":
-        return [p for p in git_diff_paths("HEAD~1 HEAD") if p.parent == MIGRATIONS]
-    base = os.environ.get("GITHUB_BASE_REF", "main")
-    return [p for p in git_diff_paths(f"origin/{base}...HEAD") if p.parent == MIGRATIONS]
-
-
-def changed_files_in_pr() -> set[str]:
-    event = os.environ.get("GITHUB_EVENT_NAME", "")
-    spec = "HEAD~1 HEAD" if event == "push" else f"origin/{os.environ.get('GITHUB_BASE_REF', 'main')}...HEAD"
-    return {p.relative_to(ROOT).as_posix() for p in git_diff_paths(spec)}
 
 
 def rpc_names_in_file(path: Path) -> set[str]:
@@ -66,7 +39,13 @@ def rpc_markers_in_rpcs_sql() -> set[str]:
 
 
 def main() -> int:
-    migrations = changed_migration_files()
+    try:
+        paths = changed_paths(ROOT)
+    except RuntimeError as exc:
+        print(f"Arch #5 — contrôle impossible : {exc}", file=sys.stderr)
+        return 1
+
+    migrations = [p for p in paths if p.parent == MIGRATIONS]
     if not migrations:
         print("Arch #5 OK — aucune migration modifiée")
         return 0
@@ -79,7 +58,7 @@ def main() -> int:
         print(f"Arch #5 OK — {len(migrations)} migration(s), aucune RPC redéfinie")
         return 0
 
-    pr_files = changed_files_in_pr()
+    pr_files = {p.relative_to(ROOT).as_posix() for p in paths}
     rpcs_changed = "supabase/rpcs.sql" in pr_files
     meta_changed = "contracts/rpc_snapshot_meta.json" in pr_files
 

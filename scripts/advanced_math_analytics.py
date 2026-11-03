@@ -5,14 +5,14 @@ Framework d'analyse mathematique avancee pour Cooked.
 Cinq modules complementaires, chacun repondant a une question que le CPI ne
 sait pas poser :
 
-  1. Chaines de Markov      — quelle page, si on la retirait du site, ferait
-                              perdre le plus de contacts ? (removal effect)
+  1. Chaines de Markov      — quel retrait de page modifie le plus la
+                              probabilite du modele ? (removal effect)
   2. Theorie des graphes    — quelle page est un carrefour de navigation vers
                               les pages business ? (betweenness centrality)
-  3. Valeur de Shapley      — quelle est la contribution marginale exacte
-                              d'une page, comparee a l'attribution 1/L du CPI ?
-  4. Inference causale      — qu'a reellement produit une reecriture, une fois
-                              la maree du site soustraite ? (controle synthetique)
+  3. Valeur de Shapley      — quelle contribution marginale le modele estime-t-il
+                              pour une page, face a l'attribution 1/L du CPI ?
+  4. Controle synthetique   — quel ecart observe-t-on apres une reecriture
+                              par rapport a des pages temoins ?
   5. STL / Kalman           — quelles pages declinent en tendance de fond,
                               sous le bruit hebdomadaire ? (signal precoce)
 
@@ -27,10 +27,18 @@ INVARIANTS RESPECTES (CLAUDE.md)
 
 SOURCES DE DONNEES
   --source supabase : lit les tables snapshot `math_*_snapshot` (rapides) et
-                      les series GSC/CPI via PostgREST. Necessite
+                      les series GSC via PostgREST. Necessite
                       SUPABASE_SECRET_KEY.
   --source cache    : rejoue depuis un repertoire de JSON (aucun secret
                       requis) — sert aux tests et a la reproductibilite.
+
+Les fichiers de cache acceptent une liste de lignes ou {"metadata": {...},
+"rows": [...]}. Les snapshots portent window_days, window_start, window_end,
+computed_at (avec fuseau) et calculation_version="paris_j1_v1". Le cache des
+contacts porte au minimum window_start/window_end, y compris pour rows=[].
+Sans ces bornes, les analyses individuelles restent lisibles mais la synthese
+est suspendue. Code de sortie 2 = rapport partiel, donnees indisponibles ou
+periodes non comparables ; un zero observe exige une lecture reussie.
 
 Les snapshots sont rafraichis cote base par `math_refresh_snapshots(days)` :
 `math_visit_sequences(28)` coute ~65 s alors que PostgREST plafonne a 8 s,
@@ -53,6 +61,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Sequence
+from zoneinfo import ZoneInfo
 
 import numpy as np
 
@@ -102,10 +111,6 @@ def is_business(path: str) -> bool:
     return any(path.startswith(p) for p in BUSINESS_PREFIXES)
 
 
-def is_resource_post(path: str) -> bool:
-    return path.startswith("/post/")
-
-
 # ═══════════════════════════════════════════════════════════════════════
 # Acces aux donnees
 # ═══════════════════════════════════════════════════════════════════════
@@ -121,8 +126,73 @@ class VisitSequence:
     n: int
 
 
+class DataUnavailable(RuntimeError):
+    """Une source absente ou inexploitable ne constitue pas un zéro observé."""
+
+
+@dataclass(frozen=True)
+class SnapshotPeriod:
+    window_days: int
+    window_start: date
+    window_end: date
+    computed_at: datetime
+    calculation_version: str
+
+    @classmethod
+    def from_record(cls, row: dict, requested_days: int) -> "SnapshotPeriod":
+        period = cls(
+            int(row["window_days"]), date.fromisoformat(row["window_start"]),
+            date.fromisoformat(row["window_end"]),
+            datetime.fromisoformat(row["computed_at"]), row["calculation_version"],
+        )
+        if (period.window_days != requested_days or requested_days <= 0
+                or (period.window_end - period.window_start).days + 1 != requested_days
+                or period.computed_at.utcoffset() is None
+                or period.window_end != (
+                    period.computed_at.astimezone(ZoneInfo("Europe/Paris")).date()
+                    - timedelta(days=1))
+                or period.calculation_version != "paris_j1_v1"):
+            raise ValueError("Métadonnées de période incompatibles.")
+        return period
+
+    def as_dict(self) -> dict:
+        return {
+            "window_days": self.window_days,
+            "window_start": self.window_start.isoformat(),
+            "window_end": self.window_end.isoformat(),
+            "computed_at": self.computed_at.isoformat(),
+            "calculation_version": self.calculation_version,
+        }
+
+
 class DataSource:
     """Interface commune aux deux back-ends."""
+
+    def __init__(self) -> None:
+        self.snapshot_periods: dict[str, SnapshotPeriod] = {}
+        self.snapshot_info: dict[str, dict] = {}
+
+    def record_snapshot(self, kind: str, rows: list[dict], window_days: int,
+                        metadata: dict | None = None) -> None:
+        try:
+            records = [metadata] if metadata is not None else rows
+            if metadata is not None:
+                records += [row for row in rows if any(key in row for key in metadata)]
+            if not records:
+                raise ValueError("Snapshot vide sans manifeste.")
+            periods = {SnapshotPeriod.from_record(row, window_days) for row in records}
+            if len(periods) != 1:
+                raise ValueError("Plusieurs périodes ou générations dans un snapshot.")
+            period = periods.pop()
+        except (ValueError, KeyError, TypeError):
+            self.snapshot_periods.pop(kind, None)
+            self.snapshot_info[kind] = {
+                "status": "unverified",
+                "message": "Métadonnées de période absentes ou incohérentes ; comparaison suspendue.",
+            }
+        else:
+            self.snapshot_periods[kind] = period
+            self.snapshot_info[kind] = {"status": "verified", **period.as_dict()}
 
     def visit_sequences(self, window_days: int) -> list[VisitSequence]:
         raise NotImplementedError
@@ -133,13 +203,10 @@ class DataSource:
     def gsc_daily(self, paths: Sequence[str] | None = None) -> list[dict]:
         raise NotImplementedError
 
-    def cpi_daily(self) -> list[dict]:
-        raise NotImplementedError
-
     def annotations(self) -> list[dict]:
         raise NotImplementedError
 
-    def macro_contacts(self, window_days: int) -> dict[str, int]:
+    def macro_contacts(self, start_date: date, end_date: date) -> dict[str, int]:
         """Contacts macro par page (phone + form filtre) — source SQL unique."""
         raise NotImplementedError
 
@@ -152,6 +219,7 @@ class SupabaseSource(DataSource):
     def __init__(self, url: str, key: str) -> None:
         from supabase import create_client
 
+        super().__init__()
         self._client = create_client(url, key)
 
     @classmethod
@@ -188,7 +256,8 @@ class SupabaseSource(DataSource):
     def visit_sequences(self, window_days: int) -> list[VisitSequence]:
         rows = self._select_all(
             "math_visit_sequences_snapshot",
-            "journey,converted,entry_channel,n",
+            "journey,converted,entry_channel,n,window_days,computed_at,"
+            "window_start,window_end,calculation_version",
             {"window_days": window_days},
         )
         if not rows:
@@ -196,6 +265,7 @@ class SupabaseSource(DataSource):
                 f"Aucun snapshot pour window_days={window_days}.\n"
                 f"  Rafraichir cote base : SELECT math_refresh_snapshots({window_days});"
             )
+        self.record_snapshot("visit_sequences", rows, window_days)
         return [
             VisitSequence(tuple(r["journey"]), bool(r["converted"]),
                           r.get("entry_channel"), int(r["n"]))
@@ -203,11 +273,14 @@ class SupabaseSource(DataSource):
         ]
 
     def internal_edges(self, window_days: int) -> list[dict]:
-        return self._select_all(
+        rows = self._select_all(
             "math_internal_edges_snapshot",
-            "src,dst,kind,placement,weight,dst_resolved",
+            "src,dst,kind,placement,weight,dst_resolved,window_days,computed_at,"
+            "window_start,window_end,calculation_version",
             {"window_days": window_days},
         )
+        self.record_snapshot("internal_edges", rows, window_days)
+        return rows
 
     def gsc_daily(self, paths: Sequence[str] | None = None) -> list[dict]:
         if paths is None:
@@ -220,34 +293,49 @@ class SupabaseSource(DataSource):
             )
         return out
 
-    def cpi_daily(self) -> list[dict]:
-        return self._select_all("cpi_daily", "day,path,cpi,grade,momentum,zc,zr,zl,zv,n_org")
-
     def annotations(self) -> list[dict]:
         return self._select_all("annotations", "day,kind,label,paths")
 
-    def macro_contacts(self, window_days: int) -> dict[str, int]:
-        res = self._client.rpc("macro_contacts_by_path",
-                               {"days_back": window_days}).execute()
-        return {r["path"]: int(r["contacts"]) for r in (res.data or [])}
+    def macro_contacts(self, start_date: date, end_date: date) -> dict[str, int]:
+        res = self._client.rpc(
+            "macro_contacts_by_path",
+            {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            count="exact",
+        ).execute()
+        if res.data is None:
+            raise DataUnavailable("Réponse contacts absente.")
+        if res.count != len(res.data):
+            raise DataUnavailable("La lecture ne confirme pas la totalité des pages de contacts.")
+        return {r["path"]: int(r["contacts"]) for r in res.data}
 
 
 class CacheSource(DataSource):
     """Rejoue un export JSON local — aucun secret requis."""
 
     def __init__(self, cache_dir: Path) -> None:
+        super().__init__()
         self.dir = cache_dir
         if not cache_dir.is_dir():
             sys.exit(f"Repertoire de cache introuvable : {cache_dir}")
 
-    def _load(self, name: str) -> list[dict]:
+    def _load_payload(self, name: str) -> tuple[list[dict], dict | None]:
         f = self.dir / f"{name}.json"
         if not f.exists():
             sys.exit(f"Fichier de cache manquant : {f}")
-        return json.loads(f.read_text())
+        payload = json.loads(f.read_text())
+        rows = payload.get("rows") if isinstance(payload, dict) else payload
+        metadata = payload.get("metadata") if isinstance(payload, dict) else None
+        if (not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows)
+                or (metadata is not None and not isinstance(metadata, dict))):
+            raise DataUnavailable(f"Format de cache inexploitable : {name}.")
+        return rows, metadata
+
+    def _load(self, name: str) -> list[dict]:
+        return self._load_payload(name)[0]
 
     def visit_sequences(self, window_days: int) -> list[VisitSequence]:
-        rows = self._load(f"visit_sequences_{window_days}")
+        rows, metadata = self._load_payload(f"visit_sequences_{window_days}")
+        self.record_snapshot("visit_sequences", rows, window_days, metadata)
         return [
             VisitSequence(tuple(r["journey"]), bool(r["converted"]),
                           r.get("entry_channel"), int(r["n"]))
@@ -255,7 +343,9 @@ class CacheSource(DataSource):
         ]
 
     def internal_edges(self, window_days: int) -> list[dict]:
-        return self._load(f"internal_edges_{window_days}")
+        rows, metadata = self._load_payload(f"internal_edges_{window_days}")
+        self.record_snapshot("internal_edges", rows, window_days, metadata)
+        return rows
 
     def gsc_daily(self, paths: Sequence[str] | None = None) -> list[dict]:
         rows = self._load("gsc_daily")
@@ -264,17 +354,22 @@ class CacheSource(DataSource):
             rows = [r for r in rows if r["path"] in keep]
         return rows
 
-    def cpi_daily(self) -> list[dict]:
-        return self._load("cpi_daily")
-
     def annotations(self) -> list[dict]:
         return self._load("annotations")
 
-    def macro_contacts(self, window_days: int) -> dict[str, int]:
-        try:
-            rows = self._load(f"macro_contacts_{window_days}")
-        except SystemExit:
-            return {}
+    def macro_contacts(self, start_date: date, end_date: date) -> dict[str, int]:
+        window_days = (end_date - start_date).days + 1
+        if not (self.dir / f"macro_contacts_{window_days}.json").is_file():
+            raise DataUnavailable("Cache des contacts directs absent.")
+        rows, metadata = self._load_payload(f"macro_contacts_{window_days}")
+        periods = [metadata] if metadata is not None else rows
+        if metadata is not None:
+            periods += [row for row in rows if "window_start" in row or "window_end" in row]
+        if not periods or any(
+            row.get("window_start") != start_date.isoformat()
+            or row.get("window_end") != end_date.isoformat() for row in periods
+        ):
+            raise DataUnavailable("Les contacts en cache ne portent pas les bornes du snapshot.")
         return {r["path"]: int(r["contacts"]) for r in rows}
 
 
@@ -1079,7 +1174,6 @@ def bridge_pages(
     differemment ; on ne retient que les pages vues par plusieurs d'entre
     elles (rang moyen), pour ne pas promouvoir un artefact d'une seule.
     """
-    direct_contacts = direct_contacts or {}
     pages = set(markov.removal) | set(shapley.shapley)
     if not pages:
         return []
@@ -1107,7 +1201,8 @@ def bridge_pages(
                 "linear_1_over_l": shapley.linear_1_over_l.get(p, 0.0),
                 "betweenness": graph.betweenness.get(p, 0.0),
                 "to_business_clicks": graph.to_business.get(p, 0),
-                "direct_contacts": direct_contacts.get(p, 0),
+                "direct_contacts": (direct_contacts.get(p, 0)
+                                    if direct_contacts is not None else None),
                 "visits": markov.support.get(p, 0),
                 "conv_visits": markov.conv_support.get(p, 0),
                 "rank_markov": rm,
@@ -1118,13 +1213,14 @@ def bridge_pages(
             }
         )
 
-    # Part des parcours convertis passant par la page ou le contact est
-    # effectivement pris SUR la page. Faible => la page fait passer, elle ne
-    # conclut pas : c'est la definition operationnelle du "pont invisible".
+    # Indice de repérage : contacts directs et visites converties n'ont pas
+    # le même grain. Ce ratio agrégé ne mesure pas une part de parcours dont
+    # on aurait vérifié individuellement que le contact a eu lieu ailleurs.
     for r in rows:
         cv = r["conv_visits"]
         r["assist_ratio"] = (
-            1.0 - min(r["direct_contacts"], cv) / cv if cv > 0 else float("nan")
+            1.0 - min(r["direct_contacts"], cv) / cv
+            if cv > 0 and r["direct_contacts"] is not None else None
         )
 
     rows.sort(key=lambda r: r["rank_mean"])
@@ -1135,17 +1231,19 @@ def invisible_bridges(
     markov: MarkovResult,
     graph: GraphResult,
     shapley: ShapleyResult,
-    direct_contacts: dict[str, int],
+    direct_contacts: dict[str, int] | None,
     min_conv_visits: int = 3,
     max_assist_ratio: float = 0.5,
     top: int = 10,
-) -> list[dict]:
+) -> list[dict] | None:
     """
     Les pages ponts INVISIBLES : celles qui pesent dans les parcours qui
     convertissent alors que le contact se prend ailleurs. Elles n'apparaissent
     dans aucun classement par contacts — c'est precisement ce qui les rend
     invisibles au pilotage habituel.
     """
+    if direct_contacts is None:
+        return None
     out = []
     for p, rem in markov.removal.items():
         cv = markov.conv_support.get(p, 0)
@@ -1186,10 +1284,11 @@ def report_markov(res: MarkovResult, window: int, top: int = 15) -> None:
     _p(f"Visites recousues       : {res.n_visits:,}".replace(",", " "))
     _p(f"Visites converties      : {res.n_conversions}")
     _p(f"P(conversion) du modele : {res.p_conversion*100:.3f} %")
+    _p("Le retrait est un scénario du modèle, pas une perte de contacts observée.")
     if not res.removal:
         _p("\nAucune page n'atteint le seuil de support : removal effect non calculable.")
         return
-    _p(f"\n{'page':<58}{'removal':>9}{'contacts':>10}{'visites':>9}")
+    _p(f"\n{'page':<58}{'removal':>9}{'eq. ct':>10}{'visites':>9}")
     _p("-" * 78)
     for p, v in sorted(res.removal.items(), key=lambda kv: -kv[1])[:top]:
         ci = res.ci.get(p)
@@ -1225,7 +1324,8 @@ def report_shapley(res: ShapleyResult, top: int = 15) -> None:
 
 
 def report_causal(results: Sequence[CausalResult]) -> None:
-    _p(f"\n{'='*78}\nMODULE 4 — INFERENCE CAUSALE (controle synthetique)\n{'='*78}")
+    _p(f"\n{'='*78}\nMODULE 4 — COMPARAISON A UN TEMOIN SYNTHETIQUE\n{'='*78}")
+    _p("L'écart estimé dépend des témoins retenus ; il ne démontre pas à lui seul une causalité.")
     if not results:
         _p("Aucune intervention mesurable (pas d'annotation exploitable).")
         return
@@ -1236,10 +1336,10 @@ def report_causal(results: Sequence[CausalResult]) -> None:
         _p(f"  Temoins        : {r.n_donors} pages   (R² pre-periode : {r.pre_fit_r2:.3f})")
         _p(f"  Observe        : {r.observed:.0f} clics")
         _p(f"  Contrefactuel  : {r.counterfactual:.0f} clics")
-        _p(f"  Effet          : {r.abs_effect:+.0f} clics ({r.rel_effect*100:+.1f} %)"
+        _p(f"  Ecart estimé   : {r.abs_effect:+.0f} clics ({r.rel_effect*100:+.1f} %)"
            f"   IC90 [{r.ci_lower:+.0f} ; {r.ci_upper:+.0f}]")
         _p(f"  p-value        : {r.p_value:.3f}")
-        _p(f"  VERDICT        : {r.verdict}")
+        _p(f"  Lecture modèle : {r.verdict}")
 
 
 def report_trends(results: Sequence[TrendResult], top: int = 15) -> None:
@@ -1262,34 +1362,38 @@ def report_trends(results: Sequence[TrendResult], top: int = 15) -> None:
 
 
 def report_bridges(rows: Sequence[dict], window: int) -> None:
-    _p(f"\n{'='*78}\nSYNTHESE — TOP PAGES PONTS INVISIBLES (fenetre {window} j)\n{'='*78}")
+    _p(f"\n{'='*78}\nSYNTHESE — PAGES PONTS A EXAMINER (fenetre {window} j)\n{'='*78}")
     if not rows:
         _p("Aucune page ne reunit assez de signal sur les trois methodes.")
         return
-    _p("Classement par rang moyen des trois methodes. 'direct' = contacts pris")
-    _p("SUR la page ; 'assist' = part des parcours convertis ou le contact est")
-    _p("pris AILLEURS.\n")
-    _p(f"{'#':<3}{'page':<44}{'remov':>7}{'shap':>8}{'betw':>8}{'direct':>7}{'assist':>7}")
+    _p("Classement par rang moyen des trois méthodes. 'direct' = actions de contact sur la page.")
+    _p("L'indice rapproche contacts directs et visites converties ; ces deux agrégats")
+    _p("ne mesurent pas la part observée des parcours dont le contact a eu lieu ailleurs.\n")
+    if any(row["direct_contacts"] is None for row in rows):
+        _p("Contacts directs indisponibles : direct et indice ne sont pas calculés.\n")
+    _p(f"{'#':<3}{'page':<44}{'remov':>7}{'shap':>8}{'betw':>8}{'direct':>7}{'indice':>7}")
     _p("-" * 78)
     for i, r in enumerate(rows, 1):
         ar = r.get("assist_ratio")
         ar_s = f"{ar*100:>6.0f}%" if ar is not None and np.isfinite(ar) else "     —"
         _p(f"{i:<3}{r['path'][:43]:<44}{r['removal_effect']*100:>6.1f}%"
            f"{r['shapley']*100:>7.3f}%{r['betweenness']:>8.4f}"
-           f"{r['direct_contacts']:>7}{ar_s}")
+           f"{r['direct_contacts'] if r['direct_contacts'] is not None else '—':>7}{ar_s}")
 
 
-def report_invisible(rows: Sequence[dict], window: int) -> None:
-    _p(f"\n{'='*78}\nPAGES PONTS INVISIBLES — contribution reelle, contact pris "
-       f"ailleurs ({window} j)\n{'='*78}")
-    if not rows:
-        _p("Aucune page ne remplit les criteres (>=3 parcours convertis, "
-           ">=50 % de contacts pris ailleurs).")
+def report_invisible(rows: Sequence[dict] | None, window: int) -> None:
+    _p(f"\n{'='*78}\nPAGES PONTS A EXAMINER — rôle suggéré par les modèles "
+       f"({window} j)\n{'='*78}")
+    if rows is None:
+        _p("Non calculé : contacts directs indisponibles, aucun indice de pont déduit.")
         return
-    _p(f"{'page':<46}{'perte si retiree':>17}{'assist':>8}{'direct':>7}")
+    if not rows:
+        _p("Aucune page ne remplit les critères (>=3 visites converties, indice de pont >=50 %).")
+        return
+    _p(f"{'page':<46}{'retrait modèle':>17}{'indice':>8}{'direct':>7}")
     _p("-" * 78)
     for r in rows:
-        _p(f"{r['path'][:45]:<46}{r['removal_contacts']:>13.1f} ct"
+        _p(f"{r['path'][:45]:<46}{r['removal_contacts']:>10.1f} eq. ct"
            f"{r['assist_ratio']*100:>7.0f}%{r['direct_contacts']:>7}")
 
 
@@ -1309,8 +1413,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                     help="fenetre en jours pour les modules 1-3 (defaut 28)")
     ap.add_argument("--source", default="supabase", choices=["supabase", "cache"])
     ap.add_argument("--cache-dir", type=Path, default=None)
-    ap.add_argument("--dump-cache", type=Path, default=None,
-                    help="exporte les donnees brutes en JSON (reproductibilite)")
     ap.add_argument("--bootstrap", type=int, default=200,
                     help="tirages bootstrap pour l'IC du removal effect (0 = aucun)")
     ap.add_argument("--permutations", type=int, default=3000)
@@ -1333,7 +1435,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     want = args.module
     payload: dict[str, Any] = {"window_days": args.window,
-                               "generated_at": datetime.now().isoformat(timespec="seconds")}
+                               "generated_at": datetime.now(ZoneInfo("Europe/Paris")).isoformat(
+                                   timespec="seconds"),
+                               "metric_notes": {
+                                   "removal": "Scénario de retrait du modèle, pas perte observée.",
+                                   "assist_ratio": "Indice agrégé entre actions de contact et visites "
+                                                   "converties ; pas part observée des parcours.",
+                                   "causal": "Écart au témoin synthétique sous hypothèses de "
+                                             "comparabilité, pas preuve causale à lui seul.",
+                               }}
 
     sequences: list[VisitSequence] = []
     if want in ("all", "markov", "shapley", "graph"):
@@ -1394,23 +1504,53 @@ def main(argv: Sequence[str] | None = None) -> int:
         payload["trend"] = [t.__dict__ for t in trends[:40]]
 
     if want == "all" and markov and graph and shapley:
-        try:
-            contacts = src.macro_contacts(args.window)
-        except Exception:
-            contacts = {}
-        rows = bridge_pages(markov, graph, shapley, direct_contacts=contacts,
-                            top=args.top)
-        report_bridges(rows, args.window)
-        inv = invisible_bridges(markov, graph, shapley, contacts, top=args.top)
-        report_invisible(inv, args.window)
-        payload["bridges"] = rows
-        payload["invisible_bridges"] = inv
+        period = src.snapshot_periods.get("visit_sequences")
+        graph_period = src.snapshot_periods.get("internal_edges")
+        if period is None or graph_period is None or period != graph_period:
+            payload["comparison"] = {
+                "status": "incompatible", "reason": "snapshot_periods_unverified_or_different",
+                "message": "Synthèse suspendue : périodes ou versions différentes, "
+                           "ou métadonnées de snapshot non vérifiées.",
+            }
+            _p("\n" + payload["comparison"]["message"])
+            payload["bridges"] = payload["invisible_bridges"] = None
+        else:
+            payload["comparison"] = {"status": "available", **period.as_dict()}
+            try:
+                contacts = src.macro_contacts(period.window_start, period.window_end)
+            except Exception:
+                contacts = None
+                payload["comparison"].update({
+                    "status": "unavailable", "reason": "contacts_unavailable",
+                    "message": "Contacts directs indisponibles ou dates non vérifiées : "
+                               "aucune absence de contact déduite.",
+                })
+            rows = bridge_pages(markov, graph, shapley, direct_contacts=contacts,
+                                top=args.top)
+            report_bridges(rows, args.window)
+            inv = invisible_bridges(markov, graph, shapley, contacts, top=args.top)
+            report_invisible(inv, args.window)
+            payload["bridges"] = rows
+            payload["invisible_bridges"] = inv
+
+    payload["sources"] = src.snapshot_info
+    for kind, info in src.snapshot_info.items():
+        if info["status"] == "verified":
+            _p(f"\nSource {kind} : du {fr_date(info['window_start'])} "
+               f"au {fr_date(info['window_end'])} inclus, snapshot calculé le "
+               f"{fr_date(datetime.fromisoformat(info['computed_at']).astimezone(ZoneInfo('Europe/Paris')))} "
+               f"({info['calculation_version']}).")
+        else:
+            _p(f"\nSource {kind} : {info['message']}")
+    partial = (payload.get("comparison", {}).get("status") in {"unavailable", "incompatible"}
+               or any(info["status"] != "verified" for info in src.snapshot_info.values()))
+    payload["status"] = "partial" if partial else "complete"
 
     if args.json_out:
         args.json_out.write_text(json.dumps(payload, indent=2, default=str))
         _p(f"\nResultats JSON : {args.json_out}")
 
-    return 0
+    return 2 if partial else 0
 
 
 if __name__ == "__main__":

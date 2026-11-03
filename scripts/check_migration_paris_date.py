@@ -27,9 +27,10 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
+
+from git_changes import changed_paths
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "supabase" / "migrations"
@@ -100,21 +101,10 @@ def scan_clock_bounds(path: Path) -> list[tuple[int, str]]:
 
 
 def git_diff_migration_paths() -> list[Path]:
-    event = os.environ.get("GITHUB_EVENT_NAME", "")
-    if event == "push":
-        cmd = ["git", "diff", "--name-only", "HEAD~1", "HEAD", "--", "supabase/migrations"]
-    else:
-        base = os.environ.get("GITHUB_BASE_REF", "main")
-        cmd = ["git", "diff", "--name-only", f"origin/{base}...HEAD", "--", "supabase/migrations"]
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, check=False)
-    if result.returncode != 0:
-        return []
-    paths: list[Path] = []
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if line.endswith(".sql"):
-            paths.append(ROOT / line)
-    return paths
+    return [
+        path for path in changed_paths(ROOT)
+        if path.is_relative_to(MIGRATIONS) and path.suffix == ".sql"
+    ]
 
 
 def resolve_targets(argv: list[str]) -> list[Path]:
@@ -180,7 +170,11 @@ def main() -> int:
     else:
         print(f"C6b OK — contrat d'inlining tenu ({', '.join(INLINE_CONTRACT_FUNCTIONS)})")
 
-    targets = resolve_targets(sys.argv)
+    try:
+        targets = resolve_targets(sys.argv)
+    except RuntimeError as exc:
+        print(f"C6 / C6c — impossible de vérifier les migrations : {exc}", file=sys.stderr)
+        return 1
     if not targets:
         print("C6 OK — aucune migration modifiée à scanner")
         return rc

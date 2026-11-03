@@ -174,7 +174,7 @@ const SANTE_CHIPS: { key: SanteFilter; label: string; dot?: string; star?: boole
   { key: "monte", label: "monte", dot: "bg-up" },
   { key: "stable", label: "stable", dot: "bg-faint" },
   { key: "ralentit", label: "ralentit", dot: "bg-warn" },
-  { key: "opportunite_contact", label: "opportunité de contact", star: true },
+  { key: "opportunite_contact", label: "sans contact organique (CPI)", star: true },
   { key: "nonscore", label: "non scoré", dot: "bg-dim" },
 ];
 
