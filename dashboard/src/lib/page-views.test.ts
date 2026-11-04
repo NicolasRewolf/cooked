@@ -5,7 +5,8 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth", () => ({ requireUser: mocks.requireUser }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: mocks.createClient }));
 
-import { filterPages, getPageViews, pageUrl, pageViewsSchema, parseFilters, type PageViews } from "./page-views";
+import { getPageViews, pageViewsSchema, type PageViews } from "./page-views";
+import { filterPages, pageUrl, parseFilters } from "./page-view-filters";
 
 const rows: PageViews["pages"] = [
   { path: "/post/ressource", page_type: "post", category: "ressource", views: 7 },

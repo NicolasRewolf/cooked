@@ -12,8 +12,10 @@ plusieurs vues ; ce ne sont pas des visites uniques.
   articles « Ressources et notions juridiques ». Articles et ressources sont disjoints.
 - Vues décroissantes puis chemin pour départager les égalités.
 
-L’inventaire et les comptes viennent de `page_view_counts(p_days)`. La page est
-rendue côté serveur, avec les filtres dans l’URL. Une collecte partielle ou un
+L’inventaire et les comptes viennent de `page_view_counts(p_days)`, lu côté serveur
+à l’ouverture et au changement de période. Le type de page filtre immédiatement
+les données déjà reçues, sans nouvelle lecture. Les filtres restent dans l’URL
+partageable ; précédent et suivant rétablissent le filtre. Une collecte partielle ou un
 inventaire absent ou confirmé il y a plus de deux jours calendaires Paris produit une indication courte.
 Un échec de lecture ne devient jamais une liste vide ou des zéros.
 
@@ -49,7 +51,8 @@ nécessaires : inscriptions désactivées et URL de callback autorisées, dont
 ## Développement et vérification
 
 Next.js 16, React 19, TypeScript et Tailwind ; IBM Plex et orange rewolf.
-Les couleurs vivent dans `src/app/globals.css`. Aucune dépendance ajoutée pour ce tableau.
+Les couleurs vivent dans `src/app/globals.css`. Aucune dépendance d’exécution
+ajoutée pour ce tableau ; jsdom sert uniquement aux tests d’interaction.
 
 ```sh
 npm ci
@@ -61,6 +64,8 @@ npm run dev
 
 Les tests vérifient Auth, les filtres, la séparation articles/ressources,
 les zéros, le tri, le contrat de lecture et le refus avant appel métier.
+Les tests DOM exercent les clics et l’historique sans requête métier ; l’intégration
+de l’API History avec Next est simulée et se vérifie aussi dans le navigateur.
 Ils ne déclenchent aucun courriel ni accès à la production.
 
 Vercel conserve `dashboard` comme Root Directory. L’indexation reste interdite
