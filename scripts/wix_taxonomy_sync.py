@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synchro page_taxonomy ← liste publiée du blog Wix.
+"""Synchro page_taxonomy ← inventaire publié complet Wix.
 
   python3 scripts/wix_taxonomy_sync.py
   python3 scripts/wix_taxonomy_sync.py --dry-run

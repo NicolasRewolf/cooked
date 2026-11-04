@@ -1,5 +1,7 @@
 # Dashboard Cooked — articles ressources
 
+> **Depuis le 4 novembre 2026** — les anciens recalculs CPI, dashboard, SEO et maths sont suspendus. Le socle utilise le comptage commun des visites et l’inventaire publié. Lire [la simplification et les limites de lecture](../docs/SIMPLIFICATION.md) avant les recettes historiques ci-dessous.
+
 Tableau de bord (lecture seule) qui synthétise le **comportement** (Cooked) et le **SEO par requête**
 (volume DataForSEO en référence) des articles « Ressources et notions juridiques » de
 jplouton-avocat.fr.
@@ -40,7 +42,7 @@ les leçons de mesure.
 - `dashboard_resources_kpis(period_kind)` — KPI d'en-tête N vs N-1.
 - `dashboard_resources_assisted(period_kind)` — contacts assistés par article (voir ci-dessous).
 - `dashboard_resources_cohorts()` — cohortes mensuelles (clics cumulés depuis la 1re impression GSC).
-- `dashboard_assisted_quarter()` — contacts assistés ressources du trimestre (snapshot clos à J-1 ; pas d'objectif posé).
+- `dashboard_assisted_quarter()` — contacts assistés ressources du trimestre (snapshot figé depuis le 04/11 ; pas d’objectif posé).
 - `dashboard_article_detail(p_path, period_kind)` — fiche `/article/[slug]`.
 - `dashboard_annotations(period_kind)` — interventions/événements de la table `annotations`.
 - `dashboard_intervention_effect(p_path, p_day)` — avant/après GSC d'une intervention (marée soustraite).
@@ -53,29 +55,38 @@ les leçons de mesure.
 **Appelées par `src/data/trend.ts`** (2) : `dashboard_resources_trend(period_kind)` et
 `dashboard_expertises_trend(period_kind)` — séries quotidiennes des sparklines.
 
-Les RPC lisent des **snapshots** (tables `dashboard_*_snapshot`) — l'agrégation live des events
-était trop lente (~106 s). Ils sont rafraîchis par **un seul orchestrateur**, `cooked_refresh_after_gsc()`
-(cron `cooked-refresh-after-gsc`, tick horaire `0 6-21 * * *` UTC, T-11) qui ne tourne que si une
-ingestion Google Search Console plus récente que le dernier refresh complet est arrivée
-(`cooked_refresh_after_gsc_pending()`), quelle que soit son heure — l'ingestion est planifiée 06:00 UTC
-mais part avec +4 à +12 h de dérive depuis fin août. Séquence (≈ 25 min, durées dans `refresh_runs`) :
-`cooked_cpi_snapshot` → `refresh_dashboard_snapshots` (articles + SEO) →
-`refresh_dashboard_expertises_snapshots` → `refresh_dashboard_resources_assisted` (dépend de
-`identity_stitch`, reconstruite chaque nuit à 03:40 UTC par `refresh-identity-stitch`, 90 j glissants) →
-`refresh_dashboard_assisted_quarter`. Driver `cooked_snapshot_window`, lens `live_j1` = fenêtre close à J-1
-Paris : le matin le dashboard montre J-2, l'après-midi J-1 — le bandeau de fraîcheur le dit (T-10).
-- `refresh_dashboard_assisted_quarter()` — 5ᵉ étape de `cooked_refresh_after_gsc` (timeout 600 s) ;
-  table `dashboard_assisted_quarter_snapshot`. `dashboard_assisted_quarter()` **lit** ce snapshot
-  (< 1 s). Fenêtre trimestre close à J-1. Les contacts `(non attribuable)` n'y entrent pas
-  (JOIN `page_taxonomy` ressources seulement). Pas d'objectif posé (`objectif_assistes_trimestre`
-  absent).
+Les tableaux ressources/expertises, leurs KPI et tendances, les contacts
+assistés et le trimestre lisent des **instantanés conservés**, dont les
+producteurs sont retirés depuis le 04/11/2026. Leurs dates ne sont pas déplacées
+artificiellement. L’avis permanent de `Header` annonce le gel ; `/` et
+`/expertises` recalculent à l’affichage l’ancienneté de `refreshed_at` et la fin
+des données `cooked_end` via `FreshnessBanner` (alerte après 36 heures).
 
-Garanties intégrées : visiteurs **uniques** par page ou périmètre du KPI (pas sessions, ni somme des lignes), spam **Baidu exclu** (filtrage
+Les requêtes Google, les cohortes, les effets d’intervention et le Lab restent
+lus directement depuis GSC. La fiche article associe des séries site/Google
+directes à un CPI et à des contacts assistés historiques : lire les bornes de
+chaque source et l’avis de gel. Le lecteur trimestriel ne fournit pas de
+`refreshed_at` propre ; il conserve son contrat pendant cette transition.
+DataForSEO reste une référence datée, actualisée seulement à la demande.
+
+Avant le 04/11, un orchestrateur post-ingestion GSC reconstruisait CPI puis les
+quatre familles de snapshots dashboard. Cette séquence est retirée ; ne pas
+réactiver son cron ni rechercher un lot « en attente de refresh ». L’ingestion
+GSC et la couture d’identité continuent, indépendamment des archives affichées.
+La refonte fonctionnelle du dashboard est une étape séparée.
+
+Garanties des lectures conservées : visiteurs **uniques** par page ou périmètre du KPI (pas sessions, ni somme des lignes), spam **Baidu exclu** (filtrage
 inline dans les RPC `dashboard_*` ; la vue `events_human_clean` d'origine a été dropée), lecture sur
 sorties de page par session×page (referrer Facebook/LinkedIn exclu pour Ressources), totaux Google depuis `gsc_path_daily`,
 requêtes **de marque exclues**, volume **DataForSEO** (France, 2250).
 
-### Contacts assistés (v2, 12/07/2026)
+### Contacts assistés — lecture des archives d’avant le 04/11/2026
+
+Cette section décrit les instantanés conservés, sans recalcul. La méthode
+courante du socle est documentée dans [CONTEXT.md](../CONTEXT.md) : activité
+observable, coupure de 30 minutes, aucune page après le contact, inconnus
+conservés et taux de visites calculé sur la cohorte d’entrées.
+
 Deux compteurs de contacts coexistent, avec deux sémantiques différentes :
 - **« Contacts » du tableau** (colonne `contacts` de `dashboard_resources_overview`) : comptage
   **au path de l'event** via `macro_contacts_by_path` — le contact est attribué à la page où le
@@ -97,7 +108,7 @@ visite appariée apparaissent sur la ligne **`(non attribuable)`** de `assisted_
 trimestre (JOIN `page_taxonomy` catégorie ressource). Phrase de lecture : « les formulaires sans
 identifiant sont désormais comptés à part ».
 
-### Facteurs de pilotage (révision de lecture du 20/10/2026)
+### Facteurs de pilotage historiques (lecture du 20/10/2026, calculs gelés le 04/11)
 Pour répondre à « est-ce que ça va ou pas ? » au niveau de chaque ligne (et pas juste des KPI
 d'en-tête), les tableaux croisent les sources existantes. Ajout **additif** : la table snapshot
 gagne des colonnes, `dashboard_resources_overview` (SETOF) les expose sans changement de signature.
@@ -214,8 +225,8 @@ re-vérifie via `requireUser()` (`src/lib/auth.ts`). Côté Supabase (projet `mx
 
 ## À savoir
 - `params`/`searchParams` sont **async** (Next 16) ; pages `/`, `/expertises`, `/seo` et
-  `/article/[slug]` en `force-dynamic` (toujours frais, pas de cache — adapté à un usage interne
-  1-3 utilisateurs).
+  `/article/[slug]` en `force-dynamic` (pas de cache de page ; cela ne rafraîchit
+  pas les anciens instantanés en base).
 - La **validation runtime** des réponses RPC vit dans `src/data/rpc-schemas.ts` (schémas zod) ;
   `src/lib/types.ts` ne fait que ré-exporter les types inférés (+ types UI purs). Si
   une signature RPC change : migration + régénération de `../supabase/rpcs.sql`, puis mise à jour
@@ -226,13 +237,14 @@ re-vérifie via `requireUser()` (`src/lib/auth.ts`). Côté Supabase (projet `mx
   mêmes clés et qu'un champ zod non nullable est une colonne NOT NULL ; en CI `prod-drift.yml`
   régénère le JSON depuis la prod (`--check`) et parse un appel réel par RPC avec les schémas zod
   (`DASHBOARD_RPC_SAMPLES`). Une RPC qui change en prod sans son zod → CI rouge, plus une page morte
-  15 jours (incident `/seo` du 25/07/2026). Budget de durée nocturne : `dashboard_rpc_budget`
-  (`run_rpc_contract_tests`).
+  15 jours (incident `/seo` du 25/07/2026). Depuis le gel du 04/11, les contrôles
+  nocturnes SQL portent sur le socle ; les 16 contrats dashboard restent vérifiés
+  par cette CI, sans leur ancienne sonde nocturne de budget de durée.
 - **Magic-link** : `signInWithOtp` reçoit `shouldCreateUser: false` (`src/lib/otp.ts`) — un e-mail
   hors allowlist ne crée pas de compte et ne consomme pas le quota d'e-mails, quel que soit le
   réglage console.
 - Le bandeau de fraîcheur affiche la fin des données site (`cooked_end`) et le décalage Google (lag J-3 normal) — le dashboard dit toujours à
-  quel point il est à jour. Ce décalage est recalculé à la lecture en jours calendaires Paris depuis
+  quelle est la fin de ses données, y compris après suspension des calculs. Ce décalage est recalculé à la lecture en jours calendaires Paris depuis
   la date Google, jamais repris du lag figé dans le snapshot. Les journées Google (Pacifique)
   et Cooked (Paris) ne couvrent pas exactement les mêmes heures.
 - Les contacts mesurent des **clics téléphone** et des formulaires hors recrutement. Ils

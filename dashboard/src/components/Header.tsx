@@ -35,6 +35,10 @@ export function Header() {
           </button>
         </form>
       </div>
+      <p className="border-t border-line bg-warn-tint px-4 py-2 text-center text-xs text-ink-2">
+        Actualisation des anciens indicateurs suspendue le 4 novembre 2026.
+        Les dates affichées restent celles des derniers calculs. La collecte continue.
+      </p>
     </header>
   );
 }

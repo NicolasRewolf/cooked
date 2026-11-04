@@ -1,134 +1,263 @@
 #!/usr/bin/env python3
-"""T-15 (mission 02/09/2026, #116) — synchro page_taxonomy ← liste PUBLIÉE du blog Wix.
+"""Synchronise l'inventaire publié Wix dans page_taxonomy, indépendamment du trafic.
 
-La catégorie Wix Blog (« ressource » / « classique ») n'existait dans page_taxonomy que si
-quelqu'un rejouait la synchro à la main via le MCP Wix ; les mécanismes automatiques ne
-regardaient que les paths déjà vus dans events_human. Un article publié mais pas encore visité
-n'avait aucune ligne (5 ressources invisibles deux mois durant, migration 20260831090540 ; rechute
-dès le 31/08). Ici la source de vérité est la liste publiée de l'API Wix, pas le trafic.
-
-Le script ne calcule rien : il lit l'API et passe la liste à la RPC SQL
-`page_taxonomy_sync_wix(jsonb)` (SECURITY DEFINER, service_role), qui insère les paths manquants
-avec la catégorie et le thème (même heuristique de slug que refresh_page_taxonomy_heuristic —
-une seule implémentation, en SQL), met à jour `category` seule sur les lignes existantes et
-compte les paths de la table absents de la liste (dépubliés / re-sluggés : jamais supprimés).
-
-Env : WIX_API_KEY (clé API compte Wix, permission Blog lecture), WIX_SITE_ID
-      (défaut : site Cabinet Plouton), SUPABASE_SECRET_KEY, SUPABASE_URL (défaut prod).
-Usage :
-  python3 scripts/wix_taxonomy_sync.py                       # API Wix → RPC
-  python3 scripts/wix_taxonomy_sync.py --dry-run             # API Wix → affiche le diff (RPC en mode dry)
-  python3 scripts/wix_taxonomy_sync.py --from-file tests/fixtures/wix_blog_posts_2026-09-03.txt --dry-run
+Une lecture complète réunit routes publiées, articles et catégories, puis confronte
+ces URLs au sitemap. Les pages hors sitemap sont vérifiées sur le site publié.
+Une seule RPC applique l'inventaire complet. Aucun état de publication ne change
+si une lecture ou sa validation échoue. Les fixtures historiques de blog restent
+acceptées et ne modifient que les catégories (mode legacy de la même RPC).
 """
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from html.parser import HTMLParser
 import json
 import os
-import sys
 from pathlib import Path
+import sys
+from urllib.parse import urljoin, urlsplit
+import xml.etree.ElementTree as ET
+
+import requests
+
+from cooked.path import canonical_path
 
 WIX_SITE_ID_DEFAULT = "0870235c-b92d-4a69-a2f4-25a976ae5f0c"
 RESSOURCE_CATEGORY_ID = "9477320f-5902-40e9-ace3-b0e3b6b8b51f"
+WIX_BLOG_APP = "14bca956-e09f-f4d6-14d7-466cb3f09103"
+SITE_URL = "https://www.jplouton-avocat.fr"
 WIX_POSTS_URL = "https://www.wixapis.com/blog/v3/posts"
+WIX_CATEGORIES_URL = "https://www.wixapis.com/blog/v3/categories"
 PAGE = 100
 
 
+class PublishedPage(HTMLParser):
+    """Read only the published routing metadata and canonical URL."""
+
+    def __init__(self, html: str):
+        super().__init__()
+        self.model_text: list[str] = []
+        self.in_model = False
+        self.canonical = None
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "script" and attributes.get("id") == "wix-viewer-model":
+            self.in_model = True
+        if tag == "link" and attributes.get("rel") == "canonical":
+            self.canonical = attributes.get("href")
+
+    def handle_data(self, data):
+        if self.in_model:
+            self.model_text.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self.in_model = False
+
+    def model(self) -> dict:
+        return json.loads("".join(self.model_text))
+
+
+def page_path(url: str) -> str:
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.netloc != urlsplit(SITE_URL).netloc:
+        raise ValueError("URL d'inventaire hors du site")
+    if parsed.query or parsed.fragment:
+        raise ValueError("URL d'inventaire avec paramètres")
+    return canonical_path(parsed.path)
+
+
 def post_to_row(post: dict) -> dict | None:
-    """Un post publié de l'API → {slug, category, published}. None si pas de slug."""
+    """Historical blog fixture format, retained for category-only synchronisations."""
     slug = (post.get("slug") or "").strip()
     if not slug:
         return None
-    cats = post.get("categoryIds") or []
     return {
         "slug": slug,
-        "category": "ressource" if RESSOURCE_CATEGORY_ID in cats else "classique",
+        "category": "ressource" if RESSOURCE_CATEGORY_ID in (post.get("categoryIds") or []) else "classique",
         "published": (post.get("firstPublishedDate") or "")[:10] or None,
     }
 
 
 def parse_fixture(text: str) -> list[dict]:
-    """Format `slug|r|YYYY-MM-DD` (r = ressource, c = classique), lignes `#` ignorées."""
-    rows: list[dict] = []
+    rows = []
     for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         slug, flag, *rest = line.split("|")
-        rows.append({
-            "slug": slug,
-            "category": "ressource" if flag == "r" else "classique",
-            "published": rest[0] if rest and rest[0] else None,
-        })
+        rows.append({"slug": slug, "category": "ressource" if flag == "r" else "classique",
+                     "published": rest[0] if rest and rest[0] else None})
     return rows
 
 
-def fetch_published_posts(api_key: str, site_id: str) -> list[dict]:
-    import requests  # type: ignore
+def get(session, url, **kwargs):
+    response = session.get(url, timeout=45, **kwargs)
+    response.raise_for_status()
+    return response
 
-    headers = {"Authorization": api_key, "wix-site-id": site_id}
+
+def collection(session, url: str, token: str, name: str) -> list[dict]:
+    """Reject missing pages, changed totals and repeated identities before any RPC."""
     rows: list[dict] = []
-    offset = 0
-    while True:
-        r = requests.get(
-            WIX_POSTS_URL,
-            headers=headers,
-            params={"paging.limit": PAGE, "paging.offset": offset},
-            timeout=60,
-        )
-        r.raise_for_status()
-        posts = r.json().get("posts") or []
-        rows.extend(row for row in (post_to_row(p) for p in posts) if row)
-        if len(posts) < PAGE:
-            break
-        offset += PAGE
-    return rows
+    seen = set()
+    total = None
+    for _ in range(100):
+        data = get(session, url, headers={"Authorization": token}, params={
+            "paging.limit": PAGE, "paging.offset": len(rows), "fieldsets": "URL",
+        }).json()
+        items, meta = data[name], data["metaData"]
+        if not isinstance(items, list) or type(meta["total"]) is not int:
+            raise ValueError("Réponse Wix invalide")
+        if total is None:
+            total = meta["total"]
+        if meta["total"] != total or meta["offset"] != len(rows) or meta["count"] != len(items):
+            raise ValueError("Pagination Wix incohérente")
+        for item in items:
+            identity = item["id"]
+            if not identity or identity in seen:
+                raise ValueError("Identité Wix absente ou répétée")
+            seen.add(identity)
+        rows.extend(items)
+        if len(rows) == total:
+            return rows
+        if not items or len(rows) > total:
+            raise ValueError("Pagination Wix interrompue")
+    raise ValueError("Pagination Wix trop longue")
 
 
-def call_sync_rpc(rows: list[dict], dry_run: bool) -> dict:
-    import requests  # type: ignore
+def published_sitemap(session) -> set[str]:
+    index = ET.fromstring(get(session, SITE_URL + "/sitemap.xml").content)
+    children = index.findall("{*}sitemap/{*}loc")
+    if not children:
+        raise ValueError("Index sitemap absent")
+    paths = set()
+    for child in children:
+        url = child.text or ""
+        page_path(url)  # same origin before the server fetches a URL from XML
+        document = ET.fromstring(get(session, url).content)
+        entries = document.findall("{*}url/{*}loc")
+        if not entries:
+            raise ValueError("Sitemap vide ou invalide")
+        paths.update(page_path(entry.text or "") for entry in entries)
+    return paths
 
+
+def static_paths(model: dict) -> set[str]:
+    router = model["siteFeaturesConfigs"]["router"]
+    pages, routes = router["pagesMap"], router["routes"]
+    result = set()
+    for route, target in routes.items():
+        if target["type"] != "Static" or not route.startswith("./"):
+            raise ValueError("Famille de routes Wix inconnue")
+        page_id = target["pageId"]
+        page = pages[page_id]
+        if page_id == router["customNotFoundPage"]["pageId"]:
+            continue
+        # Wix exposes lightboxes and the empty Blog post template as routes.
+        # Both were verified on the published site; they are not content pages.
+        if page["pageUriSEO"].startswith("popup-") or page["pageUriSEO"] == "post":
+            continue
+        path = page_path(SITE_URL + route[1:])
+        if page_id == router["mainPageId"]:
+            path = "/"
+        result.add(path)
+    if "/" not in result:
+        raise ValueError("Accueil absent des routes publiées")
+    return result
+
+
+def verify_unlisted(path: str) -> None:
+    response = get(requests, SITE_URL + path)
+    page = PublishedPage(response.text)
+    model = page.model()
+    features = model["siteFeaturesConfigs"]
+    if features["pagesService"]["currentPageId"] == features["router"]["customNotFoundPage"]["pageId"]:
+        raise ValueError("Route hors sitemap rendue en erreur")
+    if not page.canonical or page_path(page.canonical) != path:
+        raise ValueError("Route hors sitemap sans URL canonique correspondante")
+
+
+def fetch_inventory() -> dict:
+    # This is when observation begins. An overlapping older run cannot overwrite
+    # a newer completed observation in the RPC.
+    observed_at = datetime.now(timezone.utc).isoformat()
+    with requests.Session() as session:
+        model = PublishedPage(get(session, SITE_URL).text).model()
+        token_url = model["accessTokensUrl"]
+        if token_url != SITE_URL + "/_api/v1/access-tokens":
+            raise ValueError("Source de session publique Wix inconnue")
+        credentials = get(session, token_url).json()
+        if credentials["metaSiteId"] != WIX_SITE_ID_DEFAULT:
+            raise ValueError("Site Wix inattendu")
+        token = credentials["apps"][WIX_BLOG_APP]["accessToken"]
+        posts = collection(session, WIX_POSTS_URL, token, "posts")
+        categories = collection(session, WIX_CATEGORIES_URL, token, "categories")
+        static = static_paths(model)
+        sitemap = published_sitemap(session)
+
+    rows = [{"path": path, "category": None} for path in static]
+    for post in posts:
+        legacy = post_to_row(post)
+        if legacy is None:
+            raise ValueError("Article publié sans slug")
+        path = page_path(post["url"]["base"] + post["url"]["path"])
+        if path != canonical_path("/post/" + post["slug"]):
+            raise ValueError("URL Wix Blog inattendue")
+        rows.append({"path": path, "category": legacy["category"]})
+    for category in categories:
+        path = page_path(category["url"]["base"] + category["url"]["path"])
+        if not path.startswith("/blog/categories/"):
+            raise ValueError("URL de catégorie Wix inattendue")
+        rows.append({"path": path, "category": None})
+    paths = {row["path"] for row in rows}
+    if len(paths) != len(rows) or not posts or not categories or not sitemap.issubset(paths):
+        raise ValueError("Inventaire incomplet ou chemins répétés")
+    # noindex pages are published too. Validate them independently instead of
+    # treating absence from a sitemap as evidence of unpublication.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(verify_unlisted, sorted(paths - sitemap)))
+    return {"pages": sorted(rows, key=lambda row: row["path"]), "observed_at": observed_at,
+            "counts": {"posts": len(posts), "categories": len(categories), "static": len(static)}}
+
+
+def call_sync_rpc(inventory: dict | list[dict], dry_run: bool) -> dict:
     url = os.environ.get("SUPABASE_URL", "https://mxycmjkeotrycyneacje.supabase.co").rstrip("/")
     key = os.environ["SUPABASE_SECRET_KEY"]
-    r = requests.post(
+    response = requests.post(
         f"{url}/rest/v1/rpc/page_taxonomy_sync_wix",
         headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        data=json.dumps({"p_posts": rows, "p_dry_run": dry_run}, ensure_ascii=False).encode("utf-8"),
-        timeout=120,
+        json={"p_posts": inventory, "p_dry_run": dry_run}, timeout=120,
     )
-    r.raise_for_status()
-    data = r.json()
+    response.raise_for_status()
+    data = response.json()
     return data[0] if isinstance(data, list) else data
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--from-file", help="fixture slug|r|date au lieu de l'API Wix")
-    ap.add_argument("--dry-run", action="store_true", help="n'écrit rien, affiche le diff")
-    args = ap.parse_args(argv)
-
-    if args.from_file:
-        rows = parse_fixture(Path(args.from_file).read_text(encoding="utf-8"))
-        source = args.from_file
-    else:
-        api_key = os.environ.get("WIX_API_KEY", "").strip()
-        if not api_key:
-            print("WIX_API_KEY absent — rien à faire (le registre freshness_contract.page_taxonomy sonne "
-                  "après 21 j sans synchro).", file=sys.stderr)
-            return 2
-        rows = fetch_published_posts(api_key, os.environ.get("WIX_SITE_ID", WIX_SITE_ID_DEFAULT))
-        source = "API Wix"
-    if len(rows) < 300:
-        print(f"liste suspecte : {len(rows)} posts (< 300) — abandon, rien n'est écrit", file=sys.stderr)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--from-file", help="inventaire JSON complet ou fixture blog historique")
+    parser.add_argument("--dry-run", action="store_true", help="valide et compare sans écriture")
+    args = parser.parse_args(argv)
+    try:
+        if args.from_file:
+            source = Path(args.from_file).read_text(encoding="utf-8")
+            inventory = json.loads(source) if source.lstrip().startswith(("{", "[")) else parse_fixture(source)
+        else:
+            inventory = fetch_inventory()
+        result = call_sync_rpc(inventory, args.dry_run)
+        print(json.dumps({"dry_run": args.dry_run, "complete_inventory": isinstance(inventory, dict),
+                          "inserted": result["inserted"], "categories_updated": result["updated"],
+                          "absent": result["unpublished"]}, ensure_ascii=False))
+        return 0
+    except Exception as error:
+        # HTTP exception bodies can contain tokens or user data. Emit only type.
+        print(f"Inventaire Wix non appliqué ({type(error).__name__}).", file=sys.stderr)
         return 1
-
-    res = call_sync_rpc(rows, args.dry_run)
-    mode = "DRY-RUN" if args.dry_run else "SYNC"
-    print(f"[{mode}] source={source} posts={len(rows)} ressources={sum(r['category']=='ressource' for r in rows)}")
-    print(f"  insérés   : {res.get('inserted')}  {res.get('inserted_paths') or ''}")
-    print(f"  catégorie corrigée : {res.get('updated')}  {res.get('updated_paths') or ''}")
-    print(f"  en base mais dépubliés (conservés) : {res.get('unpublished')}")
-    return 0
 
 
 if __name__ == "__main__":

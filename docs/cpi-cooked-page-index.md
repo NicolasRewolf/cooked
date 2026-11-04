@@ -1,5 +1,7 @@
 # CPI — Cooked Page Index (v2.2)
 
+> **Archive fonctionnelle depuis le 4 novembre 2026.** Le calcul CPI et ses alertes sont retirés de la production ; les scores historiques restent conservés. Les recettes ci-dessous décrivent l'ancien modèle et ne doivent plus être exécutées. Les anciennes définitions SQL se retrouvent dans l'historique Git, pas dans le miroir courant. Le socle actif est décrit dans [SIMPLIFICATION.md](SIMPLIFICATION.md).
+
 Score de santé 0-100 par page, calculé sur 28 jours glissants. Croise GSC
 (capture) et Cooked (rétention, lecture, conversion), avec momentum relatif
 au site et gate technique LCP.

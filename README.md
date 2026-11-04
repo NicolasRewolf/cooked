@@ -1,5 +1,7 @@
 # Cooked
 
+> **Depuis le 4 novembre 2026** — les anciens recalculs CPI, dashboard, SEO et maths sont suspendus. Le socle utilise le comptage commun des visites et l’inventaire publié. Lire [la simplification et les limites de lecture](docs/SIMPLIFICATION.md) avant les recettes historiques ci-dessous.
+
 **Cooked est le système de mesure du site [jplouton-avocat.fr](https://www.jplouton-avocat.fr).
 Il existe pour répondre à une seule question, déclinée à l'infini :
 qu'est-ce qui amène réellement des clients au cabinet — et que faut-il
@@ -183,14 +185,11 @@ dépannage — vit dans [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 | Question posée | Ce qui répond |
 |---|---|
-| « Combien de contacts cette semaine, et d'où ? » | `site_macro_counts` + `conversion_journeys` |
-| « Quelles pages vont mal ? Lesquelles réparer d'abord ? » | `cooked_page_index(28)` — tri par CPI, grades A/B |
-| « Cette page chute — c'est la SERP ou c'est elle ? » | momentum relatif + `cpi_movers` (la dérivée du score) + alerte `cpi_drop` (vrai decay) |
-| « Cet article est-il bon ? » | `gsc_page_performance` + lecture décomposée par canal |
-| « Le SEO rapporte-t-il des clients ? » | `seo_to_contact_funnel` — requête → landing → contact |
-| « Quoi écrire ensuite ? Quels quick wins ? » | `content_performance` + `gsc_x_dfs_opportunities` |
-| « Quelles pages ont du trafic mais ne convertissent pas ? » | `cpi_opportunite_contact` — potentiel vs conversion réalisée |
-| « Le système va bien ? » | `alerts` + `refresh_pipeline_health()` |
+| « Quelles pages publiées attirent des visites ? » | `page_taxonomy.is_published` joint à `page_visits(début, fin)` ; couverture explicite avant d'afficher un zéro |
+| « Quelles pages d'entrée amènent un contact ? » | `page_visits` : visites avec clic téléphone, formulaire et union ; nombre et taux côte à côte |
+| « Quelles requêtes gagnent ou perdent des clics ? » | `gsc_query_page_daily`, mêmes périodes, position pondérée par impressions ; les requêtes masquées restent inconnues |
+| « Combien de soumissions et clics sont observés ? » | `site_macro_counts` ; des événements, pas des personnes ni des appels aboutis |
+| « Le système va bien ? » | `latest_rpc_health()` + `refresh_pipeline_health()` ; lire la date des alertes historiques |
 
 ---
 

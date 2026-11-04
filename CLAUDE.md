@@ -1,5 +1,7 @@
 # CLAUDE.md — instructions pour les sessions Claude Code travaillant sur ce repo
 
+> **Depuis le 4 novembre 2026** — les anciens recalculs CPI, dashboard, SEO et maths sont suspendus. Le socle utilise le comptage commun des visites et l’inventaire publié. Lire [la simplification et les limites de lecture](docs/SIMPLIFICATION.md) avant les recettes historiques ci-dessous.
+
 > Ce fichier est lu automatiquement au démarrage de chaque session
 > Claude Code dans ce repo. Il définit le périmètre d'autonomie de
 > l'agent et les règles dures à respecter.
@@ -86,8 +88,7 @@ recalibrée sur les sessions réellement dupliquées, seuil 30).
 - Webhook `form-webhook` v10 : lit les champs cachés → `props.cooked_aid`/
   `cooked_sid` (les colonnes identité restent `webhook-…`, invariants
   Sprint 24/29 préservés). L'attribution vit en LECTURE :
-  - `form_submits_attributed(days)` — hidden_field > temporal_unique >
-    unresolved (75 % résolu avant champs cachés, ~95 % attendu après).
+  - `form_submits_attributed(days)` — identifiants explicites > unresolved. Depuis le 04/11, aucune attribution par simple proximité temporelle.
   - `conversion_journeys(days)` — un row par contact macro avec entry_path,
     entry_channel, journey[] (séquence de pages), device.
   - `content_performance(days)` — perf par page_type × theme (sessions,
@@ -106,7 +107,7 @@ recalibrée sur les sessions réellement dupliquées, seuil 30).
   (entry_channel LIKE 'organic%' : classify_channel retourne
   organic_google / organic_other / organic_ai).
 
-**Sprint 38 (10/06/2026) — CPI (Cooked Page Index) :**
+**Sprint 38 (10/06/2026) — historique CPI, calcul retiré le 04/11/2026 :**
 - `cooked_page_index(days)` — score santé 0-100 par page : capture GSC
   (standardisation indirecte sur la courbe CTR propre du site, loi de
   puissance R²=0,917), rétention/lecture organiques (cascade orthogonale,
@@ -223,8 +224,7 @@ après C1–C9 ; tue les fuites SQL restantes :
   `contracts/branded_query_vectors.json`).
 - **`cooked_snapshot_window(w, grain)`** : driver bornes `live_j1` + GSC +
   `cooked_events_window` pour les 3 refreshers dashboard.
-- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, 143 routines au
-  20/10/2026, régénéré depuis la prod par le workflow `rpcs-regenerate`) ; gate CI
+- **`supabase/rpcs.sql`** : miroir lecture des corps RPC (`pg_get_functiondef`, routines (inventaire courant dans contracts/doc_constants.json), régénéré depuis la prod par le workflow `rpcs-regenerate`) ; gate CI
   `check_rpcs_sql_fresh.py` si migration redéfinit une RPC + prod-drift (sha = prod).
 
 **Revue architecture D4–D9 (10/07 soir, PRs #57–#65)** — chantiers opportunistes
@@ -239,7 +239,7 @@ mergés sur `main` :
 - Bug tracker : rotation aid/sid sur wipe de storage → ~22 % des sessions
   coupées, ~95 % des `cta_phone_click` sans amont visible.
 - Fix : table **`identity_stitch`** (composantes connexes aid↔sid, cron
-  03:40 UTC, 90 j) + `refresh_dashboard_resources_assisted` **v2** (assistés
+  03:40 UTC, historique conservé entier depuis le 04/11) + `refresh_dashboard_resources_assisted` **v2** (assistés
   ressource 28 j : 16→37) + **`conversion_journeys` v2** recousue (migration
   `20260712203935` ; funnel + content_performance réparés par héritage).
 - **Restatement CPI du 12/07 au soir** (voir avertissement plus bas) ;
@@ -378,13 +378,13 @@ Avant toute analyse, dans cet ordre (30 secondes) :
 SELECT * FROM alerts WHERE NOT acked;          -- 1. rien d'anormal ?
 SELECT * FROM refresh_pipeline_health();       -- 2. pipeline healthy ?
 SELECT gsc_last_data_day();                    -- 3. fraîcheur GSC (lag J-3 normal, warn > 6 j)
-SELECT * FROM cooked_refresh_after_gsc_pending(); -- 4. l'aval (CPI + dashboard) a-t-il suivi l'ingestion ? (T-11)
+SELECT status, day_start, day_end, completed_at FROM gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1; -- lot source
 ```
 
 Si une alerte est active : la traiter ou l'expliquer AVANT de produire des
 chiffres (un chiffre produit pendant un incident pipeline est un chiffre
 faux). Pour prioriser le travail SEO/contenu :
-`SELECT * FROM cooked_page_index(28) WHERE grade IN ('S','A','B') ORDER BY cpi ASC`.
+`page_visits(p_start, p_end)` sur jours clos, puis les requêtes de `gsc_query_page_daily`. L’intérêt éditorial du sujet relève de Nicolas.
 
 **Carte de la documentation** (lire selon le besoin) :
 
@@ -395,7 +395,7 @@ faux). Pour prioriser le travail SEO/contenu :
 | Versions & changements récents | `CHANGELOG.md` |
 | Mener une analyse SEO sans tomber dans les pièges | `docs/PLAYBOOK-analyse-seo.md` |
 | Comprendre/utiliser le score CPI | `docs/cpi-cooked-page-index.md` |
-| Corps complets des RPC (143 routines au 20/10/2026 — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
+| Corps complets des RPC (routines (inventaire courant dans contracts/doc_constants.json) — régénéré depuis la prod par le workflow `rpcs-regenerate`) | `supabase/rpcs.sql` |
 | Glossaire de domaine et invariants (conversions, attribution, lecture, fraîcheur) | `CONTEXT.md` |
 | Décisions d'architecture | `docs/adr/` |
 | PII, secrets, surface d'attaque, invariant I1 | `SECURITY.md` |
@@ -541,7 +541,7 @@ events table (raw)
        ↓ refresh_bot_fingerprints() — Sprint 17
        ↓ events_human view (events MINUS bots MINUS noise)
        ↓ identity_stitch (couture aid↔sid → visitor_key,
-       ↓   refresh_identity_stitch(90), cron 03:40 UTC — 12/07/2026)
+       ↓   refresh_identity_stitch(), cron 03:40 UTC — 12/07/2026)
        ↓ pg_cron nightly
 refresh_seo_url_snapshot()
        ↓

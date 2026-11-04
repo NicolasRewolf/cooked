@@ -1,5 +1,7 @@
 # Cooked — Opérations & référence technique
 
+> **Depuis le 4 novembre 2026** — les anciens recalculs CPI, dashboard, SEO et maths sont suspendus. Le socle utilise le comptage commun des visites et l’inventaire publié. Lire [la simplification et les limites de lecture](SIMPLIFICATION.md) avant les recettes historiques ci-dessous.
+
 > Ce fichier est la **référence opérationnelle** : architecture détaillée,
 > events captés, ingestion GSC/DataForSEO, crons, déploiement, sécurité,
 > dépannage, historique des sprints. **L'ambition et la vue d'ensemble du
@@ -45,15 +47,13 @@ Postgres
    │  pg_cron 03:40 UTC
    │     ↓ refresh_identity_stitch(90)
    │  identity_stitch — couture d'identité (12/07/2026) : sid|aid →
-   │     visitor_key (composantes connexes aid↔sid, 90 j glissants).
-   │     Consommée par les lectures d'attribution : conversion_journeys v2,
-   │     refresh_dashboard_resources_assisted v2 (→ seo_to_contact_funnel
-   │     et content_performance par héritage)
+   │     visitor_key (composantes connexes aid↔sid, historique conservé).
+   │     ↓ cooked_visit_events(start, end) — activité, coupure > 30 min
+   │     ↓ page_visits(start, end) — consultations, entrées, contacts/entrées
+   │     ↓ lecteurs historiques de contacts compatibles
    │
-   │  pg_cron 03:00 UTC
-   │     ↓ refresh_seo_url_snapshot()
-   │
-   │  seo_url_snapshot table (1 row / URL × rolling windows 7d/28d/90d/365d)
+   │  seo_url_snapshot / dashboard_*_snapshot / cpi_daily / math_*_snapshot
+   │     archives figées depuis le 04/11/2026, producteurs arrêtés
    │
    │  Google Search Console (Sprint 31-32, ingested via scripts/gsc_ingest.py)
    │     ↓ Service Account JWT → GSC API
@@ -128,49 +128,41 @@ Quatre gestes, comportement identique par ailleurs :
 Vérification J+1 faite le 13/07/2026 — OK (procédure : « Vérifier un
 déploiement tracker (J+1) » plus bas).
 
-### La couture SQL (répare l'historique)
+### Couture et visites — définition du 4 novembre 2026
 
-Table `identity_stitch` (`kind` = `sid` | `aid`, `key` → `visitor_key`) :
-**composantes connexes du graphe biparti aid↔sid**, calculées par label
-propagation (convergence en 2 itérations), sur **90 j glissants**.
-Exclusions : identités `webhook-%` et **aid 32-hex** (fallback serveur).
-Reconstruite chaque nuit par `refresh_identity_stitch(90)` (cron
-`refresh-identity-stitch`, 03:40 UTC). **Horodatée depuis T-10 (03/09/2026)** :
-la fonction écrit `cooked_config.identity_stitch_refreshed_at` et
-`identity_stitch_rows` à sa fin ; `alert_rule_identity_stitch()` sonne si la
-table est vide, si l'horodatage a plus de 30 h, ou si des sessions humaines de
-J-1 manquent après la reconstruction du jour ; contract-tests nocturnes
-`identity_stitch_couvre_j2` (= 0) et `identity_stitch_horodatee` (= 1).
-Aucun consommateur en périmètre ne lit la couture sur le jour en cours
-(`conversion_journeys`, `assisted_*`, `seo_to_contact_funnel` : fenêtres closes
-à J-1) — `site_kpis_compare` / `cooked_pages_snapshot` (lens `live`) comptent
-des sessions brutes, sans couture.
+`identity_stitch` associe les clés `sid` et `aid` à un `visitor_key`. La
+reconstruction porte sur **tout l’historique conservé** et itère jusqu’à
+convergence réelle. L’argument historique `refresh_identity_stitch(90)` reste
+accepté pour compatibilité ; il ne limite plus la couture à 90 jours.
+Les identités `webhook-%` et les aid 32-hex de repli serveur sont exclus du
+rapprochement : ces derniers peuvent être partagés par plusieurs navigateurs.
 
-🚨 **Garde-fou : ne JAMAIS coudre via un aid 32-hex.** C'est le fallback
-serveur `sha256(IP | UA | sel journalier)`, potentiellement **partagé entre
-plusieurs visiteurs** (même IP + même UA) — coudre dessus fusionnerait des
-inconnus entre eux.
+Le cron `refresh-identity-stitch` reste à 03:40 UTC. La fonction horodate sa fin
+et son nombre de lignes dans `cooked_config`. La règle dédiée surveille absence,
+âge et couverture de cette couture ; les six contrôles du socle passent à
+03:50 UTC, après cette reconstruction.
 
-### Consommateurs v2
+`cooked_visit_events(start, end)` est la définition commune. L’activité
+observable d’un navigateur appartient à la même visite tant qu’aucun écart ne
+dépasse 30 minutes. `web_vitals` ne prolonge pas cette activité. L’entrée reste
+la première page vue, même antérieure au début de la fenêtre ; aucun événement
+postérieur au contact n’entre dans son parcours. Un formulaire sans identifiant
+explicite ou sans visite observable reste non attribué : la proximité temporelle
+seule ne suffit plus.
 
-- `refresh_dashboard_resources_assisted` **v2** : l'entrée d'un contact =
-  première pageview de la **visite recousue** (segmentation à trous
-  > 30 min, rattachement à la dernière pageview ≤ 6 h avant le contact),
-  fallback session brute. Effet mesuré : contacts assistés « ressource »
-  28 j **16 → 37**. Depuis T-08 : `assisted_contacts_by_entry_path` compte aussi
-  les forms sans identifiant sur la ligne `(non attribuable)` (Σ = totaux site) ;
-  cette ligne n'entre pas dans le snapshot ressources.
-- `refresh_dashboard_assisted_quarter` (T-08) : 5ᵉ étape de `cooked_refresh_after_gsc`
-  (timeout 600 s) → table `dashboard_assisted_quarter_snapshot`. La RPC
-  `dashboard_assisted_quarter()` lit ce snapshot (< 1 s). Trimestre clos à J-1.
-  Pas d'objectif (`objectif_assistes_trimestre` absent).
-- `conversion_journeys` **v2** : parcours sur le visiteur recousu
-  (`visitor_key`, priorité sid > aid > fallback session brute) ; journey =
-  pageviews de la visite [t−6h, t+3min], chaîne sans trou > 30 min.
-  Contrat de sortie inchangé, ~1 s sur 28 j. `seo_to_contact_funnel` et
-  `content_performance` sont réparés **par héritage** (ils la consomment).
+`page_visits(start, end)` compte les consultations par visite distincte et les
+entrées commencées dans les jours Paris clos demandés. Les numérateurs
+phone/form/union comptent les visites de cette cohorte ayant réalisé l’action
+avant la clôture. Une visite avec plusieurs actions ne compte qu’une fois dans
+l’union ; sans entrée, le taux reste NULL. La ligne `coverage` conserve les
+contacts macro non attribuables et la couverture observée.
 
----
+`conversion_journeys`, `form_submits_attributed` et
+`assisted_contacts_by_entry_path` relisent ce socle en gardant leur signature.
+Les snapshots dashboard historiques ne sont pas recalculés : leurs dernières
+dates et définitions restent nécessaires à leur lecture. L’ancien modèle
+rattachait un contact à une pageview jusque six heures avant et autorisait une
+petite marge après le contact ; il ne décrit plus la méthode courante.
 
 ## Events captés
 
@@ -188,7 +180,7 @@ The browser-side `tracker.html` emits these events. Anything else is rejected by
 | `cta_booking_click` | Click on any `<a>` pointing to `/honoraires-rendez-vous` | `anchor`, `placement` (header / footer / sticky / body), `target_path`, `href` |
 | `click_internal` (Sprint 36) | Click on any internal `<a>` to **another** page (except `/honoraires-rendez-vous` → that stays `cta_booking_click`). Captures *which* UI element drives each page-to-page hop (the journey itself is already in the `pageview` sequence; this adds element attribution). Self-links (same path, no `#`/`data-anchor`) skipped. | `target_path`, `anchor`, `placement` (header / footer / sticky / body), `href` |
 | `cta_anchor_click` (Sprint 19) | Click on an in-page anchor: classic `href="#x"`, Wix anchor-menu (`<a href=current data-anchor="anchors-xxx">`), or any interactive element inside a sticky container. **Sprint 35**: UI chrome is excluded — the Cookiebot consent banner (`#CybotCookiebotDialog`), the mobile burger toggle, and plain nav links (no `#hash`/`data-anchor`) no longer count. | `target_section` (slugified label or hash), `anchor`, `placement` (header / footer / sticky / body), `source` (`click` / `hashchange` / `sticky-fallback`), `data_anchor` (Wix internal ID, optional) |
-| `form_submit` (Sprint 18) | Wix Form successfully submitted — fired **server-side** by the `form-webhook` Edge Function, triggered by a Wix Automation on form submission. **Sprint 38**: Wix Forms V2 ne rendant pas les champs cachés dans le DOM, le tracker expose `cooked_aid`/`cooked_sid` en query params (`replaceState`) et `wix/masterpage-cooked.js` (Velo) les écrit dans les champs cachés via `setFieldValues()` ; le webhook (code v16, version Supabase 25 depuis le 20/10/2026 ; correctif `country` v15 déployé le 19/09) les stocke dans `props` → attribution via `form_submits_attributed()` (hidden_field > temporal_unique > unresolved). Première attribution hidden_field : 11/06/2026 08:53 | `form_id`, `submission_id`, `page_source`, `cooked_aid`, `cooked_sid`, `capture_source: 'wix-webhook'` |
+| `form_submit` (Sprint 18) | Wix Form successfully submitted — fired **server-side** by the `form-webhook` Edge Function, triggered by a Wix Automation on form submission. **Sprint 38**: Wix Forms V2 ne rendant pas les champs cachés dans le DOM, le tracker expose `cooked_aid`/`cooked_sid` en query params (`replaceState`) et `wix/masterpage-cooked.js` (Velo) les écrit dans les champs cachés via `setFieldValues()` ; le webhook (code v16, version Supabase 25 depuis le 20/10/2026 ; correctif `country` v15 déployé le 19/09) les stocke dans `props` → attribution via `form_submits_attributed()` (hidden_field ou unresolved depuis le 04/11/2026). Première attribution hidden_field : 11/06/2026 08:53 | `form_id`, `submission_id`, `page_source`, `cooked_aid`, `cooked_sid`, `capture_source: 'wix-webhook'` |
 
 ### Anchor capture convention (depuis le 10/05/2026)
 
@@ -232,7 +224,7 @@ cooked/
 ├── scripts/
 │   ├── minify-tracker.py              — Minify tracker.html before Wix paste
 │   ├── gsc_ingest.py                  — CLI GSC : path-query | query-page
-│   ├── dfs_sync.py                    — CLI sync hebdo top 500 keywords GSC → DFS
+│   ├── dfs_sync.py                    — CLI sync manuelle top 500 keywords GSC → DFS
 │   ├── gbp_ingest.py                  — CLI Google Business Profile
 │   ├── secib_ingest.py                — CLI pont SECIB
 │   ├── wix_taxonomy_sync.py           — CLI synchro blog Wix → page_taxonomy
@@ -242,8 +234,6 @@ cooked/
 │   ├── validate_gsc_is_branded.sql    — Pilote Arch #3 branded
 │   ├── validate_period_bounds_live_j1.sql — Pilote Arch #1 live_j1
 │   ├── cpi_validation_j28.sql         — Harnais validation prédictive CPI (tir réel validé le 11/07/2026)
-│   ├── test_refresh_dashboard_rolling28.sql — Smoke-test MANUEL post-migration dashboard (articles)
-│   ├── test_refresh_expertises_rolling28.sql — Smoke-test MANUEL post-migration dashboard (expertises)
 │   └── cooked_events_window_contract.sql — Contrat cooked_events_window (MANUEL, non exécuté par la CI)
 ├── contracts/
 │   ├── canonical_path_vectors.json    — Contrat C3 canonical_path
@@ -251,7 +241,7 @@ cooked/
 │   └── rpc_snapshot_meta.json         — Hash + count du miroir rpcs.sql
 ├── .github/workflows/
 │   ├── gsc-daily-ingest.yml           — cron GSC quotidien (06:00 UTC)
-│   ├── dfs-weekly-sync.yml            — cron DataForSEO hebdo (lundi 07:00 UTC)
+│   ├── dfs-weekly-sync.yml            — DataForSEO manuel uniquement
 │   ├── sql-contracts.yml              — C6/C6b/C6c paris_date + Arch #5 rpcs.sql
 │   ├── canonical-path-contract.yml    — C3 SQL / Edge / Python
 │   ├── python-ingest-contract.yml     — C7 tests GSC/DFS
@@ -261,7 +251,7 @@ cooked/
 ├── supabase/
 │   ├── schema.sql                     — events table + indexes + RLS (référence)
 │   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets des 143 routines (généré depuis la prod en CI, lecture seule)
+│   ├── rpcs.sql                       — corps complets des 122 routines (généré depuis la prod en CI, lecture seule)
 │   ├── views.sql                      — vues + signatures RPC (référence partielle)
 │   └── functions/
 │       ├── track/index.ts             — Tracker ingest Edge Function
@@ -323,65 +313,39 @@ Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Cla
 | `gsc_x_dfs_opportunities(min_vol, pos_min, pos_max, period_kind, max)` | Quick wins SEO (pos 5–15, volume FR ≥ 100) |
 | `dfs_keywords_to_sync(limit_n)` | Top N keywords = union clics GSC **28j ∪ 90j** (`scripts/dfs_sync.py`) |
 | `site_pulse(period_kind, …)` / `pages_pulse(period_kind, …)` | Quadrants GSC 28v28 × Cooked 7v7 |
-| `site_seo_funnel(period_kind)` | API historique désactivée : erreur explicite avec renvoi vers `seo_to_contact_funnel`, qui aligne le périmètre organique |
 | `gsc_page_daily_series(path, days, end_date)` / `cooked_page_daily_series(…)` | Séries journalières par page |
-| `refresh_pipeline_health()` | Self-diag 5 axes (snapshot, cron, events, GSC, DataForSEO) |
+| `refresh_pipeline_health()` | Santé des sources actives events/GSC ; dates SEO/DFS informatives, cron dérivé suspendu |
 
 **Contacts (canonique)** : macro = `cta_phone_click` + `form_submit`. Micro intent RDV =
 `cta_booking_click` (`cooked_booking_intent_*`). Ne jamais additionner booking aux contacts.
 
-### RPCs attribution & santé (Sprint 37-38)
+### RPCs d’attribution et de santé — socle courant
 
-**Fenêtres (T-09, 03/09/2026)** : les trois RPC ci-dessous prennent
-`(days_back integer DEFAULT 28, p_end date DEFAULT NULL)` et lisent `days_back`
-jours **Paris clos** — à J-1 (`cooked_period_bounds('rolling_28','live_j1')`)
-pour `form_submits_attributed` / `conversion_journeys`, à `gsc_last_data_day()`
-(lens `cross`) pour `seo_to_contact_funnel` ; `p_end` aligne sur une autre borne
-close (le CPI passe `gsc_last_data_day()`). Plus de `now() - N jours` : la
-réponse ne dépend plus de l'heure. Les bornes sortent dans `window_start` /
-`window_end`. `macro_contacts_by_path(days_back)` est ancrée de la même façon.
+- `cooked_visit_events(start_date, end_date)` et `page_visits(start_date, end_date)` :
+  méthode décrite ci-dessus, jours Paris clos, service_role uniquement.
+- `form_submits_attributed(days_back, p_end)` : formulaire avec attribution
+  `hidden_field` ou `unresolved`, statut macro via `form_submit_counts_as_macro`.
+- `conversion_journeys(days_back, p_end)` : une ligne par contact macro, parcours
+  limité à l’activité précédant le contact, bornes window_start/window_end.
+- `assisted_contacts_by_entry_path(start_date, end_date)` : total conservé avec
+  ligne `(non attribuable)` ; `macro_contacts_by_path(start_date, end_date)` reste
+  le comptage au lieu de l’action. L’ancienne surcharge à un entier est retirée.
+- `content_performance` et `seo_to_contact_funnel` : lecteurs historiques conservés.
+  Pour un taux de visites entrées puis converties, utiliser `page_visits` ; un
+  nombre d’événements contacts ne se substitue pas au numérateur de visites.
+- `page_taxonomy` : référentiel unique, enrichi par l’inventaire Wix complet
+  (publication, titre, URL et date de vérification), y compris sans trafic.
+- `alerts` et `cooked_alerts_refresh()` : surveillance des sources actives.
+  `latest_rpc_health()` ne présente que les six contrôles du socle ; absence ou
+  exécution trop ancienne reste visible, sans ressusciter les contrôles retirés.
+- `annotations` : consulter les changements historiques avant de lire une série.
 
-- `form_submits_attributed(days_back, p_end)` — per form_submit: method = `hidden_field`
-  (tracker-seeded `cooked_aid`/`cooked_sid` read by webhook v10) >
-  `temporal_unique` > `unresolved`. ~75 % resolved before hidden fields,
-  ~95 % expected after. Statut macro par `form_submit_counts_as_macro(props)`.
-- `conversion_journeys(days_back, p_end)` — **v2 (12/07/2026)** : one row per macro
-  contact (≈190 events/28 j) : entry_path,
-  entry_channel, journey[] (page sequence), pages_count, device. Parcours
-  reconstruit sur le **visiteur recousu** (`visitor_key` via
-  `identity_stitch`, priorité sid > aid > fallback session brute) ;
-  journey = pageviews de la visite [t−6h, t+3min], chaîne sans trou
-  > 30 min. `entry_channel` via `classify_channel(..., url)` (gclid ⇒ paid).
-  Même total que `site_macro_counts` et Σ `macro_contacts_by_path` sur les
-  mêmes bornes (contract-test `contacts_28j_une_fenetre`).
-- `content_performance(days)` — page_type × theme: sessions, median
-  dwell/scroll, booking_intents, assisted contacts. Consomme
-  `conversion_journeys` → couture héritée depuis le 12/07/2026.
-- `seo_to_contact_funnel(days_back, p_end)` — GSC clicks → organic entries → contacts
-  per landing page, **une seule fenêtre** (GSC, entrées, contacts) close à
-  `gsc_last_data_day()`. Dénominateur = entrées de **visite recousue**
-  (`identity_stitch`, coupure 30 min — le grain du numérateur) ; `FULL JOIN`
-  entrées/contacts. Σ contacts = `conversion_journeys` organiques sur la même
-  fenêtre (contract-test `funnel_meme_total_que_journeys`).
-- `cooked_page_index(days)` / `cooked_cpi_snapshot()` / table `cpi_daily` —
-  CPI **v2.2**, score santé 0-100 par page (spec : `docs/cpi-cooked-page-index.md`).
-- `cpi_movers` (vue) — Δ CPI ~7j : statuts present/nouveau/disparu, delta_z
-  par composante, flag `fiable` ; alimente l'alerte `cpi_drop` (recalibrée S39 :
-  vrai decay momentum/capture uniquement, volatilité conversion exclue).
-- `cpi_opportunite_contact` (vue, ex-`cpi_gisement`) — pilotage conversion : `potentiel` (capture +
-  rétention + lecture, hors conversion) vs badge `convertit`, relu depuis
-  `cpi_daily`. Opportunité = Fiabilité S/A/B + `NOT convertit`, trié par potentiel.
-  Alias déprécié : `cpi_gisement`. Colonne `grade` = Fiabilité S/A/B/C.
-- `page_taxonomy` table + `cooked_page_type(path)` — page typing
-  (cabinet/hub/expertise/post/blog-nav) + theme (slug heuristic).
-- `alerts` table + `cooked_alerts_refresh()` (hourly cron) — self-monitoring.
-  Session reflex: `SELECT * FROM alerts WHERE NOT acked`.
-- `annotations` table (`day`, `kind`, `label`, `paths[]`, migration
-  `20260611201942`) — journal des **événements hors-site** (passage TV /
-  presse, campagnes, changements de site) **et des restatements de séries**
-  (ex. restatement CPI du 12/07/2026). Réflexe : la consulter avant
-  d'interpréter un mouvement dans `cpi_daily` (voir « Restatements des
-  séries » plus bas).
+Les tables CPI, SEO, dashboard, math et conversions hebdomadaires sont conservées.
+Les producteurs CPI, les anciens refreshers et les fonctions de classement
+retirées le 04/11 ne sont plus une API opérationnelle. `cpi_movers` et
+`cpi_opportunite_contact` restent des lectures d’archives ; elles ne prescrivent
+plus une action à partir d’un nouveau calcul. La spécification historique CPI
+reste dans `docs/cpi-cooked-page-index.md`.
 
 ---
 
@@ -431,7 +395,7 @@ Référence : [Search Analytics query](https://developers.google.com/webmaster-t
 
 Service Account Google Cloud `gsc-cooked@rewolf-507310.iam.gserviceaccount.com` (projet GCP central `rewolf-507310` depuis le 01/09/2026 — l'ancien projet `plouton-472207` et son SA `gsc-mcp-claude@…` ont été supprimés lors du ménage GCP), credentials JSON en `~/.claude/gsc-credentials.json` (NON commité, miroir base64 dans le secret GitHub `GSC_CREDENTIALS_B64`). Ajouté comme utilisateur sur la propriété GSC `https://www.jplouton-avocat.fr/`. Côté GBP, l'approbation est liée au projet et ne migre pas avec les credentials. Le quota nul constaté le 20/10 est résolu : Google a approuvé `rewolf-507310` (numéro `1005289878572`) le 21/10/2026, et la collecte a repris le 26/10. Voir la procédure GBP ci-dessous.
 
-### Re-ingestion / refresh
+### Re-ingestion GSC
 
 ```bash
 pip install -r scripts/requirements-gsc.txt
@@ -445,16 +409,16 @@ python3 scripts/gsc_ingest.py all
 
 Le mode `all` ouvre un lot (`gsc_ingest_begin`), alimente les trois tables
 sur une même fenêtre, puis publie `gsc_ingest_complete`. Une erreur publie
-`gsc_ingest_fail` quand la base est joignable ; un lot resté `running` bloque
-aussi l'aval. Les modes `path-query` / `query-page` sont réservés au
-diagnostic : ils laissent volontairement le refresh bloqué jusqu'au prochain
-lot complet. Après interruption, vérifier que le processus s'est arrêté
+`gsc_ingest_fail` quand la base est joignable ; un lot resté `running`
+ne devient pas un lot complet. Les modes `path-query` / `query-page` sont réservés
+au diagnostic et ne valident pas l’exhaustivité des trois tables. Après interruption, vérifier que le processus s'est arrêté
 avant de marquer son lot en échec, puis relancer `all`.
-Le verrou partagé empêche l'ouverture d'un lot pendant un refresh.
+Le verrou du protocole de lot est conservé. Aucun ancien recalcul dashboard
+n’est attendu après la clôture depuis le 04/11/2026.
 
 DDL : migrations GSC, puis
 `20261020094908_audit_data_integrity_and_ingest_completion.sql` pour le
-protocole de lot. Déployer cette migration avant le nouvel orchestrateur.
+protocole de lot ; ce protocole reste actif après retrait de l’orchestrateur.
 
 ### Cron quotidien (Sprint 33, 22/05/2026)
 
@@ -463,9 +427,9 @@ GitHub Actions workflow `.github/workflows/gsc-daily-ingest.yml` lance
 tous les jours à 06:00 UTC (≈08:00 Paris en été) — heure **planifiée** : depuis le
 27/08/2026 l'ordonnanceur GitHub retarde le run de 4 à 12 h (27/08 17:15, 28/08 18:07,
 03/09 10:35 UTC). Upsert idempotent — re-ingère les 2 derniers mois pour capturer
-les refinements GSC. L'aval (`cooked-refresh-after-gsc`, tick horaire 6-21 h UTC) repart
-dès qu'un nouveau **lot complet des trois tables** est disponible. Le
-marqueur de la seule table pages ne déclenche plus le refresh. Le script
+les refinements GSC. La validation porte sur un **lot complet des trois tables**.
+Le marqueur récent de la seule table pages ne prouve pas cette complétude.
+Les anciens recalculs en aval sont suspendus. Le script
 rejoue deux mois en mode quotidien pour conserver les fins de mois et
 reprendre les révisions tardives de Google.
 
@@ -478,10 +442,9 @@ reprendre les révisions tardives de Google.
 
 Run manuel via le bouton **"Run workflow"** sur l'onglet Actions (ou `gh workflow run
 gsc-daily-ingest.yml`). Monitoring via `refresh_pipeline_health()` axe GSC
-(gsc_data_age_days, gsc_ingest_age_hours), `cooked_refresh_after_gsc_pending()` (l'aval
-a-t-il suivi ?) et `refresh_runs` (durée par étape).
-Inspecter également `gsc_ingest_batches` : seul le dernier lot complet
-autorise le refresh ; `failed` et `running` nécessitent une reprise complète.
+(gsc_data_age_days, gsc_ingest_age_hours) et `gsc_ingest_batches`. Les lots
+`failed` et `running` nécessitent une reprise complète. `refresh_runs` garde
+l’historique des anciens calculs ; aucune fraîcheur de cet historique n’est attendue.
 
 ### Rapprochement quotidien des formulaires Wix
 
@@ -503,14 +466,16 @@ quotidiens est un contrôle de volume, pas une bijection prouvée des IDs.
 
 ---
 
-## DataForSEO weekly sync (Sprint 33+)
+## DataForSEO — synchronisation manuelle depuis le 4 novembre 2026
 
 Source de vérité pour le volume mensuel France et le CPC sur les top
 500 keywords du site (union **28j + 90j** GSC, réévalué chaque run).
 Alimente `gsc_top_queries_global` (colonnes `volume_fr` / `cpc` /
 `click_yield_pct`) et `gsc_x_dfs_opportunities` (quick wins SEO).
-Cron `.github/workflows/dfs-weekly-sync.yml` (lundi 07:00 UTC), coût
-estimé ~$2/mois.
+Le workflow `.github/workflows/dfs-weekly-sync.yml` ne conserve que
+`workflow_dispatch`. Les volumes déjà acquis restent disponibles avec leur
+date ; aucune fréquence ni dépense périodique n’est attendue. Une valeur trop
+ancienne ou absente ne doit pas devenir un zéro observé.
 
 **Secrets GitHub Actions** : `DFS_USERNAME`, `DFS_PASSWORD`,
 `SUPABASE_SECRET_KEY` (login + mot de passe **API** DataForSEO, pas le
@@ -554,27 +519,38 @@ ALL RPCs + snapshot read from events_human
 
 **Detection rule** : `anonymous_id` with > 20 pageviews/day AND 0 scroll events = crawler. Catches the nightly Ahrefs audit crawler and similar bots.
 
-**pg_cron jobs + 4 GitHub Actions planifiés** (état 03/09/2026 ; horaires UTC —
-Paris = UTC+2 l'été). La liste pg_cron est **figée dans `contracts/doc_constants.json`**
-et comparée à la prod par la gate `prod-drift` (T-12) : 10 jobs. Source de vérité
-= `SELECT jobname, schedule FROM cron.job` en prod.
+**État depuis le 4 novembre 2026 : 6 jobs pg_cron actifs, quatre tâches
+suspendues conservées.** Horaires ci-dessous en UTC (Paris UTC+1 l’hiver, UTC+2 l’été).
+Le catalogue contient dix lignes au total, y compris les tâches suspendues ;
+`contracts/doc_constants.json` distingue les tâches actives de ce total.
+Contrôle : `SELECT jobname,schedule,active FROM cron.job ORDER BY jobname`.
 
-| Job | Schedule (UTC) | What |
+| Job pg_cron | Horaire UTC | État et rôle |
 |---|---|---|
-| `refresh_seo_url_snapshot` | `0 3 * * *` (05:00 Paris) | Rebuild nocturne de `seo_url_snapshot` · `SET statement_timeout='600s'` — rebuild ≈ 230 s depuis la matérialisation d'`events_human` en temp table (30/06) |
-| `run_rpc_contract_tests` | `30 3 * * *` (05:30 Paris) | Contract-tests nocturnes des RPCs publiées → `rpc_health` (Sprint 27) |
-| `refresh-identity-stitch` | `40 3 * * *` (05:40 Paris) | `refresh_identity_stitch(90)` — reconstruit la table `identity_stitch` (couture d'identité, 90 j glissants) · **horodate sa fin** dans `cooked_config.identity_stitch_refreshed_at` (T-10) |
-| `cooked-refresh-after-gsc` | `0 6-21 * * *` (tick horaire, 08:00→23:00 Paris l'été) | **Orchestrateur aval de l'ingestion GSC** (T-11, 03/09/2026) : `cooked_refresh_after_gsc()` enchaîne `cooked_cpi_snapshot` → `refresh_dashboard_snapshots` → `refresh_dashboard_expertises_snapshots` → `refresh_dashboard_resources_assisted` → `refresh_dashboard_assisted_quarter` · budget `SET statement_timeout='2400s'` dans la commande (clé `cooked_config.refresh_after_gsc_budget_s`) · **garde depuis le 20/10** : ne tourne que pour un lot `gsc_ingest_batches` complet des trois tables, non consommé (`cooked_refresh_after_gsc_pending()`) ; un lot partiel ou en échec bloque le recalcul, et le verrou partagé interdit le chevauchement avec l'ingestion — le cron GitHub dérive de +4 à +12 h depuis le 27/08 · **durée par étape dans `refresh_runs`** (une ligne par étape + `_total`) · 21 h UTC = dernier tick qui reste dans le jour Paris (`cpi_daily.day = paris_today()`) · séquence ≈ 1 350-1 650 s (p50 30 j ≈ 1 600 s) |
-| `purge_old_events_monthly` | `0 4 1 * *` (06:00 Paris, 1er du mois) | Rétention **13 mois** (décision Nicolas 04/09/2026, CNIL audience) : supprime les events plus vieux que `now() - interval '13 months'` (⚠️ destruction d'historique RÉEL — 1er run utile ≈ 06/2027 ; backup externe décliné le 02/07) |
-| `cooked-purge-noise-weekly` | `30 4 * * 0` (06:30 Paris, dimanche) | **T-09 (03/07)** : `purge_cooked_noise(28)` — supprime le bruit bot/noise > 28 j + TTL 90 j sur `noise_sessions`. Ne change AUCUN résultat (lignes déjà hors `events_human` à toute fenêtre). 1er run : 41 589 lignes |
-| `refresh_noise_filters_hourly` | `5 * * * *` | Bot fingerprints + noise sessions, **incrémental 48 h depuis T-08 (02/07)** : ~4 s/run (155 s avant ; fingerprints historiques conservés, noise = delete-récent + réinsertion) |
-| `cooked-alerts-hourly` | `15 * * * *` | Table `alerts` — v4 (T-07, 03/09/2026) : voir § Alertes ci-dessous. Les `critical` **poussent sur ntfy** (≤ 2 par épisode, topic dans `cooked_config`) |
-| `gsc-daily-ingest` / `dfs-weekly-sync` | GitHub Actions | GSC quotidien **planifié** 06:00 UTC (`--months 2` depuis T-02 — la fenêtre mois-calendaire perdait les fins de mois) — **départ réel +4 à +12 h** depuis le 27/08/2026 (ordonnanceur GitHub) : l'aval `cooked-refresh-after-gsc` suit seul jusqu'à 21:00 UTC, l'alerte `gsc_ingest_missed` sonne à 12:00 UTC (T-11) ; DFS hebdo lundi 07:00 UTC (échec = run rouge). Les 2 notifient ntfy en échec |
-| `gbp-daily-ingest` | GitHub Actions | Google Business Profile quotidien planifié à 05:30 UTC, fenêtre 30 j (lag ~J-4, queue finale à zéro coupée par le script) → `gbp_daily`. Notifie ntfy en échec ; alerte `gbp_daily_stale` (normal J-4, warn > 7 j, critical > 14 j). Depuis le 26/10/2026 : client OAuth dédié, renouvellement automatique vérifié en CI, données jusqu'au 23/10 et 64 jours manquants récupérés. Configuration et reprise ci-dessous. |
-| `math-refresh-snapshots-weekly` | `10 5 * * 0` (07:10 Paris, dimanche) | `math_refresh_snapshots(28)` — snapshots `math_*_snapshot` du framework d'analyse mathématique (PR #91, 29/07/2026) ; registre `math_visit_sequences_snapshot` (warn > 9 j) |
-| `cpi-calibration-monthly` | `0 5 1 * *` (07:00 Paris, le 1er du mois) | **T-20 (04/09/2026)** : `cpi_calibration_check()` — rejoue le §3 du harnais `scripts/cpi_validation_j28.sql` (loi de puissance CTR × position, 90 j clos à `gsc_last_data_day()`, brandé exclu) → `cpi_calibration_checks` ; registre `cpi_calibration_checks` (warn > 35 j) + alerte `cpi_calibration` (critical R² < 0,85, warn médiane \|écart\| > 30 %) · `SET statement_timeout='300s'` · premier point 04/09/2026 : R² 0,913, médiane 25,5 % |
-| `wix-taxonomy-sync` | GitHub Actions | **T-15 (03/09/2026)** : lundi 05:00 UTC, `scripts/wix_taxonomy_sync.py` lit la liste **publiée** du blog (API Wix, secret `WIX_API_KEY`) et appelle `page_taxonomy_sync_wix(jsonb)` — insère les articles absents (category + theme, source `wix_api`), corrige `category` seule, ne supprime jamais. Sans secret : sort sans écrire (avertissement) ; filets : registre `page_taxonomy` (warn 21 j) + alerte `page_taxonomy_gap` (dès 1 article vu > 8 j) |
-| `backup-weekly.yml` | GitHub Actions | **Schedule désactivé** (backup externe décliné le 02/07/2026, risque assumé — ne pas re-proposer) — déclenchable manuellement via `workflow_dispatch` uniquement |
+| `refresh-identity-stitch` | `40 3 * * *` | Actif — couture sur l’historique conservé, convergence puis horodatage |
+| `run_rpc_contract_tests` | `50 3 * * *` | Actif — six contrôles du socle après la couture ; résultats dans rpc_health |
+| `purge_old_events_monthly` | `0 4 1 * *` | Actif — rétention existante de 13 mois ; aucune modification de durée dans la simplification |
+| `cooked-purge-noise-weekly` | `30 4 * * 0` | Actif — bruit bot/noise > 28 jours, TTL noise_sessions 90 jours |
+| `refresh_noise_filters_hourly` | `5 * * * *` | Actif — filtrage bots et bruit |
+| `cooked-alerts-hourly` | `15 * * * *` | Actif — sources, échecs et lecture du dernier contrôle du socle |
+| `refresh_seo_url_snapshot` | `0 3 * * *` | Suspendu — historique SEO conservé |
+| `cooked-refresh-after-gsc` | `0 6-21 * * *` | Suspendu — historiques CPI et dashboard conservés |
+| `math-refresh-snapshots-weekly` | `10 5 * * 0` | Suspendu — historiques math conservés |
+| `cpi-calibration-monthly` | `0 5 1 * *` | Suspendu — historique de calibration conservé |
+
+| Workflow GitHub | Déclenchement | Rôle |
+|---|---|---|
+| `wix-taxonomy-sync` | Quotidien 05:00 UTC + manuel | Inventaire public complet Wix et synchro atomique ; échec sans dépublication déduite |
+| `gbp-daily-ingest` | Quotidien 05:30 UTC + manuel | Fiche Google, client OAuth dédié ; contrôle du retard de source |
+| `gsc-daily-ingest` | Quotidien 06:00 UTC + manuel | Lots complets des trois tables, reprise des deux derniers mois |
+| `wix-forms-reconcile` | Quotidien 07:10 UTC + manuel | Comparaison agrégée des soumissions confirmées Wix et Cooked |
+| `dfs-weekly-sync` | Manuel uniquement | Volumes DataForSEO à la demande |
+| `backup-weekly.yml` | Manuel uniquement | Planification désactivée ; sauvegarde externe déclinée le 02/07/2026 |
+
+Les horaires GitHub sont planifiés, pas une garantie de début effectif. Les
+retards mesurés en août/septembre appartiennent à l’historique. Les anciens
+producteurs ont été retirés ; ne pas réactiver leurs crons sans restaurer les
+routines et leurs dépendances dans une opération explicitement décidée.
 
 ⚠️ **Piège `statement_timeout`** : un `SET statement_timeout` posé *dans*
 une fonction ne protège **pas** un statement déjà lancé. C'est pourquoi les
@@ -677,9 +653,18 @@ WHERE e.occurred_at > now() - interval '24 hours'
     AND p.name='pageview' AND p.occurred_at > now() - interval '24 hours');
 ```
 
-### Alertes v4 (T-07, 03/09/2026) — invariant I6
+### Alertes — surveillance courante et mesures historiques
 
-Chaque seuil a une distribution mesurée le 03/09. Acquittement : `SELECT public.ack_alerts();` (tout le stock) ou `SELECT public.ack_alerts(ARRAY['cpi_drop']);`.
+Les distributions ci-dessous datent du 03/09/2026 ; elles ne décrivent pas
+les volumes actuels. Depuis le 04/11, cpi_drop, cpi_calibration,
+refresh_after_gsc_stale, refresh_budget et les alertes de fraîcheur des six
+sources retirées sont désactivées. Leurs lignes ci-dessous documentent
+l’ancien modèle. Une absence de recalcul volontaire n’est plus un incident.
+
+La règle GSC surveille le dernier lot incomplet depuis trois heures et l’absence
+de lot complet du jour UTC après midi. L’alerte RPC lit les six contrôles
+nocturnes, sans relancer les sondes lourdes à chaque heure. Acquitter seulement
+les alertes expliquées et contrôlées ; ne pas vider globalement le stock.
 
 | Kind | Seuil | Distribution / replay | Push ntfy |
 |---|---|---|---|
@@ -702,9 +687,12 @@ Chaque seuil a une distribution mesurée le 03/09. Acquittement : `SELECT public
 
 Le stock du 03/09 (55 non acquittées) n'est **pas** vidé par la migration — ack = décision Nicolas.
 
-### Registre de fraîcheur `freshness_contract` (ADR-0002, 23/08/2026) — seuils au 03/09/2026
+### Registre de fraîcheur `freshness_contract` — état du 4 novembre 2026
 
-Une ligne par source ; `alert_rule_freshness()` (cron horaire) lit `last_point_sql`, compare à
+Seules les lignes `enabled=true` sont actives. Depuis le 04/11, les six sources
+CPI/calibration/dashboard/SEO/math/DFS ci-dessous sont désactivées : leurs seuils
+restent historiques et ne créent plus d’alerte attendue.
+`alert_rule_freshness()` (cron horaire) lit `last_point_sql`, compare à
 `paris_today()` et sonne `<source>_stale` (warn / critical) ou `<source>_gap` (trous dans la série).
 Le `repair_hint` de chaque ligne est la consigne de réparation embarquée dans l'alerte.
 
@@ -712,14 +700,14 @@ Le `repair_hint` de chaque ligne est la consigne de réparation embarquée dans 
 |---|---|---|---|---|---|
 | `gsc_path_daily` (+ `_query_daily`, `_query_page_daily`) | `max(day)` | 3 j | 6 j | 10 j (12 j pour les deux tables requêtes) | trous sur 90 j → `gsc_path_daily_gap` |
 | `gbp_daily` | `max(day)` | 4 j | 7 j | 14 j | une panne d'authentification n'est pas un retard normal ; relire le dernier run |
-| `dfs_keyword_volume` | `max(last_synced_at)` | 7 j | 10 j | 21 j | hebdo |
-| `cpi_daily` | `max(day)` | 1 j | 1 j | 1 j | trous sur 7 j → `cpi_daily_gap` |
-| `dashboard_resources_snapshot` | **`max(cooked_end)`** (fin des données, T-10) | 1 j | 2 j | 4 j | J-2 le matin est normal ; le grain horaire est aux alertes T-11 |
-| `seo_url_snapshot` | `max(refreshed_at)` | 1 j | 1 j | 2 j | |
+| `dfs_keyword_volume` — désactivée le 04/11 | `max(last_synced_at)` | 7 j | 10 j | 21 j | hebdo |
+| `cpi_daily` — désactivée le 04/11 | `max(day)` | 1 j | 1 j | 1 j | trous sur 7 j → `cpi_daily_gap` |
+| `dashboard_resources_snapshot` — désactivée le 04/11 | **`max(cooked_end)`** (fin des données, T-10) | 1 j | 2 j | 4 j | J-2 le matin est normal ; le grain horaire est aux alertes T-11 |
+| `seo_url_snapshot` — désactivée le 04/11 | `max(refreshed_at)` | 1 j | 1 j | 2 j | |
 | `form_submit`, `cta_phone_click`, `crm_prospects` | dernier événement | 0 | 2 j | 4 j | cadence événementielle |
-| `math_visit_sequences_snapshot` | `max(computed_at)` | 7 j | 9 j | 16 j | hebdo |
-| `cpi_calibration_checks` | `max(day)` (T-20) | 31 j | 35 j | 62 j | mensuel (1er du mois) |
-| `page_taxonomy` | `max(updated_at)` (T-10) | 7 j | 21 j | — | synchro Wix Blog hebdomadaire ; un manque isolé peut venir d'un chemin obsolète/absent |
+| `math_visit_sequences_snapshot` — désactivée le 04/11 | `max(computed_at)` | 7 j | 9 j | 16 j | hebdo |
+| `cpi_calibration_checks` — désactivée le 04/11 | `max(day)` (T-20) | 31 j | 35 j | 62 j | mensuel (1er du mois) |
+| `page_taxonomy` | `max(publication_checked_at)` | 1 j | 2 j | 7 j | inventaire Wix quotidien complet ; updated_at seul ne prouve pas la publication |
 | `secib_dossiers` | `max(synced_at)` | 1 j | 3 j | 7 j | **désactivée** (`enabled = false`) tant que le devis SECIB+ n'est pas signé |
 
 `identity_stitch` n'est pas au registre (grain jour) : règle dédiée `alert_rule_identity_stitch()` (T-10).
@@ -815,7 +803,7 @@ canonique d'une base fraîche.
 
 | Fichier | Contenu | Régénération |
 |---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 143 routines `pg_proc` de `public` (139 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
+| `supabase/rpcs.sql` | **Corps complets** des 122 routines `pg_proc` de `public` (118 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
 | `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
 | `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
 
@@ -978,11 +966,9 @@ Defense-in-depth on the Supabase side:
 ## Maintenance
 
 ```sql
--- Force snapshot refresh (service_role only)
-SELECT public.refresh_seo_url_snapshot();
-
--- Inspect detected bots
-SELECT * FROM public.bot_fingerprints;
+-- Les anciens snapshots sont figés ; pas de commande de recalcul.
+-- Compter les empreintes détectées sans sortir leurs identifiants
+SELECT count(*) FROM public.bot_fingerprints;
 
 -- Santé du pipeline / alertes / santé des RPCs
 SELECT * FROM refresh_pipeline_health();
@@ -1003,7 +989,7 @@ To rotate `ANON_SALT` : update the Edge Function secret. Old `anonymous_id`s wil
 | `500 proxy_error` | Velo Secret missing — check `SUPABASE_TRACK_URL` & `SUPABASE_SERVICE_KEY` |
 | Edge Function `401` | JWT verification was re-enabled — redeploy with `--no-verify-jwt` |
 | No rows in `events` | Adblocker on `/_functions/track`? Curl from another network to confirm |
-| Snapshot empty | Cron didn't run yet — `SELECT public.refresh_seo_url_snapshot();` |
+| Snapshot vide ou ancien | Calculs suspendus depuis le 04/11/2026 ; vérifier les dates et l’historique conservé, sans relancer l’ancien producteur |
 | Anchor stuck on `"Read More"` | Wix icon-only button without aria-label — add `aria-label` in Wix Studio settings |
 | `form-webhook` crashes on startup | `FORM_WEBHOOK_SECRET` env var missing — set it in Supabase Dashboard → Edge Functions → form-webhook → Secrets, then redeploy |
 | `cta_anchor_click` events with `target_section: anchors-xxx` | The clicked button has no `aria-label` / `textContent` — slugify fell back to the raw Wix ID. Add a label on the Wix anchor-menu button for readability |

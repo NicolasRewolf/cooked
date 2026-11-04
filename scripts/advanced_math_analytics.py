@@ -40,9 +40,9 @@ Sans ces bornes, les analyses individuelles restent lisibles mais la synthese
 est suspendue. Code de sortie 2 = rapport partiel, donnees indisponibles ou
 periodes non comparables ; un zero observe exige une lecture reussie.
 
-Les snapshots sont rafraichis cote base par `math_refresh_snapshots(days)` :
-`math_visit_sequences(28)` coute ~65 s alors que PostgREST plafonne a 8 s,
-une RPC lourde n'est donc pas appelable directement depuis ce script.
+Les snapshots math sont figes depuis le 04/11/2026 : leurs producteurs et leur
+actualisation automatique ont ete retires. Ce script consulte les archives
+disponibles ; computed_at et window_start/window_end restent leurs dates reelles.
 
 Usage :
     python3 scripts/advanced_math_analytics.py --module all --window 28
@@ -263,7 +263,8 @@ class SupabaseSource(DataSource):
         if not rows:
             sys.exit(
                 f"Aucun snapshot pour window_days={window_days}.\n"
-                f"  Rafraichir cote base : SELECT math_refresh_snapshots({window_days});"
+                "  Les calculs math sont suspendus depuis le 04/11/2026. "
+                "Utiliser une archive existante ou une fenetre deja disponible."
             )
         self.record_snapshot("visit_sequences", rows, window_days)
         return [

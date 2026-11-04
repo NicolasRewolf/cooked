@@ -1,5 +1,7 @@
 # CPI — Cooked Page Index : spécification mathématique
 
+> **Archive fonctionnelle depuis le 4 novembre 2026.** Le calcul CPI et ses alertes sont retirés de la production ; les scores historiques restent conservés. Les recettes ci-dessous décrivent l'ancien modèle et ne doivent plus être exécutées. Les anciennes définitions SQL se retrouvent dans l'historique Git, pas dans le miroir courant. Le socle actif est décrit dans [SIMPLIFICATION.md](SIMPLIFICATION.md).
+
 > Document destiné à une relecture par un mathématicien / statisticien.
 > Il décrit **exactement** le modèle tel qu'implémenté dans la fonction
 > Postgres `cooked_page_index(p_days)` (le code SQL source est reproduit en

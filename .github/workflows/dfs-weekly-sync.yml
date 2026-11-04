@@ -1,13 +1,12 @@
-name: DFS Weekly Sync
+name: DFS Manual Sync
 
-# Sprint 33+ (25/05/2026) — sync hebdo DataForSEO → Supabase
+# Depuis le 04/11/2026 : exécution manuelle uniquement.
+# Les données de volume existantes sont conservées.
 #
 # Lit les top 500 keywords (union GSC 28j ∪ 90j) et alimente la table
 # dfs_keyword_volume avec : search_volume mensuel France, CPC,
 # competition, monthly_searches 12 mois.
 #
-# Volume mensuel bouge lentement → hebdomadaire suffit.
-# Coût estimé : ~50 cents par run × 4 runs/mois = ~$2/mois.
 #
 # Secrets à configurer une fois dans GitHub
 # (Settings → Secrets and variables → Actions → New repository secret) :
@@ -16,10 +15,6 @@ name: DFS Weekly Sync
 #   SUPABASE_SECRET_KEY    : clé sb_secret_* du projet Cooked
 
 on:
-  schedule:
-    # Lundi 07:00 UTC = 09:00 Paris en été. Volume mensuel = pas critique
-    # de tomber pile à minute X.
-    - cron: "0 7 * * 1"
   workflow_dispatch: # bouton "Run workflow" manuel
 
 concurrency:
