@@ -14,7 +14,7 @@ Référence du **04/11/2026**. Le produit mesure l’audience et les contacts ob
 
 ## Vues, visites et entrées
 
-**Vue observée** : événement humain `pageview` sur une page pendant la période. Chaque affichage compte : trois vues de la même page dans une visite donnent trois vues. `page_view_counts(p_days)` renvoie ce comptage pour toutes les pages publiées, y compris celles sans vue mesurée. C’est la métrique du tableau courant ; elle ne compte pas des visites ou des personnes uniques.
+**Vue observée** : événement humain `pageview` sur une page pendant la période. Chaque affichage compte : trois vues de la même page dans une visite donnent trois vues. `page_view_counts(p_days)` conserve ce comptage pour toutes les pages publiées, y compris celles sans vue mesurée, et le fournit aussi pour la période précédente. Il ne compte pas des personnes uniques. L’état de livraison de l’extension éditoriale est indiqué dans le [changelog](CHANGELOG.md).
 
 **Visite observée** : activité d’un même navigateur rapprochée par `identity_stitch`, coupée lorsqu’un écart dépasse 30 minutes. `web_vitals` ne prolonge pas cette activité. La couture est reconstruite sur l’historique conservé, jusqu’à convergence, sans utiliser les identifiants serveur de repli 32-hex pour rapprocher des navigateurs. Une identité technique ne prouve pas une personne unique.
 
@@ -22,7 +22,7 @@ Référence du **04/11/2026**. Le produit mesure l’audience et les contacts ob
 
 **Visite d’une page** : visite ayant au moins une page vue sur cette page dans la fenêtre. Plusieurs consultations dans une visite comptent une fois. Les visites distinctes par page ne s’additionnent pas en visiteurs uniques du site.
 
-**Cohorte d’entrée** : visites dont l’entrée appartient à la période. `page_visits(début, fin)` compte leurs contacts observés avant la clôture de cette période. Les visites commencées avant ne grossissent pas son dénominateur.
+**Cohorte d’entrée** : visites dont l’entrée appartient à la période. `page_visits(début, fin)` compte leurs contacts observés avant la clôture de cette période. `page_view_counts` reprend cette définition pour chaque fenêtre. Les visites commencées avant ne grossissent pas son dénominateur ; une entrée précédente suivie d’un contact dans la fenêtre actuelle n’ajoute de contact à aucune des deux cohortes.
 
 ## Contacts
 
@@ -40,15 +40,17 @@ Référence du **04/11/2026**. Le produit mesure l’audience et les contacts ob
 
 ## Périodes, zéros et Google
 
-**Période Cooked** : jours Paris clos, bornes inclusives dans les fonctions à dates. Le tableau propose les 30, 60 ou 90 derniers jours clos jusqu’à hier, avec 90 jours par défaut, sans comparaison. Une période partielle doit être affichée comme telle ; pas de delta de performance présenté comme complet.
+**Période Cooked** : jours Paris clos, bornes inclusives dans les fonctions à dates. Le tableau propose les 30, 60 ou 90 derniers jours clos jusqu’à hier, avec 90 jours par défaut, comparés aux 30, 60 ou 90 jours immédiatement précédents. Les fenêtres sont disjointes. Une période partielle doit être affichée comme telle ; pas de delta de performance présenté comme complet ni de pourcentage artificiel sur une base nulle.
 
-**Couverture** : disponibilité des données nécessaires au calcul. `page_view_counts` renvoie les jours attendus et les jours avec au moins une page vue humaine sur le site pendant la fenêtre ; la date de vérification de l’inventaire accompagne le résultat. La ligne `coverage` de `page_visits` donne aussi les événements téléphone/formulaire non attribués. Un jour observé ne prouve pas la disponibilité à chaque minute. La couverture des identifiants de formulaires a évolué dans l’historique.
+**Couverture** : disponibilité des données nécessaires au calcul. `page_view_counts` renvoie les jours attendus et les jours avec au moins une page vue humaine sur le site dans chacune des deux fenêtres, ainsi que les événements téléphone/formulaire non attribués de chacune. La date de vérification de l’inventaire accompagne le résultat. Les non-attribués sont des événements, pas des visites ayant contacté. Un jour observé ne prouve pas la disponibilité à chaque minute. La couverture des identifiants de formulaires a évolué dans l’historique.
 
 **Zéro mesuré** : absence de vue, ou de visite selon la métrique, pour une page publiée dans la fenêtre. Le tableau conserve ce zéro observé et signale les périodes partielles. Une panne, un import incomplet ou une absence de source ne prouvent pas une absence d’activité réelle ; une erreur de lecture n’est jamais transformée en zéro.
 
 **Total Google par page** : `gsc_path_daily`, incluant les clics dont la requête est masquée. **Requêtes révélées d’une page** : `gsc_query_page_daily`. Ces grains ne sont pas interchangeables. Les dates GSC restent celles de Google ; le dernier jour disponible peut différer de celui du tracker.
 
 **Position moyenne** : moyenne pondérée par les impressions, jamais moyenne simple des positions quotidiennes. Une requête absente peut être masquée ou sans observation. Les clics GSC ne sont pas des visites Cooked et ne se relient pas individuellement aux formulaires.
+
+**Détail Google** : `page_query_counts(path, p_days)` compare deux fenêtres de même durée terminées au dernier jour observé dans les deux grains, antérieur à aujourd’hui. Lorsqu’un lot couvre un jour, son dernier état doit être complet et attester les deux grains ; l’absence de lot historique n’efface pas les données observées avant le registre. Cette couverture est celle du site, pas le nombre de jours où la page apparaît, et ne certifie pas la complétude historique. Les requêtes observées dans l’une ou l’autre fenêtre sont conservées : clics absents à zéro, position absente à `NULL`. Sans jour commun disponible, les bornes sont nulles et la liste vide ; ce n’est pas un constat d’absence de trafic.
 
 ## Santé et limites
 

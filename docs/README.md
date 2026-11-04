@@ -1,6 +1,6 @@
 # Documentation Cooked
 
-**Référence du 04/11/2026 : socle éditorial simplifié.** Les guides actifs décrivent le tableau des URL et vues, ainsi que les sources conservées : pages publiées, visites, contacts observés et requêtes Google. Les anciens modules ne sont plus des recettes de travail.
+**Référence du 04/11/2026 : socle éditorial simplifié.** Les guides actifs décrivent le tableau éditorial autorisé : URL, vues, entrées, contacts observés, comparaison et requêtes Google à la demande. Le [changelog](../CHANGELOG.md) précise les changements implémentés et les contrôles effectués. Les anciens modules ne sont plus des recettes de travail.
 
 ## Guides actifs
 
@@ -16,7 +16,7 @@
 | Lecture des pages et des requêtes | [PLAYBOOK-analyse-seo.md](PLAYBOOK-analyse-seo.md) |
 | Secrets et droits d’accès | [SECURITY.md](../SECURITY.md) |
 | Suite produit | [ROADMAP.md](ROADMAP.md) |
-| Tableau des URL, vues et accès privé | [dashboard/README.md](../dashboard/README.md) |
+| Tableau éditorial et accès privé | [dashboard/README.md](../dashboard/README.md) |
 | SQL exact courant | [rpcs.sql](../supabase/rpcs.sql), [views.sql](../supabase/views.sql) et [migrations](../supabase/migrations/) |
 
 Les [constantes du catalogue](../contracts/doc_constants.json) portent les compteurs et versions contrôlés. [CHANGELOG.md](../CHANGELOG.md) suit les changements livrés du socle.

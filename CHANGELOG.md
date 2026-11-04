@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-11-04] — Mesures éditoriales et détail Google
+
+- Extension autorisée du tableau existant : entrées, visites avec clic téléphone ou formulaire éligible, union et taux ; comparaison aux 30, 60 ou 90 jours précédents. Les vues et les règles communes de comptage restent inchangées.
+- `page_view_counts` reconstruit les visites une seule fois pour les deux périodes, avec cohortes et contacts non attribués séparés. Chaque cohorte ne reçoit que ses contacts observés avant sa clôture ; nombres et taux restent associés.
+- Nouveau lecteur `page_query_counts` pour le détail d’une page, chargé à la demande : requêtes des deux périodes, pertes incluses, clics et positions pondérées. Bornes et couverture Google propres aux jours observés communs aux deux grains, en excluant les lots connus incomplets. L’historique pré-registre reste disponible ; absence de source distinguée de zéro trafic.
+- Calcul des visites allégé : normalisation des chemins distincts, tris sur les seules colonnes nécessaires, canal calculé par tuple de sources et parcours limités aux contacts retournés. `work_mem` de 32 MB propre à la fonction, sans changer ses règles ni le réglage global.
+- Lecteurs SQL déployés par `20261104115845_editorial_metrics_readers.sql`, avec les optimisations du socle ; miroirs régénérés. Catalogue vérifié : 13 tables, trois vues, six crons et 62 routines publiques, dont 58 Cooked et quatre `unaccent`. Aucun nouveau stockage, cache, cron ou événement collecté.
+- Tests synthétiques des anciens champs, des deux fenêtres contre `page_visits`, des frontières de cohorte, des exclusions, de l’attribution, des positions et lots Google. Lectures REST 30/60/90 réussies avec les comptages de vues conservés ; 113 tests frontend et `make check` réussis.
+
 ## [2026-11-04] — Filtres locaux et lecture des vues accélérée
 
 - Les catégories filtrent les lignes déjà chargées ; URL partageable et historique conservés. Seul un changement de période relance la lecture serveur.

@@ -9,5 +9,5 @@ export default async function Page({ searchParams }: {
 }) {
   const { days } = parseFilters(await searchParams);
   const data = await getPageViews(days);
-  return <PageViewsTable data={data} />;
+  return <PageViewsTable key={`${data.period_start}:${data.period_end}`} data={data} />;
 }

@@ -5,9 +5,10 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth", () => ({ requireUser: mocks.requireUser }));
 vi.mock("@supabase/supabase-js", () => ({ createClient: mocks.createClient }));
 
-import { getPageViews, pageViewsSchema, type PageViews } from "./page-views";
+import { getPageViews, getPageQueries, pageViewsSchema, pageQueriesSchema, type PageViews, type PageQueries } from "./page-views";
 import { filterPages, pageUrl, parseFilters } from "./page-view-filters";
 
+const emptyMetrics = { views: 0, entries: 0, phone_visits: 0, form_visits: 0, contact_visits: 0, contact_rate_pct: null };
 const rows: PageViews["pages"] = [
   { path: "/post/ressource", page_type: "post", category: "ressource", views: 7 },
   { path: "/expertises", page_type: "hub", category: null, views: 0 },
@@ -16,10 +17,12 @@ const rows: PageViews["pages"] = [
   { path: "/droit-penal", page_type: "expertise", category: null, views: 12 },
   { path: "/", page_type: "home", category: null, views: 20 },
   { path: "/blog/categories/ressources", page_type: "category", category: "ressource", views: 1 },
-];
+].map((page) => ({ ...emptyMetrics, ...page, previous: { ...emptyMetrics } }));
 const valid: PageViews = {
   period_start: "2026-10-05", period_end: "2026-11-03", expected_days: 30, observed_days: 30,
   inventory_checked_at: "2026-11-04T09:50:08.864047+00:00", pages: rows,
+  unattributed_phone_events: 2, unattributed_form_events: 1,
+  previous: { period_start: "2026-09-05", period_end: "2026-10-04", observed_days: 30, unattributed_phone_events: 0, unattributed_form_events: 0 },
 };
 
 beforeEach(() => {
@@ -103,12 +106,12 @@ describe("lecture serveur des vues", () => {
 
   it("une erreur DB ne devient pas une liste vide et ne révèle pas son message", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: "private-database-detail" } });
-    await expect(getPageViews(30)).rejects.toThrow(/^Lecture des vues indisponible$/);
+    await expect(getPageViews(30)).rejects.toThrow(/^Lecture des données indisponible$/);
   });
 
   it("un rejet réseau reste une erreur de lecture", async () => {
     mocks.rpc.mockRejectedValue(new Error("private-network-detail"));
-    await expect(getPageViews(30)).rejects.toThrow(/^Lecture des vues indisponible$/);
+    await expect(getPageViews(30)).rejects.toThrow(/^Lecture des données indisponible$/);
   });
 
   it("refuse une réponse d’une autre période", async () => {
@@ -141,6 +144,7 @@ describe("lecture serveur des vues", () => {
   it("utilise les jours Paris même pendant le changement d’heure d’été", async () => {
     mocks.rpc.mockResolvedValue({ data: {
       ...valid, period_start: "2026-03-02", period_end: "2026-03-31",
+      previous: { ...valid.previous, period_start: "2026-01-31", period_end: "2026-03-01" },
       inventory_checked_at: "2026-03-29T22:00:00Z",
     }, error: null });
     expect((await getPageViews(30)).inventoryStale).toBe(false);
@@ -149,5 +153,89 @@ describe("lecture serveur des vues", () => {
   it("accepte une couverture partielle et un inventaire non confirmé sans les masquer", () => {
     expect(pageViewsSchema.parse({ ...valid, observed_days: 0, inventory_checked_at: null }))
       .toMatchObject({ observed_days: 0, inventory_checked_at: null });
+  });
+});
+
+
+describe("cohérence des contacts et des périodes", () => {
+  const metrics = { views: 40, entries: 20, phone_visits: 4, form_visits: 3, contact_visits: 5, contact_rate_pct: 25 };
+  const withMetrics = (value: object) => ({ ...valid, pages: [{ ...rows[0], ...metrics, ...value }] });
+  it("accepte le recouvrement téléphone/formulaire sans additionner les visites", () => {
+    expect(pageViewsSchema.parse(withMetrics({})).pages[0].contact_visits).toBe(5);
+  });
+  it("refuse davantage d’entrées que de vues, sur chacune des périodes", () => {
+    expect(pageViewsSchema.safeParse(withMetrics({ views: 19 })).success).toBe(false);
+    expect(pageViewsSchema.safeParse(withMetrics({ previous: { ...metrics, views: 19 } })).success).toBe(false);
+    expect(pageViewsSchema.safeParse(withMetrics({ views: 20, previous: { ...metrics, views: 20 } })).success).toBe(true);
+  });
+  it("refuse une URL présente plusieurs fois dans la réponse", () => {
+    expect(pageViewsSchema.safeParse({ ...valid, pages: [...rows, { ...rows[0], views: 8 }] }).success).toBe(false);
+  });
+  it.each([
+    { entries: -1 }, { phone_visits: -1 }, { form_visits: -1 }, { contact_visits: -1 },
+    { entries: 4 }, { phone_visits: 6 }, { form_visits: 6 }, { contact_visits: 8, contact_rate_pct: 40 },
+    { contact_rate_pct: 0.25 }, { contact_rate_pct: null }, { contact_rate_pct: 101 },
+    { entries: 0, phone_visits: 0, form_visits: 0, contact_visits: 0, contact_rate_pct: 0 },
+  ])("refuse les comptes ou taux incohérents %j", (changes) => {
+    expect(pageViewsSchema.safeParse(withMetrics(changes)).success).toBe(false);
+  });
+  it("conserve le vrai taux zéro et l’inconnu sans entrée", () => {
+    expect(pageViewsSchema.parse(withMetrics({ phone_visits: 0, form_visits: 0, contact_visits: 0, contact_rate_pct: 0 })).pages[0].contact_rate_pct).toBe(0);
+    expect(pageViewsSchema.parse(withMetrics(emptyMetrics)).pages[0].contact_rate_pct).toBeNull();
+    expect(pageViewsSchema.parse(withMetrics({ entries: 3, phone_visits: 1, form_visits: 0, contact_visits: 1, contact_rate_pct: 33.33 })).pages[0].contact_rate_pct).toBe(33.33);
+  });
+  it("vérifie aussi les comptes précédents et les non-attribués", () => {
+    expect(pageViewsSchema.safeParse(withMetrics({ previous: { ...emptyMetrics, contact_visits: 1 } })).success).toBe(false);
+    expect(pageViewsSchema.safeParse({ ...valid, unattributed_form_events: -1 }).success).toBe(false);
+    expect(pageViewsSchema.safeParse({ ...valid, previous: { ...valid.previous, unattributed_phone_events: -1 } }).success).toBe(false);
+  });
+  it.each([
+    { period_start: "2026-09-06" }, { period_end: "2026-10-03" },
+    { period_start: "2026-09-06", period_end: "2026-10-05" }, { observed_days: 31 },
+  ])("refuse des périodes précédentes non contiguës ou incohérentes %j", (previous) => {
+    expect(pageViewsSchema.safeParse({ ...valid, previous: { ...valid.previous, ...previous } }).success).toBe(false);
+  });
+});
+
+const google: PageQueries = {
+  path: "/post/ressource", expected_days: 30, observed_days: 30,
+  period_start: "2026-10-03", period_end: "2026-11-01",
+  previous: { period_start: "2026-09-03", period_end: "2026-10-02", observed_days: 30 },
+  queries: [{ query: "droit pénal", clicks: 3, previous_clicks: 0, position_avg: 4.5, previous_position_avg: null }],
+};
+
+describe("lecture des requêtes Google", () => {
+  it("vérifie la session avant de demander une seule page et sa période", async () => {
+    mocks.rpc.mockResolvedValue({ data: google, error: null });
+    expect(await getPageQueries("/post/ressource", 30)).toEqual(google);
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("page_query_counts", { p_path: "/post/ressource", p_days: 30 });
+    expect(mocks.requireUser.mock.invocationCallOrder[0]).toBeLessThan(mocks.createClient.mock.invocationCallOrder[0]);
+  });
+  it("n’accède pas à Google si la session est refusée", async () => {
+    mocks.requireUser.mockRejectedValue(new Error("redirect-login"));
+    await expect(getPageQueries("/", 30)).rejects.toThrow("redirect-login");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it("refuse une autre période et les contrats invalides", async () => {
+    mocks.rpc.mockResolvedValue({ data: google, error: null });
+    await expect(getPageQueries("/", 60)).rejects.toThrow("Réponse Google invalide");
+    mocks.rpc.mockResolvedValue({ data: { ...google, queries: [{ ...google.queries[0], clicks: -1 }] }, error: null });
+    await expect(getPageQueries("/", 30)).rejects.toThrow("Réponse Google invalide");
+  });
+  it("accepte l’absence complète de source et les positions inconnues", () => {
+    expect(pageQueriesSchema.safeParse({ ...google, period_start: null, period_end: null, observed_days: 0,
+      previous: { period_start: null, period_end: null, observed_days: 0 }, queries: [],
+    }).success).toBe(true);
+    expect(pageQueriesSchema.parse(google).queries[0].previous_position_avg).toBeNull();
+  });
+  it.each([
+    { period_start: null }, { period_start: "2026-10-04" }, { observed_days: 31 },
+    { previous: { ...google.previous, observed_days: 31 } },
+    { previous: { ...google.previous, period_end: "2026-10-01" } },
+    { queries: [{ ...google.queries[0], previous_clicks: -1 }] },
+    { queries: [{ ...google.queries[0], position_avg: -1 }] },
+    { queries: [{ ...google.queries[0], previous_position_avg: Infinity }] },
+  ])("refuse un contrat Google incohérent %j", (changes) => {
+    expect(pageQueriesSchema.safeParse({ ...google, ...changes }).success).toBe(false);
   });
 });
