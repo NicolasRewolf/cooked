@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 
-// Auth uniquement : aucune clé service ni lecture des données métier.
+// Configuration Auth. La clé de lecture métier est vérifiée uniquement à l’appel serveur.
 const schema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().min(1, "NEXT_PUBLIC_SUPABASE_URL manquante"),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1, "NEXT_PUBLIC_SUPABASE_ANON_KEY manquante"),

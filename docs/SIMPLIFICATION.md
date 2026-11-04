@@ -1,8 +1,10 @@
 # Socle éditorial — 4 novembre 2026
 
-La mesure éditoriale repose sur les pages publiées, les visites observées, les clics sur le numéro, les formulaires et les requêtes Google. Le tableau de bord sera repris séparément.
+La mesure éditoriale repose sur les pages publiées, les visites observées, les clics sur le numéro, les formulaires et les requêtes Google. Le dashboard commence par une seule page : URL publiées et nombre de vues, sur 30, 60 ou 90 jours Paris clos. Ses filtres distinguent Expertises, Articles hors ressources et Ressources et notions juridiques.
 
 ## Comptage
+
+Le tableau compte chaque événement humain `pageview` avec `page_view_counts`, y compris plusieurs affichages dans une même visite. Il complète les résultats depuis l’inventaire publié pour montrer aussi les pages à zéro vue mesurée. Ce lecteur ne crée ni table, ni cache, ni cron et ne modifie pas les règles de visite ou de contact ci-dessous.
 
 La règle commune de visite regroupe l’activité observable d’un même navigateur tant que les écarts ne dépassent pas 30 minutes. Les performances Web tardives ne prolongent pas une visite. L’entrée est la première page vue de cette visite, même avant le début de la période demandée.
 
@@ -10,7 +12,7 @@ La couture utilise la table existante `identity_stitch` sur l’historique conse
 
 Les formulaires à identifiants explicites peuvent être rattachés à une visite observable. Un simple voisinage dans le temps ne suffit plus à leur attribuer une page. Les contacts inconnus restent comptés dans le total du site. Un clic sur le numéro ne prouve pas un appel abouti.
 
-Pour chaque page, les consultations comptent une fois la même visite. Les entrées comptent les visites commencées dans la fenêtre. Les numérateurs téléphone, formulaire et union comptent les visites distinctes de cette cohorte ayant réalisé l’action avant la clôture. Une visite avec deux formulaires et un clic compte une seule fois dans l’union. Une absence de dénominateur produit un taux inconnu.
+Dans `page_visits`, les consultations comptent une fois la même visite pour chaque page. Les entrées comptent les visites commencées dans la fenêtre. Les numérateurs téléphone, formulaire et union comptent les visites distinctes de cette cohorte ayant réalisé l’action avant la clôture. Une visite avec deux formulaires et un clic compte une seule fois dans l’union. Une absence de dénominateur produit un taux inconnu. Ces mesures ne sont pas affichées dans le tableau courant.
 
 Les dates sont des jours Paris clos. Pour comparer 90 jours aux 90 précédents, utiliser des fenêtres de même durée avec la même définition. L’évolution de la couverture des identifiants reste une limite historique ; les données manquantes ne sont pas reconstituées par une supposition.
 
@@ -24,7 +26,7 @@ Depuis le 04/11/2026, l’import est quotidien et rapproche le sitemap, les arti
 
 ## Retraits
 
-Le retrait est appliqué en production : 24 tables, huit vues et 62 anciennes routines ont été supprimées. Il reste 13 tables, trois vues et 60 routines, dont les quatre fonctions de l’extension `unaccent`. Le CPI, les copies dashboard, le rapprochement CRM/SECIB et les modèles de maillage n’ont plus de stockage ou de calcul actif.
+Le retrait est appliqué en production : 24 tables, huit vues et 62 anciennes routines ont été supprimées. Le catalogue avec le lecteur `page_view_counts` comprend 13 tables, trois vues et 61 routines, dont les quatre fonctions de l’extension `unaccent`. Le CPI, les copies dashboard, le rapprochement CRM/SECIB et les modèles de maillage n’ont plus de stockage ou de calcul actif.
 
 Les intégrations DataForSEO et fiche Google sont retirées de Cooked. Google Search Console conserve deux sources : les totaux par page et les requêtes par page. Un lot doit terminer ces deux imports pour être complet. Les anciens manifestes à trois sources restent des preuves historiques, sans être réécrits.
 
@@ -36,4 +38,4 @@ La surveillance garde les sources, les échecs et les contrôles du comptage com
 
 Les migrations et leurs tests décrivent le changement déployable. Les corps SQL sont régénérés depuis la production après livraison. Les constantes du catalogue suivent `contracts/doc_constants.json`.
 
-Les migrations `20261104080927_gsc_two_grain_batches.sql` et `20261104081230_retire_unused_data_surface.sql` portent ce retrait. Le rapport privé avant/après contient les fenêtres fixes de contre-vérification, les contrôles de production et le registre de chaque objet. Les événements bruts, les deux sources GSC utiles et l’inventaire publié sont conservés. La refonte fonctionnelle du dashboard reste une étape ultérieure.
+Les migrations `20261104080927_gsc_two_grain_batches.sql` et `20261104081230_retire_unused_data_surface.sql` portent ce retrait. Le rapport privé avant/après contient les fenêtres fixes de contre-vérification, les contrôles de production et le registre de chaque objet. Les événements bruts, les deux sources GSC utiles et l’inventaire publié sont conservés. Le périmètre du tableau et ses limites sont décrits dans [README.md](../README.md) ; aucune autre métrique n’est ajoutée à cette étape.

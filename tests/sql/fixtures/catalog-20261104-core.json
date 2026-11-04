@@ -518,6 +518,13 @@
       "service_exec": true
     },
     {
+      "name": "page_view_counts",
+      "args": "p_days integer",
+      "anon_exec": false,
+      "auth_exec": false,
+      "service_exec": true
+    },
+    {
       "name": "page_visits",
       "args": "p_start date, p_end date",
       "anon_exec": false,

@@ -3,13 +3,17 @@
 
 ## Périmètre courant
 
-1. Cette application affiche uniquement une page de transition authentifiée.
-   La nouvelle interface est une étape séparée ; ne pas ajouter de métriques.
-2. Aucune table ni RPC métier n’est lue. Aucun client admin ni clé service n’est
-   nécessaire. Supabase reste utilisé uniquement pour Auth.
-3. Conserver magic-link, logout, allowlist fermée par défaut, validation serveur
-   de la session et garde contre les redirections externes.
-4. Les anciennes routes redirigent vers la transition. Ne pas restaurer les
-   écrans, contrats ou bibliothèques de métriques retirés.
+1. Une page authentifiée liste toutes les URL publiées, y compris celles à zéro vue.
+   Une seule métrique : les affichages de page filtrés, pas les visites uniques.
+2. Les périodes sont 30, 60 ou 90 jours clos Paris, 90 par défaut. Filtres :
+   toutes les pages ; expertises (hubs compris) ; articles hors ressources ;
+   articles catégorisés « Ressources et notions juridiques ». Les deux derniers
+   ensembles sont disjoints ; aucun score, conversion, graphique ou détail ajouté.
+3. La seule lecture métier appelle `page_view_counts(p_days)` depuis un module
+   `server-only`, après validation de session et allowlist. La clé serveur n’est
+   jamais transmise au navigateur. Pas d’API intermédiaire ni cache ajouté.
+4. Conserver magic-link, logout, allowlist fermée par défaut, validation serveur
+   de la session et garde contre les redirections externes. Les anciennes routes
+   continuent de rediriger vers `/`.
 5. Les couleurs sont des tokens de `src/app/globals.css`. Conserver IBM Plex,
-   orange rewolf, angles vifs et thème clair.
+   orange rewolf, angles vifs, thème clair et tableau compact.

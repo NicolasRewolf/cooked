@@ -101,7 +101,7 @@ CREATE OR REPLACE VIEW public.events_no_bots WITH (security_invoker=true) AS
            FROM bot_fingerprints b
           WHERE b.anonymous_id = e.anonymous_id));
 
--- SIGNATURES (60)
+-- SIGNATURES (61)
 -- ack_alerts(p_kinds text[]) -> integer
 -- alert_rule_contact_sans_amont() -> TABLE(kind text, severity text, detail text)
 -- alert_rule_cron_failed() -> TABLE(kind text, severity text, detail text)
@@ -142,6 +142,7 @@ CREATE OR REPLACE VIEW public.events_no_bots WITH (security_invoker=true) AS
 -- latest_rpc_health() -> TABLE(rpc_name text, status text, detail text, rows_returned bigint, duration_ms numeric, checked_at timestamp with time zone, age_minutes numeric)
 -- page_taxonomy_sync_wix(p_posts jsonb, p_dry_run boolean) -> TABLE(inserted integer, updated integer, unpublished integer, inserted_paths text[], updated_paths text[])
 -- page_taxonomy_theme_from_slug(p_path text) -> text
+-- page_view_counts(p_days integer) -> jsonb
 -- page_visits(p_start date, p_end date) -> TABLE(row_kind text, path text, visits bigint, entries bigint, phone_visits bigint, form_visits bigint, contact_visits bigint, contact_rate_pct numeric, observed_days integer, unattributed_phone_events bigint, unattributed_form_events bigint)
 -- paris_date(ts timestamp with time zone) -> date
 -- paris_today() -> date

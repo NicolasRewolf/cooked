@@ -1,6 +1,6 @@
 {
   "project_id": "mxycmjkeotrycyneacje",
-  "rpc_function_count_expected_min": 60,
+  "rpc_function_count_expected_min": 61,
   "cron_jobs": [
     {
       "jobname": "run_rpc_contract_tests",
@@ -34,9 +34,9 @@
   ],
   "notes": "Six crons utiles, cinq sources de fraîcheur actives. Tables/vues/routines comparées à la production par T-12/T-14.",
   "measured_at": "2026-11-04",
-  "routines_pg_proc": 60,
-  "routines_cooked": 56,
-  "routines_note": "60 objets pg_proc dans public = 56 routines Cooked et quatre fonctions unaccent. CPI, CRM/SECIB, copies dashboard et analyses abandonnées retirés.",
+  "routines_pg_proc": 61,
+  "routines_cooked": 57,
+  "routines_note": "61 objets pg_proc dans public = 57 routines Cooked et quatre fonctions unaccent. CPI, CRM/SECIB, copies dashboard et analyses abandonnées retirés.",
   "alert_rules": 15,
   "dashboard_rpcs": 0,
   "views": 3,

@@ -1,6 +1,6 @@
 # Agents IA — point d’entrée
 
-**État du 04/11/2026 : socle éditorial simplifié.** Les anciens écrans, scores CPI, snapshots et intégrations annexes sont retirés. La nouvelle interface sera traitée séparément. Lire [SIMPLIFICATION.md](docs/SIMPLIFICATION.md) avant toute recette historique.
+**État du 04/11/2026 : socle éditorial simplifié.** Les anciens écrans, scores CPI, snapshots et intégrations annexes sont retirés. Le dashboard se limite à une page privée : URL publiées, vues et filtres de période/type. Lire [SIMPLIFICATION.md](docs/SIMPLIFICATION.md) avant toute recette historique.
 
 ## Lire en premier
 
@@ -32,14 +32,14 @@ Lire les dates et le périmètre des résultats. Expliquer les incidents qui aff
 | Ingestion Python | [src/cooked/](src/cooked/) |
 | Réception Edge | `supabase/functions/track/`, `form-webhook/` et `_shared/` |
 | Tracker et attribution Forms | [wix/tracker.html](wix/tracker.html), [wix/masterpage-cooked.js](wix/masterpage-cooked.js) |
-| Page de transition et authentification | [dashboard/README.md](dashboard/README.md) |
+| Tableau des URL, vues et authentification | [dashboard/README.md](dashboard/README.md) |
 | Guides et décisions communes | [docs/README.md](docs/README.md), [docs/adr/](docs/adr/) |
 
 ## Contrats conservés
 
 `contracts/canonical_path_vectors.json` vérifie les chemins SQL/Edge/Python ; `recruitment_objet_vectors.json` l’exclusion des candidatures ; `rpc_snapshot_meta.json` le miroir SQL. `doc_constants.json` porte les compteurs du catalogue et les versions, confrontés aux sources et à la production par la CI.
 
-Le socle compte **60 routines** publiques : 56 Cooked et quatre `unaccent`. Les anciens contrats des lecteurs dashboard ont été retirés avec leurs consommateurs.
+Le socle compte **61 routines** publiques : 57 Cooked et quatre `unaccent`. `page_view_counts` est l’unique lecteur du dashboard ; les anciens contrats ont été retirés avec leurs consommateurs.
 
 ## Versions canoniques
 

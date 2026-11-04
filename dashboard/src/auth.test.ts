@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
-describe("accès à la page de transition", () => {
+describe("accès au dashboard", () => {
   it("redirige une session absente vers la connexion", async () => {
     const response = await proxy(new NextRequest("https://data.example/"));
     expect(response.headers.get("location")).toBe("https://data.example/login");
@@ -62,7 +62,7 @@ describe("accès à la page de transition", () => {
     expect(response.headers.get("location")).toBe("https://data.example/login");
   });
 
-  it("ne nécessite plus de clé service pour valider la configuration", async () => {
+  it("ne nécessite pas de clé service pour valider la configuration Auth", async () => {
     vi.stubEnv("SUPABASE_SECRET_KEY", undefined);
     const { allowedEmails } = await import("./env");
     expect(allowedEmails).toEqual(["allowed@example.test"]);

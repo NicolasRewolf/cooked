@@ -4,7 +4,9 @@
 
 ## Périmètre produit
 
-La cible de lecture est un tableau des pages publiées et le détail Google d’une page, avec 90 jours comparés aux 90 précédents et une période modifiable. La refonte UI reste séparée ; `dashboard/` ne contient désormais que l’accès authentifié et une page de transition.
+Le dashboard se limite à une page privée avec toutes les URL publiées et leur nombre de vues, y compris zéro. Une vue est un événement humain `pageview` ; plusieurs affichages dans une même visite comptent plusieurs vues. Les périodes sont 30, 60 ou 90 jours Paris clos, avec 90 jours par défaut.
+
+Les filtres sont Toutes, Expertises (types `hub` et `expertise`), Articles (articles hors ressources) et Ressources et notions juridiques (articles de catégorie `ressource`). Articles et Ressources sont disjoints. Les visites, conversions, comparaisons et détails Google ne font pas partie de cette étape ; leur ajout nécessite une nouvelle demande produit.
 
 Nicolas décide de l’intérêt d’un sujet pour le cabinet et des actions éditoriales. Ne pas lui demander de renseigner cet intérêt dans Cooked, ajouter de score automatique, rétablir le CPI ou greffer une nouvelle intégration. Une page à fort volume et une page de niche à fort taux peuvent toutes deux être utiles.
 
@@ -36,6 +38,7 @@ Présenter les données observées, les calculs et les hypothèses séparément.
 ## Invariants métier
 
 - **Filtrage commun.** Pour les analyses ad hoc, lire `events_human`, jamais `events` brut. Les exceptions sont l’audit du filtrage et le diagnostic d’ingestion, à annoncer. Les vues `events_main` et `events_no_bots` participent au même filtre du site principal.
+- **Vue observée.** `page_view_counts` compte chaque `pageview` humain sur la période et complète depuis l’inventaire publié. Une vue n’est ni une visite distincte ni une personne.
 - **Visite observée.** `cooked_visit_events` utilise la couture d’identité et coupe après plus de 30 minutes sans activité observable. `web_vitals` ne prolonge pas une visite. La première page vue est l’entrée, même si elle précède la fenêtre de lecture.
 - **Attribution prudente.** Aucun événement futur ni simple proximité temporelle ne crée de lien avec un formulaire. Les contacts sans amont connu restent dans le total site, explicitement non attribués.
 - **Contacts métier.** Clic téléphone et formulaire éligible seulement. Les candidatures « nous rejoindre » sont exclues. Le clic « prendre RDV » reste une intention ; lecture et engagement ne sont pas des contacts. Un clic téléphone ne prouve pas un appel réel, une soumission ne prouve pas une personne ni un dossier signé.

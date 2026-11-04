@@ -4,9 +4,9 @@ Cooked mesure le site [jplouton-avocat.fr](https://www.jplouton-avocat.fr) pour 
 
 ## Le besoin retenu
 
-Le futur tableau devra montrer toutes les pages publiées, y compris celles sans visite : visites ayant consulté chaque page, visites commencées dessus, puis nombre et taux de ces entrées ayant produit un clic téléphone ou un formulaire. Le détail d’une page comparera les clics de ses requêtes Google et leur position moyenne. La période de départ sera de 90 jours comparés aux 90 précédents, modifiable.
+Le dashboard comporte une seule page privée : toutes les URL publiées et leur nombre de vues, y compris zéro. La période se choisit entre 30, 60 et 90 jours Paris clos ; 90 jours est le choix par défaut.
 
-**Cette interface reste un chantier séparé.** `dashboard/` conserve l’authentification et une page de transition ; les anciens écrans et leurs indicateurs sont retirés. L’intérêt du sujet pour le cabinet reste une décision de Nicolas, sans score ni classement automatique.
+Quatre filtres : Toutes, Expertises (pages et hubs d’expertise), Articles (actualités du cabinet, récits de procès et autres articles hors ressources), Ressources et notions juridiques. **Articles et Ressources sont deux ensembles disjoints.** Cette étape n’ajoute ni conversion, ni comparaison, ni détail Google. L’intérêt du sujet pour le cabinet reste une décision de Nicolas, sans score ni classement automatique.
 
 ## Le socle conservé
 
@@ -17,15 +17,16 @@ Le futur tableau devra montrer toutes les pages publiées, y compris celles sans
 | Google Search Console par page | Clics et impressions totaux de la page |
 | Google Search Console par requête et page | Requêtes révélées, clics, impressions et position |
 
-Les données conservées passent par les mêmes filtres bots/bruit et la même définition de visite. Le catalogue cible comprend **13 tables, trois vues et 60 routines** publiques, dont 56 Cooked et quatre fonctions de l’extension `unaccent`. Les compteurs de référence sont dans [contracts/doc_constants.json](contracts/doc_constants.json).
+Les données conservées passent par les mêmes filtres bots/bruit et la même définition de visite. Le catalogue comprend **13 tables, trois vues et 61 routines** publiques, dont 57 Cooked et quatre fonctions de l’extension `unaccent`. Le tableau utilise un seul lecteur, `page_view_counts`, sans nouveau stockage ni recalcul planifié. Les compteurs de référence sont dans [contracts/doc_constants.json](contracts/doc_constants.json).
 
 Le CPI, les copies de l’ancien dashboard, les modèles mathématiques, DataForSEO, Google Business Profile et le pont CRM/SECIB sortent du produit. Leurs anciens guides restent dans [l’historique Git](https://github.com/NicolasRewolf/cooked/tree/b6aa6370b9041763814bc0b1253182ece2694772/docs) ; le dépôt courant décrit uniquement le socle maintenu.
 
 ## Ce que les chiffres signifient
 
+- Une vue est un affichage reçu comme événement humain `pageview`. Trois affichages d’une page dans la même visite comptent trois vues. C’est la seule métrique du dashboard à cette étape.
 - Une visite regroupe l’activité observable d’un même navigateur, avec une coupure après plus de 30 minutes d’inactivité. Sa première page vue est son entrée.
 - Un clic téléphone ne prouve pas un appel abouti. Un formulaire ne prouve pas un prospect unique. Les candidatures « nous rejoindre » sont exclues des contacts métier.
-- Une visite avec téléphone et formulaire compte une fois dans leur union. Les nombres restent visibles à côté des taux.
+- Dans les analyses de contacts, une visite avec téléphone et formulaire compte une fois dans leur union. Les nombres accompagnent les taux.
 - Un contact sans amont connu reste compté comme non attribué. Aucun parcours n’est inventé pour le rattacher à une page.
 - Une collecte incomplète n’est pas un zéro. Les dates, la couverture et la part attribuable doivent accompagner la comparaison.
 - Google masque des requêtes : leur somme ne reconstitue pas tous les clics de la page et ne permet pas d’attribuer une soumission à une requête individuelle.
