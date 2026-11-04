@@ -132,3 +132,32 @@ def test_cli_dry_run_passes_full_inventory_without_hiding_failure(monkeypatch):
     monkeypatch.setattr(taxonomy, 'fetch_inventory', lambda: (_ for _ in ()).throw(TimeoutError()))
     assert taxonomy.main([]) == 1
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('url,source,status,rpc_failure', [
+    (taxonomy.WIX_POSTS_URL + '?token=private-token', 'api-blog-wix', 403, False),
+    (taxonomy.SITE_URL + '/_api/v1/access-tokens?token=private-token', 'site-public-wix', 429, False),
+    ('https://mxycmjkeotrycyneacje.supabase.co/rest/v1/rpc/page_taxonomy_sync_wix?token=private-token',
+     'rpc-supabase', 401, True),
+    ('https://private-token.invalid/path', 'source-inconnue', 500, False),
+])
+def test_http_failure_identifies_source_without_exposing_credentials(
+        monkeypatch, capsys, url, source, status, rpc_failure):
+    response = taxonomy.requests.Response()
+    response.status_code = status
+    response.url = url
+    response._content = b'private response body with private-token'
+    error = taxonomy.requests.HTTPError('private exception with private-token', response=response)
+    def fail(*args):
+        raise error
+    calls = []
+    monkeypatch.delenv('SUPABASE_URL', raising=False)
+    monkeypatch.setattr(taxonomy, 'fetch_inventory', lambda: {} if rpc_failure else fail())
+    monkeypatch.setattr(taxonomy, 'call_sync_rpc', fail if rpc_failure else lambda *args: calls.append(args))
+    assert taxonomy.main([]) == 1
+    assert calls == []
+    output = capsys.readouterr()
+    phase = 'synchronisation-supabase' if rpc_failure else 'lecture-inventaire'
+    assert output.out == ''
+    assert output.err == (f'Inventaire Wix non appliqué (HTTPError; phase={phase}; '
+                          f'source={source}; HTTP={status}).\n')

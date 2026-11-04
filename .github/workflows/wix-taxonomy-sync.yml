@@ -43,7 +43,7 @@ jobs:
             python3 scripts/wix_taxonomy_sync.py
           fi
       - name: notify-failure
-        if: failure()
+        if: failure() && github.ref == 'refs/heads/main'
         run: |
           if [ -n "${{ secrets.NTFY_TOPIC }}" ]; then
             curl -s -H "Title: Cooked CI en échec" -H "Priority: high" -H "Tags: warning" \

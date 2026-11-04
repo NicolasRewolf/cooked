@@ -6,6 +6,16 @@ try {
   await db.exec(`INSERT INTO page_taxonomy(path,category,theme,source)
     VALUES('/post/existing','classique','manual-theme','manual'),('/post/retired','ressource','old','manual');`);
   await applyMigration(db, '_published_page_inventory.sql');
+  await applyMigration(db, '_filter_publication_updates.sql');
+  // Count physical publication updates, not just equal final values. This
+  // catches a replay that needlessly writes every row again.
+  await db.exec(`CREATE TEMP TABLE inventory_write_count(total integer);
+    INSERT INTO inventory_write_count VALUES(0);
+    CREATE FUNCTION pg_temp.count_inventory_write() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN UPDATE inventory_write_count SET total=total+1; RETURN NEW; END; $$;
+    CREATE TRIGGER count_inventory_write AFTER UPDATE OF is_published, publication_checked_at
+    ON page_taxonomy FOR EACH ROW EXECUTE FUNCTION pg_temp.count_inventory_write();`);
+  const writes = async () => (await db.query('SELECT total FROM inventory_write_count')).rows[0].total;
   const rows = async () => (await db.query('SELECT * FROM page_taxonomy ORDER BY path')).rows;
   assert.equal((await rows()).every(r => r.is_published === null && r.publication_checked_at === null), true);
   const stamp = (await db.query('SELECT clock_timestamp()::text AS stamp')).rows[0].stamp;
@@ -27,8 +37,11 @@ try {
   assert.equal(current.find(r => r.path === '/post/retired').is_published, false);
   assert.equal(current.find(r => r.path === '/post/existing').theme, 'manual-theme');
   assert.equal(current.find(r => r.path === '/post/existing').source, 'manual');
+  assert.equal(await writes(), current.length, 'the first inventory observes every current and absent page');
+  const writesBeforeReplay = await writes();
   assert.deepEqual(await sync(inventory), {inserted:0, updated:0, unpublished:1, inserted_paths:[], updated_paths:[]});
   assert.deepEqual(await rows(), current, 'replaying an inventory is idempotent');
+  assert.equal(await writes(), writesBeforeReplay, 'an exact replay does not rewrite publication rows');
   const corruptions = [
     {...inventory, counts:{posts:1,categories:1,static:1}},
     {...inventory, pages:inventory.pages.slice(1)},
