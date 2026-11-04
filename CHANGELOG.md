@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026-11-04] — Règles de fraîcheur réutilisées
+
+- Le résumé du pipeline lit les seuils Google dans `freshness_contract` et réutilise la règle de lot GSC incomplet ; les valeurs et règles de comptage sont conservées.
+- Aucun nouvel objet SQL : mêmes cinq contrats et 60 routines. La portée du résumé, ses colonnes, ses arrondis et ses délais propres restent inchangés. Un contrat GSC absent ou désactivé est explicitement signalé.
+- Consignes de reprise GSC et formulaires mises à jour pour les flux conservés. Tests SQL des seuils, limites, arrondis et périmètres.
+- Migration `20261104092851_reuse_freshness_rules` appliquée ; registre inchangé hors consignes, autres routines identiques et état du pipeline sain avant/après. Miroir régénéré depuis la production.
+
 ## [2026-11-04] — Réception tracker regroupée
 
 - `track/index.ts` se limite au branchement de l’environnement et de Supabase ; `_shared/track_delivery.ts` rassemble le traitement HTTP jusqu’au résultat de l’écriture.

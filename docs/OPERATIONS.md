@@ -58,7 +58,7 @@ Un lot n’est déclaré complet que lorsque ses deux grains ont réussi. Un imp
 
 ```bash
 python3 scripts/gsc_ingest.py --help
-python3 scripts/gsc_ingest.py --daily
+python3 scripts/gsc_ingest.py all --daily
 ```
 
 Les accès Google utilisent le service account existant, en lecture Search Console. Les identifiants restent hors dépôt ; noms d’environnement dans [.env.example](../.env.example). Aucun ancien recalcul de dashboard n’est attendu après cet import.
@@ -110,7 +110,9 @@ FROM gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1;
 
 La surveillance conserve **15 règles d'alerte** et cinq sources de fraîcheur : `gsc_path_daily`, `gsc_query_page_daily`, `form_submit`, `cta_phone_click`, `page_taxonomy`. La couture a ses contrôles dédiés. Les règles horaires lisent les résultats des contrôles nocturnes, sans relancer leurs sondes lourdes à chaque passage.
 
-`refresh_pipeline_health()` résume la réception des événements et les lots GSC ; ce n’est pas un certificat global de justesse des données. Pour un résultat métier, lire aussi l’inventaire, les bornes de couverture et les contrôles concernés. Consulter les seuils courants dans `freshness_contract` et les corps SQL, sans les recopier dans plusieurs guides.
+`refresh_pipeline_health()` résume la réception des événements, les données GSC par page et les lots GSC ; ce n’est pas un certificat global de justesse des données. Il lit les seuils Google dans le contrat actif `gsc_path_daily` et réutilise la règle existante pour un lot incomplet. Un contrat absent ou désactivé est signalé par `gsc_freshness_contract_unavailable`, sans état sain implicite. Les délais de réception et d’exécution des imports gardent leurs règles distinctes.
+
+`alert_rule_freshness()` conserve le contrôle des cinq sources et des trous de série. Ces contrôles ne sont pas tous exécutés par le résumé du pipeline. Pour un résultat métier, lire aussi l’inventaire, les bornes de couverture et les contrôles concernés. Consulter les seuils courants dans `freshness_contract` et les corps SQL, sans les recopier dans plusieurs guides.
 
 Une alerte datée peut être historique. Acquitter seulement une cause vérifiée ou un périmètre explicitement retiré. Les contacts sans amont, champs Forms absents et différences de comptes restent visibles ; un acquittement ne reconstitue pas les données manquantes.
 

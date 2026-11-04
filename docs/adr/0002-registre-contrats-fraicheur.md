@@ -81,5 +81,15 @@ exactement quand l'ingestion meurt.
 - **Un cadre d'ingestion Python générique** : les divergences (auth, fenêtres,
   pagination) sont du domaine ; un pipeline générique serait shallow. Ce qui
   doit être partagé est le contrat, pas le pipeline.
+
+## Application ciblée du 04/11/2026
+
+Le résumé `refresh_pipeline_health()` réutilise les seuils du contrat actif
+`gsc_path_daily` et la détection de lot interrompu d’`alert_rule_gsc_ingest_missed()`.
+Il garde sa portée réception / pages GSC / lots, ses délais d’exécution et ses
+colonnes. Il ne devient pas une synthèse des cinq sources ni des alertes ouvertes.
+Cette étape retire les décisions recopiées sans ajouter de routine ni exécuter
+les recherches de trous sur 90 jours à chaque lecture du résumé. Un contrat GSC
+absent ou désactivé est explicitement critique, sans seuil de secours caché.
 - **Escalade codée dans chaque règle** (le `elsif` artisanal de feu
   `alert_rule_gbp_gap`) : la politique doit vivre à un endroit.
