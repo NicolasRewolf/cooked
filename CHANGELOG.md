@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-11-04] — Délai REST du tableau
+
+- Le calcul 90 jours dépassait le délai REST par défaut de 8 secondes, malgré des tests SQL réussis. `page_view_counts` dispose désormais de 30 secondes, avec rechargement du schéma PostgREST ; aucun délai global, droit d’accès ou calcul modifié.
+- Migration `20261104104252_page_view_counts_timeout.sql`, miroir régénéré et réglage couvert par la suite SQL. La vérification passe par l’API utilisée par le dashboard.
+
 ## [2026-11-04] — Tableau minimal des URL et vues
 
 - Une page privée affiche toutes les URL publiées et leurs vues humaines, y compris zéro, sur 30, 60 ou 90 jours Paris clos ; 90 jours par défaut.
