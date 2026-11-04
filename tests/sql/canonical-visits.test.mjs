@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
-import {createDatabase,root} from './helpers.mjs';
+import {createDatabase,root,applyMigration} from './helpers.mjs';
 import fs from 'node:fs';
 
 const db=await createDatabase();
 try {
+  const original = fs.readFileSync(root+'/supabase/migrations/20261104065743_canonical_visits_and_identity.sql','utf8')
+    .match(/CREATE OR REPLACE FUNCTION public\.cooked_visit_events[\s\S]*?END \$\$;/)[0];
+  await db.exec(original.replace('FUNCTION public.cooked_visit_events(', 'FUNCTION public.visits_before_normalization('));
+  await applyMigration(db,'_visit_path_normalization.sql');
+  await applyMigration(db,'_visit_source_scan.sql');
+  await applyMigration(db,'_visit_lean_projection.sql');
   await db.exec("CREATE OR REPLACE FUNCTION public.paris_today() RETURNS date LANGUAGE sql STABLE AS $$SELECT date '2026-11-04'$$;");
   await db.exec('SET check_function_bodies=true;');
   for(const c of JSON.parse(fs.readFileSync(root+'/contracts/canonical_path_vectors.json','utf8')).path_cases) {
@@ -131,6 +137,13 @@ try {
   }
   await assert.rejects(()=>db.query("SELECT * FROM page_visits('2026-11-03','2026-11-04')"),e=>e.code==='22023');
   await assert.rejects(()=>db.query("SELECT * FROM page_visits('2026-11-03','2026-11-02')"),e=>e.code==='22023');
+  // Full output parity, including journeys and attribution: not just totals.
+  for (const [start,end] of [['2026-05-08','2026-11-03'],['2026-08-06','2026-11-03'],
+    ['2026-05-08','2026-08-05'],['2026-11-03','2026-11-03']]) {
+    assert.deepEqual(await rows('SELECT * FROM cooked_visit_events($1,$2) ORDER BY event_id',[start,end]),
+      await rows('SELECT * FROM visits_before_normalization($1,$2) ORDER BY event_id',[start,end]),
+      `path normalization preserves every event field for ${start} to ${end}`);
+  }
   console.log('Canonical visits verified: inactivity, entry boundaries, certain attribution, historical stitch, rates, ACL.');
 } catch(e) {
   console.error(e.message,e.detail??'');

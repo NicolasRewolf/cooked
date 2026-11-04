@@ -101,7 +101,7 @@ CREATE OR REPLACE VIEW public.events_no_bots WITH (security_invoker=true) AS
            FROM bot_fingerprints b
           WHERE b.anonymous_id = e.anonymous_id));
 
--- SIGNATURES (61)
+-- SIGNATURES (62)
 -- ack_alerts(p_kinds text[]) -> integer
 -- alert_rule_contact_sans_amont() -> TABLE(kind text, severity text, detail text)
 -- alert_rule_cron_failed() -> TABLE(kind text, severity text, detail text)
@@ -140,6 +140,7 @@ CREATE OR REPLACE VIEW public.events_no_bots WITH (security_invoker=true) AS
 -- gsc_path_metrics(start_date date, end_date date) -> TABLE(path text, impressions_total bigint, clicks_total bigint, position_avg numeric, ctr_pct numeric)
 -- gsc_top_queries_for_path(target_path text, p_period_kind text, max_rows integer) -> TABLE(query text, clicks bigint, impressions bigint, position_avg numeric, ctr_pct numeric, days_in_period integer)
 -- latest_rpc_health() -> TABLE(rpc_name text, status text, detail text, rows_returned bigint, duration_ms numeric, checked_at timestamp with time zone, age_minutes numeric)
+-- page_query_counts(p_path text, p_days integer) -> jsonb
 -- page_taxonomy_sync_wix(p_posts jsonb, p_dry_run boolean) -> TABLE(inserted integer, updated integer, unpublished integer, inserted_paths text[], updated_paths text[])
 -- page_taxonomy_theme_from_slug(p_path text) -> text
 -- page_view_counts(p_days integer) -> jsonb

@@ -13,7 +13,7 @@ Contacter Nicolas Rewolf par le canal habituel Rewolf Studio / cabinet. Ne pas o
 | Événements et couture | Identifiants pseudonymes persistants et activité du site ; les champs d’identité et le texte libre de formulaire ne doivent pas être copiés dans l’événement | RLS, rôles techniques autorisés et filtres communs |
 | GSC et inventaire Wix | Mesures agrégées par page/requête et contenu publié | Rôles techniques autorisés |
 | Alertes et contrôles | Comptes, codes et états techniques ; pas de payload personnel ni message DB brut | Rôles techniques autorisés |
-| Dashboard | URL publiées et vues agrégées ; session et allowlist | Supabase Auth, puis lecture serveur pour l’utilisateur autorisé |
+| Dashboard | URL publiées, vues, entrées, contacts agrégés et requêtes Google ; session et allowlist | Supabase Auth, puis lecture serveur pour l’utilisateur autorisé |
 
 Un identifiant aléatoire ou une IP hachée ne démontre pas l’anonymat. `localStorage._ckd_aid` n’a pas d’expiration propre ; la rétention serveur ne l’expire pas. L’absence de cookies ne suffit pas à établir une exemption de consentement. Les finalités, informations publiées, accès et durées doivent être évalués ensemble ; voir les [conditions CNIL](https://www.cnil.fr/fr/cookies-solutions-pour-les-outils-de-mesure-daudience).
 
@@ -48,7 +48,7 @@ Modèles sans valeurs réelles : [.env.example](.env.example), [dashboard/.env.l
 - **Formulaires.** Secret dans l’URL, identifiant stable obligatoire et constructeur d’événement filtré. v17 répond 200 après insertion ou doublon `23505`, 503 sur erreur DB/réseau. Aucun nom, email, téléphone, texte libre ou message DB brut dans les logs/alertes. L’idempotence permet la reprise sans prouver que Wix l’exécutera.
 - **Rapprochement Wix.** Comptes confirmés agrégés par jour Paris, sans contenu personnel dans les sorties. Écart ou API inaccessible déclenche un échec ; aucune réimportation automatique.
 - **Postgres.** RLS sur les tables métier, vues `security_invoker`, fonctions métier avec `REVOKE` pour `PUBLIC`, `anon`, `authenticated`, puis droits explicites nécessaires. `alert_rule_exposure()` et `check_prod_drift.py` contrôlent l’exposition. `REVOKE FROM PUBLIC` seul ne couvre pas les droits explicites hérités des anciens déploiements.
-- **Dashboard.** Magic-link avec `shouldCreateUser: false`, allowlist et validation des destinations de callback. Après `requireUser`, le lecteur `server-only` appelle `page_view_counts` avec `SUPABASE_SECRET_KEY`. Cette clé reste côté serveur ; le navigateur reçoit les URL et comptes agrégés. La fonction est réservée à `service_role` : l’authentification ne donne pas d’accès direct aux tables métier ni à cette RPC.
+- **Dashboard.** Magic-link avec `shouldCreateUser: false`, allowlist et validation des destinations de callback. Après `requireUser`, les lecteurs `server-only` appellent `page_view_counts` et, à l’ouverture d’un détail, `page_query_counts` avec `SUPABASE_SECRET_KEY`. Le chargement Google vérifie lui aussi l’accès et le chemin demandé. La clé reste côté serveur ; le navigateur reçoit des mesures agrégées, jamais les événements, identifiants de visite ou contenus de formulaire. Les deux fonctions sont réservées à `service_role` : l’authentification ne donne pas d’accès direct aux tables métier ni à ces RPC.
 - **CI.** `cooked_ci_ro` reste un rôle de lecture technique ; il n’a pas vocation à lire les payloads d’événements ni à écrire. Les privilèges sont vérifiés avec le catalogue, pas déduits de son nom.
 
 ## Règles de contribution

@@ -9,12 +9,15 @@ async function applyCountingVersions(db) {
   await db.exec(definition.replace('FUNCTION public.page_view_counts(',
     'FUNCTION public.page_view_counts_before_grouping('));
   await applyMigration(db, '_page_view_counts_group_paths.sql');
+  await applyMigration(db, '_editorial_metrics_readers.sql');
 }
 
 async function compareCounts(db, days = 90) {
   const {rows: [{result, before}]} = await db.query(`SELECT
     page_view_counts($1) AS result, page_view_counts_before_grouping($1) AS before`, [days]);
-  assert.deepEqual(result, before, 'grouping paths preserves the complete JSON result for ' + days + ' days');
+  const legacy = Object.fromEntries(Object.keys(before).map(key => [key, result[key]]));
+  legacy.pages = result.pages.map(({path,page_type,category,views}) => ({path,page_type,category,views}));
+  assert.deepEqual(legacy, before, 'the extended reader preserves every original field for ' + days + ' days');
   return result;
 }
 
@@ -38,6 +41,9 @@ try {
   assert.deepEqual(await counts(), {
     period_start: '2026-08-06', period_end: '2026-11-03', expected_days: 90,
     observed_days: 0, inventory_checked_at: null, pages: [],
+    unattributed_phone_events: 0, unattributed_form_events: 0,
+    previous: {period_start: '2026-05-08', period_end: '2026-08-05', observed_days: 0,
+      unattributed_phone_events: 0, unattributed_form_events: 0},
   }, 'an empty inventory stays explicit, with no invented page');
   assert.deepEqual((await db.query('SELECT page_view_counts() AS result')).rows[0].result,
     await counts(90), 'omitting the SQL parameter selects 90 days');

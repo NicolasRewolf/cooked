@@ -4,9 +4,9 @@
 
 ## Périmètre produit
 
-Le dashboard se limite à une page privée avec toutes les URL publiées et leur nombre de vues, y compris zéro. Une vue est un événement humain `pageview` ; plusieurs affichages dans une même visite comptent plusieurs vues. Les périodes sont 30, 60 ou 90 jours Paris clos, avec 90 jours par défaut.
+Le dashboard reste une page privée avec toutes les URL publiées, y compris celles à zéro vue. L’extension autorisée ajoute les entrées, les visites ayant cliqué sur le numéro ou envoyé un formulaire éligible, leur union et son taux. Une vue reste un événement humain `pageview` ; plusieurs affichages dans une même visite comptent plusieurs vues. Les périodes sont 30, 60 ou 90 jours Paris clos, avec 90 jours par défaut, comparées à la période précédente de même durée. État de livraison : [CHANGELOG.md](CHANGELOG.md).
 
-Les filtres sont Toutes, Expertises (types `hub` et `expertise`), Articles (articles hors ressources) et Ressources et notions juridiques (articles de catégorie `ressource`). Articles et Ressources sont disjoints. Les visites, conversions, comparaisons et détails Google ne font pas partie de cette étape ; leur ajout nécessite une nouvelle demande produit.
+Les filtres sont Toutes, Expertises (types `hub` et `expertise`), Articles (articles hors ressources) et Ressources et notions juridiques (articles de catégorie `ressource`). Articles et Ressources sont disjoints. Le détail Google d’une page se charge à son ouverture : clics et positions des requêtes sur deux périodes, requêtes perdues incluses. Les ajouts autorisés réutilisent les sources existantes, sans nouveau stockage ni collecte.
 
 Nicolas décide de l’intérêt d’un sujet pour le cabinet et des actions éditoriales. Ne pas lui demander de renseigner cet intérêt dans Cooked, ajouter de score automatique, rétablir le CPI ou greffer une nouvelle intégration. Une page à fort volume et une page de niche à fort taux peuvent toutes deux être utiles.
 
@@ -43,11 +43,11 @@ Présenter les données observées, les calculs et les hypothèses séparément.
 - **Attribution prudente.** Aucun événement futur ni simple proximité temporelle ne crée de lien avec un formulaire. Les contacts sans amont connu restent dans le total site, explicitement non attribués.
 - **Contacts métier.** Clic téléphone et formulaire éligible seulement. Les candidatures « nous rejoindre » sont exclues. Le clic « prendre RDV » reste une intention ; lecture et engagement ne sont pas des contacts. Un clic téléphone ne prouve pas un appel réel, une soumission ne prouve pas une personne ni un dossier signé.
 - **Grain explicite.** Les événements, visites et personnes ne sont pas interchangeables. `page_visits` déduplique les visites ayant contacté ; téléphone et formulaire se recouvrent et ne s’additionnent pas pour obtenir l’union.
-- **Cohorte d’entrée.** Les taux par page portent sur les visites commencées sur cette page dans la période, avec actions observées avant sa clôture. Sans entrée, le taux est inconnu. Les nombres accompagnent les taux.
+- **Cohorte d’entrée.** Les taux par page portent sur les visites commencées sur cette page dans la période, avec actions observées avant sa clôture. Chaque période a sa propre cohorte : un contact survenu après la clôture précédente n’augmente pas son résultat. Sans entrée, le taux est inconnu. Les nombres accompagnent les taux.
 - **Zéro et couverture.** Une page publiée sans ligne de mesure devient zéro seulement si la couverture permet cette lecture. Un trou de collecte ou une période partielle reste explicite ; pas de delta présenté comme complet.
 - **Temps.** Jours clos Paris pour Cooked ; utiliser `paris_today()`, `paris_date()` et les helpers de bornes. Éviter les casts directs et `current_date` dans les nouveaux calculs. GSC conserve ses dates source ; ne pas les présenter comme des jours Paris parfaitement superposables.
 - **Affichage.** Dates en JJ/MM/AAAA, heures Paris, bornes visibles. ISO reste permis dans SQL, code et noms de fichiers. Une colonne `*_pct` vaut 0–100 ; `*_rate`, 0–1.
-- **Google.** Garder les deux grains page et requête × page distincts. Pondérer les positions par les impressions. Les requêtes masquées sont inconnues ; aucune attribution individuelle requête → formulaire n’est démontrée.
+- **Google.** Garder les deux grains page et requête × page distincts. Le détail se termine au dernier jour observé dans les deux grains, antérieur à aujourd’hui, en écartant les jours couverts par un dernier lot incomplet. L’historique antérieur au registre reste observable ; cette couverture ne certifie pas sa complétude. Les dates peuvent différer du tableau. Pondérer les positions par les impressions. Les requêtes masquées sont inconnues ; aucune attribution individuelle requête → formulaire n’est démontrée.
 - **Petits volumes.** Conserver les nombres et les limites. Une baisse de clics à position stable n’établit pas que l’article est mauvais ; une corrélation ne prouve pas la cause.
 
 Définitions détaillées : [CONTEXT.md](CONTEXT.md). Recette de lecture : [PLAYBOOK-analyse-seo.md](docs/PLAYBOOK-analyse-seo.md).

@@ -1,6 +1,6 @@
 # Analyser les pages et les requêtes
 
-Référence du **04/11/2026**. Cooked fournit les observations ; Nicolas décide de l’intérêt du sujet et de l’action éditoriale. Lire [CONTEXT.md](../CONTEXT.md) pour les grains et [SIMPLIFICATION.md](SIMPLIFICATION.md) pour le périmètre. Ce guide couvre les analyses du socle ; le dashboard courant affiche uniquement les URL et leurs vues.
+Référence du **04/11/2026**. Cooked fournit les observations ; Nicolas décide de l’intérêt du sujet et de l’action éditoriale. Lire [CONTEXT.md](../CONTEXT.md) pour les grains et [SIMPLIFICATION.md](SIMPLIFICATION.md) pour le périmètre. Le guide décrit les vues, entrées, contacts, comparaison et requêtes Google autorisés ; l’état de livraison de leur affichage est dans le [changelog](../CHANGELOG.md).
 
 ## Vérifier la période disponible
 
@@ -13,9 +13,11 @@ SELECT gsc_last_data_day();
 
 Lire les dates et l’état du dernier lot `gsc_ingest_batches`. Une alerte ancienne ne prouve pas une panne actuelle. Une santé correcte aujourd’hui ne démontre pas la couverture des mois précédents. Un trou de collecte signifie une mesure partielle, pas zéro visite.
 
-## Vues du tableau
+## Lecture du tableau
 
-`SELECT page_view_counts(90);` renvoie toutes les URL publiées et leur nombre de `pageview` humains sur les 90 derniers jours Paris clos. Les seules durées acceptées sont 30, 60 et 90. Plusieurs affichages dans une même visite comptent plusieurs vues. Examiner les bornes, les jours observés et la date de l’inventaire renvoyés avec les pages ; un zéro mesuré n’exclut pas une collecte partielle.
+`SELECT page_view_counts(90);` renvoie toutes les URL publiées, leurs vues, entrées, visites avec téléphone, formulaire, union et taux, ainsi que la période précédente dans `previous`. Les seules durées acceptées sont 30, 60 et 90 jours Paris clos. Plusieurs affichages dans une même visite comptent plusieurs vues. Examiner les bornes, les jours observés, les événements non attribués de chaque période et la date de l’inventaire ; un zéro mesuré n’exclut pas une collecte partielle.
+
+Lire ensemble volume et efficacité : les entrées indiquent ce qui attire, l’union des contacts ce qui aboutit à une action observée, le taux rapporte cette union aux entrées. Les petits dénominateurs rendent les taux instables. Une comparaison partielle ou fondée sur une période à zéro ne justifie pas un pourcentage présenté comme une évolution certaine.
 
 ## Pages publiées, visites et contacts
 
@@ -30,15 +32,17 @@ SELECT * FROM page_visits(paris_today()-180, paris_today()-91);
 
 Joindre à gauche le référentiel publié aux lignes `row_kind='page'`. La ligne `coverage` indique les jours avec au moins une page vue et les événements téléphone/formulaire non attribués. Cette couverture journalière ne prouve pas une disponibilité à chaque minute. N’afficher zéro que si la fenêtre permet cette lecture ; sinon indiquer inconnu ou partiel et éviter un delta trompeur.
 
-`visits` compte les visites ayant consulté la page ; `entries` celles commencées dessus. `phone_visits`, `form_visits` et `contact_visits` portent sur ces mêmes entrées et les actions observées avant la clôture. L’union déduplique une visite qui a fait plusieurs actions. Présenter nombres et taux ensemble ; sans entrée, le taux est inconnu.
+`page_visits` reste la référence de contre-vérification sur chacune des fenêtres. `visits` compte les visites ayant consulté la page ; `entries` celles commencées dessus. `phone_visits`, `form_visits` et `contact_visits` portent sur ces mêmes entrées et les actions observées avant la clôture. L’union déduplique une visite qui a fait plusieurs actions. Un contact postérieur à la clôture précédente n’augmente pas cette cohorte. Présenter nombres et taux ensemble ; sans entrée, le taux est inconnu.
 
 Un clic téléphone ne prouve pas un appel abouti ; une soumission ne prouve pas un prospect unique. Les candidatures sont exclues. Les contacts sans amont certain restent comptés séparément, sans entrée inventée. `cooked_visit_events` fournit le détail événementiel nécessaire à une contre-vérification ; ne pas additionner ses événements comme des visites distinctes.
 
 ## Requêtes Google d’une page
 
+`SELECT page_query_counts('/chemin-de-la-page', 90);` fournit les deux fenêtres d’une page, chargées à son ouverture. Leur fin est le dernier jour commun observé dans les deux sources, en excluant les jours couverts par un dernier lot incomplet. L’historique pré-registre reste disponible. La couverture est celle du site, pas celle de la page, et ne certifie pas toute la complétude historique. Les requêtes présentes dans une seule fenêtre restent visibles, notamment celles ayant perdu tous leurs clics observés. Sans jour commun disponible, les dates nulles et la liste vide ne signifient pas zéro trafic.
+
 Les totaux de page viennent de `gsc_path_daily`, les requêtes révélées de `gsc_query_page_daily`. Google masque une partie des requêtes : leur somme ne reconstitue pas tous les clics et ne permet pas d’attribuer individuellement une soumission à une requête.
 
-Comparer deux fenêtres de même durée, bornées au dernier jour Google complet. Additionner les clics et impressions ; calculer la position par `sum(position * impressions) / sum(impressions)`, avec dénominateur nul traité comme inconnu. Ne pas faire une moyenne simple des moyennes quotidiennes.
+Comparer deux fenêtres de même durée, bornées au dernier jour Google commun disponible. Additionner les clics et impressions ; calculer la position par `sum(position * impressions) / sum(impressions)`, avec dénominateur nul traité comme inconnu. Ne pas faire une moyenne simple des moyennes quotidiennes.
 
 Une requête absente d’une fenêtre peut être masquée ou sans observation. Une baisse de clics à position stable invite à regarder la demande et la page de résultats ; une baisse de position invite à examiner la page et ses concurrents. Ces indices n’établissent pas seuls une cause.
 

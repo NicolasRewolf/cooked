@@ -19,7 +19,7 @@ make check
 
 Python 3.12 en CI, Node 22 et Deno 2. `make deps` installe le paquet avec ses outils de développement ; le module maths n’est plus une dépendance. `make check` n’a pas besoin de secrets de production.
 
-Les tests couvrent les imports GSC à deux grains, l’inventaire Wix, le rapprochement agrégé des formulaires, le stockage, les scénarios SQL PGlite, le tracker, les helpers Edge et le dashboard : authentification, lecture des vues et filtres. Les anciens lecteurs RPC/dashboard et leurs contrats ont été retirés ; `page_view_counts` porte le seul nouveau comptage affiché.
+Les tests couvrent les imports GSC à deux grains, l’inventaire Wix, le rapprochement agrégé des formulaires, le stockage, les scénarios SQL PGlite, le tracker, les helpers Edge et le dashboard : authentification, lecteurs éditoriaux, filtres et détail Google à la demande. `page_view_counts` conserve les vues et ajoute les cohortes de contacts sur deux périodes, contre-vérifiées avec `page_visits` ; `page_query_counts` vérifie couverture commune, requêtes perdues et positions pondérées. Les anciens lecteurs et contrats abandonnés restent retirés.
 
 ```bash
 # Réception tracker : HTTP, lots, filtrage, horodatage et résultat de l’écriture.
@@ -43,7 +43,7 @@ Les gardes SQL comparent le diff à sa référence Git ; une référence absente
 | `supabase/functions/` | Réception tracker et formulaires, helpers Deno |
 | `wix/` | Tracker, proxy Velo et champs d’attribution Forms |
 | `src/cooked/`, `scripts/` | GSC, inventaire Wix, rapprochement Forms et contrôles |
-| `dashboard/` | Tableau privé des URL publiées et vues, avec filtres de période/type |
+| `dashboard/` | Tableau privé des URL, vues, entrées, contacts, comparaison et requêtes Google à la demande |
 | `tests/` | Régressions Python, tracker et PostgreSQL embarqué |
 | `contracts/` | Vecteurs partagés et métadonnées contrôlées |
 | `docs/` | Guides du socle et décisions communes (ADR) |
@@ -58,7 +58,7 @@ Les contrats actifs portent notamment sur les chemins canoniques (`canonical_pat
 | `canonical-path-contract` | Chemins identiques en SQL, Edge et Python |
 | `python-ingest-contract` | GSC, stockage et contrôles Wix |
 | `edge-shared-helpers` / `tracker-test` | Réception et événements navigateur |
-| `dashboard-contract` | Session, allowlist, magic-link, redirections, lecteur des vues et filtres |
+| `dashboard-contract` | Session, allowlist, magic-link, redirections, lecteurs éditoriaux, filtres et détail Google |
 | `prod-drift` / `rpcs-regenerate` | Catalogue, migrations, accès et miroir SQL |
 | `docs-check` | Documents requis, versions, compteurs, liens locaux et index |
 

@@ -4,13 +4,15 @@ Référence du **04/11/2026**. Le périmètre retenu est décrit dans [SIMPLIFIC
 
 ## Étape produit retenue
 
-Une seule page privée liste toutes les URL publiées avec leur nombre de vues, y compris zéro. Une vue est un événement humain `pageview` ; les affichages répétés comptent plusieurs fois. La période est de 30, 60 ou 90 jours Paris clos, avec 90 jours par défaut.
+Une seule page privée liste toutes les URL publiées avec leurs vues, y compris zéro. L’extension autorisée ajoute les entrées, contacts observés par téléphone/formulaire, leur union et son taux, la comparaison avec la période précédente et le détail Google d’une page. Ses lecteurs SQL sont déployés ; les vérifications de l’implémentation sont suivies dans le [changelog](../CHANGELOG.md).
+
+Une vue reste un événement humain `pageview` ; les affichages répétés comptent plusieurs fois. La période est de 30, 60 ou 90 jours Paris clos, avec 90 jours par défaut, comparée à une fenêtre précédente de même durée. Le détail Google se charge à la demande, avec ses propres dates et sa couverture.
 
 Les filtres sont Toutes, Expertises (pages et hubs d’expertise), Articles (hors ressources) et Ressources et notions juridiques. Articles et Ressources sont disjoints ; les autres pages restent dans Toutes. Une période incomplète reste signalée.
 
 L’intérêt d’un sujet pour le cabinet reste jugé par Nicolas. Le tableau lit les sources existantes sans nouveau stockage ni recalcul planifié.
 
-Les idées de visites, d’entrées, de conversions, de comparaison et de détail Google restent hors de cette étape. Leur ajout dépend d’une nouvelle demande de Nicolas. Les anciens scores et intégrations retirés ne font pas partie de la suite implicite.
+Les contacts restent des actions observées : aucun appel abouti, prospect qualifié, dossier signé ou revenu n’est déduit des clics et formulaires. Les anciens scores, intégrations retirées et analyses de lecture ne font pas partie de la suite implicite. Tout ajout au-delà du périmètre autorisé demande une nouvelle décision de Nicolas.
 
 ## Exploitation courante
 

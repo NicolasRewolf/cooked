@@ -977,15 +977,19 @@ CREATE OR REPLACE FUNCTION public.cooked_visit_events(p_start date, p_end date)
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
  SET jit TO 'off'
+ SET work_mem TO '32MB'
 AS $function$
 BEGIN
   IF p_start IS NULL OR p_end IS NULL OR p_start>p_end OR p_end>=public.paris_today() THEN
     RAISE EXCEPTION 'Expected completed Paris days with start <= end' USING ERRCODE='22023';
   END IF;
   RETURN QUERY
-  WITH raw AS MATERIALIZED (
-    SELECT e.id,e.name,e.occurred_at AS t,CASE WHEN e.name IN ('pageview','cta_phone_click','form_submit') AND nullif(e.path,'') IS NOT NULL THEN public.canonical_path(e.path) END AS path,
-      e.anonymous_id,CASE WHEN e.name='pageview' THEN e.device_type END AS device_type,CASE WHEN e.name='form_submit' THEN e.props->>'objet_de_ma_demande' END AS objet,
+  WITH raw_paths AS MATERIALIZED (
+    SELECT e.id,e.name,e.occurred_at AS t,
+      CASE WHEN e.name IN ('pageview','cta_phone_click','form_submit') AND nullif(e.path,'') IS NOT NULL THEN e.path END AS raw_path,
+      CASE WHEN e.name IN ('pageview','cta_phone_click') THEN e.anonymous_id END AS anonymous_id,
+      CASE WHEN e.name='pageview' THEN e.device_type END AS device_type,
+      CASE WHEN e.name='form_submit' THEN e.props->>'objet_de_ma_demande' END AS objet,
       e.name='cta_phone_click' OR (e.name='form_submit' AND public.form_submit_counts_as_macro(e.props)) AS macro,
       CASE WHEN e.name='pageview' THEN e.referrer_hostname END AS referrer_hostname,
       CASE WHEN e.name='pageview' THEN e.utm_source END AS utm_source,
@@ -995,59 +999,77 @@ BEGIN
       CASE WHEN e.name='form_submit' THEN nullif(e.props->>'cooked_aid','') ELSE nullif(e.anonymous_id,'') END AS aid
     FROM public.events_human e
     WHERE e.occurred_at<public.cooked_paris_ts_end_exclusive(p_end)
+  ), paths AS MATERIALIZED (
+    SELECT p.raw_path,public.canonical_path(p.raw_path) AS path
+    FROM (SELECT DISTINCT r.raw_path FROM raw_paths r WHERE r.raw_path IS NOT NULL) p
   ), keyed AS (
-    SELECT r.*,CASE WHEN r.name='form_submit' AND s.visitor_key IS NOT NULL AND a.visitor_key IS NOT NULL
-      AND s.visitor_key<>a.visitor_key THEN 'event:'||r.id ELSE coalesce(s.visitor_key,a.visitor_key,
-      CASE WHEN r.sid NOT LIKE 'webhook-%' THEN 'sid:'||r.sid END,
-      CASE WHEN r.aid !~ '^[0-9a-f]{32}$' AND r.aid NOT LIKE 'webhook-%' THEN 'aid:'||r.aid END,'event:'||r.id) END AS vk
-    FROM raw r
+    -- Les tris de segmentation n'emportent ni URL, ni campagne, ni formulaire.
+    SELECT r.id,r.name,r.t,r.raw_path,
+      CASE WHEN r.name='form_submit' AND s.visitor_key IS NOT NULL AND a.visitor_key IS NOT NULL
+        AND s.visitor_key<>a.visitor_key THEN 'event:'||r.id ELSE coalesce(s.visitor_key,a.visitor_key,
+        CASE WHEN r.sid NOT LIKE 'webhook-%' THEN 'sid:'||r.sid END,
+        CASE WHEN r.aid !~ '^[0-9a-f]{32}$' AND r.aid NOT LIKE 'webhook-%' THEN 'aid:'||r.aid END,'event:'||r.id) END AS vk
+    FROM raw_paths r
     LEFT JOIN public.identity_stitch s ON s.kind='sid' AND s.key=r.sid AND r.sid NOT LIKE 'webhook-%'
     LEFT JOIN public.identity_stitch a ON a.kind='aid' AND a.key=r.aid
       AND r.aid !~ '^[0-9a-f]{32}$' AND r.aid NOT LIKE 'webhook-%'
     WHERE r.name IN ('pageview','engagement_tick','page_exit','scroll_depth','click_internal',
       'click_outbound','cta_anchor_click','cta_booking_click','cta_phone_click','form_submit')
-  ), wanted AS (
-    SELECT DISTINCT k.vk FROM keyed k WHERE k.t>=public.cooked_paris_ts_start(p_start)
-  ), scoped AS (
-    -- On conserve tout l'amont des navigateurs concernés, pas une marge arbitraire.
-    SELECT k.* FROM keyed k JOIN wanted w ON w.vk=k.vk
   ), gaps AS (
-    SELECT k.*,k.t-lag(k.t) OVER(PARTITION BY k.vk ORDER BY k.t,(k.name='pageview') DESC,k.id) AS gap FROM scoped k
+    SELECT k.*,k.t-lag(k.t) OVER(PARTITION BY k.vk ORDER BY k.t,(k.name='pageview') DESC,k.id) AS gap
+    FROM keyed k
   ), segmented AS (
-    SELECT g.*,sum((g.gap IS NULL OR g.gap>interval '30 minutes')::int)
-      OVER(PARTITION BY g.vk ORDER BY g.t,(g.name='pageview') DESC,g.id) AS seq FROM gaps g
-  ), relevant AS (
-    SELECT s.* FROM segmented s WHERE (s.name='pageview' AND s.path IS NOT NULL) OR s.name IN ('cta_phone_click','form_submit')
-  ), enriched AS (
-    SELECT r.*,
-      first_value(r.id) OVER entry AS first_id,
-      first_value(r.t) OVER entry AS first_time,
-      first_value(r.name) OVER entry AS first_name,
-      first_value(r.path) OVER entry AS first_path,
-      first_value(r.referrer_hostname) OVER entry AS first_ref,
-      first_value(r.utm_source) OVER entry AS first_source,
-      first_value(r.utm_medium) OVER entry AS first_medium,
-      first_value(r.url) OVER entry AS first_url,
-      first_value(r.device_type) OVER entry AS first_device,
-      array_agg(r.path) FILTER(WHERE r.name='pageview' AND r.path IS NOT NULL) OVER (
-        PARTITION BY r.vk,r.seq ORDER BY r.t,(r.name='pageview') DESC,r.id) AS paths
-    FROM relevant r WINDOW entry AS (PARTITION BY r.vk,r.seq
-      ORDER BY (r.name='pageview') DESC,r.t,r.id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+    SELECT g.id,g.name,g.t,g.raw_path,g.vk,
+      sum((g.gap IS NULL OR g.gap>interval '30 minutes')::int)
+        OVER(PARTITION BY g.vk ORDER BY g.t,(g.name='pageview') DESC,g.id) AS seq
+    FROM gaps g
+  ), relevant AS MATERIALIZED (
+    SELECT s.id,s.name,s.t,s.vk,s.seq,p.path
+    FROM segmented s LEFT JOIN paths p ON p.raw_path=s.raw_path
+    WHERE (s.name='pageview' AND p.path IS NOT NULL) OR s.name IN ('cta_phone_click','form_submit')
+  ), first_pages AS (
+    SELECT DISTINCT ON (r.vk,r.seq) r.vk,r.seq,r.id,r.t,r.path
+    FROM relevant r WHERE r.name='pageview'
+    ORDER BY r.vk,r.seq,r.t,r.id
+  ), entry_inputs AS MATERIALIZED (
+    SELECT p.vk,p.seq,p.id,p.t,p.path,r.device_type,
+      jsonb_build_array(r.referrer_hostname,r.utm_source,r.utm_medium,r.url) AS channel_key
+    FROM first_pages p JOIN raw_paths r ON r.id=p.id
+  ), channels AS MATERIALIZED (
+    -- Plusieurs visites ont les mêmes sources : classifier chaque tuple une fois.
+    -- Le tableau JSON garde les quatre positions et distingue NULL de la chaîne vide.
+    SELECT c.channel_key,
+      public.classify_channel(c.channel_key->>0,c.channel_key->>1,c.channel_key->>2,
+        'www.jplouton-avocat.fr',c.channel_key->>3) AS channel
+    FROM (SELECT DISTINCT i.channel_key FROM entry_inputs i) c
+  ), entries AS MATERIALIZED (
+    SELECT i.vk,i.seq,i.id,i.t,i.path,i.device_type,c.channel
+    FROM entry_inputs i JOIN channels c ON c.channel_key=i.channel_key
+  ), contact_paths AS (
+    -- Jointure des seuls contacts rendus aux pages déjà vues de leur visite.
+    -- Le premier passage conserve l'ordre exact des chemins dédupliqués.
+    SELECT DISTINCT ON (c.id,p.path) c.id,p.path,p.t,p.id AS page_id
+    FROM relevant c JOIN relevant p ON p.vk=c.vk AND p.seq=c.seq
+      AND p.name='pageview' AND p.t<=c.t
+    WHERE c.name IN ('cta_phone_click','form_submit')
+      AND c.t>=public.cooked_paris_ts_start(p_start)
+    ORDER BY c.id,p.path,p.t,p.id
+  ), journeys AS MATERIALIZED (
+    SELECT c.id,array_agg(c.path ORDER BY c.t,c.page_id) AS paths
+    FROM contact_paths c GROUP BY c.id
   )
   SELECT e.id,e.name,e.t,e.path,
-    CASE WHEN e.name='form_submit' THEN e.aid ELSE e.anonymous_id END,
-    e.objet,e.macro,
-    CASE WHEN e.paths IS NULL THEN 'unresolved'
+    CASE WHEN e.name='form_submit' THEN r.aid ELSE r.anonymous_id END,
+    r.objet,r.macro,
+    CASE WHEN entry.id IS NULL THEN 'unresolved'
       WHEN e.name='form_submit' THEN 'hidden_field' ELSE 'direct' END,
-    CASE WHEN e.paths IS NOT NULL THEN e.first_id END,
-    CASE WHEN e.paths IS NOT NULL THEN e.first_time END,
-    CASE WHEN e.paths IS NOT NULL THEN e.first_path END,
-    CASE WHEN e.paths IS NOT NULL THEN public.classify_channel(e.first_ref,e.first_source,e.first_medium,
-      'www.jplouton-avocat.fr',e.first_url) END,
-    CASE WHEN e.name<>'pageview' THEN
-      ARRAY(SELECT x.p FROM unnest(e.paths) WITH ORDINALITY x(p,n) GROUP BY x.p ORDER BY min(x.n)) END,
-    CASE WHEN e.paths IS NOT NULL THEN e.first_device END
-  FROM enriched e
+    entry.id,entry.t,entry.path,entry.channel,
+    CASE WHEN e.name<>'pageview' THEN coalesce(j.paths,ARRAY[]::text[]) END,
+    entry.device_type
+  FROM relevant e
+  JOIN raw_paths r ON r.id=e.id
+  LEFT JOIN entries entry ON entry.vk=e.vk AND entry.seq=e.seq AND entry.t<=e.t
+  LEFT JOIN journeys j ON j.id=e.id
   WHERE e.t>=public.cooked_paris_ts_start(p_start)
   ORDER BY e.t,e.id;
 END $function$
@@ -1275,6 +1297,82 @@ AS $function$
 $function$
 
 
+-- ═══ public.page_query_counts(p_path text, p_days integer) ═══
+CREATE OR REPLACE FUNCTION public.page_query_counts(p_path text, p_days integer DEFAULT 90)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+ SET statement_timeout TO '30s'
+AS $function$
+DECLARE
+  v_path text;
+  v_end date;
+  v_start date;
+  v_previous_start date;
+  v_complete_days date[];
+  v_result jsonb;
+BEGIN
+  IF p_days IS NULL OR p_days NOT IN (30, 60, 90) THEN
+    RAISE EXCEPTION 'Expected 30, 60 or 90 completed Google days' USING ERRCODE = '22023';
+  END IF;
+  IF p_path IS NULL OR btrim(p_path) = '' THEN
+    RAISE EXCEPTION 'Expected a page path' USING ERRCODE = '22023';
+  END IF;
+  v_path := public.canonical_path(p_path);
+
+  -- Couverture observée dans les deux grains, y compris avant le registre des lots.
+  -- Lorsqu'un lot couvre le jour, son dernier état doit attester les deux grains :
+  -- les imports écrivent en place et un lot incomplet peut avoir écrasé les données.
+  SELECT array_agg(d.day ORDER BY d.day), max(d.day)
+  INTO v_complete_days, v_end
+  FROM (SELECT DISTINCT g.day FROM public.gsc_path_daily g
+    WHERE g.day < public.paris_today()) d
+  WHERE EXISTS (SELECT 1 FROM public.gsc_query_page_daily q WHERE q.day = d.day)
+    AND coalesce((SELECT coalesce(b.status = 'completed'
+      AND b.row_counts ?& ARRAY['gsc_path_daily', 'gsc_query_page_daily'], false)
+      FROM public.gsc_ingest_batches b
+      WHERE d.day BETWEEN b.day_start AND b.day_end
+      ORDER BY b.batch_no DESC LIMIT 1), true);
+
+  v_start := v_end - p_days + 1;
+  v_previous_start := v_start - p_days;
+  WITH queries AS (
+    SELECT g.query,
+      coalesce(sum(g.clicks) FILTER (WHERE g.day >= v_start), 0)::bigint AS clicks,
+      coalesce(sum(g.clicks) FILTER (WHERE g.day < v_start), 0)::bigint AS previous_clicks,
+      round(sum(g.position * g.impressions) FILTER (WHERE g.day >= v_start)
+        / nullif(sum(g.impressions) FILTER (WHERE g.day >= v_start), 0), 2) AS position_avg,
+      round(sum(g.position * g.impressions) FILTER (WHERE g.day < v_start)
+        / nullif(sum(g.impressions) FILTER (WHERE g.day < v_start), 0), 2) AS previous_position_avg
+    FROM public.gsc_query_page_daily g
+    WHERE g.path = v_path AND g.day BETWEEN v_previous_start AND v_end
+      AND g.day = ANY(v_complete_days)
+    GROUP BY g.query
+  )
+  SELECT jsonb_build_object(
+    'path', v_path,
+    'period_start', v_start,
+    'period_end', v_end,
+    'expected_days', p_days,
+    'observed_days', (SELECT count(*)::integer FROM unnest(v_complete_days) d(day)
+      WHERE d.day BETWEEN v_start AND v_end),
+    'previous', jsonb_build_object(
+      'period_start', v_previous_start,
+      'period_end', v_start - 1,
+      'observed_days', (SELECT count(*)::integer FROM unnest(v_complete_days) d(day)
+        WHERE d.day BETWEEN v_previous_start AND v_start - 1)
+    ),
+    'queries', coalesce(jsonb_agg(jsonb_build_object(
+      'query', q.query, 'clicks', q.clicks, 'previous_clicks', q.previous_clicks,
+      'position_avg', q.position_avg, 'previous_position_avg', q.previous_position_avg
+    ) ORDER BY abs(q.clicks - q.previous_clicks) DESC, q.clicks DESC, q.query), '[]'::jsonb)
+  ) INTO v_result FROM queries q;
+  RETURN v_result;
+END;
+$function$
+
+
 -- ═══ public.page_taxonomy_sync_wix(p_posts jsonb, p_dry_run boolean) ═══
 CREATE OR REPLACE FUNCTION public.page_taxonomy_sync_wix(p_posts jsonb, p_dry_run boolean DEFAULT false)
  RETURNS TABLE(inserted integer, updated integer, unpublished integer, inserted_paths text[], updated_paths text[])
@@ -1407,42 +1505,108 @@ AS $function$
 DECLARE
   v_today date := public.paris_today();
   v_start date;
+  v_previous_start date;
+  v_start_ts timestamptz;
+  v_previous_start_ts timestamptz;
   v_result jsonb;
 BEGIN
   IF p_days IS NULL OR p_days NOT IN (30, 60, 90) THEN
     RAISE EXCEPTION 'Expected 30, 60 or 90 completed Paris days' USING ERRCODE = '22023';
   END IF;
   v_start := v_today - p_days;
+  v_previous_start := v_start - p_days;
+  v_start_ts := public.cooked_paris_ts_start(v_start);
+  v_previous_start_ts := public.cooked_paris_ts_start(v_previous_start);
 
   WITH pageviews AS MATERIALIZED (
+    -- Les vues restent indépendantes de la reconstruction des visites : les
+    -- chemins absents contribuent à la couverture, jamais à une page inventée.
     SELECT e.path, public.paris_date(e.occurred_at) AS day
     FROM public.events_human e
     WHERE e.name = 'pageview'
-      AND e.occurred_at >= public.cooked_paris_ts_start(v_start)
+      AND e.occurred_at >= v_previous_start_ts
       AND e.occurred_at < public.cooked_paris_ts_start(v_today)
   ), raw_counts AS (
-    SELECT p.path, count(*) AS views
+    SELECT p.path, count(*) FILTER (WHERE p.day >= v_start) AS views,
+      count(*) FILTER (WHERE p.day < v_start) AS previous_views
     FROM pageviews p WHERE nullif(p.path, '') IS NOT NULL
     GROUP BY p.path
   ), counts AS (
-    SELECT public.canonical_path(r.path) AS path, sum(r.views)::bigint AS views
+    SELECT public.canonical_path(r.path) AS path, sum(r.views)::bigint AS views,
+      sum(r.previous_views)::bigint AS previous_views
     FROM raw_counts r
     GROUP BY public.canonical_path(r.path)
+  ), visit_events AS MATERIALIZED (
+    SELECT event_id, event_name, occurred_at, path, counts_as_macro, visit_id, entry_at, entry_path
+    FROM public.cooked_visit_events(v_previous_start, v_today - 1)
+  ), entries AS (
+    SELECT e.path,
+      count(DISTINCT e.visit_id) FILTER (WHERE e.occurred_at >= v_start_ts) AS entries,
+      count(DISTINCT e.visit_id) FILTER (WHERE e.occurred_at < v_start_ts) AS previous_entries
+    FROM visit_events e WHERE e.event_name = 'pageview' AND e.event_id = e.visit_id
+    GROUP BY e.path
+  ), cohort_contacts AS (
+    SELECT e.entry_path, e.visit_id, e.event_name, e.entry_at >= v_start_ts AS current_period
+    FROM visit_events e
+    WHERE e.counts_as_macro AND e.entry_at >= v_previous_start_ts
+      -- Entrée et action doivent appartenir à la même période. Une entrée
+      -- précédente suivie d'un contact actuel ne convertit aucune des deux cohortes.
+      AND (e.entry_at >= v_start_ts) = (e.occurred_at >= v_start_ts)
+  ), contacts AS (
+    SELECT e.entry_path AS path,
+      count(DISTINCT e.visit_id) FILTER (WHERE e.current_period AND e.event_name = 'cta_phone_click') AS phone_visits,
+      count(DISTINCT e.visit_id) FILTER (WHERE e.current_period AND e.event_name = 'form_submit') AS form_visits,
+      count(DISTINCT e.visit_id) FILTER (WHERE e.current_period) AS contact_visits,
+      count(DISTINCT e.visit_id) FILTER (WHERE NOT e.current_period AND e.event_name = 'cta_phone_click') AS previous_phone_visits,
+      count(DISTINCT e.visit_id) FILTER (WHERE NOT e.current_period AND e.event_name = 'form_submit') AS previous_form_visits,
+      count(DISTINCT e.visit_id) FILTER (WHERE NOT e.current_period) AS previous_contact_visits
+    FROM cohort_contacts e GROUP BY e.entry_path
+  ), coverage AS (
+    SELECT count(*) FILTER (WHERE e.event_name = 'cta_phone_click' AND e.occurred_at >= v_start_ts) AS phone,
+      count(*) FILTER (WHERE e.event_name = 'form_submit' AND e.occurred_at >= v_start_ts) AS form,
+      count(*) FILTER (WHERE e.event_name = 'cta_phone_click' AND e.occurred_at < v_start_ts) AS previous_phone,
+      count(*) FILTER (WHERE e.event_name = 'form_submit' AND e.occurred_at < v_start_ts) AS previous_form
+    FROM visit_events e WHERE e.visit_id IS NULL AND e.counts_as_macro
   )
   SELECT jsonb_build_object(
     'period_start', v_start,
     'period_end', v_today - 1,
     'expected_days', p_days,
-    'observed_days', (SELECT count(DISTINCT p.day)::integer FROM pageviews p),
+    'observed_days', (SELECT count(DISTINCT p.day)::integer FROM pageviews p WHERE p.day >= v_start),
     'inventory_checked_at', min(t.publication_checked_at),
+    'unattributed_phone_events', (SELECT c.phone FROM coverage c),
+    'unattributed_form_events', (SELECT c.form FROM coverage c),
+    'previous', jsonb_build_object(
+      'period_start', v_previous_start,
+      'period_end', v_start - 1,
+      'observed_days', (SELECT count(DISTINCT p.day)::integer FROM pageviews p WHERE p.day < v_start),
+      'unattributed_phone_events', (SELECT c.previous_phone FROM coverage c),
+      'unattributed_form_events', (SELECT c.previous_form FROM coverage c)
+    ),
     'pages', coalesce(jsonb_agg(jsonb_build_object(
       'path', t.path,
       'page_type', public.cooked_page_type(t.path),
       'category', t.category,
-      'views', coalesce(c.views, 0)
+      'views', coalesce(c.views, 0),
+      'entries', coalesce(e.entries, 0),
+      'phone_visits', coalesce(k.phone_visits, 0),
+      'form_visits', coalesce(k.form_visits, 0),
+      'contact_visits', coalesce(k.contact_visits, 0),
+      'contact_rate_pct', round(100.0 * coalesce(k.contact_visits, 0) / nullif(e.entries, 0), 2),
+      'previous', jsonb_build_object(
+        'views', coalesce(c.previous_views, 0),
+        'entries', coalesce(e.previous_entries, 0),
+        'phone_visits', coalesce(k.previous_phone_visits, 0),
+        'form_visits', coalesce(k.previous_form_visits, 0),
+        'contact_visits', coalesce(k.previous_contact_visits, 0),
+        'contact_rate_pct', round(100.0 * coalesce(k.previous_contact_visits, 0) / nullif(e.previous_entries, 0), 2)
+      )
     ) ORDER BY coalesce(c.views, 0) DESC, t.path), '[]'::jsonb)
   ) INTO v_result
-  FROM public.page_taxonomy t LEFT JOIN counts c ON c.path = t.path
+  FROM public.page_taxonomy t
+  LEFT JOIN counts c ON c.path = t.path
+  LEFT JOIN entries e ON e.path = t.path
+  LEFT JOIN contacts k ON k.path = t.path
   WHERE t.is_published IS TRUE;
 
   RETURN v_result;
