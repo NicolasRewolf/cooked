@@ -27,13 +27,14 @@ const valid: PageViews = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(console, "error").mockImplementation(() => {});
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("SUPABASE_SECRET_KEY", "synthetic-server-key");
   mocks.requireUser.mockResolvedValue({ email: "allowed@example.test" });
   mocks.createClient.mockReturnValue({ rpc: mocks.rpc });
   mocks.rpc.mockResolvedValue({ data: valid, error: null });
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 describe("filtres du tableau", () => {
   it("ouvre toutes les pages sur 90 jours par défaut", () => {
@@ -109,9 +110,30 @@ describe("lecture serveur des vues", () => {
     await expect(getPageViews(30)).rejects.toThrow(/^Lecture des données indisponible$/);
   });
 
+  it("journalise uniquement RPC, SQLSTATE et statut pour identifier une annulation SQL", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, status: 500, error: {
+      code: "57014", message: "private-database-detail", details: "private-payload", hint: "private-hint",
+    } });
+    await expect(getPageViews(30)).rejects.toThrow(/^Lecture des données indisponible$/);
+    expect(console.error).toHaveBeenCalledExactlyOnceWith("cooked_rpc_failed", {
+      rpc: "page_view_counts", sqlstate: "57014", status: 500,
+    });
+  });
+
+  it("écarte les diagnostics hors format sans écrire les paramètres ni l’erreur brute", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, status: "private-status", error: { code: "private-code", message: "private-message" } });
+    await expect(getPageQueries("/post/private-path", 30)).rejects.toThrow(/^Lecture des données indisponible$/);
+    expect(console.error).toHaveBeenCalledExactlyOnceWith("cooked_rpc_failed", {
+      rpc: "page_query_counts", sqlstate: null, status: null,
+    });
+  });
+
   it("un rejet réseau reste une erreur de lecture", async () => {
     mocks.rpc.mockRejectedValue(new Error("private-network-detail"));
     await expect(getPageViews(30)).rejects.toThrow(/^Lecture des données indisponible$/);
+    expect(console.error).toHaveBeenCalledExactlyOnceWith("cooked_rpc_failed", {
+      rpc: "page_view_counts", sqlstate: null, status: null,
+    });
   });
 
   it("refuse une réponse d’une autre période", async () => {

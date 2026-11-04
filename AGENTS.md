@@ -39,7 +39,7 @@ Lire les dates et le périmètre des résultats. Expliquer les incidents qui aff
 
 `contracts/canonical_path_vectors.json` vérifie les chemins SQL/Edge/Python ; `recruitment_objet_vectors.json` l’exclusion des candidatures ; `rpc_snapshot_meta.json` le miroir SQL. `doc_constants.json` porte les compteurs du catalogue et les versions, confrontés aux sources et à la production par la CI.
 
-Le catalogue vérifié en production compte **62 routines** publiques : 58 Cooked et quatre `unaccent`. `page_view_counts` lit les deux périodes du tableau ; `page_query_counts` lit les requêtes d’une seule page à son ouverture. Les anciens contrats ont été retirés avec leurs consommateurs.
+Le catalogue vérifié en production compte **61 routines** publiques : 57 Cooked et quatre `unaccent`. `page_view_counts` lit les deux périodes du tableau ; `page_query_counts` lit les requêtes d’une seule page à son ouverture. Les anciens contrats ont été retirés avec leurs consommateurs.
 
 ## Versions canoniques
 

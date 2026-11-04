@@ -101,7 +101,7 @@ CREATE OR REPLACE VIEW public.events_no_bots WITH (security_invoker=true) AS
            FROM bot_fingerprints b
           WHERE b.anonymous_id = e.anonymous_id));
 
--- SIGNATURES (62)
+-- SIGNATURES (61)
 -- ack_alerts(p_kinds text[]) -> integer
 -- alert_rule_contact_sans_amont() -> TABLE(kind text, severity text, detail text)
 -- alert_rule_cron_failed() -> TABLE(kind text, severity text, detail text)
@@ -119,7 +119,6 @@ CREATE OR REPLACE VIEW public.events_no_bots WITH (security_invoker=true) AS
 -- alert_rule_volume_floor() -> TABLE(kind text, severity text, detail text)
 -- alert_rule_warn_escalation() -> TABLE(kind text, severity text, detail text)
 -- canonical_path(p text) -> text
--- classify_channel(ref text, utm_source text, utm_medium text, self_host text, url text) -> text
 -- cooked_alerts_refresh() -> integer
 -- cooked_ci_cron_jobs() -> TABLE(jobname text, schedule text, active boolean)
 -- cooked_is_chrome_anchor(props jsonb) -> boolean
@@ -130,7 +129,7 @@ CREATE OR REPLACE VIEW public.events_no_bots WITH (security_invoker=true) AS
 -- cooked_paris_ts_end_exclusive(p_day date) -> timestamp with time zone
 -- cooked_paris_ts_start(p_day date) -> timestamp with time zone
 -- cooked_period_bounds(period_kind text, data_lens text) -> TABLE(period_kind_out text, label_fr text, n_start date, n_end date, prev_start date, prev_end date, day_count integer, paris_today date, gsc_last_day date, lag_days integer, data_lens_out text)
--- cooked_visit_events(p_start date, p_end date) -> TABLE(event_id uuid, event_name text, occurred_at timestamp with time zone, path text, anonymous_id text, objet text, counts_as_macro boolean, attribution_method text, visit_id uuid, entry_at timestamp with time zone, entry_path text, entry_channel text, journey text[], device_type text)
+-- cooked_visit_events(p_start date, p_end date) -> TABLE(event_id uuid, event_name text, occurred_at timestamp with time zone, path text, counts_as_macro boolean, visit_id uuid, entry_at timestamp with time zone, entry_path text)
 -- form_submission_counts_for_period(p_start date, p_end date) -> TABLE(day date, submissions bigint)
 -- form_submit_counts_as_macro(props jsonb) -> boolean
 -- gsc_ingest_begin(p_run_id uuid, p_start date, p_end date) -> uuid

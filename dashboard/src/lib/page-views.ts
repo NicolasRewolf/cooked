@@ -68,6 +68,15 @@ export const pageQueriesSchema = z.object({
 export type PageViews = z.infer<typeof pageViewsSchema>;
 export type PageQueries = z.infer<typeof pageQueriesSchema>;
 
+function reportRpcFailure(rpc: "page_view_counts" | "page_query_counts", code?: unknown, status?: unknown) {
+  console.error("cooked_rpc_failed", {
+    rpc,
+    sqlstate: typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? code : null,
+    status: typeof status === "number" && Number.isInteger(status)
+      && (status === 0 || (status >= 100 && status <= 599)) ? status : null,
+  });
+}
+
 async function readRpc(name: "page_view_counts" | "page_query_counts", params: { p_days: Period; p_path?: string }) {
   await requireUser();
   const secret = process.env.SUPABASE_SECRET_KEY;
@@ -79,9 +88,13 @@ async function readRpc(name: "page_view_counts" | "page_query_counts", params: {
   try {
     response = await supabase.rpc(name, params);
   } catch {
+    reportRpcFailure(name);
     throw new Error("Lecture des données indisponible");
   }
-  if (response.error) throw new Error("Lecture des données indisponible");
+  if (response.error) {
+    reportRpcFailure(name, response.error.code, response.status);
+    throw new Error("Lecture des données indisponible");
+  }
   return response.data;
 }
 

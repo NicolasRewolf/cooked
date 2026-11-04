@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026-11-04] — Annulation du chargement du tableau
+
+- Incident confirmé : annulations SQL `57014` de `page_view_counts` à la limite de 30 secondes ; le calcul de 20–28 secondes laissait trop peu de marge lors de requêtes rapprochées.
+- Le moteur de visites conserve uniquement les huit champs encore utilisés. Canaux, parcours détaillés et six sorties inutilisées sont retirés, ainsi que `classify_channel`. Les identités, fenêtres, filtres, entrées et contacts restent inchangés ; première page calculée une fois par visite.
+- Migration `20261104143216_compact_visit_reader.sql`, sans table, cache, index, cron ni relèvement du délai. Miroirs régénérés depuis la production : 61 routines publiques, dont 57 Cooked et quatre `unaccent`.
+- Le bouton « Réessayer » recharge réellement la page après un échec serveur, au lieu de réafficher la réponse RSC déjà en erreur. Le changement de période affiche son chargement et bloque les clics concurrents. Les liens partageables, historique et filtres locaux sont conservés. Les échecs RPC journalisent seulement un nom de lecteur, un code SQLSTATE et un statut bornés.
+- Parité production des huit champs sur 105 241 événements, tests de frontières de visite et 116 tests frontend. Les réponses complètes des trois périodes sont recoupées avec celles d’avant correction.
+
 ## [2026-11-04] — Mesures éditoriales et détail Google
 
 - Extension autorisée du tableau existant : entrées, visites avec clic téléphone ou formulaire éligible, union et taux ; comparaison aux 30, 60 ou 90 jours précédents. Les vues et les règles communes de comptage restent inchangées.
