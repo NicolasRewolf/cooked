@@ -28,11 +28,6 @@ try {
     [{path:'/post/start',visits:1,entries:1,contact_visits:1,contact_rate_pct:100}],
     'entry and contact denominators share the first completed day');
   assert.equal((await db.query("SELECT count(*)::int AS n FROM cooked_visit_events('2026-10-05','2026-11-01') WHERE path IN ('/post/before','/post/today')")).rows[0].n,0);
-  for(const id of ['gclid','gbraid','wbraid']){
-    const {rows:[r]}=await db.query("SELECT classify_channel('www.google.com','gmb',NULL,'jplouton-avocat.fr',$1) AS channel",
-      ['https://www.jplouton-avocat.fr/post/source?'+id+'=synthetic']);
-    assert.equal(r.channel,'paid','click id takes priority over GBP');
-  }
   // The autumn day lasts 25 hours; both 02:30 occurrences belong to one closed day.
   await db.exec(`TRUNCATE events;
     CREATE OR REPLACE FUNCTION public.paris_today() RETURNS date LANGUAGE sql STABLE AS $$ SELECT date '2026-10-26' $$;`);
@@ -42,5 +37,5 @@ try {
   await event('pageview','dst-outside','2026-10-26 00:00:00+01','/dst');
   assert.deepEqual((await db.query("SELECT sum(visits)::int AS n FROM page_visits('2026-10-25','2026-10-25') WHERE row_kind='page'")).rows,[{n:3}],
     'one closed Paris day contains both repeated hours and excludes the next midnight');
-  console.log('Analytics windows: closed days, visit counts, Ads precedence and autumn transition verified.');
+  console.log('Analytics windows: closed days, visit counts and autumn transition verified.');
 } finally { await db.close(); }

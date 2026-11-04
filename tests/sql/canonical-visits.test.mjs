@@ -1,15 +1,9 @@
 import assert from 'node:assert/strict';
-import {createDatabase,root,applyMigration} from './helpers.mjs';
+import {createDatabase,root} from './helpers.mjs';
 import fs from 'node:fs';
 
 const db=await createDatabase();
 try {
-  const original = fs.readFileSync(root+'/supabase/migrations/20261104065743_canonical_visits_and_identity.sql','utf8')
-    .match(/CREATE OR REPLACE FUNCTION public\.cooked_visit_events[\s\S]*?END \$\$;/)[0];
-  await db.exec(original.replace('FUNCTION public.cooked_visit_events(', 'FUNCTION public.visits_before_normalization('));
-  await applyMigration(db,'_visit_path_normalization.sql');
-  await applyMigration(db,'_visit_source_scan.sql');
-  await applyMigration(db,'_visit_lean_projection.sql');
   await db.exec("CREATE OR REPLACE FUNCTION public.paris_today() RETURNS date LANGUAGE sql STABLE AS $$SELECT date '2026-11-04'$$;");
   await db.exec('SET check_function_bodies=true;');
   for(const c of JSON.parse(fs.readFileSync(root+'/contracts/canonical_path_vectors.json','utf8')).path_cases) {
@@ -32,12 +26,15 @@ try {
   await event('engagement_tick','cross','2026-11-02T23:10:00Z','/post/épreuve');
   await event('cta_phone_click','cross','2026-11-02T23:20:00Z','/post/épreuve');
   await event('form_submit','webhook-cross','2026-11-02T23:22:00Z',null,{cooked_sid:'cross',cooked_aid:'cross-aid'});
-  const contacts=await rows(`SELECT visit_id,entry_path,entry_at::text,cardinality(journey) AS pages
+  const contacts=await rows(`SELECT visit_id,entry_path,entry_at::text
     FROM cooked_visit_events('2026-11-03','2026-11-03') WHERE counts_as_macro ORDER BY occurred_at`);
   assert.equal(contacts.length,2);
   assert.deepEqual(contacts.map(c=>c.visit_id),[entry,entry]);
   assert.deepEqual(contacts.map(c=>c.entry_path),['/post/épreuve','/post/épreuve']);
-  assert.equal(contacts[0].pages,1);
+  assert.equal(contacts[0].entry_at,contacts[1].entry_at);
+  const [contract]=await rows("SELECT * FROM cooked_visit_events('2026-11-03','2026-11-03') LIMIT 1");
+  assert.deepEqual(Object.keys(contract),['event_id','event_name','occurred_at','path',
+    'counts_as_macro','visit_id','entry_at','entry_path'],'only the eight fields used by the readers are returned');
   assert.deepEqual(await rows(`SELECT row_kind,path,entries::int,contact_visits::int FROM page_visits('2026-11-03','2026-11-03')`),
     [{row_kind:'coverage',path:null,entries:null,contact_visits:null}]);
   // Never create an entry in the later window because a continuation page is seen.
@@ -46,14 +43,16 @@ try {
     [{path:'/expertise',visits:1,entries:0,contact_visits:0}]);
 
   // Repeated actions and phone + form are one converted visit, never >100%.
-  await event('pageview','new','2026-11-03T11:00:00Z','/landing');
+  const newEntry=await event('pageview','new','2026-11-03T11:00:00Z','/landing');
   await event('cta_phone_click','new','2026-11-03T11:01:00Z','/landing');
   await event('cta_phone_click','new','2026-11-03T11:02:00Z','/landing');
   await event('form_submit','webhook-new','2026-11-03T11:03:00Z',null,{cooked_sid:'new'});
   await event('pageview','new','2026-11-03T11:04:00Z','/future');
-  const newContacts=await rows(`SELECT journey FROM cooked_visit_events('2026-11-03','2026-11-03')
+  const newContacts=await rows(`SELECT visit_id,entry_path FROM cooked_visit_events('2026-11-03','2026-11-03')
     WHERE counts_as_macro AND entry_path='/landing'`);
-  assert.ok(newContacts.every(c=>c.journey.join(',')==='/landing'),'no post-contact page in journey');
+  assert.equal(newContacts.length,3);
+  assert.ok(newContacts.every(c=>c.visit_id===newEntry && c.entry_path==='/landing'),
+    'a later page does not replace the entry of earlier contacts');
   assert.deepEqual(await rows(`SELECT visits::int,entries::int,phone_visits::int,form_visits::int,contact_visits::int,contact_rate_pct::float
     FROM page_visits('2026-11-03','2026-11-03') WHERE path='/landing'`),
     [{visits:1,entries:1,phone_visits:1,form_visits:1,contact_visits:1,contact_rate_pct:100}]);
@@ -63,14 +62,25 @@ try {
   await event('pageview','stale','2026-11-03T09:00:00Z','/stale');
   await event('web_vitals','stale','2026-11-03T09:25:00Z','/stale');
   await event('cta_phone_click','stale','2026-11-03T09:40:00Z','/stale');
-  await event('pageview','stale','2026-11-03T09:41:00Z','/too-late');
+  const futureEntry=await event('pageview','stale','2026-11-03T09:41:00Z','/too-late');
   await event('form_submit','webhook-no-id','2026-11-03T11:02:00Z','/landing');
   await event('form_submit','webhook-job','2026-11-03T11:02:30Z','/landing',{objet_de_ma_demande:'Nous rejoindre'});
   const coverage=(await rows(`SELECT unattributed_phone_events::int AS phone,unattributed_form_events::int AS form
     FROM page_visits('2026-11-03','2026-11-03') WHERE row_kind='coverage'`))[0];
   assert.deepEqual(coverage,{phone:1,form:1});
-  assert.deepEqual(await rows(`SELECT attribution_method FROM cooked_visit_events('2026-11-03','2026-11-03')
-    WHERE event_name='form_submit' AND visit_id IS NULL ORDER BY occurred_at`),[{attribution_method:'unresolved'},{attribution_method:'unresolved'}]);
+  assert.deepEqual(await rows(`SELECT visit_id,entry_at,entry_path,counts_as_macro
+    FROM cooked_visit_events('2026-11-03','2026-11-03')
+    WHERE event_name='form_submit' AND visit_id IS NULL ORDER BY occurred_at`),
+    [{visit_id:null,entry_at:null,entry_path:null,counts_as_macro:true},
+      {visit_id:null,entry_at:null,entry_path:null,counts_as_macro:false}]);
+  assert.deepEqual(await rows(`SELECT visit_id,entry_at,entry_path
+    FROM cooked_visit_events('2026-11-03','2026-11-03')
+    WHERE event_name='cta_phone_click' AND path='/stale'`),
+    [{visit_id:null,entry_at:null,entry_path:null}],
+    'a page seen after a contact never attributes that earlier contact');
+  assert.deepEqual(await rows(`SELECT visit_id,entry_path
+    FROM cooked_visit_events('2026-11-03','2026-11-03') WHERE event_id=$1`,[futureEntry]),
+    [{visit_id:futureEntry,entry_path:'/too-late'}]);
 
   // IDs are stable across window cuts and old aliases are genuinely stitched.
   await event('pageview','old-a','2026-06-01T10:00:00Z','/old',{},'same-old-aid');
@@ -92,9 +102,29 @@ try {
   await event('pageview','conflict-b','2026-11-03T14:00:00Z','/conflict-b');
   await event('form_submit','webhook-conflict','2026-11-03T14:01:00Z',null,{cooked_sid:'conflict-a',cooked_aid:'conflict-b-aid'});
   await db.query('SELECT refresh_identity_stitch(90)');
-  const conflicting=await rows(`SELECT entry_path,attribution_method FROM cooked_visit_events('2026-11-03','2026-11-03')
+  const conflicting=await rows(`SELECT visit_id,entry_at,entry_path FROM cooked_visit_events('2026-11-03','2026-11-03')
     WHERE event_name='form_submit' AND occurred_at='2026-11-03T14:01:00Z'`);
-  assert.deepEqual(conflicting,[{entry_path:null,attribution_method:'unresolved'}]);
+  assert.deepEqual(conflicting,[{visit_id:null,entry_at:null,entry_path:null}]);
+
+  // Exactly thirty minutes stays in the visit; one extra second starts a new one.
+  const boundaryEntry=await event('pageview','boundary','2026-11-03T16:00:00Z','/boundary');
+  const exactPhone=await event('cta_phone_click','boundary','2026-11-03T16:30:00Z','/boundary');
+  const continuedPhone=await event('cta_phone_click','boundary','2026-11-03T17:00:00Z','/boundary');
+  const nextEntry=await event('pageview','boundary','2026-11-03T17:30:01Z','/boundary');
+  const nextPhone=await event('cta_phone_click','boundary','2026-11-03T18:00:01Z','/boundary');
+  assert.deepEqual(await rows(`SELECT event_id,visit_id FROM cooked_visit_events('2026-11-03','2026-11-03')
+    WHERE event_id=ANY($1::uuid[]) ORDER BY occurred_at`,[[exactPhone,continuedPhone,nextPhone]]),
+    [{event_id:exactPhone,visit_id:boundaryEntry},{event_id:continuedPhone,visit_id:boundaryEntry},
+      {event_id:nextPhone,visit_id:nextEntry}]);
+  assert.deepEqual(await rows(`SELECT visits::int,entries::int,phone_visits::int,contact_visits::int,contact_rate_pct::float
+    FROM page_visits('2026-11-03','2026-11-03') WHERE path='/boundary'`),
+    [{visits:2,entries:2,phone_visits:2,contact_visits:2,contact_rate_pct:100}]);
+
+  // Equal timestamps still place the pageview before its contact in the visit.
+  const simultaneousPhone=await event('cta_phone_click','simultaneous','2026-11-03T18:30:00Z','/simultaneous');
+  const simultaneousEntry=await event('pageview','simultaneous','2026-11-03T18:30:00Z','/simultaneous');
+  assert.deepEqual(await rows(`SELECT visit_id,entry_path FROM cooked_visit_events('2026-11-03','2026-11-03')
+    WHERE event_id=$1`,[simultaneousPhone]),[{visit_id:simultaneousEntry,entry_path:'/simultaneous'}]);
 
   // Long chains need more than three propagation rounds to converge.
   for(let n=0;n<10;n++){
@@ -114,7 +144,7 @@ try {
   const dstKnown=await rows("SELECT visit_id FROM cooked_visit_events('2026-10-25','2026-10-25') WHERE counts_as_macro");
   assert.equal(dstKnown[0].visit_id,null,'repeated local hour actually has sixty minutes inactivity');
 
-  // Organic entry and phone/form contacts use the same visit cohort.
+  // Phone and form contacts use the same entry cohort regardless of source.
   await event('pageview','organic','2026-11-03T15:00:00Z','/organic');
   await db.query("UPDATE events SET referrer_hostname='www.google.com' WHERE session_id='organic'");
   await event('cta_phone_click','organic','2026-11-03T15:01:00Z','/organic');
@@ -123,8 +153,6 @@ try {
   assert.deepEqual(await rows(`SELECT entries::int,contact_visits::int,phone_visits::int,form_visits::int,
     contact_rate_pct::float FROM page_visits('2026-11-03','2026-11-03') WHERE path='/organic'`),
     [{entries:1,contact_visits:1,phone_visits:1,form_visits:1,contact_rate_pct:100}]);
-
-  assert.equal((await rows("SELECT count(*)::int AS n FROM cooked_visit_events('2026-11-03','2026-11-03') WHERE event_name='pageview' AND journey IS NOT NULL"))[0].n,0);
 
   // Every filtered macro event remains present, including unknown attribution.
   const [{total}]=await rows(`SELECT count(*)::int AS total FROM events_human
@@ -137,12 +165,13 @@ try {
   }
   await assert.rejects(()=>db.query("SELECT * FROM page_visits('2026-11-03','2026-11-04')"),e=>e.code==='22023');
   await assert.rejects(()=>db.query("SELECT * FROM page_visits('2026-11-03','2026-11-02')"),e=>e.code==='22023');
-  // Full output parity, including journeys and attribution: not just totals.
-  for (const [start,end] of [['2026-05-08','2026-11-03'],['2026-08-06','2026-11-03'],
-    ['2026-05-08','2026-08-05'],['2026-11-03','2026-11-03']]) {
+  // Changing the extraction window never reassigns an event or invents an entry.
+  for (const [start,end] of [['2026-08-06','2026-11-03'],['2026-05-08','2026-08-05'],['2026-11-03','2026-11-03']]) {
     assert.deepEqual(await rows('SELECT * FROM cooked_visit_events($1,$2) ORDER BY event_id',[start,end]),
-      await rows('SELECT * FROM visits_before_normalization($1,$2) ORDER BY event_id',[start,end]),
-      `path normalization preserves every event field for ${start} to ${end}`);
+      await rows(`SELECT * FROM cooked_visit_events('2026-05-08','2026-11-03')
+        WHERE occurred_at>=cooked_paris_ts_start($1) AND occurred_at<cooked_paris_ts_end_exclusive($2)
+        ORDER BY event_id`,[start,end]),
+      `all eight event fields stay stable across the extraction window ${start} to ${end}`);
   }
   console.log('Canonical visits verified: inactivity, entry boundaries, certain attribution, historical stitch, rates, ACL.');
 } catch(e) {

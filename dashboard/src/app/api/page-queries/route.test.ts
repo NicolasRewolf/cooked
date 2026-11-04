@@ -13,13 +13,14 @@ const data = {
 const request = (query: string) => new Request(`https://dashboard.example/api/page-queries?${query}`);
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(console, "error").mockImplementation(() => {});
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("SUPABASE_SECRET_KEY", "synthetic-server-key");
   mocks.requireUser.mockResolvedValue({ email: "allowed@example.test" });
   mocks.createClient.mockReturnValue({ rpc: mocks.rpc });
   mocks.rpc.mockResolvedValue({ data, error: null });
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 describe("GET /api/page-queries", () => {
   it("authentifie puis lit une page et renvoie les agrégats sans cache", async () => {

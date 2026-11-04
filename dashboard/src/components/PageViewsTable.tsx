@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { PageQueries } from "./PageQueries";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { filterPages, pageTypes, pageUrl, parseFilters, periods, type PageTypeFilter } from "@/lib/page-view-filters";
 import type { PageViews } from "@/lib/page-views";
 
@@ -22,6 +22,11 @@ function Metric({ value, previous, compare, rate = false }: { value: number | nu
 }
 
 export function PageViewsTable({ data }: { data: PageViews & { inventoryStale: boolean } }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const navigating = useRef(false);
+  const [requestedDays, setRequestedDays] = useState(data.expected_days);
+  useEffect(() => { if (!isPending) navigating.current = false; }, [isPending]);
   const searchParams = useSearchParams();
   const requestedTypes = searchParams.getAll("type");
   const type = parseFilters({ type: requestedTypes.length === 1 ? requestedTypes[0] : undefined }).type;
@@ -57,16 +62,27 @@ export function PageViewsTable({ data }: { data: PageViews & { inventoryStale: b
       </div>
 
       <div className="my-7 flex flex-wrap gap-x-8 gap-y-4">
-        <nav aria-label="Période">
+        <nav aria-label="Période" aria-busy={isPending}>
           <p className="mb-2 text-xs font-medium text-muted">Période</p>
           <div className="flex gap-1">
             {periods.map((days) => (
               days === data.expected_days
                 ? <span key={days} aria-current="true" className={choice(true)}>{days} jours</span>
                 : <Link key={days} href={`/?days=${days}&type=${type}`} prefetch={false}
-                    className={choice(false)}>{days} jours</Link>
+                    aria-disabled={isPending} tabIndex={isPending ? -1 : undefined}
+                    onClick={(event) => { if (isPending || navigating.current) event.preventDefault(); }}
+                    onNavigate={(event) => {
+                      event.preventDefault();
+                      if (isPending || navigating.current) return;
+                      navigating.current = true;
+                      setRequestedDays(days);
+                      setQueryPage(null);
+                      startTransition(() => router.push(`/?days=${days}&type=${type}`));
+                    }}
+                    className={`${choice(false)} ${isPending ? "cursor-wait opacity-60" : ""}`}>{days} jours</Link>
             ))}
           </div>
+          {isPending && <p role="status" className="mt-2 text-xs text-muted">Chargement des {requestedDays} jours…</p>}
         </nav>
         <nav aria-label="Type de page">
           <p className="mb-2 text-xs font-medium text-muted">Type de page</p>

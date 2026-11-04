@@ -26,7 +26,7 @@ Depuis le 04/11/2026, l’import est quotidien et rapproche le sitemap, les arti
 
 ## Retraits
 
-Le retrait est appliqué en production : 24 tables, huit vues et 62 anciennes routines ont été supprimées. Le catalogue vérifié en production comporte 13 tables, trois vues et 62 routines, dont les quatre fonctions de l’extension `unaccent`. Le seul nouveau lecteur est `page_query_counts` ; `page_view_counts` est étendu. Le CPI, les copies dashboard, le rapprochement CRM/SECIB et les modèles de maillage n’ont plus de stockage ou de calcul actif.
+Le retrait est appliqué en production : 24 tables, huit vues et 62 anciennes routines ont été supprimées. Le catalogue vérifié en production comporte 13 tables, trois vues et 61 routines, dont les quatre fonctions de l’extension `unaccent`. Le seul nouveau lecteur est `page_query_counts` ; `page_view_counts` est étendu. Le CPI, les copies dashboard, le rapprochement CRM/SECIB et les modèles de maillage n’ont plus de stockage ou de calcul actif.
 
 Les intégrations DataForSEO et fiche Google sont retirées de Cooked. Google Search Console conserve deux sources : les totaux par page et les requêtes par page. Un lot doit terminer ces deux imports pour être complet. Les anciens manifestes à trois sources restent des preuves historiques, sans être réécrits.
 

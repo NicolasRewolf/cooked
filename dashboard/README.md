@@ -22,6 +22,8 @@ L’inventaire et les comptes viennent de `page_view_counts(p_days)`, lu côté 
 à l’ouverture et au changement de période. Le type de page filtre immédiatement
 les données déjà reçues, sans nouvelle lecture. Les filtres restent dans l’URL
 partageable ; précédent et suivant rétablissent le filtre.
+Pendant une navigation de période, un message de chargement apparaît et les
+autres liens de période attendent sa fin, pour éviter les calculs concurrents.
 
 Les écarts sont absolus, ou en points pour les taux : aucune division par une
 base nulle. Si une période est partielle, les nombres observés restent visibles
@@ -58,6 +60,8 @@ nécessaire ni au navigateur ni au chargement de la configuration Auth.
 `GET /api/page-queries?path=…&days=…` valide les paramètres, réutilise ce lecteur
 et renvoie des agrégats sans cache. Une erreur de source produit un message
 générique, jamais un message DB brut ni un faux zéro.
+Un échec RPC laisse uniquement son nom, le SQLSTATE valide éventuel et le statut
+HTTP dans le diagnostic serveur, sans paramètres, contenu de réponse ni erreur brute.
 
 | Variable | Usage |
 |---|---|

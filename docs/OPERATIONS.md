@@ -29,7 +29,7 @@ La réception tracker est regroupée dans `_shared/track_delivery.ts` : validati
 
 ## Données conservées
 
-Le catalogue vérifié en production comprend **13 tables, trois vues et 62 routines** publiques (58 Cooked et quatre `unaccent`). Les valeurs contrôlées sont dans [doc_constants.json](../contracts/doc_constants.json) ; les corps exacts livrés dans [rpcs.sql](../supabase/rpcs.sql).
+Le catalogue vérifié en production comprend **13 tables, trois vues et 61 routines** publiques (57 Cooked et quatre `unaccent`). Les valeurs contrôlées sont dans [doc_constants.json](../contracts/doc_constants.json) ; les corps exacts livrés dans [rpcs.sql](../supabase/rpcs.sql).
 
 | Tables | Rôle |
 |---|---|
@@ -62,7 +62,7 @@ Le serveur vérifie la session et l’allowlist avec `requireUser` avant tout ap
 
 `cooked_visit_events(début, fin)` segmente l’activité observable à plus de 30 minutes d’écart. Les Web Vitals tardifs ne prolongent pas la visite. L’entrée est sa première page vue, y compris avant la fenêtre du contact. Un formulaire sans identifiants explicites reste non attribué ; aucun rapprochement par simple voisinage temporel ou page future.
 
-Le calcul conserve tout l’amont historique, mais les tris de segmentation transportent seulement les identifiants, événements, heures et chemins nécessaires. Les autres attributs sont rejoints ensuite. Chaque chemin distinct est normalisé une fois ; le canal est classifié une fois par tuple distinct de sources. Les parcours sont construits uniquement pour les contacts retournés, à partir des pages déjà vues au moment de l’action. `work_mem='32MB'` est limité à cette fonction, sans réglage global ni stockage supplémentaire. Ces optimisations réduisent le travail sans changer le découpage des visites ou l’attribution.
+Le calcul conserve tout l’amont historique et ne retourne que huit champs encore consommés : événement, date, chemin, admissibilité du contact et entrée de la visite. Les canaux, parcours détaillés et métadonnées de sortie inutilisés ne sont plus calculés ; `classify_channel` est retirée. Les identités, le seuil de 30 minutes, la première page antérieure et les cohortes restent inchangés. Chaque chemin distinct est normalisé une fois ; les premières pages sont calculées une seule fois avant leur jointure. `work_mem='32MB'` reste limité à cette fonction, sans réglage global ni stockage supplémentaire.
 
 `page_visits(début, fin)` renvoie les lignes `page` et une ligne `coverage`. Pour les pages : visites ayant consulté, entrées dans la fenêtre, visites de cette cohorte avec téléphone, formulaire et union, puis taux de l’union. Les actions sont bornées à la clôture. Sans entrée, le taux vaut `NULL`. La couverture porte sur les jours observés et les contacts non attribués, sans garantir une collecte continue à chaque minute.
 

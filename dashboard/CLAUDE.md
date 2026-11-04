@@ -14,7 +14,8 @@
    validation de session et allowlist. La clé serveur reste privée, sans cache.
    Les types filtrent localement et synchronisent l’URL par l’API History native ;
    seul un changement de période relit les métriques. Conserver les liens sans
-   prefetch et l’historique précédent/suivant.
+   prefetch et l’historique précédent/suivant. Afficher la navigation en cours
+   et bloquer les clics de période concurrents jusqu’à sa fin.
 4. Google se déplie pour une seule page à la fois, via `/api/page-queries` et le
    lecteur protégé `page_query_counts(p_path, p_days)`. Aucun appel anticipé pour
    toutes les URL. Annuler les requêtes navigateur devenues inutiles et ignorer

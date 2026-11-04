@@ -9,6 +9,7 @@ const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 // Next expose les changements History à useSearchParams sans requête RSC.
 // Ici le DOM et ses clics sont réels ; seule cette intégration du routeur est simulée.
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: navigation.push }),
   useSearchParams() {
     const query = useSyncExternalStore(
       (listener) => {
@@ -22,11 +23,17 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("next/link", () => ({
-  default: ({ href, prefetch, children, ...props }: {
+  default: ({ href, prefetch, children, onNavigate, onClick, ...props }: {
     href: string; prefetch?: boolean; children: ReactNode;
+    onNavigate?: (event: { preventDefault: () => void }) => void;
+    onClick?: (event: MouseEvent) => void;
   }) => <a {...props} href={href} data-prefetch={String(prefetch)} onClick={(event: MouseEvent) => {
+    onClick?.(event);
+    if (event.defaultPrevented) return;
     event.preventDefault();
-    navigation.push(href);
+    let prevented = false;
+    onNavigate?.({ preventDefault: () => { prevented = true; } });
+    if (!prevented) navigation.push(href);
   }}>{children}</a>,
 }));
 
@@ -55,6 +62,7 @@ const fetchSpy = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
   fetchSpy.mockReset();
+  navigation.push.mockReset();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("fetch", fetchSpy);
   window.history.replaceState(null, "", "/?days=90&type=all");
@@ -122,6 +130,33 @@ describe("filtres locaux du tableau", () => {
     expect(displayedPaths()).toEqual(["/post/ressource"]);
     expect(navigation.push).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("signale le chargement et bloque les clics de période concurrents jusqu’à la fin de navigation", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    navigation.push.mockReturnValueOnce(pending);
+    await act(() => root.render(<PageViewsTable data={data} />));
+    const periods = [...container.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Période"] a')];
+    const sixty = periods.find((link) => link.textContent === "60 jours")!;
+    const thirty = periods.find((link) => link.textContent === "30 jours")!;
+    // Même avant le prochain rendu, le second clic ne déclenche aucun calcul.
+    await act(() => { sixty.click(); thirty.click(); });
+    expect(navigation.push).toHaveBeenCalledExactlyOnceWith("/?days=60&type=all");
+    expect(container.querySelector('nav[aria-label="Période"]')?.getAttribute("aria-busy")).toBe("true");
+    expect(container.textContent).toContain("Chargement des 60 jours…");
+    expect(periods.every((link) => link.getAttribute("aria-disabled") === "true")).toBe(true);
+    await act(() => thirty.click());
+    await act(() => button("Articles").click());
+    expect(displayedPaths()).toEqual(["/post/proces"]);
+    expect(navigation.push).toHaveBeenCalledOnce();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    await act(async () => { finish(); await pending; });
+    expect(container.textContent).not.toContain("Chargement des 60 jours…");
+    expect(thirty.getAttribute("aria-disabled")).toBe("false");
+    await act(() => thirty.click());
+    expect(navigation.push).toHaveBeenLastCalledWith("/?days=30&type=articles");
+    expect(navigation.push).toHaveBeenCalledTimes(2);
   });
 
   it("ouvre le filtre partagé et réserve la navigation aux changements de période", async () => {

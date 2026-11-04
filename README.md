@@ -17,7 +17,7 @@ Quatre filtres : Toutes, Expertises (pages et hubs d’expertise), Articles (act
 | Google Search Console par page | Clics et impressions totaux de la page |
 | Google Search Console par requête et page | Requêtes révélées, clics, impressions et position |
 
-Les données conservées passent par les mêmes filtres bots/bruit et la même définition de visite. Le catalogue vérifié en production comprend **13 tables, trois vues et 62 routines** publiques, dont 58 Cooked et quatre fonctions de l’extension `unaccent`. `page_view_counts` fournit le tableau et ses deux périodes ; `page_query_counts` fournit les requêtes d’une seule page à la demande. Aucun nouveau stockage ni recalcul planifié. Les compteurs de référence sont dans [contracts/doc_constants.json](contracts/doc_constants.json).
+Les données conservées passent par les mêmes filtres bots/bruit et la même définition de visite. Le catalogue vérifié en production comprend **13 tables, trois vues et 61 routines** publiques, dont 57 Cooked et quatre fonctions de l’extension `unaccent`. `page_view_counts` fournit le tableau et ses deux périodes ; `page_query_counts` fournit les requêtes d’une seule page à la demande. Aucun nouveau stockage ni recalcul planifié. Les compteurs de référence sont dans [contracts/doc_constants.json](contracts/doc_constants.json).
 
 Le CPI, les copies de l’ancien dashboard, les modèles mathématiques, DataForSEO, Google Business Profile et le pont CRM/SECIB sortent du produit. Leurs anciens guides restent dans [l’historique Git](https://github.com/NicolasRewolf/cooked/tree/b6aa6370b9041763814bc0b1253182ece2694772/docs) ; le dépôt courant décrit uniquement le socle maintenu.
 
