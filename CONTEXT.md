@@ -7,6 +7,10 @@ dont un calculé avec une méthode obsolète). Il **complète** la taxonomie
 macro / micro / engagement de `CLAUDE.md` en tranchant la question de
 l'**attribution**.
 
+> **Depuis le 4 novembre 2026** — la définition courante est celle du socle
+> décrit dans [SIMPLIFICATION.md](docs/SIMPLIFICATION.md). Les anciens
+> instantanés CPI, dashboard, SEO et math restent des archives datées.
+
 ## Language
 
 ### Conversions
@@ -29,8 +33,9 @@ Un clic « prendre RDV » (`cta_booking_click`) qui ne se matérialise pas.
 **N'est PAS une conversion / un contact.**
 _Avoid_ : compter une intention comme une conversion (erreur de l'audit du
 15/05/2026 : 157 « conversions » pour 37 vrais contacts).
-Le badge CPI `convertit` utilise les contacts macro directs ou assistés.
-La contribution pondérée des intentions au score reste distincte du badge.
+Dans les archives CPI, le badge `convertit` utilise les contacts macro directs
+ou assistés. La contribution pondérée des intentions au score historique reste
+distincte du badge ; ce score n’est plus recalculé depuis le 04/11/2026.
 
 ### Attribution — deux vues d'une conversion, jamais fusionnées
 
@@ -47,25 +52,46 @@ site, avant de convertir au cours de la **même visite**. Attribution
 _Avoid_ : « assisté » employé seul sans qualifier ; toute variante calculée
 sur la session brute.
 
-**Visite recousue** :
-Parcours d'un même visiteur reconstitué par `identity_stitch` (couture
-aid ↔ sid), segmenté aux trous > 30 min, conversion rattachée à la dernière
-pageview ≤ 6 h avant. C'est **la** base de l'attribution « à l'entrée ».
-Ne jamais coudre via un `anonymous_id` 32-hex (fallback serveur hash IP|UA,
-partageable entre visiteurs).
-_Avoid_ : « session » (brute) comme base d'attribution à l'entrée.
+**Visite observée et recousue** :
+Activité d’un même navigateur rapprochée par `identity_stitch` (aid ↔ sid),
+segmentée dès qu’un écart d’activité dépasse 30 minutes. La couture couvre
+l’historique conservé et converge réellement ; l’argument historique de durée
+ne tronque plus ce rapprochement. `web_vitals` ne prolonge pas une visite.
+La première page vue est l’entrée, même si elle précède la période demandée.
+Le parcours d’un contact ne contient jamais de page postérieure à ce contact.
+Ne jamais coudre via un `anonymous_id` 32-hex de repli serveur, partageable entre
+navigateurs. Une identité technique ne prouve pas une personne distincte.
+_Avoid_ : « session » brute comme base d’attribution à l’entrée.
+
+**Contact non attribué** :
+Contact compté dans le site mais sans visite observable certaine. Un formulaire
+sans identifiant explicite ne reçoit plus de page par simple proximité dans le
+temps. Il reste conservé comme inconnu, jamais attribué à la page suivante.
+
+**Visite ayant contacté** :
+Visite distincte ayant produit au moins un clic téléphone ou un formulaire macro.
+Le téléphone, le formulaire et leur union sont trois compteurs : leurs nombres
+ne s’additionnent pas si la même visite a fait les deux. `page_visits(start,end)`
+calcule le taux sur la cohorte des visites **entrées dans la fenêtre**, actions
+observées avant sa clôture. Sans entrée, le taux est inconnu (`NULL`). Une visite
+qui consulte une page sans entrer dessus augmente les consultations, pas le
+dénominateur des contacts attribués à cette page d’entrée.
 
 **Conversions du site** :
 Total des conversions **toutes pages confondues** — le chiffre business de
-référence. Se présente **avec son détail** : appels vs formulaires, et la part
+référence au grain des actions. Se présente **avec son détail** : clics téléphone
+vs formulaires, et la part
 qui touche les articles ressources. Source : `site_macro_counts`.
 _Avoid_ : présenter un total scopé (ressources seules) comme « les contacts du
 site » — c'est le piège de la tuile actuelle (36 affichés pour 210 réels au
 13/07/2026).
 
-### Lecture
+### Lecture — vocabulaire historique conservé
 
-Le CPI repose à parts égales sur quatre composantes, dont deux — `zr` rétention
+Cette section décrit les indicateurs de lecture et les archives CPI d’avant le
+04/11/2026. Elle ne définit pas le nouveau taux de visites ayant contacté.
+
+Le CPI historique repose à parts égales sur quatre composantes, dont deux — `zr` rétention
 et `zl` lecture — relèvent de ce vocabulaire. Il a été figé le 28/07/2026, après
 avoir constaté que la lecture était redérivée à la main dans **8 RPC** avec trois
 définitions divergentes (grain, source du scroll, traitement du zéro).
@@ -107,23 +133,26 @@ Pacifique fourni par Google. Les comparaisons affichent les bornes de chaque
 source. Une même date n'assure pas une même tranche de 24 heures.
 
 **Lot GSC terminé** :
-Une ingestion ne devient utilisable pour le refresh qu'après succès des trois
-tables sur une même fenêtre. `gsc_ingest_begin` ouvre le lot, `gsc_ingest_complete`
-le clôt ; erreur ou mode partiel impose `gsc_ingest_fail` et bloque le refresh.
+Une ingestion n’est complète qu’après succès des trois tables sur une même
+fenêtre. `gsc_ingest_begin` ouvre le lot, `gsc_ingest_complete` le clôt ; erreur
+ou mode partiel impose `gsc_ingest_fail`. Depuis le 04/11/2026, aucun ancien
+recalcul dashboard n’est attendu en aval.
 Un timestamp récent dans la seule table pages n'est pas une preuve d'exhaustivité.
 
 **Source** :
 Un flux qui alimente Cooked en données : tracker (events), formulaires
 (webhook Wix), GSC, GBP, DataForSEO, snapshots internes (CPI, SEO,
-dashboard), demain SECIB. Chaque source a une ligne dans
-`freshness_contract` — le registre est la liste exhaustive de ce qui est
-surveillé, et son complément est la liste de ce qui ne l'est pas.
+dashboard), ou SECIB. `freshness_contract` conserve leur registre ; seules les
+lignes `enabled=true` ont une fraîcheur attendue. Les six sources
+CPI/calibration/dashboard/SEO/math/DFS sont désactivées depuis le 04/11/2026 ;
+leur ancienneté reste visible dans les archives sans devenir une panne.
 _Avoid_ : « pipeline » pour désigner une source précise (le pipeline est
 l'ensemble).
 
 **Lag normal** :
 Le retard structurel d'une source en jours, dû à son fournisseur — GSC
-consolide à ~J-3 (registre `freshness_contract` : normal 3, warn > 6, critical > 10), GBP à ~J-4/J-5, un snapshot nocturne est à J-0/J-1.
+consolide à ~J-3 (registre `freshness_contract` : normal 3, warn > 6, critical > 10),
+GBP à ~J-4/J-5. Les snapshots suspendus n’ont plus de cadence attendue.
 Un âge ≤ lag normal n'est jamais une anomalie.
 
 **Retard** (`<source>_stale`) :
@@ -145,23 +174,19 @@ _Avoid_ : confondre avec le Retard d'un snapshot — le Silence porte sur des
 événements humains, sa normalité dépend de la cadence réelle du site.
 
 **Escalade** :
-Un warn ininterrompu ≥ 5 jours devient critical (et pousse sur ntfy),
-**sauf** les kinds éditoriaux (`cpi_drop` — jamais critical). Au plus
-2 pushs par épisode, puis silence jusqu'à ack. **Acker** (`SELECT ack_alerts();`)
-suspend l'escalade et le re-push : « vu, je gère ».
+Un warn ininterrompu ≥ 5 jours devient critical (et pousse sur ntfy), sous
+réserve des exclusions existantes. Au plus deux pushs par épisode, puis silence
+jusqu’à acquittement. Acquitter signifie « vu, je gère » ; ce n’est pas une preuve
+de correction. Cibler les alertes contrôlées, sans vider globalement le stock.
+Les familles de calculs retirées sont acquittées explicitement lors du gel.
 
 ## Invariants
 
-- **Une seule méthode pour l'attribution à l'entrée : la visite recousue.**
-  Tout compteur « attribué / assisté » (colonne du tableau, fiche article,
-  **objectif trimestriel**) doit lire la même base.
-  ✅ Résolu le 25/07/2026 : `dashboard_assisted_quarter` lit désormais
-  `assisted_contacts_by_entry_path` (visite recousue via `identity_stitch`),
-  migration `20260725220100_audit_assisted_contacts_unified`.
-  Depuis T-08 (03/09/2026) : elle lit un **snapshot** nocturne (plus de calcul
-  à l'affichage) ; les forms sans identifiant sont sur la ligne `(non attribuable)`
-  — comptés dans le total site, pas dans le compteur ressources. Pas d'objectif
-  trimestriel posé.
+- **Une seule méthode courante pour l’attribution à l’entrée : la visite observée.**
+  `cooked_visit_events` la fournit aux lecteurs de contacts ; `page_visits` compte
+  la cohorte d’entrées et les visites ayant contacté. Les contacts sans amont
+  restent dans le total site. Les anciennes tables dashboard conservent la
+  méthode de leur dernier calcul et ne sont pas présentées comme actualisées.
 - **« sur la page » et « à l'entrée » ne se somment jamais** et ne partagent
   jamais un libellé nu « contacts ». Toujours qualifier lequel des deux.
 - **Conversion = macro uniquement.** Le booking (micro, intention) n'entre
@@ -177,8 +202,9 @@ suspend l'escalade et le re-push : « vu, je gère ».
   série homogène. Le graphique conserve les ruptures et les annotations.
 - **Une seule source pour la profondeur de lecture : `page_exit.max_scroll`.**
   Voir [ADR-0001](docs/adr/0001-source-unique-profondeur-lecture.md).
-  ⚠️ Au 28/07/2026, `seo_pages_overview` et `refresh_seo_url_snapshot` lisent
-  encore `scroll_depth.percent` — à migrer pour respecter cette définition.
+  Constat historique du 28/07/2026 : des anciens lecteurs et le producteur SEO
+  utilisaient encore `scroll_depth.percent`. Le producteur SEO est retiré depuis
+  le 04/11/2026 ; ce constat ne constitue pas une nouvelle tâche de recalcul.
 - **Toute statistique de lecture se présente avec sa couverture.** Un dwell
   médian sans son taux de `page_exit` n'est pas un chiffre livrable — la
   couverture varie de 40 % à 92 % selon la page et elle est corrélée

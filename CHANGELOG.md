@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026-11-04] — Simplification du socle éditorial
+
+- Comptage commun des visites, entrées et actions, avec rattachements inconnus conservés.
+- Inventaire des pages publiées indépendant du trafic dans le référentiel existant.
+- Arrêt des recalculs automatiques des anciens indicateurs et retrait de leurs procédures inutilisées.
+- Contrôles du socle et rapport avant/après. Détails et sémantique dans [SIMPLIFICATION.md](docs/SIMPLIFICATION.md).
+
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versions datées (pas de semver strict) — jalons opérationnels du système Cooked.
 

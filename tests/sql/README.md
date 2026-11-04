@@ -1,24 +1,8 @@
 # Régressions SQL
 
-`audit-integrity.test.mjs` exécute les véritables fonctions SQL dans PostgreSQL
-embarqué (PGlite), en mémoire, avec des événements et volumes **synthétiques**.
-Il ne se connecte jamais à Supabase et ne contient aucune clé.
-
-`npm test` exécute également les scénarios du 02/11/2026 :
-
-- `analytics-windows.test.mjs` : jours Paris clos, parcours et URL Ads,
-  contenu et provenance commune des snapshots ;
-- `proposed-overviews.test.mjs` : bornes GSC et calculs des trois récapitulatifs
-  par page, depuis `docs/proposals/analytics-overviews.sql` uniquement.
-  Cette proposition n'est pas appliquée en production ;
-- `analytics-cleanup.test.mjs` : résultats conservés après retrait du travail
-  SQL redondant, ACL et validation des fenêtres ;
-- `alert-clock.test.mjs` : heures civiles Paris et exécution des véritables
-  règles d'alerte aux deux changements d'heure, avec horloge synthétique.
-
-`helpers.mjs` prépare une base jetable commune aux nouveaux scénarios.
-Les vues de base sont simplifiées dans ce harnais ; les tests qui dépendent
-de leur déduplication doivent installer explicitement les définitions utiles.
+Ces scénarios exécutent les fonctions SQL dans PostgreSQL embarqué (PGlite),
+en mémoire, avec des événements et volumes synthétiques. Ils ne se connectent
+jamais à Supabase et ne contiennent aucune clé.
 
 ```sh
 cd tests/sql
@@ -33,36 +17,54 @@ PGLITE_MODULE=/chemin/node_modules/@electric-sql/pglite/dist/index.js \
   node tests/sql/audit-integrity.test.mjs
 ```
 
-Le scénario charge le miroir des fonctions du dépôt, puis la migration dont le
-nom se termine par `_audit_data_integrity_and_ingest_completion.sql`.
-Le timestamp peut donc être aligné sur celui effectivement appliqué.
+Les suites couvrent les garanties conservées après la simplification :
 
-Les assertions couvrent :
+- `audit-integrity.test.mjs` : lots GSC partiels, concurrents, échoués et
+  repris, manifestes, positions pondérées, versions CPI historiques en lecture,
+  clics intentionnels hors prefetch, dernières révisions CWV, jours Paris et ACL ;
+- `analytics-windows.test.mjs` : jours Paris clos, passage à l’heure d’hiver,
+  lecture et contacts par page, priorité des identifiants publicitaires ;
+- `analytics-cleanup.test.mjs` : sélection du volume DataForSEO disponible
+  sur la fenêtre de référence ;
+- `canonical-visits.test.mjs` : couture d’identité, séparation des visites,
+  contacts sans amont conservés, absence de page future dans un parcours et
+  cohérence des lecteurs de contacts ;
+- `published-inventory.test.mjs` : pages sans trafic, inventaire complet ou
+  partiel, absence de dépublication déduite d’un échec et préservation du manuel ;
+- `simplification.test.mjs` : arrêt ciblé des calculs et de leur fraîcheur,
+  historique intact, lecteurs dashboard conservés, santé des sources actives,
+  contrôles minimaux, acquittements ciblés et migration rejouable ;
+- `alert-clock.test.mjs` : règles d’alerte avec horloge synthétique aux deux
+  changements d’heure ;
+- `click-dedup-index.test.mjs` : filtre des clics répétés inchangé avec sa
+  comparaison de secondes UTC indexable ;
+- `proposed-overviews.test.mjs` : bornes et agrégations des récapitulatifs
+  de `docs/proposals/analytics-overviews.sql`. Cette proposition reste distincte
+  des migrations appliquées.
 
-- lot GSC partiel, concurrent, échoué, reprise et manifestes invalides ;
-- progression exacte du lot après une chaîne de refresh partielle ou complète ;
-- positions pondérées, médianes sans referrer, trois identifiants Ads ;
-- conservation des clics intentionnels dans le filtre prefetch ;
-- dernière révision CWV par document dans les quatre consommateurs ;
-- badge macro, contribution de booking au score préservée et versions CPI ;
-- exclusion des bookings avant et après la fenêtre canonique, même si leur
-  session possède une pageview dans cette fenêtre ;
-- comptages de formulaires par jour Paris, recrutement inclus ;
-- dépréciation du funnel ancien, ACL et maintien de l’inlining.
+`helpers.mjs` prépare les relations synthétiques, le schéma de suivi des lots
+GSC, puis charge le miroir actuel des fonctions. Il ne réapplique pas une
+ancienne définition de RPC par-dessus ce miroir. Chaque scénario installe
+ensuite uniquement les migrations nécessaires à sa vérification. Les vues de
+base sont simplifiées ; les tests de déduplication chargent explicitement leur
+définition réelle.
 
-`fixtures/catalog-20261020.json` contient uniquement les **noms et types de
-colonnes** du catalogue contrôlé le 20/10/2026, sans contenu de table. Les relations
-y sont reconstituées avec les contraintes nécessaires au scénario. Ce n’est pas
-un substitut à une restauration intégrale des migrations, aux extensions
-Supabase, à un EXPLAIN sur les volumes de production ou à un test de contention
-entre plusieurs connexions.
+`fixtures/catalog-20261020.json` contient uniquement les noms et types de
+colonnes du catalogue contrôlé le 20/10/2026. Ces tests ne remplacent pas une
+restauration complète des migrations, les extensions Supabase, les plans sur
+les volumes réels ou la contention entre plusieurs connexions.
+Le scénario de simplification fournit un double de `cron.alter_job` : il
+vérifie les états et horaires demandés, pas les privilèges de l’extension pg_cron.
 
-`fixtures/cpi-before-20261020.sql` conserve le calcul audité pour prouver que la
-réparation du badge seule ne change aucun composant numérique du score, et pour
-reproduire la fuite des bookings hors fenêtre avant sa correction.
+Pour vérifier un miroir après simplification sans modifier `supabase/rpcs.sql` :
 
-La compatibilité avec un miroir déjà régénéré peut être vérifiée sans modifier
-`supabase/rpcs.sql` : lancer une première fois avec
-`SQL_RPC_EXPORT=/tmp/cooked-post-audit-mirror.sql`, puis relancer avec
-`SQL_RPC_MIRROR=/tmp/cooked-post-audit-mirror.sql`. La seconde passe reconstruit
-une base vide, charge les fonctions du miroir futur, puis applique la migration.
+```sh
+SQL_SIMPLIFIED_EXPORT=/tmp/cooked-simplified-rpcs.sql \
+  node tests/sql/simplification.test.mjs
+cd tests/sql
+SQL_RPC_MIRROR=/tmp/cooked-simplified-rpcs.sql npm test
+```
+
+Le fichier temporaire sert uniquement à cette vérification. Les tests du
+calcul CPI et des producteurs retirés ont été supprimés ; leur historique
+reste accessible par les migrations Git.

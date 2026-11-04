@@ -1,18 +1,12 @@
 name: Wix taxonomy sync
 
-# T-15 (mission 02/09/2026) — page_taxonomy suit la liste PUBLIÉE du blog Wix, pas le trafic.
-# scripts/wix_taxonomy_sync.py lit l'API Wix Blog et appelle la RPC page_taxonomy_sync_wix.
-#
-# Secrets GitHub (Settings → Secrets and variables → Actions) :
-#   WIX_API_KEY          : clé API du compte Wix (manage.wix.com → API Keys), permission Blog (lecture)
-#   SUPABASE_SECRET_KEY  : déjà posé pour les autres ingestions
-# Tant que WIX_API_KEY est absent, le job se termine sans écrire (exit 0 + avertissement) :
-# le filet est le registre freshness_contract.page_taxonomy (warn après 21 j sans ligne touchée)
-# et l'alerte page_taxonomy_gap.
+# One complete public-site inventory is validated before a single database RPC.
+# Public Wix visitor credentials are fetched in memory, never stored or logged.
+# Only the Supabase write key is needed; failures leave publication unchanged.
 
 on:
   schedule:
-    - cron: "0 5 * * 1" # lundi 05:00 UTC — avant l'ingestion GSC de 06:00
+    - cron: "0 5 * * *" # inventaire quotidien avant l'ingestion GSC
   workflow_dispatch:
     inputs:
       dry_run:
@@ -39,15 +33,10 @@ jobs:
           cache: "pip"
           cache-dependency-path: pyproject.toml
       - run: pip install .
-      - name: Sync page_taxonomy depuis la liste publiée Wix
+      - name: Sync page_taxonomy depuis les publications Wix
         env:
-          WIX_API_KEY: ${{ secrets.WIX_API_KEY }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          if [ -z "$WIX_API_KEY" ]; then
-            echo "::warning::WIX_API_KEY absent — synchro non exécutée (action Nicolas : créer la clé API Wix, permission Blog lecture, puis la poser en secret)."
-            exit 0
-          fi
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             python3 scripts/wix_taxonomy_sync.py --dry-run
           else

@@ -4,7 +4,7 @@
   "cron_jobs": [
     {
       "jobname": "run_rpc_contract_tests",
-      "schedule": "30 3 * * *"
+      "schedule": "50 3 * * *"
     },
     {
       "jobname": "purge_old_events_monthly",
@@ -19,28 +19,12 @@
       "schedule": "15 * * * *"
     },
     {
-      "jobname": "refresh_seo_url_snapshot",
-      "schedule": "0 3 * * *"
-    },
-    {
       "jobname": "cooked-purge-noise-weekly",
       "schedule": "30 4 * * 0"
     },
     {
       "jobname": "refresh-identity-stitch",
       "schedule": "40 3 * * *"
-    },
-    {
-      "jobname": "cooked-refresh-after-gsc",
-      "schedule": "0 6-21 * * *"
-    },
-    {
-      "jobname": "math-refresh-snapshots-weekly",
-      "schedule": "10 5 * * 0"
-    },
-    {
-      "jobname": "cpi-calibration-monthly",
-      "schedule": "0 5 1 * *"
     }
   ],
   "migrations_must_exist": [
@@ -48,16 +32,16 @@
     "20260902182316",
     "20260902212045"
   ],
-  "notes": "T-12 (02/09/2026) : liste cron figée depuis prod. T-14 (03/09/2026) : compteurs et versions mesurés en prod (check_prod_drift.py les compare chaque matin), bloc docs consommé par scripts/check_docs_constants.py (I13).",
-  "measured_at": "2026-10-20",
-  "routines_pg_proc": 143,
-  "routines_cooked": 139,
-  "routines_note": "143 objets pg_proc dans public (f+p) = 139 routines Cooked + 4 fonctions de l'extension unaccent. Mesuré le 20/10/2026 après correction des lots GSC et des mesures.",
-  "alert_rules": 19,
+  "notes": "Compte des crons actifs uniquement (six actifs, quatre suspendus conservés). Les 15 lignes freshness incluent six sources désactivées. T-12/T-14 comparent ces constantes à la production.",
+  "measured_at": "2026-11-04",
+  "routines_pg_proc": 122,
+  "routines_cooked": 118,
+  "routines_note": "122 objets pg_proc dans public (f+p) = 118 routines Cooked + 4 fonctions unaccent. Simplification du 04/11/2026 : 23 retraits, deux fonctions communes de comptage.",
+  "alert_rules": 15,
   "dashboard_rpcs": 16,
   "views": 11,
   "freshness_sources": 15,
-  "cron_jobs_count": 10,
+  "cron_jobs_count": 6,
   "versions": {
     "tracker": "sprint43",
     "edge_track": 31,
@@ -81,7 +65,8 @@
       "docs/rgpd-pont-secib.md",
       "dashboard/README.md",
       "dashboard/CLAUDE.md",
-      "docs/agents/domain.md"
+      "docs/agents/domain.md",
+      "docs/SIMPLIFICATION.md"
     ],
     "index_docs": [
       "docs/README.md",

@@ -7,7 +7,7 @@
 -- Ce fichier = instantané lisible pour humains et agents (Arch #5, 10/07/2026).
 --
 -- Régénérer : python3 scripts/generate_rpcs_sql.py  (DATABASE_URL requis)
--- Généré le 03/11/2026 — projet mxycmjkeotrycyneacje.
+-- Généré le 04/11/2026 — projet mxycmjkeotrycyneacje.
 -- ============================================================================
 
 -- ═══ public.ack_alerts(p_kinds text[]) ═══
@@ -67,87 +67,6 @@ BEGIN
     RETURN NEXT;
   END IF;
 END $function$
-
-
--- ═══ public.alert_rule_cpi_calibration() ═══
-CREATE OR REPLACE FUNCTION public.alert_rule_cpi_calibration()
- RETURNS TABLE(kind text, severity text, detail text)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE r record;
-BEGIN
-  SELECT * INTO r FROM public.cpi_calibration_checks ORDER BY day DESC LIMIT 1;
-  IF r.day IS NULL THEN RETURN; END IF;
-  IF r.r2 < 0.85 THEN
-    kind := 'cpi_calibration'; severity := 'critical';
-    detail := format('Courbe CTR du CPI : R² = %s < 0,85 (critère liant, check du %s, %s buckets, médiane |écart| %s %%). Le terme capture zc et clics_perdus reposent sur cette loi de puissance : ne pas livrer de « clics perdus » avant instruction (docs/cpi-cooked-page-index.md §validation).',
-                     r.r2, to_char(r.day, 'DD/MM/YYYY'), r.n_buckets, r.mediane_ecart_pct);
-    RETURN NEXT;
-  ELSIF r.mediane_ecart_pct > 30 THEN
-    kind := 'cpi_calibration'; severity := 'warn';
-    detail := format('Courbe CTR du CPI : R² %s (ok) mais médiane |écart| %s %% > 30 %% (20,1 %% le 11/07/2026, 28,8 %% le 02/09) — courbure non captée par la loi de puissance à 1 segment ; clics_perdus à lire avec prudence.',
-                     r.r2, r.mediane_ecart_pct);
-    RETURN NEXT;
-  END IF;
-END $function$
-
-
--- ═══ public.alert_rule_cpi_drop() ═══
-CREATE OR REPLACE FUNCTION public.alert_rule_cpi_drop()
- RETURNS TABLE(kind text, severity text, detail text)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE v_n bigint; v_detail text;
-BEGIN
-  BEGIN
-    SELECT count(*),
-           string_agg(
-             path || ' (' || cpi_ref || '→' || cpi_now
-               || ', mom ' || round(coalesce(momentum_now, 0)::numeric, 2)
-               || ', zvΔ' || round(coalesce(delta_zv, 0)::numeric, 1) || ')',
-             ', ' ORDER BY rn
-           ) FILTER (WHERE rn <= 3)
-      INTO v_n, v_detail
-    FROM (
-      SELECT path, cpi_ref, cpi_now, delta_zv, momentum_now,
-             row_number() OVER (ORDER BY delta_cpi ASC) AS rn
-      FROM public.cpi_movers
-      WHERE statut = 'present'
-        AND grade_now IN ('S', 'A')
-        AND grade_ref IN ('S', 'A')
-        AND delta_cpi <= -15
-        AND coalesce(ecart_jours, 99) <= 8
-        AND coalesce(momentum_now, 1) < 0.90
-        AND (coalesce(delta_momentum, 0) <= -0.10 OR coalesce(delta_zc, 0) <= -0.5)
-        AND NOT EXISTS (
-          SELECT 1
-          FROM (SELECT public.gsc_last_data_day() AS g_end) g,
-               LATERAL (SELECT coalesce(sum(p.clicks) FILTER (WHERE p.day > g.g_end - 7), 0)  AS r1,
-                               coalesce(sum(p.clicks) FILTER (WHERE p.day <= g.g_end - 7), 0) AS r0
-                        FROM public.gsc_path_daily p
-                        WHERE p.path = cpi_movers.path AND p.day > g.g_end - 14) c
-          WHERE c.r1 > c.r0
-        )
-    ) m;
-    IF v_n >= 1 THEN
-      RETURN QUERY SELECT
-        'cpi_drop'::text,
-        'warn'::text,
-        format(
-          '%s page(s) S/A en vrai decay (momentum < 0,90, fenêtre ≤8j) : %s%s — cpi_movers',
-          v_n, v_detail,
-          CASE WHEN v_n > 3 THEN format(' … et %s autre(s)', v_n - 3) ELSE '' END
-        );
-    END IF;
-  EXCEPTION WHEN OTHERS THEN
-    RETURN QUERY SELECT 'cpi_movers_failed'::text, 'critical'::text, SQLERRM;
-  END;
-END;
-$function$
 
 
 -- ═══ public.alert_rule_cron_failed() ═══
@@ -413,24 +332,19 @@ CREATE OR REPLACE FUNCTION public.alert_rule_gsc_ingest_missed()
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE
-  v_last_ingest timestamptz;
+DECLARE b public.gsc_ingest_batches%ROWTYPE; last_complete timestamptz;
 BEGIN
-  -- Le cron GitHub est planifié 06:00 UTC et dérive de +4 à +12 h (constat e-02) :
-  -- on ne juge qu'à partir de 12:00 UTC, heure du cron (UTC), pas heure Paris.
-  IF (now() AT TIME ZONE 'UTC')::time < time '12:00' THEN
-    RETURN;
+  SELECT * INTO b FROM public.gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1;
+  IF b.status IN ('running','failed') AND b.started_at < now()-interval '3 hours' THEN
+    kind:='gsc_ingest_incomplete'; severity:='critical';
+    detail:='Le dernier lot GSC est incomplet depuis plus de trois heures. Reprendre les trois tables avant lecture.';
+    RETURN NEXT;
   END IF;
-  SELECT max(g.ingested_at) INTO v_last_ingest FROM public.gsc_path_daily g;
-  -- Jour UTC des deux côtés (le cron vit en UTC) — un jour Paris ici sonnait à tort de 22:00 à 24:00 UTC.
-  IF (v_last_ingest AT TIME ZONE 'UTC')::date IS DISTINCT FROM (now() AT TIME ZONE 'UTC')::date THEN
-    kind := 'gsc_ingest_missed'; severity := 'warn';
-    detail := format(
-      'Ingestion GSC en retard : attendue à 06:00 UTC, toujours absente à %s UTC (dernière : %s). '
-      'Si rien à 18:00 UTC : gh workflow run gsc-daily-ingest.yml. '
-      'L''aval (cooked-refresh-after-gsc) repartira seul à l''heure suivante, jusqu''à 21:00 UTC.',
-      to_char(now() AT TIME ZONE 'UTC', 'HH24:MI'),
-      coalesce(to_char(v_last_ingest AT TIME ZONE 'Europe/Paris', 'DD/MM/YYYY HH24:MI'), 'jamais'));
+  SELECT max(completed_at) INTO last_complete FROM public.gsc_ingest_batches WHERE status='completed';
+  IF (now() AT TIME ZONE 'UTC')::time >= time '12:00'
+     AND (last_complete AT TIME ZONE 'UTC')::date IS DISTINCT FROM (now() AT TIME ZONE 'UTC')::date THEN
+    kind:='gsc_ingest_missed'; severity:='warn';
+    detail:='Aucun lot GSC complet du jour UTC après midi. Vérifier le workflow gsc-daily-ingest et sa reprise.';
     RETURN NEXT;
   END IF;
 END;
@@ -608,127 +522,16 @@ END;
 $function$
 
 
--- ═══ public.alert_rule_refresh_after_gsc_stale() ═══
-CREATE OR REPLACE FUNCTION public.alert_rule_refresh_after_gsc_stale()
- RETURNS TABLE(kind text, severity text, detail text)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_pending record;
-  v_batch public.gsc_ingest_batches%ROWTYPE;
-  v_hour    integer := extract(hour FROM (now() AT TIME ZONE 'UTC'))::int;
-BEGIN
-  SELECT * INTO v_batch FROM public.gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1;
-  IF v_batch.status IN ('running','failed') AND v_batch.started_at < now() - interval '3 hours' THEN
-    kind:='refresh_after_gsc_stale'; severity:='critical';
-    detail:=format('Lot GSC %s incomplet depuis le %s : refresh volontairement bloqué. Vérifier le workflow puis relancer une ingestion complète des trois tables ; ne pas forcer le marqueur.',
-      v_batch.run_id,to_char(v_batch.started_at AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'));
-    RETURN NEXT;
-    RETURN;
-  END IF;
-  -- Jugé dans la fenêtre du cron aval (6h-21h UTC), après au moins deux ticks.
-  IF v_hour < 8 OR v_hour > 23 THEN
-    RETURN;
-  END IF;
-  SELECT * INTO v_pending FROM public.cooked_refresh_after_gsc_pending();
-  IF v_pending.pending AND v_pending.last_ingest < now() - interval '3 hours'
-     AND NOT EXISTS (
-       SELECT 1 FROM public.alerts a
-       WHERE a.kind LIKE 'refresh_step_failed_%'
-         AND a.created_at > now() - interval '6 hours')
-  THEN
-    kind := 'refresh_after_gsc_stale'; severity := 'critical';
-    detail := format(
-      '%s — le cron cooked-refresh-after-gsc (0 6-21 * * * UTC) n''a pas suivi. '
-      'Vérifier cron.job (actif ?) et refresh_runs ; relancer : SELECT public.cooked_refresh_after_gsc();',
-      v_pending.reason);
-    RETURN NEXT;
-  END IF;
-END;
-$function$
-
-
--- ═══ public.alert_rule_refresh_budget() ═══
-CREATE OR REPLACE FUNCTION public.alert_rule_refresh_budget()
- RETURNS TABLE(kind text, severity text, detail text)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_budget_s integer;
-  v_run      record;
-  v_steps    text;
-BEGIN
-  SELECT nullif(btrim(c.value), '')::int INTO v_budget_s
-  FROM public.cooked_config c WHERE c.key = 'refresh_after_gsc_budget_s';
-  IF v_budget_s IS NULL THEN
-    RETURN;
-  END IF;
-
-  SELECT r.run_id, r.started_at, r.duration_ms, r.ok INTO v_run
-  FROM public.refresh_runs r
-  WHERE r.step = '_total' AND r.started_at > now() - interval '48 hours'
-  ORDER BY r.started_at DESC
-  LIMIT 1;
-
-  IF v_run.run_id IS NULL OR v_run.duration_ms < v_budget_s * 1000 * 0.8 THEN
-    RETURN;
-  END IF;
-
-  SELECT string_agg(format('%s %s s%s', s.step, round(s.duration_ms / 1000.0),
-                           CASE WHEN s.ok THEN '' ELSE ' ✗' END),
-                    ', ' ORDER BY s.step_no)
-    INTO v_steps
-  FROM public.refresh_runs s
-  WHERE s.run_id = v_run.run_id AND s.step_no > 0;
-
-  kind := 'refresh_budget'; severity := 'warn';
-  detail := format(
-    'Refresh après GSC du %s : %s s = %s %% du budget de %s s (%s). '
-    'Au-delà de 100 %% les étapes restantes sautent (retex 26/07). Étapes : %s.',
-    to_char(v_run.started_at AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'),
-    round(v_run.duration_ms / 1000.0),
-    round(100.0 * v_run.duration_ms / (v_budget_s * 1000)),
-    v_budget_s,
-    CASE WHEN v_run.ok THEN 'complet' ELSE 'partiel' END,
-    coalesce(v_steps, '—'));
-  RETURN NEXT;
-END;
-$function$
-
-
 -- ═══ public.alert_rule_rpc_health() ═══
 CREATE OR REPLACE FUNCTION public.alert_rule_rpc_health()
  RETURNS TABLE(kind text, severity text, detail text)
- LANGUAGE plpgsql
- SECURITY DEFINER
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-DECLARE
-  v_fn text;
-  v_n bigint;
-  v_start timestamptz;
-BEGIN
-  FOREACH v_fn IN ARRAY ARRAY['form_submits_attributed', 'conversion_journeys', 'content_performance']
-  LOOP
-    v_start := clock_timestamp();
-    BEGIN
-      EXECUTE format('SELECT count(*) FROM public.%I(7)', v_fn) INTO v_n;
-      INSERT INTO public.rpc_health (rpc_name, status, rows_returned, duration_ms)
-      VALUES (v_fn, 'ok', v_n, extract(epoch FROM (clock_timestamp() - v_start)) * 1000);
-    EXCEPTION WHEN OTHERS THEN
-      INSERT INTO public.rpc_health (rpc_name, status, detail, duration_ms)
-      VALUES (v_fn, 'failed', SQLERRM, extract(epoch FROM (clock_timestamp() - v_start)) * 1000);
-      RETURN QUERY SELECT
-        ('rpc_failed_' || v_fn)::text,
-        'critical'::text,
-        SQLERRM;
-    END;
-  END LOOP;
-END;
+  SELECT 'rpc_failed_'||h.rpc_name,'critical'::text,
+    'Contrôle '||h.rpc_name||' : '||h.status
+  FROM public.latest_rpc_health() h WHERE h.status IS DISTINCT FROM 'ok';
 $function$
 
 
@@ -913,86 +716,14 @@ $function$
 -- ═══ public.assisted_contacts_by_entry_path(p_start date, p_end date) ═══
 CREATE OR REPLACE FUNCTION public.assisted_contacts_by_entry_path(p_start date, p_end date)
  RETURNS TABLE(entry_path text, contacts bigint)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
  SET statement_timeout TO '300s'
 AS $function$
-DECLARE
-  t0 timestamptz := public.cooked_paris_ts_start(p_start);
-  t1 timestamptz := public.cooked_paris_ts_end_exclusive(p_end);
-BEGIN
-  DROP TABLE IF EXISTS _pvk;
-  CREATE TEMP TABLE _pvk ON COMMIT DROP AS
-    SELECT COALESCE(st.visitor_key, 'sid:' || e.session_id) AS vk,
-           e.occurred_at AS t, e.path
-    FROM public.events_human e
-    LEFT JOIN public.identity_stitch st ON st.kind = 'sid' AND st.key = e.session_id
-    WHERE e.name = 'pageview'
-      AND e.occurred_at >= t0 AND e.occurred_at < t1
-      AND NOT public.cooked_is_spam_referrer(e.referrer_hostname);
-
-  DROP TABLE IF EXISTS _pvseg;
-  CREATE TEMP TABLE _pvseg ON COMMIT DROP AS
-    SELECT vk, t, path,
-           sum(brk) OVER (PARTITION BY vk ORDER BY t) AS visit_n
-    FROM (
-      SELECT vk, t, path,
-             CASE WHEN lag(t) OVER (PARTITION BY vk ORDER BY t) IS NULL
-                    OR t - lag(t) OVER (PARTITION BY vk ORDER BY t) > interval '30 minutes'
-                  THEN 1 ELSE 0 END AS brk
-      FROM _pvk
-    ) x;
-  CREATE INDEX ON _pvseg (vk, t);
-  ANALYZE _pvseg;
-
-  DROP TABLE IF EXISTS _ventry;
-  CREATE TEMP TABLE _ventry ON COMMIT DROP AS
-    SELECT vk, visit_n, (array_agg(path ORDER BY t))[1] AS entry_path
-    FROM _pvseg GROUP BY vk, visit_n;
-  ANALYZE _ventry;
-
-  DROP TABLE IF EXISTS _ct;
-  CREATE TEMP TABLE _ct ON COMMIT DROP AS
-    SELECT e.occurred_at AS t,
-           COALESCE(st.visitor_key, 'sid:' || e.session_id) AS vk
-    FROM public.events_human e
-    LEFT JOIN public.identity_stitch st ON st.kind = 'sid' AND st.key = e.session_id
-    WHERE e.name = 'cta_phone_click'
-      AND e.occurred_at >= t0 AND e.occurred_at < t1
-    UNION ALL
-    SELECT e.occurred_at,
-           COALESCE(sts.visitor_key, sta.visitor_key,
-             CASE
-               WHEN nullif(e.props->>'cooked_sid', '') IS NOT NULL THEN 'sid:' || (e.props->>'cooked_sid')
-               WHEN nullif(e.props->>'cooked_aid', '') IS NOT NULL THEN 'aid:' || (e.props->>'cooked_aid')
-               ELSE 'unresolved:' || e.session_id
-             END)
-    FROM public.events_human e
-    LEFT JOIN public.identity_stitch sts ON sts.kind = 'sid' AND sts.key = e.props->>'cooked_sid'
-    LEFT JOIN public.identity_stitch sta ON sta.kind = 'aid' AND sta.key = e.props->>'cooked_aid'
-    WHERE e.name = 'form_submit'
-      AND public.form_submit_counts_as_macro(e.props)
-      AND e.occurred_at >= t0 AND e.occurred_at < t1;
-  ANALYZE _ct;
-
-  DROP TABLE IF EXISTS _ce;
-  CREATE TEMP TABLE _ce ON COMMIT DROP AS
-    SELECT COALESCE(v.entry_path, '(non attribuable)') AS entry_path
-    FROM _ct c
-    LEFT JOIN LATERAL (
-      SELECT s.vk, s.visit_n
-      FROM _pvseg s
-      WHERE s.vk = c.vk AND s.t <= c.t AND c.t - s.t <= interval '6 hours'
-      ORDER BY s.t DESC LIMIT 1
-    ) lp ON true
-    LEFT JOIN _ventry v ON v.vk = lp.vk AND v.visit_n = lp.visit_n;
-
-  RETURN QUERY
-  SELECT ce.entry_path, count(*)::bigint
-  FROM _ce ce
-  GROUP BY ce.entry_path;
-END;
+  SELECT coalesce(e.entry_path,'(non attribuable)'),count(*)
+  FROM public.cooked_visit_events(p_start,p_end) e
+  WHERE e.counts_as_macro GROUP BY 1;
 $function$
 
 
@@ -1188,122 +919,15 @@ CREATE OR REPLACE FUNCTION public.conversion_journeys(days_back integer DEFAULT 
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  -- T-09 (mission 02/09/2026, #110 — d-02) : fenêtre = days_back jours Paris CLOS ancrés sur J-1 (lens 'live_j1'), ou sur
-  -- p_end (CPI : gsc_last_data_day()). Même fenêtre que form_submits_attributed(days_back, p_end), site_macro_counts et
-  -- macro_contacts_by_path sur les mêmes bornes ⇒ un seul total de contacts (contract-test contacts_28j_une_fenetre).
-  -- Avant : `occurred_at > now() - make_interval(...)`. Le parcours (visite recousue, coupure 30 min) est inchangé (v2, 12/07).
-  with w as (
-    select coalesce(p_end, b.n_end) as d_end,
-           coalesce(p_end, b.n_end) - (days_back - 1) as d_start
-    from public.cooked_period_bounds('rolling_28', 'live_j1') b
-  ),
-  contacts as (
-    select 'phone'::text as kind, e.occurred_at, e.path as contact_path,
-      null::text as objet, e.anonymous_id, e.session_id, 'direct'::text as method
-    from public.events_human e
-    where e.name = 'cta_phone_click'
-      and public.paris_date(e.occurred_at) between (select d_start from w) and (select d_end from w)
-    union all
-    select 'form', f.occurred_at, f.form_path, f.objet,
-      f.resolved_anonymous_id, f.resolved_session_id, f.attribution_method
-    from public.form_submits_attributed(days_back, p_end) f
-    where f.counts_as_macro
-  ),
-  ck as (
-    select c.*,
-      coalesce(ss.visitor_key, sa.visitor_key,
-               'sid:' || coalesce(c.session_id, c.anonymous_id, 'inconnu')) as vk
-    from contacts c
-    left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = c.session_id
-    left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = c.anonymous_id
-  ),
-  -- sessions couvertes par chaque visiteur porteur de contact
-  -- (fallback : la session brute du contact si la couture ne la connaît
-  -- pas encore — sessions plus récentes que le dernier refresh du stitch)
-  vsess as (
-    select k.vk, st.key as sid
-    from (select distinct vk from ck) k
-    join public.identity_stitch st on st.kind = 'sid' and st.visitor_key = k.vk
-    union
-    select c.vk, c.session_id from ck c where c.session_id is not null
+  WITH w AS (
+    SELECT coalesce(p_end,b.n_end) AS last_day,coalesce(p_end,b.n_end)-days_back+1 AS first_day
+    FROM public.cooked_period_bounds('rolling_28','live_j1') b
   )
-  select s.kind, s.occurred_at, s.contact_path, s.objet, s.anonymous_id, s.method,
-    s.journey[1],
-    public.classify_channel(s.first_ref, s.first_utm_source, s.first_utm_medium, 'www.jplouton-avocat.fr', s.first_url),
-    coalesce(array_length(s.journey, 1), 0),
-    s.journey,
-    s.dev,
-    w.d_start, w.d_end
-  from (
-    select c.kind, c.occurred_at, c.contact_path, c.objet, c.anonymous_id, c.method,
-      j.journey, j.first_ref, j.first_utm_source, j.first_utm_medium, j.first_url,
-      (select e6.device_type from public.events_human e6
-        where e6.session_id in (select v2.sid from vsess v2 where v2.vk = c.vk)
-          and e6.device_type is distinct from 'server'
-        limit 1) as dev
-    from ck c
-    left join lateral (
-      with pv as (
-        select e2.path, e2.occurred_at as t,
-               e2.referrer_hostname, e2.utm_source, e2.utm_medium, e2.url
-        from public.events_human e2
-        where e2.name = 'pageview'
-          and e2.session_id in (select v.sid from vsess v where v.vk = c.vk)
-          and e2.occurred_at <= c.occurred_at + interval '3 min'
-          and e2.occurred_at >= c.occurred_at - interval '6 hours'
-      ),
-      seg as (
-        select pv.*,
-          case when pv.t - lag(pv.t) over (order by pv.t) > interval '30 minutes'
-               then pv.t end as brk
-        from pv
-      ),
-      chain as (
-        select * from seg
-        where seg.t >= coalesce((select max(s2.brk) from seg s2), '-infinity'::timestamptz)
-      )
-      select
-        (select array_agg(q.path order by q.first_seen)
-           from (select ch.path, min(ch.t) as first_seen from chain ch group by ch.path) q) as journey,
-        (select ch.referrer_hostname from chain ch order by ch.t limit 1) as first_ref,
-        (select ch.utm_source from chain ch order by ch.t limit 1) as first_utm_source,
-        (select ch.utm_medium from chain ch order by ch.t limit 1) as first_utm_medium,
-        (select ch.url from chain ch order by ch.t limit 1) as first_url
-    ) j on true
-  ) s
-  cross join w
-  order by s.occurred_at desc;
-$function$
-
-
--- ═══ public.conversions_leaderboard(p_since date) ═══
-CREATE OR REPLACE FUNCTION public.conversions_leaderboard(p_since date DEFAULT NULL::date)
- RETURNS TABLE(page text, conversions_sur_la_page bigint, appels bigint, formulaires bigint, conversions_attribuees_entree bigint, semaines_actives bigint, premiere_semaine date, derniere_semaine date)
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-  WITH base AS (
-    SELECT week_start, COALESCE(contact_path, '(page inconnue)') AS page,
-           'sur'::text AS role, contact_kind
-    FROM public.conversion_weekly
-    WHERE week_start >= COALESCE(p_since, '-infinity'::date)
-    UNION ALL
-    SELECT week_start, COALESCE(entry_path, '(entree inconnue)'),
-           'entree', contact_kind
-    FROM public.conversion_weekly
-    WHERE week_start >= COALESCE(p_since, '-infinity'::date)
-  )
-  SELECT page,
-         count(*) FILTER (WHERE role = 'sur'),
-         count(*) FILTER (WHERE role = 'sur' AND contact_kind = 'phone'),
-         count(*) FILTER (WHERE role = 'sur' AND contact_kind = 'form'),
-         count(*) FILTER (WHERE role = 'entree'),
-         count(DISTINCT week_start),
-         min(week_start), max(week_start)
-  FROM base
-  GROUP BY 1
-  ORDER BY 2 DESC, 5 DESC, 1;
+  SELECT CASE e.event_name WHEN 'cta_phone_click' THEN 'phone' ELSE 'form' END,
+    e.occurred_at,e.path,e.objet,e.anonymous_id,e.attribution_method,e.entry_path,e.entry_channel,
+    cardinality(e.journey),e.journey,e.device_type,w.first_day,w.last_day
+  FROM w CROSS JOIN LATERAL public.cooked_visit_events(w.first_day,w.last_day) e
+  WHERE e.counts_as_macro;
 $function$
 
 
@@ -1353,28 +977,6 @@ AS $function$
   SELECT j.jobname::text, j.schedule::text, j.active
   FROM cron.job j
   ORDER BY 1;
-$function$
-
-
--- ═══ public.cooked_cpi_snapshot() ═══
-CREATE OR REPLACE FUNCTION public.cooked_cpi_snapshot()
- RETURNS void
- LANGUAGE sql
- SET search_path TO 'public', 'pg_temp'
- SET statement_timeout TO '600s'
-AS $function$
-  INSERT INTO public.cpi_daily
-    (day, path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct, convertit, cpi_version)
-  SELECT public.paris_today(),
-    path, ptype, grade, cpi, cpi_raw, momentum, gate, zc, zr, zl, zv, clics_perdus, n_org, couv_gsc_pct, convertit,
-    (SELECT value FROM public.cooked_config WHERE key = 'cpi_definition_version')
-  FROM public.cooked_page_index(28)
-  ON CONFLICT (day, path) DO UPDATE SET
-    ptype=EXCLUDED.ptype, grade=EXCLUDED.grade, cpi=EXCLUDED.cpi, cpi_raw=EXCLUDED.cpi_raw,
-    momentum=EXCLUDED.momentum, gate=EXCLUDED.gate,
-    zc=EXCLUDED.zc, zr=EXCLUDED.zr, zl=EXCLUDED.zl, zv=EXCLUDED.zv,
-    clics_perdus=EXCLUDED.clics_perdus, n_org=EXCLUDED.n_org, couv_gsc_pct=EXCLUDED.couv_gsc_pct,
-    convertit=EXCLUDED.convertit, cpi_version=EXCLUDED.cpi_version;
 $function$
 
 
@@ -1562,9 +1164,8 @@ CREATE OR REPLACE FUNCTION public.cooked_is_main_site(hostname text, props jsonb
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE
-AS $function$
-  SELECT public.cooked_site_scope(hostname, props) = 'main';
-$function$
+AS $function$ SELECT hostname IS DISTINCT FROM 'outremer.jplouton-avocat.fr'
+  AND (props->>'cooked_site') IS DISTINCT FROM 'outremer' $function$
 
 
 -- ═══ public.cooked_is_spam_referrer(p_hostname text) ═══
@@ -1641,168 +1242,6 @@ AS $function$
    AND e.path = (SELECT p FROM cp)
   GROUP BY s.day
   ORDER BY s.day;
-$function$
-
-
--- ═══ public.cooked_page_index(p_days integer) ═══
-CREATE OR REPLACE FUNCTION public.cooked_page_index(p_days integer DEFAULT 28)
- RETURNS TABLE(path text, ptype text, grade text, cpi integer, cpi_raw integer, momentum numeric, momentum_badge text, gate numeric, zc numeric, zr numeric, zl numeric, zv numeric, clics_perdus integer, n_org bigint, couv_gsc_pct integer, convertit boolean)
- LANGUAGE sql
- STABLE
- SET search_path TO 'public', 'pg_temp'
-AS $function$
--- T-05 (mission 02/09/2026, #106 — d-03/d-07/f-04) : UNE fenêtre pour tout le score. Côté GSC : p_days jours clos à
--- gsc_last_data_day() (avant : borne sur la date serveur, soit 24 jours de données réelles sur 28 nominaux, lag Google J-4).
--- Côté Cooked : les MÊMES jours Paris, bornés par cooked_paris_ts_start/_end_exclusive (avant : 28 × 24 h glissantes, borne
--- qui glissait avec l'heure du run — deux snapshots consécutifs étaient séparés de 18 à 34 h). Le score d'un jour donné
--- est désormais reproductible. T-09 (#110) : le terme zv (conversion_journeys) est lui aussi clos à gsc_last_data_day() —
--- plus aucune borne d'horloge dans le score ; url passée à classify_channel (gclid ⇒ paid, o-14).
-WITH w AS (
-  SELECT g.g_end,
-         public.cooked_paris_ts_start(g.g_end - (p_days - 1)) AS t0,
-         public.cooked_paris_ts_end_exclusive(g.g_end)        AS t1
-  FROM (SELECT public.gsc_last_data_day() AS g_end) g
-),
-fit AS (
-  SELECT regr_slope(ln(ctr), ln(pos)) AS pente, regr_intercept(ln(ctr), ln(pos)) AS icept
-  FROM (SELECT round(position)::int pos, (sum(clicks)+1.0)/(sum(impressions)+20.0) ctr
-        FROM public.gsc_query_page_daily WHERE day > (SELECT g_end FROM w) - 90 AND NOT public.gsc_is_branded(query)
-        GROUP BY 1 HAVING round(position)::int BETWEEN 1 AND 20 AND sum(impressions) >= 200) b
-),
-capq AS (SELECT g.path, sum(g.impressions) i_qpd,
-    sum(g.impressions * least(greatest(exp(f.icept + f.pente*ln(greatest(g.position,1.0))),0.0005),0.5)) e_qpd
-  FROM public.gsc_query_page_daily g, fit f WHERE g.day > (SELECT g_end FROM w) - p_days AND NOT public.gsc_is_branded(g.query) GROUP BY g.path),
-capb AS (SELECT path, sum(clicks) o_b, sum(impressions) i_b FROM public.gsc_query_page_daily
-  WHERE day > (SELECT g_end FROM w) - p_days AND public.gsc_is_branded(query) GROUP BY path),
-capp AS (SELECT path, sum(clicks) o_full, sum(impressions) i_full FROM public.gsc_path_daily WHERE day > (SELECT g_end FROM w) - p_days GROUP BY path),
-cap AS (SELECT p.path, greatest(p.o_full - coalesce(b.o_b,0),0)::numeric AS o,
-    CASE WHEN coalesce(q.i_qpd,0)>0 THEN q.e_qpd*(greatest(p.i_full-coalesce(b.i_b,0),0)::numeric/q.i_qpd) ELSE NULL END AS e,
-    q.i_qpd, greatest(p.i_full-coalesce(b.i_b,0),0) AS i_nb
-  FROM capp p LEFT JOIN capq q ON q.path=p.path LEFT JOIN capb b ON b.path=p.path),
-firstpv AS (SELECT DISTINCT ON (session_id) session_id, eh.path,
-    public.classify_channel(referrer_hostname, utm_source, utm_medium,'www.jplouton-avocat.fr', url) chan
-  FROM public.events_human eh WHERE name='pageview' AND occurred_at >= (SELECT t0 FROM w) AND occurred_at < (SELECT t1 FROM w) ORDER BY session_id, occurred_at),
-orge AS (SELECT session_id, firstpv.path FROM firstpv WHERE chan LIKE 'organic%'),
-norg AS (SELECT orge.path, count(*) n_org FROM orge GROUP BY orge.path),
-spv AS (SELECT session_id, count(*) pv FROM public.events_human WHERE name='pageview' AND occurred_at >= (SELECT t0 FROM w) AND occurred_at < (SELECT t1 FROM w) GROUP BY session_id),
-pex AS (SELECT e.session_id, e.path,
-    max((e.props->>'duration_seconds')::numeric) d,
-    max(coalesce((e.props->>'max_scroll')::numeric,0)) s
-  FROM public.events_human e
-  WHERE e.name='page_exit' AND e.occurred_at >= (SELECT t0 FROM w) AND occurred_at < (SELECT t1 FROM w)
-  GROUP BY e.session_id, e.path),
-ex2 AS (SELECT o.path, public.cooked_page_type(o.path) ptype, px.d,
-    coalesce(px.s,0) s,
-    (px.d >= 15 OR coalesce(s2.pv,1) >= 2) retained
-  FROM orge o JOIN pex px ON px.session_id=o.session_id AND px.path=o.path
-  LEFT JOIN spv s2 ON s2.session_id=o.session_id),
-thr AS (SELECT ptype, percentile_cont(0.5) WITHIN GROUP (ORDER BY d) tau, percentile_cont(0.5) WITHIN GROUP (ORDER BY s) sig FROM ex2 WHERE retained GROUP BY ptype),
-reads AS (SELECT e.path, max(e.ptype) ptype, count(*) n, count(*) FILTER (WHERE retained) r,
-    count(*) FILTER (WHERE retained AND d >= t.tau AND s >= t.sig) k FROM ex2 e JOIN thr t ON t.ptype=e.ptype GROUP BY e.path),
-tmeans AS (SELECT ptype, coalesce(sum(r)::numeric/nullif(sum(n),0),0.5) rho, coalesce(sum(k)::numeric/nullif(sum(r),0),0.25) q FROM reads GROUP BY ptype),
-ebk AS (
-  SELECT t.ptype, t.rho, t.q,
-    CASE WHEN er.np>=5 AND er.v>0 AND er.v < t.rho*(1-t.rho) THEN least(greatest(t.rho*(1-t.rho)/er.v - 1, 5), 200) ELSE 20 END kappa_ret,
-    CASE WHEN el.np>=5 AND el.v>0 AND el.v < t.q*(1-t.q) THEN least(greatest(t.q*(1-t.q)/el.v - 1, 5), 200) ELSE 20 END kappa_lec
-  FROM tmeans t
-  LEFT JOIN (SELECT ptype, var_samp(r::numeric/n) v, count(*) np FROM reads WHERE n>=10 GROUP BY ptype) er ON er.ptype=t.ptype
-  LEFT JOIN (SELECT ptype, var_samp(k::numeric/nullif(r,0)) v, count(*) np FROM reads WHERE r>=10 GROUP BY ptype) el ON el.ptype=t.ptype
-),
-jx AS (SELECT * FROM public.conversion_journeys(p_days, (SELECT g_end FROM w)) WHERE entry_channel LIKE 'organic%'),
-direct AS (SELECT entry_path path, count(*)::numeric v FROM jx WHERE entry_path IS NOT NULL GROUP BY 1),
-assist AS (SELECT jp.path, sum(1.0/greatest(j.pages_count,1)) v FROM jx j CROSS JOIN LATERAL unnest(j.journey) jp(path) WHERE jp.path <> j.entry_path GROUP BY jp.path),
-book AS (SELECT o.path, 0.25*count(*)::numeric v FROM orge o
-  JOIN public.events_human b ON b.session_id=o.session_id AND b.path=o.path AND b.name='cta_booking_click'
-  WHERE b.occurred_at >= (SELECT t0 FROM w) AND b.occurred_at < (SELECT t1 FROM w)
-  GROUP BY o.path),
-convv AS (SELECT n.path, n.n_org, coalesce(d.v,0)+coalesce(a.v,0)+coalesce(b.v,0) val,
-    coalesce(d.v,0)+coalesce(a.v,0) macro_val
-  FROM norg n LEFT JOIN direct d ON d.path=n.path LEFT JOIN assist a ON a.path=n.path LEFT JOIN book b ON b.path=n.path),
-tconv AS (SELECT public.cooked_page_type(convv.path) ptype, coalesce(sum(val)/nullif(sum(convv.n_org),0),0) nu FROM convv GROUP BY 1),
-xs AS (
-  SELECT r.path, r.ptype, c.n_org, c.val, coalesce(cap.o,0) o, cap.e, coalesce(cap.i_qpd,0) i_qpd, coalesce(cap.i_nb,0) i_nb,
-    coalesce(ln((coalesce(cap.o,0)+3)/(cap.e+3)),0) x_cap,
-    ln( least(greatest((r.r + tm.kappa_ret*tm.rho)/(r.n + tm.kappa_ret),0.001),0.999) / (1-least(greatest((r.r + tm.kappa_ret*tm.rho)/(r.n + tm.kappa_ret),0.001),0.999)) ) x_ret,
-    ln( least(greatest((r.k + tm.kappa_lec*tm.q)/(r.r + tm.kappa_lec),0.001),0.999) / (1-least(greatest((r.k + tm.kappa_lec*tm.q)/(r.r + tm.kappa_lec),0.001),0.999)) ) x_lec,
-    ln( (c.val + 30*tc.nu + 0.05)/(c.n_org+30) ) x_conv
-  FROM reads r JOIN convv c ON c.path=r.path LEFT JOIN cap ON cap.path=r.path
-  JOIN ebk tm ON tm.ptype=r.ptype JOIN tconv tc ON tc.ptype=r.ptype
-  WHERE c.n_org >= 5 AND r.n >= 3
-),
-medt AS (SELECT ptype, count(*) cnt, percentile_cont(0.5) WITHIN GROUP (ORDER BY x_cap) mc, percentile_cont(0.5) WITHIN GROUP (ORDER BY x_ret) mr,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY x_lec) ml, percentile_cont(0.5) WITHIN GROUP (ORDER BY x_conv) mv FROM xs GROUP BY ptype),
-madt AS (SELECT x.ptype,
-  greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_cap-m.mc)),0.15) sc,
-  greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_ret-m.mr)),0.15) sr,
-  greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_lec-m.ml)),0.15) sl,
-  greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_conv-m.mv)),0.15) sv FROM xs x JOIN medt m ON m.ptype=x.ptype GROUP BY x.ptype),
-medg AS (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY x_cap) mc, percentile_cont(0.5) WITHIN GROUP (ORDER BY x_ret) mr,
-  percentile_cont(0.5) WITHIN GROUP (ORDER BY x_lec) ml, percentile_cont(0.5) WITHIN GROUP (ORDER BY x_conv) mv FROM xs),
-madg AS (SELECT greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_cap-g.mc)),0.15) sc,
-  greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_ret-g.mr)),0.15) sr,
-  greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_lec-g.ml)),0.15) sl,
-  greatest(1.4826*percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(x.x_conv-g.mv)),0.15) sv FROM xs x, medg g),
--- T-06 (mission 02/09/2026, f-01, option (b) — décision Nicolas 03/09/2026) : les clics du momentum viennent de la source
--- COMPLÈTE gsc_path_daily, moins les clics brandés que Google révèle dans gsc_query_page_daily (≈ total non brandé).
--- Avant (25/07/2026) : gsc_query_page_daily non brandé seul = 16 à 28 % des clics réels d'une page ; 15 des 47 pages
--- fiables avaient un momentum de direction inverse à leurs clics. Le terme position (p1/p0) reste sur les requêtes
--- révélées non brandées : la position n'a de sens que requête par requête.
-momf AS (SELECT path,
-    coalesce(sum(clicks) FILTER (WHERE day > (SELECT g_end FROM w) - p_days),0) c1,
-    coalesce(sum(clicks) FILTER (WHERE day <= (SELECT g_end FROM w) - p_days),0) c0
-  FROM public.gsc_path_daily
-  WHERE day > (SELECT g_end FROM w) - 2*p_days
-  GROUP BY path),
-momb AS (SELECT path,
-    coalesce(sum(clicks) FILTER (WHERE day > (SELECT g_end FROM w) - p_days),0) b1,
-    coalesce(sum(clicks) FILTER (WHERE day <= (SELECT g_end FROM w) - p_days),0) b0
-  FROM public.gsc_query_page_daily
-  WHERE day > (SELECT g_end FROM w) - 2*p_days AND public.gsc_is_branded(query)
-  GROUP BY path),
-momp AS (SELECT path,
-    avg(position) FILTER (WHERE day > (SELECT g_end FROM w) - p_days) p1,
-    avg(position) FILTER (WHERE day <= (SELECT g_end FROM w) - p_days) p0
-  FROM public.gsc_query_page_daily
-  WHERE day > (SELECT g_end FROM w) - 2*p_days AND NOT public.gsc_is_branded(query)
-  GROUP BY path),
-mom AS (SELECT f.path,
-    greatest(f.c1 - coalesce(b.b1,0), 0) c1,
-    greatest(f.c0 - coalesce(b.b0,0), 0) c0,
-    p.p1, p.p0
-  FROM momf f LEFT JOIN momb b ON b.path = f.path LEFT JOIN momp p ON p.path = f.path),
-site AS (SELECT sum(c1) s1, sum(c0) s0 FROM mom),
-lcp AS (SELECT eh.path, percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'value')::numeric) lcp75
-  FROM public.cooked_web_vitals_window((SELECT t0 FROM w),(SELECT t1 FROM w)) eh
-  WHERE props->>'metric'='LCP' AND device_type='mobile' GROUP BY eh.path),
-scored AS (
-  SELECT x.path, x.ptype, x.n_org, round(greatest(coalesce(x.e,0)-x.o,0))::int clics_perdus,
-    CASE WHEN coalesce(x.i_nb,0)>0 THEN round(100.0*x.i_qpd/x.i_nb)::int ELSE 0 END couv,
-    round(least(greatest((x.x_cap - CASE WHEN mt.cnt>=15 THEN mt.mc ELSE mg.mc END)/(CASE WHEN mt.cnt>=15 THEN dt.sc ELSE dg.sc END),-3),3)::numeric,1) zc,
-    round(least(greatest((x.x_ret - CASE WHEN mt.cnt>=15 THEN mt.mr ELSE mg.mr END)/(CASE WHEN mt.cnt>=15 THEN dt.sr ELSE dg.sr END),-3),3)::numeric,1) zr,
-    round(least(greatest((x.x_lec - CASE WHEN mt.cnt>=15 THEN mt.ml ELSE mg.ml END)/(CASE WHEN mt.cnt>=15 THEN dt.sl ELSE dg.sl END),-3),3)::numeric,1) zl,
-    round(least(greatest((x.x_conv - CASE WHEN mt.cnt>=15 THEN mt.mv ELSE mg.mv END)/(CASE WHEN mt.cnt>=15 THEN dt.sv ELSE dg.sv END),-3),3)::numeric,1) zv,
-    round(exp(least(greatest(
-      (1 - 1.0/(1+exp(-((coalesce(m.c1,0)+coalesce(m.c0,0))-20)/5.0))) * (-0.08*coalesce(m.p1-m.p0,0))
-      + (1.0/(1+exp(-((coalesce(m.c1,0)+coalesce(m.c0,0))-20)/5.0))) * (ln((coalesce(m.c1,0)+5.0)/(coalesce(m.c0,0)+5.0)) - ln((s.s1+50.0)/(s.s0+50.0)))
-    ,-0.336),0.336))::numeric,2) mm,
-    round((1 - 0.15*least(greatest((coalesce(l.lcp75,2500)-2500)/2500.0,0),1))::numeric,2) gg,
-    CASE
-      WHEN x.n_org >= 200 AND coalesce(x.e,0) >= 40 THEN 'S'
-      WHEN x.n_org >= 100 AND coalesce(x.e,0) >= 20 THEN 'A'
-      WHEN x.n_org >= 30 AND coalesce(x.e,0) >= 5 THEN 'B'
-      ELSE 'C'
-    END grade,
-    coalesce(cv.macro_val, 0) > 0 AS convertit
-  FROM xs x LEFT JOIN medt mt ON mt.ptype=x.ptype LEFT JOIN madt dt ON dt.ptype=x.ptype
-  CROSS JOIN medg mg CROSS JOIN madg dg LEFT JOIN mom m ON m.path=x.path CROSS JOIN site s LEFT JOIN lcp l ON l.path=x.path
-  LEFT JOIN convv cv ON cv.path=x.path
-)
-SELECT scored.path, scored.ptype, scored.grade,
-  least(100, round(public.cpi_compose(zc, zr, zl, zv, mm, gg))::int) cpi,
-  round(public.cpi_compose(zc, zr, zl, zv, mm, gg))::int cpi_raw,
-  mm momentum, (CASE WHEN mm>=1.15 THEN '↗' WHEN mm<=0.87 THEN '↘' ELSE '→' END) momentum_badge,
-  gg gate, zc, zr, zl, zv, clics_perdus, n_org, couv couv_gsc_pct, convertit
-FROM scored
 $function$
 
 
@@ -2015,164 +1454,6 @@ END;
 $function$
 
 
--- ═══ public.cooked_refresh_after_gsc() ═══
-CREATE OR REPLACE FUNCTION public.cooked_refresh_after_gsc()
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_pending  record;
-  v_run_id   uuid        := gen_random_uuid();
-  v_run_t0   timestamptz := clock_timestamp();
-  v_t0       timestamptz;
-  v_t1       timestamptz;
-  v_steps constant text[] := ARRAY[
-    'cooked_cpi_snapshot',
-    'refresh_dashboard_snapshots',
-    'refresh_dashboard_expertises_snapshots',
-    'refresh_dashboard_resources_assisted',
-    'refresh_dashboard_assisted_quarter'
-  ];
-  v_step     text;
-  v_i        integer;
-  v_failures text[] := array[]::text[];
-  v_detail   text;
-  v_err      text;
-  v_state    text;
-BEGIN
-  IF NOT pg_try_advisory_xact_lock(782026) THEN
-    RETURN 'skip: un refresh est déjà en cours';
-  END IF;
-
-  -- T-11 : plus de garde « ingestion du jour ». On repart dès qu'une ingestion GSC est
-  -- plus récente que le dernier refresh complet, quelle que soit l'heure d'arrivée.
-  SELECT * INTO v_pending FROM public.cooked_refresh_after_gsc_pending();
-  IF NOT v_pending.pending THEN
-    RETURN 'skip: ' || v_pending.reason;
-  END IF;
-
-  FOR v_i IN 1..cardinality(v_steps) LOOP
-    v_step := v_steps[v_i];
-    v_t0   := clock_timestamp();
-    BEGIN
-      EXECUTE format('SELECT public.%I()', v_step);
-      v_t1 := clock_timestamp();
-      INSERT INTO public.refresh_runs
-        (run_id, step_no, step, started_at, finished_at, duration_ms, ok, trigger_ingest_at)
-      VALUES
-        (v_run_id, v_i, v_step, v_t0, v_t1,
-         (extract(epoch FROM (v_t1 - v_t0)) * 1000)::int, true, v_pending.last_ingest);
-    EXCEPTION WHEN OTHERS OR query_canceled THEN
-      GET STACKED DIAGNOSTICS v_err = MESSAGE_TEXT, v_state = RETURNED_SQLSTATE;
-      v_t1     := clock_timestamp();
-      v_detail := format('%s [%s]: %s', v_step, v_state, v_err);
-      IF v_state = '57014' AND v_i < cardinality(v_steps) THEN
-        v_detail := v_detail || format(' — étapes non lancées (budget timeout épuisé) : %s',
-                                       array_to_string(v_steps[v_i + 1:], ', '));
-      END IF;
-      v_failures := v_failures || v_detail;
-
-      BEGIN
-        INSERT INTO public.refresh_runs
-          (run_id, step_no, step, started_at, finished_at, duration_ms, ok, sqlstate, error, trigger_ingest_at)
-        VALUES
-          (v_run_id, v_i, v_step, v_t0, v_t1,
-           (extract(epoch FROM (v_t1 - v_t0)) * 1000)::int, false, v_state, left(v_err, 500),
-           v_pending.last_ingest);
-      EXCEPTION WHEN OTHERS OR query_canceled THEN
-        NULL;
-      END;
-
-      BEGIN
-        PERFORM public.raise_cooked_alert(
-          'refresh_step_failed_' || v_step, 'critical',
-          format('Refresh après GSC — %s. Les étapes réussies sont conservées ; retry complet au prochain tick horaire (cron cooked-refresh-after-gsc, 6h-21h UTC). Durées : SELECT * FROM refresh_runs ORDER BY started_at DESC.',
-                 v_detail));
-      EXCEPTION WHEN OTHERS OR query_canceled THEN
-        NULL;
-      END;
-
-      IF v_state = '57014' THEN
-        EXIT;
-      END IF;
-    END;
-  END LOOP;
-
-  v_t1 := clock_timestamp();
-  BEGIN
-    INSERT INTO public.refresh_runs
-      (run_id, step_no, step, started_at, finished_at, duration_ms, ok, error, trigger_ingest_at)
-    VALUES
-      (v_run_id, 0, '_total', v_run_t0, v_t1,
-       (extract(epoch FROM (v_t1 - v_run_t0)) * 1000)::int,
-       cardinality(v_failures) = 0,
-       nullif(array_to_string(v_failures, ' | '), ''),
-       v_pending.last_ingest);
-    DELETE FROM public.refresh_runs WHERE started_at < now() - interval '400 days';
-  EXCEPTION WHEN OTHERS OR query_canceled THEN
-    NULL;
-  END;
-
-  IF cardinality(v_failures) = 0 THEN
-    BEGIN
-      -- Begin prend le même verrou : aucune ingestion conforme ne peut écrire
-      -- pendant ce refresh. Le lot exact consommé est mémorisé, pas une horloge.
-      INSERT INTO public.cooked_config (key, value, updated_at)
-      VALUES ('last_full_refresh_after_gsc_at', clock_timestamp()::text, now()),
-             ('last_full_refresh_gsc_batch_id',
-               (SELECT run_id::text FROM public.gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1), now())
-      ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;
-    EXCEPTION WHEN OTHERS OR query_canceled THEN
-      NULL;
-    END;
-
-    RETURN format('ok: séquence complète en %s s après ingestion du %s',
-                  round(extract(epoch FROM (v_t1 - v_run_t0))),
-                  to_char(v_pending.last_ingest AT TIME ZONE 'Europe/Paris', 'DD/MM HH24:MI'));
-  END IF;
-
-  RETURN format('partiel: %s', array_to_string(v_failures, ' | '));
-END;
-$function$
-
-
--- ═══ public.cooked_refresh_after_gsc_pending() ═══
-CREATE OR REPLACE FUNCTION public.cooked_refresh_after_gsc_pending()
- RETURNS TABLE(pending boolean, reason text, last_ingest timestamp with time zone, last_complete timestamp with time zone)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE v_latest public.gsc_ingest_batches%ROWTYPE; v_refreshed_id uuid;
-BEGIN
-  SELECT * INTO v_latest FROM public.gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1;
-  SELECT c.value::timestamptz INTO last_complete FROM public.cooked_config c
-    WHERE c.key='last_full_refresh_after_gsc_at';
-  SELECT c.value::uuid INTO v_refreshed_id FROM public.cooked_config c
-    WHERE c.key='last_full_refresh_gsc_batch_id';
-  last_ingest := v_latest.completed_at;
-  IF v_latest.run_id IS NULL THEN
-    pending:=false; reason:='aucun lot GSC complet : lancer une ingestion complète des trois tables';
-  ELSIF v_latest.status <> 'completed' THEN
-    pending:=false;
-    reason:=format('lot GSC %s incomplet depuis le %s ; refresh bloqué jusqu''à reprise complète',
-                   v_latest.run_id,to_char(v_latest.started_at AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'));
-  ELSIF v_refreshed_id=v_latest.run_id THEN
-    pending:=false;
-    reason:=format('lot GSC %s suivi d''un refresh complet le %s',v_latest.run_id,
-                   to_char(last_complete AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'));
-  ELSE
-    pending:=true;
-    reason:=format('lot GSC complet du %s non suivi d''un refresh complet',
-                   to_char(v_latest.completed_at AT TIME ZONE 'Europe/Paris','DD/MM HH24:MI'));
-  END IF;
-  RETURN NEXT;
-END;
-$function$
-
-
 -- ═══ public.cooked_site_scope(hostname text, props jsonb) ═══
 CREATE OR REPLACE FUNCTION public.cooked_site_scope(hostname text, props jsonb DEFAULT '{}'::jsonb)
  RETURNS text
@@ -2222,6 +1503,89 @@ END;
 $procedure$
 
 
+-- ═══ public.cooked_visit_events(p_start date, p_end date) ═══
+CREATE OR REPLACE FUNCTION public.cooked_visit_events(p_start date, p_end date)
+ RETURNS TABLE(event_id uuid, event_name text, occurred_at timestamp with time zone, path text, anonymous_id text, objet text, counts_as_macro boolean, attribution_method text, visit_id uuid, entry_at timestamp with time zone, entry_path text, entry_channel text, journey text[], device_type text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+ SET jit TO 'off'
+AS $function$
+BEGIN
+  IF p_start IS NULL OR p_end IS NULL OR p_start>p_end OR p_end>=public.paris_today() THEN
+    RAISE EXCEPTION 'Expected completed Paris days with start <= end' USING ERRCODE='22023';
+  END IF;
+  RETURN QUERY
+  WITH raw AS MATERIALIZED (
+    SELECT e.id,e.name,e.occurred_at AS t,CASE WHEN e.name IN ('pageview','cta_phone_click','form_submit') AND nullif(e.path,'') IS NOT NULL THEN public.canonical_path(e.path) END AS path,
+      e.anonymous_id,CASE WHEN e.name='pageview' THEN e.device_type END AS device_type,CASE WHEN e.name='form_submit' THEN e.props->>'objet_de_ma_demande' END AS objet,
+      e.name='cta_phone_click' OR (e.name='form_submit' AND public.form_submit_counts_as_macro(e.props)) AS macro,
+      CASE WHEN e.name='pageview' THEN e.referrer_hostname END AS referrer_hostname,
+      CASE WHEN e.name='pageview' THEN e.utm_source END AS utm_source,
+      CASE WHEN e.name='pageview' THEN e.utm_medium END AS utm_medium,
+      CASE WHEN e.name='pageview' THEN e.url END AS url,
+      CASE WHEN e.name='form_submit' THEN nullif(e.props->>'cooked_sid','') ELSE nullif(e.session_id,'') END AS sid,
+      CASE WHEN e.name='form_submit' THEN nullif(e.props->>'cooked_aid','') ELSE nullif(e.anonymous_id,'') END AS aid
+    FROM public.events_human e
+    WHERE e.occurred_at<public.cooked_paris_ts_end_exclusive(p_end)
+  ), keyed AS (
+    SELECT r.*,CASE WHEN r.name='form_submit' AND s.visitor_key IS NOT NULL AND a.visitor_key IS NOT NULL
+      AND s.visitor_key<>a.visitor_key THEN 'event:'||r.id ELSE coalesce(s.visitor_key,a.visitor_key,
+      CASE WHEN r.sid NOT LIKE 'webhook-%' THEN 'sid:'||r.sid END,
+      CASE WHEN r.aid !~ '^[0-9a-f]{32}$' AND r.aid NOT LIKE 'webhook-%' THEN 'aid:'||r.aid END,'event:'||r.id) END AS vk
+    FROM raw r
+    LEFT JOIN public.identity_stitch s ON s.kind='sid' AND s.key=r.sid AND r.sid NOT LIKE 'webhook-%'
+    LEFT JOIN public.identity_stitch a ON a.kind='aid' AND a.key=r.aid
+      AND r.aid !~ '^[0-9a-f]{32}$' AND r.aid NOT LIKE 'webhook-%'
+    WHERE r.name IN ('pageview','engagement_tick','page_exit','scroll_depth','click_internal',
+      'click_outbound','cta_anchor_click','cta_booking_click','cta_phone_click','form_submit')
+  ), wanted AS (
+    SELECT DISTINCT k.vk FROM keyed k WHERE k.t>=public.cooked_paris_ts_start(p_start)
+  ), scoped AS (
+    -- On conserve tout l'amont des navigateurs concernés, pas une marge arbitraire.
+    SELECT k.* FROM keyed k JOIN wanted w ON w.vk=k.vk
+  ), gaps AS (
+    SELECT k.*,k.t-lag(k.t) OVER(PARTITION BY k.vk ORDER BY k.t,(k.name='pageview') DESC,k.id) AS gap FROM scoped k
+  ), segmented AS (
+    SELECT g.*,sum((g.gap IS NULL OR g.gap>interval '30 minutes')::int)
+      OVER(PARTITION BY g.vk ORDER BY g.t,(g.name='pageview') DESC,g.id) AS seq FROM gaps g
+  ), relevant AS (
+    SELECT s.* FROM segmented s WHERE (s.name='pageview' AND s.path IS NOT NULL) OR s.name IN ('cta_phone_click','form_submit')
+  ), enriched AS (
+    SELECT r.*,
+      first_value(r.id) OVER entry AS first_id,
+      first_value(r.t) OVER entry AS first_time,
+      first_value(r.name) OVER entry AS first_name,
+      first_value(r.path) OVER entry AS first_path,
+      first_value(r.referrer_hostname) OVER entry AS first_ref,
+      first_value(r.utm_source) OVER entry AS first_source,
+      first_value(r.utm_medium) OVER entry AS first_medium,
+      first_value(r.url) OVER entry AS first_url,
+      first_value(r.device_type) OVER entry AS first_device,
+      array_agg(r.path) FILTER(WHERE r.name='pageview' AND r.path IS NOT NULL) OVER (
+        PARTITION BY r.vk,r.seq ORDER BY r.t,(r.name='pageview') DESC,r.id) AS paths
+    FROM relevant r WINDOW entry AS (PARTITION BY r.vk,r.seq
+      ORDER BY (r.name='pageview') DESC,r.t,r.id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+  )
+  SELECT e.id,e.name,e.t,e.path,
+    CASE WHEN e.name='form_submit' THEN e.aid ELSE e.anonymous_id END,
+    e.objet,e.macro,
+    CASE WHEN e.paths IS NULL THEN 'unresolved'
+      WHEN e.name='form_submit' THEN 'hidden_field' ELSE 'direct' END,
+    CASE WHEN e.paths IS NOT NULL THEN e.first_id END,
+    CASE WHEN e.paths IS NOT NULL THEN e.first_time END,
+    CASE WHEN e.paths IS NOT NULL THEN e.first_path END,
+    CASE WHEN e.paths IS NOT NULL THEN public.classify_channel(e.first_ref,e.first_source,e.first_medium,
+      'www.jplouton-avocat.fr',e.first_url) END,
+    CASE WHEN e.name<>'pageview' THEN
+      ARRAY(SELECT x.p FROM unnest(e.paths) WITH ORDINALITY x(p,n) GROUP BY x.p ORDER BY min(x.n)) END,
+    CASE WHEN e.paths IS NOT NULL THEN e.first_device END
+  FROM enriched e
+  WHERE e.t>=public.cooked_paris_ts_start(p_start)
+  ORDER BY e.t,e.id;
+END $function$
+
+
 -- ═══ public.cooked_web_vitals_window(p_from timestamp with time zone, p_to timestamp with time zone) ═══
 CREATE OR REPLACE FUNCTION public.cooked_web_vitals_window(p_from timestamp with time zone, p_to timestamp with time zone)
  RETURNS TABLE(id uuid, path text, device_type text, props jsonb, occurred_at timestamp with time zone)
@@ -2242,95 +1606,6 @@ AS $function$
     e.props->>'metric',
     CASE WHEN e.props->>'revision' ~ '^[0-9]{1,9}$' THEN (e.props->>'revision')::int ELSE 0 END DESC,
     e.occurred_at DESC,e.id DESC;
-$function$
-
-
--- ═══ public.cooked_weekly_conversions_snapshot(p_week_start date) ═══
-CREATE OR REPLACE FUNCTION public.cooked_weekly_conversions_snapshot(p_week_start date DEFAULT NULL::date)
- RETURNS integer
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
- SET statement_timeout TO '300s'
-AS $function$
-DECLARE
-  v_today date := (now() AT TIME ZONE 'Europe/Paris')::date;
-  v_week  date;
-  v_days  integer;
-  v_rows  integer;
-BEGIN
-  -- defaut : la derniere semaine COMPLETE (lundi -> dimanche revolus)
-  v_week := date_trunc('week',
-              COALESCE(p_week_start::timestamp,
-                       date_trunc('week', v_today::timestamp) - interval '7 days'))::date;
-
-  IF v_week + 6 >= v_today THEN
-    RAISE EXCEPTION 'semaine non terminee (% -> %), rien de fige', v_week, v_week + 6;
-  END IF;
-
-  -- fenetre a couvrir depuis maintenant, + 1 jour de marge
-  v_days := (v_today - v_week) + 2;
-
-  DELETE FROM public.conversion_weekly WHERE week_start = v_week;
-
-  INSERT INTO public.conversion_weekly (
-    week_start, occurred_at, contact_kind, contact_path, entry_path,
-    entry_channel, objet, device_type, attribution_method, anonymous_id,
-    pages_count, journey)
-  SELECT v_week, j.occurred_at, j.contact_kind, j.contact_path, j.entry_path,
-         j.entry_channel, j.objet, j.device_type, j.attribution_method,
-         j.anonymous_id, j.pages_count, j.journey
-  FROM public.conversion_journeys(v_days) j
-  WHERE date_trunc('week', (j.occurred_at AT TIME ZONE 'Europe/Paris'))::date = v_week;
-
-  GET DIAGNOSTICS v_rows = ROW_COUNT;
-  RETURN v_rows;
-END;
-$function$
-
-
--- ═══ public.cpi_calibration_check() ═══
-CREATE OR REPLACE FUNCTION public.cpi_calibration_check()
- RETURNS TABLE(day date, r2 numeric, pente numeric, n_buckets integer, mediane_ecart_pct numeric, max_ecart_pct numeric, ctr_pos1_pct numeric)
- LANGUAGE sql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-  WITH b AS (SELECT public.gsc_last_data_day() AS gsc_end),
-  base AS (
-    SELECT round(g.position)::int AS pos,
-           (sum(g.clicks) + 1.0) / (sum(g.impressions) + 20.0) AS ctr,
-           sum(g.impressions) AS imps
-    FROM public.gsc_query_page_daily g, b
-    WHERE g.day > b.gsc_end - 90 AND g.day <= b.gsc_end
-      AND NOT public.gsc_is_branded(g.query)
-    GROUP BY 1
-    HAVING round(g.position)::int BETWEEN 1 AND 20 AND sum(g.impressions) >= 200
-  ),
-  fit AS (
-    SELECT regr_slope(ln(ctr), ln(pos)) AS pente, regr_intercept(ln(ctr), ln(pos)) AS icept,
-           regr_r2(ln(ctr), ln(pos)) AS r2, count(*) AS n_buckets
-    FROM base
-  ),
-  ecarts AS (
-    SELECT abs(100 * (bs.ctr - exp(f.icept + f.pente * ln(bs.pos))) / exp(f.icept + f.pente * ln(bs.pos))) AS e
-    FROM base bs, fit f
-  ),
-  agg AS (
-    SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY e) AS med, max(e) AS mx FROM ecarts
-  ),
-  ins AS (
-    INSERT INTO public.cpi_calibration_checks (day, gsc_end, r2, pente, n_buckets, mediane_ecart_pct, max_ecart_pct, ctr_pos1_pct, cpi_version)
-    SELECT public.paris_today(), b.gsc_end, round(f.r2::numeric, 3), round(f.pente::numeric, 3), f.n_buckets::int,
-           round(agg.med::numeric, 1), round(agg.mx::numeric, 1), round((100 * exp(f.icept))::numeric, 2),
-           (SELECT value FROM public.cooked_config WHERE key = 'cpi_definition_version')
-    FROM b, fit f, agg
-    ON CONFLICT (day) DO UPDATE SET gsc_end = EXCLUDED.gsc_end, r2 = EXCLUDED.r2, pente = EXCLUDED.pente,
-      n_buckets = EXCLUDED.n_buckets, mediane_ecart_pct = EXCLUDED.mediane_ecart_pct,
-      max_ecart_pct = EXCLUDED.max_ecart_pct, ctr_pos1_pct = EXCLUDED.ctr_pos1_pct, cpi_version = EXCLUDED.cpi_version
-    RETURNING day, r2, pente, n_buckets, mediane_ecart_pct, max_ecart_pct, ctr_pos1_pct
-  )
-  SELECT * FROM ins;
 $function$
 
 
@@ -3057,55 +2332,17 @@ CREATE OR REPLACE FUNCTION public.form_submits_attributed(days_back integer DEFA
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  -- T-09 (mission 02/09/2026, #110 — d-02) : fenêtre = days_back jours Paris CLOS, ancrés par défaut sur J-1 Paris
-  -- (cooked_period_bounds, lens 'live_j1') ; p_end permet d'aligner sur une autre borne close (CPI : gsc_last_data_day()).
-  -- Avant : `occurred_at > now() - make_interval(...)` — la réponse changeait avec l'heure de la question.
-  -- Le statut macro passe par form_submit_counts_as_macro(props) : une seule définition avec site_macro_counts.
-  -- Lecture de `events` brut assumée : les form_submit sont insérés server-side, jamais classés bot ni bruit.
-  with w as (
-    select coalesce(p_end, b.n_end) as d_end,
-           coalesce(p_end, b.n_end) - (days_back - 1) as d_start
-    from public.cooked_period_bounds('rolling_28', 'live_j1') b
-  ),
-  forms as (
-    select e.id, e.occurred_at, e.path,
-      e.props->>'objet_de_ma_demande' as objet,
-      public.form_submit_counts_as_macro(e.props) as counts_as_macro,
-      nullif(e.props->>'cooked_aid','') as hf_aid,
-      nullif(e.props->>'cooked_sid','') as hf_sid
-    from public.events e
-    where e.name = 'form_submit'
-      and public.paris_date(e.occurred_at) between (select d_start from w) and (select d_end from w)
-  ),
-  temporal as (
-    -- candidat unique : visiteurs browser actifs sur la page du form
-    -- dans les 20 min avant → 3 min après le submit
-    select f.id as form_id,
-      (array_agg(distinct e.anonymous_id)) as aids,
-      (array_agg(distinct e.session_id)) as sids
-    from forms f
-    join public.events_human e
-      on e.path = coalesce(f.path, '/honoraires-rendez-vous')
-     and e.device_type is distinct from 'server'
-     and e.anonymous_id not like 'webhook-%'
-     and e.occurred_at between f.occurred_at - interval '20 min'
-                           and f.occurred_at + interval '3 min'
-    where f.hf_aid is null
-    group by f.id
-    having count(distinct e.anonymous_id) = 1
+  WITH w AS (
+    SELECT coalesce(p_end,b.n_end) AS last_day,coalesce(p_end,b.n_end)-days_back+1 AS first_day
+    FROM public.cooked_period_bounds('rolling_28','live_j1') b
   )
-  select f.id, f.occurred_at, f.path, f.objet, f.counts_as_macro,
-    coalesce(f.hf_aid, t.aids[1]),
-    coalesce(f.hf_sid, t.sids[1]),
-    case
-      when f.hf_aid is not null then 'hidden_field'
-      when t.aids[1] is not null then 'temporal_unique'
-      else 'unresolved'
-    end,
-    w.d_start, w.d_end
-  from forms f
-  cross join w
-  left join temporal t on t.form_id = f.id;
+  SELECT v.event_id,v.occurred_at,v.path,v.objet,v.counts_as_macro,
+    CASE WHEN v.attribution_method='hidden_field' THEN v.anonymous_id END,
+    CASE WHEN v.attribution_method='hidden_field' THEN nullif(e.props->>'cooked_sid','') END,
+    v.attribution_method,w.first_day,w.last_day
+  FROM w CROSS JOIN LATERAL public.cooked_visit_events(w.first_day,w.last_day) v
+  JOIN public.events e ON e.id=v.event_id
+  WHERE v.event_name='form_submit';
 $function$
 
 
@@ -3528,27 +2765,6 @@ AS $function$
 $function$
 
 
--- ═══ public.gsc_top_queries_for_path(target_path text, days_back integer, max_rows integer) ═══
-CREATE OR REPLACE FUNCTION public.gsc_top_queries_for_path(target_path text, days_back integer DEFAULT 28, max_rows integer DEFAULT 20)
- RETURNS TABLE(query text, clicks bigint, impressions bigint, position_avg numeric, ctr_pct numeric, days_in_period integer)
- LANGUAGE sql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  WITH cp AS (SELECT canonical_path(target_path) AS p)
-  SELECT gqp.query, SUM(gqp.clicks)::bigint, SUM(gqp.impressions)::bigint,
-    CASE WHEN SUM(gqp.impressions) > 0 THEN ROUND((SUM(gqp.position * gqp.impressions) / SUM(gqp.impressions))::numeric, 2) ELSE NULL END,
-    CASE WHEN SUM(gqp.impressions) > 0 THEN ROUND((100.0 * SUM(gqp.clicks) / SUM(gqp.impressions))::numeric, 2) ELSE NULL END,
-    COUNT(DISTINCT gqp.day)::integer
-  FROM gsc_query_page_daily gqp, cp
-  WHERE gqp.path = cp.p
-    AND gqp.day >= (now() AT TIME ZONE 'Europe/Paris')::date - (days_back - 1)
-  GROUP BY gqp.query
-  ORDER BY 2 DESC, 3 DESC
-  LIMIT max_rows;
-$function$
-
-
 -- ═══ public.gsc_top_queries_for_path(target_path text, p_period_kind text, max_rows integer) ═══
 CREATE OR REPLACE FUNCTION public.gsc_top_queries_for_path(target_path text, p_period_kind text DEFAULT 'rolling_28'::text, max_rows integer DEFAULT 20)
  RETURNS TABLE(query text, clicks bigint, impressions bigint, position_avg numeric, ctr_pct numeric, days_in_period integer)
@@ -3723,39 +2939,20 @@ CREATE OR REPLACE FUNCTION public.latest_rpc_health()
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  select distinct on (h.rpc_name)
-    h.rpc_name,
-    case when h.checked_at < now() - interval '48 hours'
-         then 'stale'
-         else h.status
-    end as status,
-    case when h.checked_at < now() - interval '48 hours'
-         then 'mesure du ' || to_char(h.checked_at AT TIME ZONE 'Europe/Paris', 'DD/MM/YYYY HH24:MI')
-              || ' — le contract test n a pas tourné depuis, statut réel inconnu. Dernier état connu : '
-              || coalesce(h.status, 'null') || '. ' || coalesce(h.detail, '')
-         else h.detail
-    end as detail,
-    h.rows_returned,
-    h.duration_ms,
-    h.checked_at,
-    round(extract(epoch from (now() - h.checked_at)) / 60, 1) as age_minutes
-  from public.rpc_health h
-  order by h.rpc_name, h.checked_at desc;
-$function$
-
-
--- ═══ public.macro_contacts_by_path(days_back integer) ═══
-CREATE OR REPLACE FUNCTION public.macro_contacts_by_path(days_back integer)
- RETURNS TABLE(path text, phone_clicks bigint, form_submits bigint, contacts bigint, booking_intent bigint)
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  -- T-09 (mission 02/09/2026, #110 — d-02) : days_back jours Paris CLOS ancrés sur J-1 (lens 'live_j1'), comme
-  -- conversion_journeys(days_back). Avant : paris_today() - (days_back - 1) → paris_today() = jour en cours partiel.
-  SELECT m.*
-  FROM public.cooked_period_bounds('rolling_28', 'live_j1') b,
-       LATERAL public.macro_contacts_by_path(b.n_end - (days_back - 1), b.n_end) m;
+  SELECT expected.name,
+    CASE WHEN h.checked_at IS NULL THEN 'missing'
+         WHEN h.checked_at<now()-interval '48 hours' THEN 'stale' ELSE h.status END,
+    CASE WHEN h.checked_at IS NULL THEN 'Contrôle du socle jamais exécuté'
+         WHEN h.checked_at<now()-interval '48 hours' THEN 'Contrôle du socle à relancer'
+         ELSE h.detail END,
+    h.rows_returned,h.duration_ms,h.checked_at,
+    round(extract(epoch FROM now()-h.checked_at)/60,1)
+  FROM (VALUES('core_visit_counts'),('core_unattributed_contacts'),('core_canonical_path'),
+    ('core_gsc_batch'),('core_identity_fresh'),('core_private_surface')) expected(name)
+  LEFT JOIN LATERAL (
+    SELECT r.* FROM public.rpc_health r WHERE r.rpc_name=expected.name
+    ORDER BY r.checked_at DESC LIMIT 1
+  ) h ON true;
 $function$
 
 
@@ -3793,256 +2990,6 @@ AS $function$
 $function$
 
 
--- ═══ public.math_internal_edges(days_back integer) ═══
-CREATE OR REPLACE FUNCTION public.math_internal_edges(days_back integer DEFAULT 28)
- RETURNS TABLE(src text, dst text, kind text, placement text, weight bigint, dst_resolved boolean)
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-  with w as (
-    select b.n_end as d_end, b.n_end - (days_back - 1) as d_start
-    from public.cooked_period_bounds('rolling_28', 'live_j1') b
-  ),
-  ev as materialized (
-    select e.anonymous_id, e.session_id, e.name, e.path, e.occurred_at, e.props
-    from public.events_human e
-    where e.name in ('pageview', 'click_internal')
-      and e.occurred_at >= public.cooked_paris_ts_start((select d_start from w))
-      and e.occurred_at < public.cooked_paris_ts_end_exclusive((select d_end from w))
-      and e.path is not null
-  ),
-  seen as (
-    select distinct e.path from ev e where e.name = 'pageview'
-  ),
-  clicks_raw as (
-    select e.path as src,
-           e.props->>'target_path' as dst_raw,
-           coalesce(e.props->>'placement', 'inconnu') as placement,
-           count(*)::bigint as weight
-    from ev e
-    where e.name = 'click_internal' and e.props->>'target_path' is not null
-    group by 1, 2, 3
-  ),
-  clicks as (
-    -- resolution ciblee des cibles orphelines : les liens du site pointent
-    -- vers des URL accentuees qui redirigent (301) vers la forme desaccentuee
-    -- ou atterrissent les pageviews. On ne desaccentue QUE si la cible brute
-    -- n'existe pas et que la forme desaccentuee, elle, existe.
-    select c.src,
-      case when c.raw_exists then c.dst_raw
-           when c.flat_exists then c.dst_flat
-           else c.dst_raw end as dst,
-      c.placement, c.weight,
-      (not c.raw_exists and c.flat_exists) as dst_resolved
-    from (
-      select c0.*,
-        translate(c0.dst_raw, 'àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ',
-                              'aaaeeeeiioouuucAAAEEEEIIOOUUUC') as dst_flat,
-        exists (select 1 from seen s where s.path = c0.dst_raw) as raw_exists,
-        exists (select 1 from seen s where s.path =
-                translate(c0.dst_raw, 'àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ',
-                                      'aaaeeeeiioouuucAAAEEEEIIOOUUUC')) as flat_exists
-      from clicks_raw c0
-    ) c
-  ),
-  pv as (
-    select
-      coalesce(ss.visitor_key, sa.visitor_key,
-               'sid:' || coalesce(e.session_id, e.anonymous_id, 'inconnu')) as vk,
-      e.path, e.occurred_at as t
-    from ev e
-    left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = e.session_id
-    left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = e.anonymous_id
-    where e.name = 'pageview'
-  ),
-  seg as (
-    select pv.*,
-      case when pv.t - lag(pv.t) over (partition by pv.vk order by pv.t)
-                > interval '30 minutes'
-             or lag(pv.t) over (partition by pv.vk order by pv.t) is null
-           then 1 else 0 end as is_new
-    from pv
-  ),
-  vis as (
-    select seg.*,
-      sum(is_new) over (partition by vk order by t rows unbounded preceding) as visit_no
-    from seg
-  ),
-  flows as (
-    select v.path as src,
-           lead(v.path) over (partition by v.vk, v.visit_no order by v.t) as dst
-    from vis v
-  )
-  select f.src, f.dst, 'flow'::text, null::text, count(*)::bigint, false
-  from flows f
-  where f.dst is not null and f.dst <> f.src
-  group by f.src, f.dst
-  union all
-  select c.src, c.dst, 'click'::text, c.placement, c.weight, c.dst_resolved
-  from clicks c
-  where c.dst <> c.src;
-$function$
-
-
--- ═══ public.math_refresh_snapshots(p_window_days integer) ═══
-CREATE OR REPLACE FUNCTION public.math_refresh_snapshots(p_window_days integer DEFAULT 28)
- RETURNS TABLE(sequences bigint, edges bigint)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_seq bigint;
-  v_edg bigint;
-  v_start date;
-  v_end date;
-  v_computed_at timestamptz := now();
-BEGIN
-  IF p_window_days IS NULL OR p_window_days < 1 THEN
-    RAISE EXCEPTION 'window_days must be a positive integer' USING ERRCODE = '22023';
-  END IF;
-  SELECT b.n_end - (p_window_days - 1), b.n_end INTO v_start, v_end
-  FROM public.cooked_period_bounds('rolling_28', 'live_j1') b;
-
-  DELETE FROM public.math_visit_sequences_snapshot WHERE window_days = p_window_days;
-  INSERT INTO public.math_visit_sequences_snapshot
-    (computed_at, window_days, window_start, window_end, calculation_version, journey, converted, entry_channel, n)
-  SELECT v_computed_at, p_window_days, v_start, v_end, 'paris_j1_v1', s.journey, s.converted, s.entry_channel, s.n
-  FROM public.math_visit_sequences(p_window_days) s;
-  GET DIAGNOSTICS v_seq = ROW_COUNT;
-
-  DELETE FROM public.math_internal_edges_snapshot WHERE window_days = p_window_days;
-  INSERT INTO public.math_internal_edges_snapshot
-    (computed_at, window_days, window_start, window_end, calculation_version, src, dst, kind, placement, weight, dst_resolved)
-  SELECT v_computed_at, p_window_days, v_start, v_end, 'paris_j1_v1', e.src, e.dst, e.kind, e.placement, e.weight, e.dst_resolved
-  FROM public.math_internal_edges(p_window_days) e;
-  GET DIAGNOSTICS v_edg = ROW_COUNT;
-
-  RETURN QUERY SELECT v_seq, v_edg;
-END;
-$function$
-
-
--- ═══ public.math_visit_sequences(days_back integer) ═══
-CREATE OR REPLACE FUNCTION public.math_visit_sequences(days_back integer DEFAULT 28)
- RETURNS TABLE(journey text[], converted boolean, entry_channel text, n bigint)
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-  with w as (
-    select b.n_end as d_end, b.n_end - (days_back - 1) as d_start
-    from public.cooked_period_bounds('rolling_28', 'live_j1') b
-  ),
-  ev as materialized (
-    select e.anonymous_id, e.session_id, e.name, e.path, e.occurred_at,
-           e.referrer_hostname, e.utm_source, e.utm_medium, e.url
-    from public.events_human e
-    where e.name in ('pageview', 'cta_phone_click')
-      and e.occurred_at >= public.cooked_paris_ts_start((select d_start from w))
-      and e.occurred_at < public.cooked_paris_ts_end_exclusive((select d_end from w))
-  ),
-  pv as materialized (
-    select
-      coalesce(ss.visitor_key, sa.visitor_key,
-               'sid:' || coalesce(e.session_id, e.anonymous_id, 'inconnu')) as vk,
-      e.path, e.occurred_at as t,
-      e.referrer_hostname, e.utm_source, e.utm_medium, e.url
-    from ev e
-    left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = e.session_id
-    left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = e.anonymous_id
-    where e.name = 'pageview' and e.path is not null
-  ),
-  contacts as materialized (
-    select
-      coalesce(ss.visitor_key, sa.visitor_key,
-               'sid:' || coalesce(c.session_id, c.anonymous_id, 'inconnu')) as vk,
-      c.occurred_at as t
-    from (
-      select e.occurred_at, e.anonymous_id, e.session_id
-      from ev e where e.name = 'cta_phone_click'
-      union all
-      select f.occurred_at, f.resolved_anonymous_id, f.resolved_session_id
-      from public.form_submits_attributed(days_back, (select d_end from w)) f
-      where f.counts_as_macro
-    ) c
-    left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = c.session_id
-    left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = c.anonymous_id
-  ),
-  vis as materialized (
-    select seg.*,
-      sum(is_new) over (partition by vk order by t rows unbounded preceding) as visit_no
-    from (
-      select pv.*,
-        case when pv.t - lag(pv.t) over (partition by pv.vk order by pv.t)
-                  > interval '30 minutes'
-               or lag(pv.t) over (partition by pv.vk order by pv.t) is null
-             then 1 else 0 end as is_new
-      from pv
-    ) seg
-  ),
-  bounds as materialized (
-    select vk, visit_no, min(t) as t_start, max(t) as t_end
-    from vis group by vk, visit_no
-  ),
-  -- un contact = au plus une visite : la plus recente qui le precede,
-  -- dans la limite de 6 h (fenetre de conversion_journeys v2)
-  contact_visit as materialized (
-    select distinct on (c.vk, c.t) c.vk, c.t as contact_at, b.visit_no
-    from contacts c
-    join bounds b
-      on b.vk = c.vk
-     and b.t_start <= c.t + interval '3 minutes'
-     and c.t <= b.t_end + interval '6 hours'
-    order by c.vk, c.t, b.t_start desc
-  ),
-  vc as materialized (
-    select vk, visit_no, min(contact_at) as contact_at
-    from contact_visit group by vk, visit_no
-  ),
-  kept as materialized (
-    select v.vk, v.visit_no, v.path, v.t,
-           v.referrer_hostname, v.utm_source, v.utm_medium, v.url,
-           (vc.contact_at is not null) as converted
-    from vis v
-    left join vc on vc.vk = v.vk and vc.visit_no = v.visit_no
-    where vc.contact_at is null
-       or v.t <= vc.contact_at + interval '3 minutes'
-  ),
-  entry as materialized (
-    select distinct on (k.vk, k.visit_no)
-           k.vk, k.visit_no, k.referrer_hostname, k.utm_source, k.utm_medium, k.url
-    from kept k
-    order by k.vk, k.visit_no, k.t
-  ),
-  per_visit as materialized (
-    select f.vk, f.visit_no,
-      array_agg(f.path order by f.first_seen) as journey,
-      bool_or(f.converted) as converted
-    from (
-      select vk, visit_no, path, min(t) as first_seen, bool_or(converted) as converted
-      from kept group by vk, visit_no, path
-    ) f
-    group by f.vk, f.visit_no
-  ),
-  raw_grouped as (
-    select p.journey, p.converted,
-           e.referrer_hostname, e.utm_source, e.utm_medium, e.url,
-           count(*)::bigint as n
-    from per_visit p
-    join entry e on e.vk = p.vk and e.visit_no = p.visit_no
-    group by 1, 2, 3, 4, 5, 6
-  )
-  select g.journey, g.converted,
-         public.classify_channel(g.referrer_hostname, g.utm_source, g.utm_medium,
-                                 'www.jplouton-avocat.fr', g.url),
-         sum(g.n)::bigint
-  from raw_grouped g
-  group by 1, 2, 3;
-$function$
-
-
 -- ═══ public.outbound_destinations_for_path(path text, days_back integer) ═══
 CREATE OR REPLACE FUNCTION public.outbound_destinations_for_path(path text, days_back integer DEFAULT 28)
  RETURNS TABLE(hostname text, clicks bigint)
@@ -4070,51 +3017,107 @@ CREATE OR REPLACE FUNCTION public.page_taxonomy_sync_wix(p_posts jsonb, p_dry_ru
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  v_n int;
+  v_complete boolean := jsonb_typeof(p_posts) = 'object';
+  v_pages jsonb;
+  v_observed_at timestamptz;
+  v_count integer;
+  v_unique integer;
+  v_posts integer;
+  v_categories integer;
+  v_static integer;
 BEGIN
-  IF p_posts IS NULL OR jsonb_typeof(p_posts) <> 'array' OR jsonb_array_length(p_posts) < 300 THEN
-    RAISE EXCEPTION 'page_taxonomy_sync_wix : liste publiée suspecte (% éléments, attendu ≥ 300) — rien n''est écrit',
-      coalesce(jsonb_array_length(p_posts), 0);
+  IF p_posts IS NULL OR p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'Wix inventory and dry-run flag are required' USING ERRCODE='22023';
+  END IF;
+  IF v_complete THEN
+    IF jsonb_typeof(p_posts->'pages') IS DISTINCT FROM 'array'
+       OR jsonb_typeof(p_posts->'counts') IS DISTINCT FROM 'object' THEN
+      RAISE EXCEPTION 'Complete Wix inventory requires pages and source counts' USING ERRCODE='22023';
+    END IF;
+    v_pages := p_posts->'pages';
+    v_observed_at := (p_posts->>'observed_at')::timestamptz;
+    IF v_observed_at IS NULL OR v_observed_at > clock_timestamp() + interval '5 minutes'
+       OR v_observed_at < clock_timestamp() - interval '24 hours' THEN
+      RAISE EXCEPTION 'Wix observation timestamp missing or outside accepted range' USING ERRCODE='22023';
+    END IF;
+  ELSIF jsonb_typeof(p_posts) = 'array' AND jsonb_array_length(p_posts) >= 300 THEN
+    -- Backward compatibility for old CLI clients / historical fixtures:
+    -- only blog categories change. Publication status and observation never do.
+    SELECT jsonb_agg(jsonb_build_object('path', path, 'category', category)) INTO v_pages
+    FROM (
+      SELECT DISTINCT public.canonical_path('/post/' || (e->>'slug')) AS path,
+        CASE WHEN e->>'category'='ressource' THEN 'ressource' ELSE 'classique' END AS category
+      FROM jsonb_array_elements(p_posts) e WHERE coalesce(e->>'slug','')<>''
+    ) w;
+  ELSE
+    RAISE EXCEPTION 'Unsupported or incomplete Wix inventory' USING ERRCODE='22023';
   END IF;
 
-  CREATE TEMP TABLE _wix_posts ON COMMIT DROP AS
-    SELECT DISTINCT public.canonical_path('/post/' || (e->>'slug')) AS path,
-           CASE WHEN e->>'category' = 'ressource' THEN 'ressource' ELSE 'classique' END AS category
-    FROM jsonb_array_elements(p_posts) e
-    WHERE coalesce(e->>'slug', '') <> '';
-
-  SELECT count(*) INTO v_n FROM _wix_posts;
-  IF v_n < 300 THEN
-    RAISE EXCEPTION 'page_taxonomy_sync_wix : % paths après canonicalisation (attendu ≥ 300)', v_n;
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(v_pages) e
+    WHERE jsonb_typeof(e) <> 'object' OR jsonb_typeof(e->'path') IS DISTINCT FROM 'string'
+      OR e->>'path' NOT LIKE '/%' OR e->>'path' LIKE '//%'
+      OR e->>'path' ~ '[?#[:cntrl:]]'
+      OR e->>'path' IS DISTINCT FROM public.canonical_path(e->>'path')
+      OR ((e->>'path' LIKE '/post/%') AND coalesce(e->>'category','') NOT IN ('ressource','classique'))
+      OR ((e->>'path' NOT LIKE '/post/%') AND e->>'category' IS NOT NULL)
+  ) THEN
+    RAISE EXCEPTION 'Invalid Wix path or category' USING ERRCODE='22023';
+  END IF;
+  SELECT count(*), count(DISTINCT path),
+    count(*) FILTER(WHERE path LIKE '/post/%'),
+    count(*) FILTER(WHERE path LIKE '/blog/categories/%'),
+    count(*) FILTER(WHERE path NOT LIKE '/post/%' AND path NOT LIKE '/blog/categories/%')
+    INTO v_count, v_unique, v_posts, v_categories, v_static
+  FROM jsonb_to_recordset(v_pages) w(path text, category text);
+  IF v_count=0 OR v_count<>v_unique OR (NOT v_complete AND v_count<300) THEN
+    RAISE EXCEPTION 'Incomplete or repeated Wix paths' USING ERRCODE='22023';
+  END IF;
+  IF v_complete AND (
+    v_posts < 1 OR v_categories < 1 OR v_static < 1
+    OR v_posts IS DISTINCT FROM (p_posts->'counts'->>'posts')::integer
+    OR v_categories IS DISTINCT FROM (p_posts->'counts'->>'categories')::integer
+    OR v_static IS DISTINCT FROM (p_posts->'counts'->>'static')::integer
+    OR NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE path='/')
+  ) THEN
+    RAISE EXCEPTION 'Wix source counts or homepage do not match' USING ERRCODE='22023';
   END IF;
 
+  -- Serialise inventory writes and the existing heuristic updater. Any failure
+  -- rolls back both category changes and all publication changes in this RPC.
+  LOCK TABLE public.page_taxonomy IN SHARE ROW EXCLUSIVE MODE;
+  IF v_complete AND v_observed_at < (SELECT max(publication_checked_at) FROM public.page_taxonomy) THEN
+    RAISE EXCEPTION 'A newer Wix inventory has already been applied' USING ERRCODE='22023';
+  END IF;
   SELECT coalesce(array_agg(w.path ORDER BY w.path), '{}') INTO inserted_paths
-  FROM _wix_posts w LEFT JOIN public.page_taxonomy t ON t.path = w.path WHERE t.path IS NULL;
+  FROM jsonb_to_recordset(v_pages) w(path text, category text)
+  LEFT JOIN public.page_taxonomy t USING(path) WHERE t.path IS NULL;
   SELECT coalesce(array_agg(w.path ORDER BY w.path), '{}') INTO updated_paths
-  FROM _wix_posts w JOIN public.page_taxonomy t ON t.path = w.path
-  WHERE t.category IS DISTINCT FROM w.category;
-  SELECT count(*) INTO unpublished
-  FROM public.page_taxonomy t WHERE t.path LIKE '/post/%'
-    AND NOT EXISTS (SELECT 1 FROM _wix_posts w WHERE w.path = t.path);
-  inserted := coalesce(array_length(inserted_paths, 1), 0);
-  updated  := coalesce(array_length(updated_paths, 1), 0);
-
+  FROM jsonb_to_recordset(v_pages) w(path text, category text)
+  JOIN public.page_taxonomy t USING(path)
+  WHERE w.path LIKE '/post/%' AND t.category IS DISTINCT FROM w.category;
+  SELECT count(*) INTO unpublished FROM public.page_taxonomy t
+  WHERE (v_complete OR t.path LIKE '/post/%')
+    AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE w.path=t.path);
+  inserted := cardinality(inserted_paths);
+  updated := cardinality(updated_paths);
   IF NOT p_dry_run THEN
-    INSERT INTO public.page_taxonomy (path, category, theme, source)
-    SELECT w.path, w.category, public.page_taxonomy_theme_from_slug(w.path), 'wix_api'
-    FROM _wix_posts w
-    WHERE w.path = ANY (inserted_paths);
-
-    -- Lignes existantes : seule `category` bouge (theme/source préservés — garde-fou
-    -- `source = 'slug_heuristic'` de refresh_page_taxonomy_heuristic).
-    UPDATE public.page_taxonomy t
-       SET category = w.category, updated_at = now()
-      FROM _wix_posts w
-     WHERE w.path = t.path AND t.path = ANY (updated_paths);
+    INSERT INTO public.page_taxonomy(path,category,theme,source)
+      SELECT w.path,w.category,public.page_taxonomy_theme_from_slug(w.path),'wix_api'
+      FROM jsonb_to_recordset(v_pages) w(path text, category text)
+      WHERE w.path=ANY(inserted_paths);
+    UPDATE public.page_taxonomy t SET category=w.category, updated_at=clock_timestamp()
+      FROM jsonb_to_recordset(v_pages) w(path text, category text)
+      WHERE w.path=t.path AND t.path=ANY(updated_paths);
+    IF v_complete THEN
+      UPDATE public.page_taxonomy t SET
+        is_published=EXISTS (SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE w.path=t.path),
+        publication_checked_at=v_observed_at;
+    END IF;
   END IF;
-
   RETURN NEXT;
-END $function$
+END;
+$function$
 
 
 -- ═══ public.page_taxonomy_theme_from_slug(p_path text) ═══
@@ -4137,6 +3140,38 @@ AS $function$
     when p_path ~* 'diffamation|injure|r.putation|presse' then 'réputation & presse'
     else null
   end
+$function$
+
+
+-- ═══ public.page_visits(p_start date, p_end date) ═══
+CREATE OR REPLACE FUNCTION public.page_visits(p_start date, p_end date)
+ RETURNS TABLE(row_kind text, path text, visits bigint, entries bigint, phone_visits bigint, form_visits bigint, contact_visits bigint, contact_rate_pct numeric, observed_days integer, unattributed_phone_events bigint, unattributed_form_events bigint)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  WITH e AS MATERIALIZED (SELECT * FROM public.cooked_visit_events(p_start,p_end)),
+  per_page AS (
+    SELECT e.path,count(DISTINCT e.visit_id) AS visits,
+      count(DISTINCT e.visit_id) FILTER(WHERE e.event_id=e.visit_id) AS entries
+    FROM e WHERE e.event_name='pageview' GROUP BY e.path
+  ), contacts AS (
+    SELECT e.entry_path,
+      count(DISTINCT e.visit_id) FILTER(WHERE e.event_name='cta_phone_click') AS phone,
+      count(DISTINCT e.visit_id) FILTER(WHERE e.event_name='form_submit') AS form,
+      count(DISTINCT e.visit_id) AS union_count
+    FROM e WHERE e.counts_as_macro AND e.entry_at>=public.cooked_paris_ts_start(p_start)
+    GROUP BY e.entry_path
+  )
+  SELECT 'page',p.path,p.visits,p.entries,coalesce(c.phone,0),coalesce(c.form,0),coalesce(c.union_count,0),
+    round(100.0*coalesce(c.union_count,0)/nullif(p.entries,0),2),NULL::integer,NULL::bigint,NULL::bigint
+  FROM per_page p LEFT JOIN contacts c ON c.entry_path=p.path
+  UNION ALL
+  SELECT 'coverage',NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+    count(DISTINCT public.paris_date(e.occurred_at)) FILTER(WHERE e.event_name='pageview')::integer,
+    count(*) FILTER(WHERE e.event_name='cta_phone_click' AND e.visit_id IS NULL),
+    count(*) FILTER(WHERE e.event_name='form_submit' AND e.counts_as_macro AND e.visit_id IS NULL)
+  FROM e;
 $function$
 
 
@@ -4697,486 +3732,55 @@ end;
 $function$
 
 
--- ═══ public.refresh_dashboard_assisted_quarter() ═══
-CREATE OR REPLACE FUNCTION public.refresh_dashboard_assisted_quarter()
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
- SET statement_timeout TO '600s'
-AS $function$
-DECLARE
-  q_start date := date_trunc('quarter', public.paris_today())::date;
-  q_end   date := public.paris_today() - 1;
-  q_label text := 'T' || extract(quarter FROM q_start)::int || ' ' || extract(year FROM q_start)::int;
-  v_value int;
-  v_target int;
-BEGIN
-  IF q_end < q_start THEN
-    v_value := 0;
-  ELSE
-    SELECT coalesce(sum(a.contacts), 0)::int INTO v_value
-    FROM public.assisted_contacts_by_entry_path(q_start, q_end) a
-    JOIN public.page_taxonomy pt ON pt.path = a.entry_path AND pt.category = 'ressource';
-  END IF;
-
-  SELECT NULLIF(btrim(value), '')::int INTO v_target
-  FROM public.cooked_config WHERE key = 'objectif_assistes_trimestre';
-
-  INSERT INTO public.dashboard_assisted_quarter_snapshot
-    (quarter, quarter_start, quarter_end, value, target, refreshed_at)
-  VALUES (q_label, q_start, q_end, v_value, v_target, now())
-  ON CONFLICT (quarter) DO UPDATE SET
-    quarter_start = excluded.quarter_start,
-    quarter_end   = excluded.quarter_end,
-    value         = excluded.value,
-    target        = excluded.target,
-    refreshed_at  = excluded.refreshed_at;
-END;
-$function$
-
-
--- ═══ public.refresh_dashboard_expertises_snapshots(p_window text) ═══
-CREATE OR REPLACE FUNCTION public.refresh_dashboard_expertises_snapshots(p_window text DEFAULT NULL::text)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
- SET statement_timeout TO '600s'
-AS $function$
-DECLARE
-  windows text[] := CASE WHEN p_window IS NULL THEN ARRAY['rolling_28','rolling_90'] ELSE ARRAY[p_window] END;
-  w text; lns date; lne date; lps date; lpe date; lpt date; lbl text; ld int;
-  gns date; gne date; gps date; gpe date; glast date; glag int; cpi_day date;
-BEGIN
-  SELECT max(day) INTO cpi_day FROM cpi_daily;
-  DELETE FROM public.dashboard_expertises_snapshot       WHERE window_kind = ANY(windows);
-  DELETE FROM public.dashboard_expertises_kpis_snapshot  WHERE window_kind = ANY(windows);
-  DELETE FROM public.dashboard_expertises_trend_snapshot WHERE window_kind = ANY(windows);
-
-  DROP TABLE IF EXISTS _xp;
-  CREATE TEMP TABLE _xp ON COMMIT DROP AS
-    SELECT * FROM (VALUES
-      ('/defense-penale/droit-penal'),
-      ('/defense-penale/droit-penal-des-affaires'),
-      ('/defense-penale/proces-criminel'),
-      ('/defense-penale/trafic-de-stupefiant'),
-      ('/defense-penale/violences-conjugales-et-feminicides'),
-      ('/indemnisation-des-victimes/accidents-de-la-route'),
-      ('/indemnisation-des-victimes/accidents-de-la-vie-courante'),
-      ('/indemnisation-des-victimes/accidents-et-erreurs-medicales'),
-      ('/indemnisation-des-victimes/droit-et-accidents-du-travail'),
-      ('/indemnisation-des-victimes/victimes-de-delits-ou-crimes'),
-      ('/droit-des-contrats-et-des-personnes/droit-de-la-famille'),
-      ('/droit-des-contrats-et-des-personnes/droit-de-la-famille/avocat-divorce-bordeaux'),
-      ('/droit-des-contrats-et-des-personnes/defense-des-consommateurs'),
-      ('/droit-des-contrats-et-des-personnes/droit-assurances-particuliers-professionnels')
-    ) v(path);
-  ANALYZE _xp;
-
-  FOREACH w IN ARRAY windows LOOP
-    CALL public.cooked_snapshot_window(w, 'clean', lbl, lns, lne, lps, lpe, lpt, ld, gns, gne, gps, gpe, glast, glag);
-    DROP TABLE IF EXISTS _evx;
-    CREATE TEMP TABLE _evx ON COMMIT DROP AS
-      SELECT e.anonymous_id, e.session_id, e.path, e.name, e.occurred_at,
-        (e.props->>'duration_seconds')::numeric AS dur, (e.props->>'max_scroll')::numeric AS scr,
-        e.d
-      FROM _cooked_ev e JOIN _xp ON _xp.path=e.path
-      WHERE e.name IN ('pageview','page_exit')
-        AND e.referrer_hostname IS DISTINCT FROM 'm.baidu.com'
-        AND e.referrer_hostname IS DISTINCT FROM 'baidu.com';
-    ANALYZE _evx;
-
-    DROP TABLE IF EXISTS _fp;
-    CREATE TEMP TABLE _fp ON COMMIT DROP AS
-      SELECT DISTINCT ON (e.session_id) e.session_id, e.path AS entry_path,
-        public.classify_channel(e.referrer_hostname,e.utm_source,e.utm_medium,'www.jplouton-avocat.fr',e.url) AS chan
-      FROM _cooked_ev e
-      WHERE e.name='pageview'
-        AND e.session_id IN (SELECT DISTINCT session_id FROM _evx WHERE name='pageview' AND d BETWEEN lns AND lne)
-        AND e.d BETWEEN lns AND lne
-      ORDER BY e.session_id, e.occurred_at;
-    ANALYZE _fp;
-
-    INSERT INTO public.dashboard_expertises_snapshot (
-      window_kind, path, theme, unique_visitors, pageviews, dwell_median_s, scroll_median,
-      gsc_clicks, gsc_impressions, gsc_position_avg, gsc_ctr_pct,
-      best_query, best_query_clicks, best_query_volume_fr, best_query_cpc,
-      contacts, booking_intent, first_impression_day, first_tracker_day, days_live,
-      confidence, cooked_start, cooked_end, gsc_start, gsc_end, refreshed_at,
-      unique_visitors_prev, gsc_clicks_prev, cpi, cpi_grade, momentum, potentiel, convertit,
-      ctr_expected, paid_share_pct)
-    WITH
-    reads AS (
-      SELECT fp.entry_path AS path,
-        ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY a.dur)) AS dwell,
-        ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY a.scr)) AS scroll
-      FROM _fp fp
-      JOIN (SELECT session_id, path, max(dur) dur, max(scr) scr FROM _evx WHERE name='page_exit' GROUP BY session_id, path) a
-        ON a.session_id=fp.session_id AND a.path=fp.entry_path
-      WHERE fp.chan LIKE 'organic%' AND fp.entry_path IN (SELECT path FROM _xp)
-      GROUP BY fp.entry_path
-    ),
-    vis AS (
-      SELECT path,
-        COUNT(DISTINCT anonymous_id) FILTER (WHERE name='pageview' AND d BETWEEN lns AND lne) AS uv,
-        COUNT(DISTINCT anonymous_id) FILTER (WHERE name='pageview' AND d BETWEEN lps AND lpe) AS uv_prev,
-        COUNT(*) FILTER (WHERE name='pageview' AND d BETWEEN lns AND lne) AS pv
-      FROM _evx GROUP BY path
-    ),
-    pgchan AS (
-      SELECT ev.path,
-        COUNT(DISTINCT ev.session_id) AS tot,
-        COUNT(DISTINCT ev.session_id) FILTER (WHERE fp.chan='paid') AS paid
-      FROM _evx ev JOIN _fp fp ON fp.session_id=ev.session_id
-      WHERE ev.name='pageview' AND ev.d BETWEEN lns AND lne
-      GROUP BY ev.path
-    ),
-    gsc AS (SELECT m.path,m.clicks_total,m.impressions_total,m.position_avg,m.ctr_pct
-            FROM gsc_path_metrics(gns,gne) m JOIN _xp ON _xp.path=m.path),
-    gscp AS (SELECT m.path,m.clicks_total AS clicks_prev FROM gsc_path_metrics(gps,gpe) m JOIN _xp ON _xp.path=m.path),
-    cpi_d AS (SELECT path,cpi,grade,momentum FROM cpi_daily WHERE day=cpi_day),
-    gis AS (SELECT path,potentiel,convertit FROM cpi_gisement),
-    bestq AS (
-      SELECT DISTINCT ON (q.path) q.path,q.query,q.clicks FROM (
-        SELECT qp.path,qp.query,SUM(qp.clicks) clicks,SUM(qp.impressions) impr
-        FROM gsc_query_page_daily qp JOIN _xp ON _xp.path=qp.path
-        WHERE qp.day BETWEEN gns AND gne AND NOT public.gsc_is_branded(qp.query)
-        GROUP BY qp.path,qp.query) q
-      ORDER BY q.path,q.clicks DESC,q.impr DESC
-    ),
-    contacts AS (SELECT mc.path,mc.contacts,mc.booking_intent FROM macro_contacts_by_path(lns,lne) mc JOIN _xp ON _xp.path=mc.path)
-    SELECT w, x.path,
-      (SELECT theme FROM page_taxonomy pt WHERE pt.path=x.path),
-      COALESCE(v.uv,0), COALESCE(v.pv,0), r.dwell, r.scroll,
-      COALESCE(g.clicks_total,0), COALESCE(g.impressions_total,0), g.position_avg, g.ctr_pct,
-      bq.query, bq.clicks, dfs.search_volume, dfs.cpc,
-      COALESCE(ct.contacts,0), COALESCE(ct.booking_intent,0),
-      NULL::date, NULL::date, NULL::int,
-      CASE WHEN ld>0 AND COALESCE(v.uv,0)::numeric/ld >= 1.5 THEN 'A'
-           WHEN ld>0 AND COALESCE(v.uv,0)::numeric/ld >= 0.5 THEN 'B' ELSE 'C' END,
-      lns, lne, gns, gne, now(),
-      COALESCE(v.uv_prev,0)::int, COALESCE(gp.clicks_prev,0)::int,
-      cd.cpi, cd.grade, cd.momentum, gi.potentiel, gi.convertit,
-      NULL::numeric,
-      CASE WHEN pc.tot>0 THEN ROUND(100.0*pc.paid/pc.tot,1) END
-    FROM _xp x
-    LEFT JOIN vis v      ON v.path=x.path
-    LEFT JOIN reads r    ON r.path=x.path
-    LEFT JOIN pgchan pc  ON pc.path=x.path
-    LEFT JOIN gsc g      ON g.path=x.path
-    LEFT JOIN gscp gp    ON gp.path=x.path
-    LEFT JOIN cpi_d cd   ON cd.path=x.path
-    LEFT JOIN gis gi     ON gi.path=x.path
-    LEFT JOIN bestq bq   ON bq.path=x.path
-    LEFT JOIN dfs_keyword_volume dfs ON dfs.keyword=bq.query AND dfs.location_code=2250
-    LEFT JOIN contacts ct ON ct.path=x.path;
-
-    INSERT INTO public.dashboard_expertises_kpis_snapshot (
-      window_kind, label_fr, cooked_start, cooked_end, gsc_start, gsc_end, gsc_last_day, lag_days,
-      is_partial, visitors_n, visitors_prev, pageviews_n, pageviews_prev, contacts_n, contacts_prev,
-      gsc_clicks_n, gsc_clicks_prev, gsc_impressions_n, gsc_impressions_prev, refreshed_at,
-      current_day_partial, no_prev_baseline, paid_entries_n, organic_entries_n, total_entries_n)
-    SELECT w, lbl, lns, lne, gns, gne, glast, glag,
-      ((lne >= lpt) OR (tracker_first_seen_global() > lpe::timestamptz)),
-      (SELECT COUNT(DISTINCT anonymous_id) FILTER (WHERE name='pageview') FROM _evx WHERE d BETWEEN lns AND lne),
-      (SELECT COUNT(DISTINCT anonymous_id) FILTER (WHERE name='pageview') FROM _evx WHERE d BETWEEN lps AND lpe),
-      (SELECT COUNT(*) FILTER (WHERE name='pageview') FROM _evx WHERE d BETWEEN lns AND lne),
-      (SELECT COUNT(*) FILTER (WHERE name='pageview') FROM _evx WHERE d BETWEEN lps AND lpe),
-      (SELECT COALESCE(SUM(mc.contacts),0) FROM macro_contacts_by_path(lns,lne) mc JOIN _xp ON _xp.path=mc.path),
-      (SELECT COALESCE(SUM(mc.contacts),0) FROM macro_contacts_by_path(lps,lpe) mc JOIN _xp ON _xp.path=mc.path),
-      (SELECT COALESCE(SUM(m.clicks_total),0) FROM gsc_path_metrics(gns,gne) m JOIN _xp ON _xp.path=m.path),
-      (SELECT COALESCE(SUM(m.clicks_total),0) FROM gsc_path_metrics(gps,gpe) m JOIN _xp ON _xp.path=m.path),
-      (SELECT COALESCE(SUM(m.impressions_total),0) FROM gsc_path_metrics(gns,gne) m JOIN _xp ON _xp.path=m.path),
-      (SELECT COALESCE(SUM(m.impressions_total),0) FROM gsc_path_metrics(gps,gpe) m JOIN _xp ON _xp.path=m.path),
-      now(), (lne >= lpt), (tracker_first_seen_global() > lpe::timestamptz),
-      (SELECT COUNT(*) FILTER (WHERE chan='paid')          FROM _fp),
-      (SELECT COUNT(*) FILTER (WHERE chan LIKE 'organic%') FROM _fp),
-      (SELECT COUNT(*)                                     FROM _fp);
-
-    INSERT INTO public.dashboard_expertises_trend_snapshot (
-      window_kind, visitors_daily, pageviews_daily, contacts_daily, gsc_clicks_daily, gsc_impressions_daily, refreshed_at)
-    SELECT w,
-      (SELECT array_agg(COALESCE(v.uv,0)::numeric ORDER BY ds.d)
-         FROM (SELECT generate_series(lns::timestamp,lne::timestamp,interval '1 day')::date d) ds
-         LEFT JOIN (SELECT d,COUNT(DISTINCT anonymous_id) FILTER (WHERE name='pageview') uv FROM _evx WHERE d BETWEEN lns AND lne GROUP BY d) v ON v.d=ds.d),
-      (SELECT array_agg(COALESCE(p.pv,0)::numeric ORDER BY ds.d)
-         FROM (SELECT generate_series(lns::timestamp,lne::timestamp,interval '1 day')::date d) ds
-         LEFT JOIN (SELECT d,COUNT(*) pv FROM _evx WHERE name='pageview' AND d BETWEEN lns AND lne GROUP BY d) p ON p.d=ds.d),
-      (SELECT array_agg(COALESCE(ct.ct,0)::numeric ORDER BY ds.d)
-         FROM (SELECT generate_series(lns::timestamp,lne::timestamp,interval '1 day')::date d) ds
-         LEFT JOIN (
-           SELECT public.paris_date(e.occurred_at) d, COUNT(*) ct
-           FROM events_human e JOIN _xp ON _xp.path=e.path
-           WHERE e.name IN ('cta_phone_click','form_submit')
-             AND (e.name='cta_phone_click' OR form_submit_counts_as_macro(e.props))
-             AND public.paris_date(e.occurred_at) BETWEEN lns AND lne
-           GROUP BY 1
-         ) ct ON ct.d=ds.d),
-      (SELECT array_agg(COALESCE(gd.clicks,0)::numeric ORDER BY ds.d)
-         FROM (SELECT generate_series(gns::timestamp,gne::timestamp,interval '1 day')::date d) ds
-         LEFT JOIN (SELECT day,SUM(clicks) clicks FROM gsc_path_daily WHERE day BETWEEN gns AND gne AND path IN (SELECT path FROM _xp) GROUP BY day) gd ON gd.day=ds.d),
-      (SELECT array_agg(COALESCE(gd.impr,0)::numeric ORDER BY ds.d)
-         FROM (SELECT generate_series(gns::timestamp,gne::timestamp,interval '1 day')::date d) ds
-         LEFT JOIN (SELECT day,SUM(impressions) impr FROM gsc_path_daily WHERE day BETWEEN gns AND gne AND path IN (SELECT path FROM _xp) GROUP BY day) gd ON gd.day=ds.d),
-      now();
-  END LOOP;
-END $function$
-
-
--- ═══ public.refresh_dashboard_resources_assisted(p_window text) ═══
-CREATE OR REPLACE FUNCTION public.refresh_dashboard_resources_assisted(p_window text DEFAULT NULL::text)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
- SET statement_timeout TO '300s'
-AS $function$
-DECLARE
-  windows text[] := CASE WHEN p_window IS NULL THEN ARRAY['rolling_28','rolling_90'] ELSE ARRAY[p_window] END;
-  w text; lns date; lne date; lps date; lpe date;
-BEGIN
-  IF p_window IS NOT NULL AND p_window NOT IN ('rolling_28','rolling_90') THEN
-    RAISE EXCEPTION 'refresh_dashboard_resources_assisted: unsupported window %', p_window;
-  END IF;
-  DELETE FROM public.dashboard_resources_assisted_snapshot WHERE window_kind = ANY(windows);
-
-  FOREACH w IN ARRAY windows LOOP
-    SELECT b.n_start, b.n_end, b.prev_start, b.prev_end
-      INTO lns, lne, lps, lpe
-    FROM public.cooked_period_bounds(w, 'live_j1') b;
-
-    INSERT INTO public.dashboard_resources_assisted_snapshot
-      (window_kind, path, assisted_contacts, assisted_prev, refreshed_at)
-    SELECT w, pt.path, COALESCE(cur.n, 0), COALESCE(prv.n, 0), now()
-    FROM public.page_taxonomy pt
-    LEFT JOIN (
-      SELECT entry_path, contacts AS n
-      FROM public.assisted_contacts_by_entry_path(lns, lne)
-    ) cur ON cur.entry_path = pt.path
-    LEFT JOIN (
-      SELECT entry_path, contacts AS n
-      FROM public.assisted_contacts_by_entry_path(lps, lpe)
-    ) prv ON prv.entry_path = pt.path
-    WHERE pt.category = 'ressource';
-  END LOOP;
-END;
-$function$
-
-
--- ═══ public.refresh_dashboard_snapshots(p_window text) ═══
-CREATE OR REPLACE FUNCTION public.refresh_dashboard_snapshots(p_window text DEFAULT NULL::text)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
- SET statement_timeout TO '600s'
-AS $function$
-DECLARE
-  windows text[] := CASE WHEN p_window IS NULL THEN ARRAY['rolling_28','rolling_90'] ELSE ARRAY[p_window] END;
-  w text;
-  lns date; lne date; lps date; lpe date; lpt date; lbl text; ld int;
-  gns date; gne date; gps date; gpe date; glast date; glag int;
-  cpi_day date;
-BEGIN
-  SELECT max(day) INTO cpi_day FROM cpi_daily;
-  DELETE FROM public.dashboard_resources_snapshot WHERE window_kind = ANY(windows);
-  DELETE FROM public.dashboard_kpis_snapshot WHERE window_kind = ANY(windows);
-  DELETE FROM public.dashboard_trend_snapshot WHERE window_kind = ANY(windows);
-  FOREACH w IN ARRAY windows LOOP
-    CALL public.cooked_snapshot_window(w, 'clean', lbl, lns, lne, lps, lpe, lpt, ld, gns, gne, gps, gpe, glast, glag);
-    DROP TABLE IF EXISTS _ev;
-    CREATE TEMP TABLE _ev ON COMMIT DROP AS
-      SELECT e.anonymous_id, e.session_id, e.path, e.name, e.referrer_hostname AS ref,
-        (e.props->>'duration_seconds')::numeric AS dur, (e.props->>'max_scroll')::numeric AS scr,
-        e.d
-      FROM _cooked_ev e
-      JOIN page_taxonomy pt ON pt.path = e.path AND pt.category='ressource'
-      WHERE e.name IN ('pageview','page_exit')
-        AND e.referrer_hostname IS DISTINCT FROM 'm.baidu.com'
-        AND e.referrer_hostname IS DISTINCT FROM 'baidu.com';
-    DROP TABLE IF EXISTS _evc;
-    CREATE TEMP TABLE _evc ON COMMIT DROP AS SELECT * FROM _ev;
-    ANALYZE _evc;
-    INSERT INTO public.dashboard_resources_snapshot
-    WITH res AS (SELECT pt.path, pt.theme FROM page_taxonomy pt WHERE pt.category='ressource'),
-    dwx AS (
-      SELECT path,
-        ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY dur)) AS dwell,
-        ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY scr)) AS scroll
-      FROM (
-        SELECT path, session_id, max(dur) AS dur, max(scr) AS scr
-        FROM _evc
-        WHERE name='page_exit' AND d BETWEEN lns AND lne
-          AND coalesce(ref,'') NOT ILIKE '%linkedin%' AND coalesce(ref,'') NOT ILIKE '%facebook%'
-        GROUP BY path, session_id
-      ) a GROUP BY path
-    ),
-    cooked AS (
-      SELECT path,
-        COUNT(DISTINCT anonymous_id) FILTER (WHERE name='pageview' AND d BETWEEN lns AND lne) AS uv,
-        COUNT(DISTINCT anonymous_id) FILTER (WHERE name='pageview' AND d BETWEEN lps AND lpe) AS uv_prev,
-        COUNT(*) FILTER (WHERE name='pageview' AND d BETWEEN lns AND lne) AS pv
-      FROM _evc GROUP BY path
-    ),
-    gsc AS (SELECT m.path, m.clicks_total, m.impressions_total, m.position_avg, m.ctr_pct
-            FROM gsc_path_metrics(gns,gne) m JOIN res ON res.path=m.path),
-    gscp AS (SELECT m.path, m.clicks_total AS clicks_prev FROM gsc_path_metrics(gps,gpe) m JOIN res ON res.path=m.path),
-    cpi_d AS (SELECT path, cpi, grade, momentum FROM cpi_daily WHERE day = cpi_day),
-    gis AS (SELECT path, potentiel, convertit FROM cpi_gisement),
-    bestq AS (
-      SELECT DISTINCT ON (q.path) q.path, q.query, q.clicks FROM (
-        SELECT qp.path, qp.query, SUM(qp.clicks) clicks, SUM(qp.impressions) impr
-        FROM gsc_query_page_daily qp JOIN res ON res.path=qp.path
-        WHERE qp.day BETWEEN gns AND gne AND NOT public.gsc_is_branded(qp.query)
-        GROUP BY qp.path, qp.query) q
-      ORDER BY q.path, q.clicks DESC, q.impr DESC
-    ),
-    contacts AS (SELECT mc.path, mc.contacts, mc.booking_intent FROM macro_contacts_by_path(lns,lne) mc JOIN res ON res.path=mc.path),
-    fi AS (SELECT g.path, MIN(g.day) first_impr FROM gsc_path_daily g
-           WHERE g.impressions>0 AND g.path IN (SELECT path FROM res) GROUP BY g.path),
-    fv AS (SELECT e.path, MIN(public.paris_date(e.occurred_at)) first_view
-           FROM events_human e
-           WHERE e.name='pageview' AND e.path IN (SELECT path FROM res)
-           GROUP BY e.path)
-    SELECT w, res.path, res.theme,
-      COALESCE(c.uv,0), COALESCE(c.pv,0), dw.dwell, dw.scroll,
-      COALESCE(g.clicks_total,0), COALESCE(g.impressions_total,0), g.position_avg, g.ctr_pct,
-      bq.query, bq.clicks, dfs.search_volume, dfs.cpc,
-      COALESCE(ct.contacts,0), COALESCE(ct.booking_intent,0),
-      fi.first_impr, fv.first_view,
-      (lpt - LEAST(COALESCE(fi.first_impr,fv.first_view), COALESCE(fv.first_view,fi.first_impr)))::int,
-      CASE WHEN ld>0 AND COALESCE(c.uv,0)::numeric/ld >= 1.5 THEN 'A'
-           WHEN ld>0 AND COALESCE(c.uv,0)::numeric/ld >= 0.5 THEN 'B' ELSE 'C' END,
-      lns, lne, gns, gne, now(),
-      COALESCE(c.uv_prev,0)::int, COALESCE(gp.clicks_prev,0)::int,
-      cd.cpi, cd.grade, cd.momentum, gi.potentiel, gi.convertit,
-      NULL::numeric
-    FROM res
-    LEFT JOIN cooked c ON c.path=res.path
-    LEFT JOIN dwx dw ON dw.path=res.path
-    LEFT JOIN gsc g ON g.path=res.path
-    LEFT JOIN gscp gp ON gp.path=res.path
-    LEFT JOIN cpi_d cd ON cd.path=res.path
-    LEFT JOIN gis gi ON gi.path=res.path
-    LEFT JOIN bestq bq ON bq.path=res.path
-    LEFT JOIN dfs_keyword_volume dfs ON dfs.keyword=bq.query AND dfs.location_code=2250
-    LEFT JOIN contacts ct ON ct.path=res.path
-    LEFT JOIN fi ON fi.path=res.path
-    LEFT JOIN fv ON fv.path=res.path;
-    INSERT INTO public.dashboard_kpis_snapshot
-      (window_kind, label_fr, cooked_start, cooked_end, gsc_start, gsc_end, gsc_last_day, lag_days,
-       is_partial, visitors_n, visitors_prev, pageviews_n, pageviews_prev, contacts_n, contacts_prev,
-       gsc_clicks_n, gsc_clicks_prev, gsc_impressions_n, gsc_impressions_prev, refreshed_at,
-       current_day_partial, no_prev_baseline)
-    SELECT w, lbl, lns, lne, gns, gne, glast, glag,
-      ((lne >= lpt) OR (tracker_first_seen_global() > lpe::timestamptz)),
-      (SELECT COUNT(DISTINCT anonymous_id) FILTER (WHERE name='pageview') FROM _evc WHERE d BETWEEN lns AND lne),
-      (SELECT COUNT(DISTINCT anonymous_id) FILTER (WHERE name='pageview') FROM _evc WHERE d BETWEEN lps AND lpe),
-      (SELECT COUNT(*) FROM _evc WHERE name='pageview' AND d BETWEEN lns AND lne),
-      (SELECT COUNT(*) FROM _evc WHERE name='pageview' AND d BETWEEN lps AND lpe),
-      (SELECT COALESCE(SUM(mc.contacts),0) FROM macro_contacts_by_path(lns,lne) mc JOIN page_taxonomy pt ON pt.path=mc.path AND pt.category='ressource'),
-      (SELECT COALESCE(SUM(mc.contacts),0) FROM macro_contacts_by_path(lps,lpe) mc JOIN page_taxonomy pt ON pt.path=mc.path AND pt.category='ressource'),
-      (SELECT COALESCE(SUM(m.clicks_total),0) FROM gsc_path_metrics(gns,gne) m JOIN page_taxonomy pt ON pt.path=m.path AND pt.category='ressource'),
-      (SELECT COALESCE(SUM(m.clicks_total),0) FROM gsc_path_metrics(gps,gpe) m JOIN page_taxonomy pt ON pt.path=m.path AND pt.category='ressource'),
-      (SELECT COALESCE(SUM(m.impressions_total),0) FROM gsc_path_metrics(gns,gne) m JOIN page_taxonomy pt ON pt.path=m.path AND pt.category='ressource'),
-      (SELECT COALESCE(SUM(m.impressions_total),0) FROM gsc_path_metrics(gps,gpe) m JOIN page_taxonomy pt ON pt.path=m.path AND pt.category='ressource'),
-      now(), (lne >= lpt), (tracker_first_seen_global() > lpe::timestamptz);
-    INSERT INTO public.dashboard_trend_snapshot
-      (window_kind, visitors_daily, pageviews_daily, contacts_daily, gsc_clicks_daily, gsc_impressions_daily, refreshed_at)
-    SELECT w,
-      (SELECT array_agg(COALESCE(v.uv,0)::numeric ORDER BY ds.d)
-         FROM (SELECT generate_series(lns::timestamp, lne::timestamp, interval '1 day')::date d) ds
-         LEFT JOIN (SELECT d, COUNT(DISTINCT anonymous_id) FILTER (WHERE name='pageview') uv FROM _evc WHERE d BETWEEN lns AND lne GROUP BY d) v ON v.d = ds.d),
-      (SELECT array_agg(COALESCE(p.pv,0)::numeric ORDER BY ds.d)
-         FROM (SELECT generate_series(lns::timestamp, lne::timestamp, interval '1 day')::date d) ds
-         LEFT JOIN (SELECT d, COUNT(*) pv FROM _evc WHERE name='pageview' AND d BETWEEN lns AND lne GROUP BY d) p ON p.d = ds.d),
-      (SELECT array_agg(COALESCE(ct.ct,0)::numeric ORDER BY ds.d)
-         FROM (SELECT generate_series(lns::timestamp, lne::timestamp, interval '1 day')::date d) ds
-         LEFT JOIN (
-           SELECT public.paris_date(e.occurred_at) d, COUNT(*) ct
-           FROM events_human e JOIN page_taxonomy pt ON pt.path=e.path AND pt.category='ressource'
-           WHERE e.name IN ('cta_phone_click','form_submit')
-             AND (e.name='cta_phone_click' OR form_submit_counts_as_macro(e.props))
-             AND public.paris_date(e.occurred_at) BETWEEN lns AND lne
-           GROUP BY 1
-         ) ct ON ct.d = ds.d),
-      (SELECT array_agg(COALESCE(gd.clicks,0)::numeric ORDER BY ds.d)
-         FROM (SELECT generate_series(gns::timestamp, gne::timestamp, interval '1 day')::date d) ds
-         LEFT JOIN (SELECT day, SUM(clicks) clicks FROM gsc_path_daily
-                    WHERE day BETWEEN gns AND gne AND path IN (SELECT path FROM page_taxonomy WHERE category='ressource') GROUP BY day) gd ON gd.day = ds.d),
-      (SELECT array_agg(COALESCE(gd.impr,0)::numeric ORDER BY ds.d)
-         FROM (SELECT generate_series(gns::timestamp, gne::timestamp, interval '1 day')::date d) ds
-         LEFT JOIN (SELECT day, SUM(impressions) impr FROM gsc_path_daily
-                    WHERE day BETWEEN gns AND gne AND path IN (SELECT path FROM page_taxonomy WHERE category='ressource') GROUP BY day) gd ON gd.day = ds.d),
-      now();
-  END LOOP;
-END $function$
-
-
 -- ═══ public.refresh_identity_stitch(p_days integer) ═══
-CREATE OR REPLACE FUNCTION public.refresh_identity_stitch(p_days integer DEFAULT 90)
+CREATE OR REPLACE FUNCTION public.refresh_identity_stitch(p_days integer DEFAULT 400)
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_catalog'
  SET statement_timeout TO '420s'
 AS $function$
-DECLARE
-  t0 timestamptz := now() - make_interval(days => p_days);  -- c6c:allow (fenêtre de topologie, pas un chiffre business ; inchangé depuis le 12/07/2026)
+DECLARE changed bigint;
 BEGIN
-  -- Paires (aid, sid) observées. Lecture d'events BRUT, assumée et
-  -- volontaire : (a) c'est de la topologie d'identité, pas un chiffre
-  -- business — les ids étant aléatoires par navigateur, les sessions
-  -- bots forment leurs propres composantes sans polluer celles des
-  -- humains ; (b) scanner events_human (anti-joins bots/bruit) coûte
-  -- >100 s sur 28 j — prohibitif ici, les consommateurs business
-  -- continuent de lire events_human et joignent la couture ensuite.
-  DROP TABLE IF EXISTS _st_pairs;
+  IF p_days IS NULL OR p_days<1 THEN
+    RAISE EXCEPTION 'p_days must be positive' USING ERRCODE='22023';
+  END IF;
+  PERFORM pg_advisory_xact_lock(782028);
+  DROP TABLE IF EXISTS pg_temp._st_pairs;
+  DROP TABLE IF EXISTS pg_temp._st_labels;
   CREATE TEMP TABLE _st_pairs ON COMMIT DROP AS
-    SELECT DISTINCT anonymous_id AS a, session_id AS s
-    FROM events
-    WHERE occurred_at >= t0
-      AND anonymous_id NOT LIKE 'webhook-%'
-      AND session_id  NOT LIKE 'webhook-%'
+    SELECT DISTINCT anonymous_id AS a,session_id AS s FROM public.events
+    WHERE nullif(anonymous_id,'') IS NOT NULL AND nullif(session_id,'') IS NOT NULL
+      AND anonymous_id NOT LIKE 'webhook-%' AND session_id NOT LIKE 'webhook-%'
       AND anonymous_id !~ '^[0-9a-f]{32}$';
-  ANALYZE _st_pairs;
-
-  -- Label propagation alternée sid→aid→sid. Convergence mesurée à
-  -- 2 itérations sur 28 j de prod (12/07/2026) ; 3 par marge.
-  DROP TABLE IF EXISTS _st_l0; DROP TABLE IF EXISTS _st_a1;
-  DROP TABLE IF EXISTS _st_l1; DROP TABLE IF EXISTS _st_a2;
-  DROP TABLE IF EXISTS _st_l2; DROP TABLE IF EXISTS _st_a3;
-  DROP TABLE IF EXISTS _st_l3;
-  CREATE TEMP TABLE _st_l0 ON COMMIT DROP AS
-    SELECT s, min(a) AS lbl FROM _st_pairs GROUP BY s;
-  CREATE TEMP TABLE _st_a1 ON COMMIT DROP AS
-    SELECT p.a, min(l.lbl) AS lbl FROM _st_pairs p JOIN _st_l0 l ON l.s = p.s GROUP BY p.a;
-  CREATE TEMP TABLE _st_l1 ON COMMIT DROP AS
-    SELECT p.s, min(x.lbl) AS lbl FROM _st_pairs p JOIN _st_a1 x ON x.a = p.a GROUP BY p.s;
-  CREATE TEMP TABLE _st_a2 ON COMMIT DROP AS
-    SELECT p.a, min(l.lbl) AS lbl FROM _st_pairs p JOIN _st_l1 l ON l.s = p.s GROUP BY p.a;
-  CREATE TEMP TABLE _st_l2 ON COMMIT DROP AS
-    SELECT p.s, min(x.lbl) AS lbl FROM _st_pairs p JOIN _st_a2 x ON x.a = p.a GROUP BY p.s;
-  CREATE TEMP TABLE _st_a3 ON COMMIT DROP AS
-    SELECT p.a, min(l.lbl) AS lbl FROM _st_pairs p JOIN _st_l2 l ON l.s = p.s GROUP BY p.a;
-  CREATE TEMP TABLE _st_l3 ON COMMIT DROP AS
-    SELECT p.s, min(x.lbl) AS lbl FROM _st_pairs p JOIN _st_a3 x ON x.a = p.a GROUP BY p.s;
-
-  DELETE FROM identity_stitch;
-  INSERT INTO identity_stitch (kind, key, visitor_key)
-    SELECT 'sid', s, lbl FROM _st_l3
+  CREATE TEMP TABLE _st_labels ON COMMIT DROP AS
+    SELECT s,min(a) AS label FROM pg_temp._st_pairs GROUP BY s;
+  CREATE UNIQUE INDEX ON _st_labels(s);
+  ANALYZE pg_temp._st_pairs;
+  ANALYZE pg_temp._st_labels;
+  -- Converger réellement plutôt que supposer qu'exactement trois passes suffisent.
+  LOOP
+    WITH aid_labels AS MATERIALIZED (
+      SELECT p.a,min(l.label) AS label FROM pg_temp._st_pairs p
+      JOIN pg_temp._st_labels l USING(s) GROUP BY p.a
+    ), sid_labels AS (
+      SELECT p.s,min(a.label) AS label FROM pg_temp._st_pairs p
+      JOIN aid_labels a USING(a) GROUP BY p.s
+    )
+    UPDATE pg_temp._st_labels l SET label=n.label FROM sid_labels n
+    WHERE l.s=n.s AND l.label IS DISTINCT FROM n.label;
+    GET DIAGNOSTICS changed=ROW_COUNT;
+    EXIT WHEN changed=0;
+  END LOOP;
+  DELETE FROM public.identity_stitch;
+  INSERT INTO public.identity_stitch(kind,key,visitor_key)
+    SELECT 'sid',s,label FROM pg_temp._st_labels
     UNION ALL
-    SELECT 'aid', a, lbl FROM _st_a3;
-
-  -- T-10 (03/09/2026) : horodatage de la couture. Lu par alert_rule_identity_stitch()
-  -- et le contract-test identity_stitch_horodatee. Une couture vidée ou non reconstruite
-  -- n'est plus un « succeeded » muet.
-  INSERT INTO cooked_config (key, value, updated_at)
-  VALUES ('identity_stitch_refreshed_at', now()::text, now()),
-         ('identity_stitch_rows', (SELECT count(*) FROM identity_stitch)::text, now())
-  ON CONFLICT (key) DO UPDATE
-    SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at;
+    SELECT 'aid',p.a,min(l.label) FROM pg_temp._st_pairs p JOIN pg_temp._st_labels l USING(s) GROUP BY p.a;
+  INSERT INTO public.cooked_config(key,value,updated_at)
+    VALUES ('identity_stitch_refreshed_at',now()::text,now()),
+      ('identity_stitch_rows',(SELECT count(*)::text FROM public.identity_stitch),now())
+  ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=EXCLUDED.updated_at;
 END $function$
 
 
@@ -5387,397 +3991,42 @@ CREATE OR REPLACE FUNCTION public.refresh_pipeline_health()
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'cron', 'pg_catalog'
 AS $function$
-declare
-  v_snapshot_refreshed_at  timestamptz;
-  v_snapshot_age_hours     numeric;
-  v_cron_last_status       text;
-  v_cron_last_run          timestamptz;
-  v_cron_age_hours         numeric;
-  v_last_event_at          timestamptz;
-  v_last_event_age_minutes numeric;
-  v_events_last_60min      bigint;
-  v_gsc_last_day           date;
-  v_gsc_data_age_days      numeric;
-  v_gsc_last_ingest        timestamptz;
-  v_gsc_ingest_age_hours   numeric;
-  v_dfs_last_synced_at     timestamptz;
-  v_dfs_row_count          bigint;
-  v_dfs_sync_age_hours     numeric;
-  v_issues                 text[] := array[]::text[];
-  v_status                 text   := 'healthy';
-begin
-  -- 1. Snapshot freshness
-  select max(refreshed_at) into v_snapshot_refreshed_at from public.seo_url_snapshot;
-  v_snapshot_age_hours := extract(epoch from (now() - v_snapshot_refreshed_at)) / 3600;
-
-  if v_snapshot_refreshed_at is null then
-    v_issues := v_issues || 'snapshot_never_refreshed'::text;
-    v_status := 'critical';
-  elsif v_snapshot_age_hours > 36 then
-    v_issues := v_issues || ('snapshot_stale: '||round(v_snapshot_age_hours,1)||'h old');
-    v_status := 'critical';
-  elsif v_snapshot_age_hours > 25 then
-    v_issues := v_issues || ('snapshot_aging: '||round(v_snapshot_age_hours,1)||'h old');
-    if v_status = 'healthy' then v_status := 'degraded'; end if;
-  end if;
-
-  -- 2. Cron last run status (refresh_seo_url_snapshot)
-  select d.status, d.start_time into v_cron_last_status, v_cron_last_run
-  from cron.job j join cron.job_run_details d on d.jobid = j.jobid
-  where j.jobname = 'refresh_seo_url_snapshot'
-  order by d.start_time desc limit 1;
-
-  v_cron_age_hours := extract(epoch from (now() - v_cron_last_run)) / 3600;
-
-  if v_cron_last_run is null then
-    v_issues := v_issues || 'cron_no_run_history'::text;
-    v_status := 'critical';
-  elsif v_cron_last_status is distinct from 'succeeded' then
-    v_issues := v_issues || ('cron_last_failed: status='||coalesce(v_cron_last_status,'NULL'));
-    v_status := 'critical';
-  elsif v_cron_age_hours > 25 then
-    v_issues := v_issues || ('cron_overdue: '||round(v_cron_age_hours,1)||'h since last run');
-    v_status := 'critical';
-  end if;
-
-  -- 3. Ingestion freshness (events table)
-  select max(occurred_at) into v_last_event_at from public.events;
-  v_last_event_age_minutes := extract(epoch from (now() - v_last_event_at)) / 60;
-  select count(*) into v_events_last_60min from public.events
-  where occurred_at >= now() - interval '60 minutes';
-
-  if v_last_event_at is null then
-    v_issues := v_issues || 'no_events_ever'::text;
-    v_status := 'critical';
-  elsif v_last_event_age_minutes > 360 then
-    v_issues := v_issues || ('ingestion_stopped: '||round(v_last_event_age_minutes)||'min since last event');
-    v_status := 'critical';
-  elsif v_last_event_age_minutes > 60 then
-    v_issues := v_issues || ('ingestion_quiet: '||round(v_last_event_age_minutes)||'min since last event');
-    if v_status = 'healthy' then v_status := 'degraded'; end if;
-  end if;
-
-  -- 4. GSC freshness
-  select max(day) into v_gsc_last_day from public.gsc_path_daily;
-  select max(ingested_at) into v_gsc_last_ingest from public.gsc_path_daily;
-  v_gsc_data_age_days    := (((now() at time zone 'Europe/Paris')::date - v_gsc_last_day))::numeric;
-  v_gsc_ingest_age_hours := extract(epoch from (now() - v_gsc_last_ingest)) / 3600;
-
-  if v_gsc_last_day is null then
-    v_issues := v_issues || 'gsc_no_data'::text;
-    v_status := 'critical';
-  elsif v_gsc_data_age_days > 7 then
-    v_issues := v_issues || ('gsc_data_stale: '||round(v_gsc_data_age_days)||' days behind');
-    v_status := 'critical';
-  elsif v_gsc_data_age_days > 4 then
-    v_issues := v_issues || ('gsc_data_aging: '||round(v_gsc_data_age_days)||' days behind');
-    if v_status = 'healthy' then v_status := 'degraded'; end if;
-  end if;
-
-  if v_gsc_last_ingest is not null then
-    if v_gsc_ingest_age_hours > 72 then
-      v_issues := v_issues || ('gsc_ingest_stale: '||round(v_gsc_ingest_age_hours,1)||'h since last ingest');
-      v_status := 'critical';
-    elsif v_gsc_ingest_age_hours > 30 then
-      v_issues := v_issues || ('gsc_ingest_aging: '||round(v_gsc_ingest_age_hours,1)||'h since last ingest');
-      if v_status = 'healthy' then v_status := 'degraded'; end if;
-    end if;
-  end if;
-
-  -- 5. DataForSEO keyword volume sync (hebdo)
-  select max(last_synced_at), count(*)::bigint into v_dfs_last_synced_at, v_dfs_row_count
-  from public.dfs_keyword_volume;
-
-  if v_dfs_last_synced_at is not null then
-    v_dfs_sync_age_hours := extract(epoch from (now() - v_dfs_last_synced_at)) / 3600;
-  end if;
-
-  if v_dfs_row_count is null or v_dfs_row_count = 0 then
-    v_issues := v_issues || 'dfs_no_data'::text;
-    v_status := 'critical';
-  elsif v_dfs_row_count < 200 then
-    v_issues := v_issues || ('dfs_partial_sync: '||v_dfs_row_count||' rows (expected ~300-500)');
-    if v_status = 'healthy' then v_status := 'degraded'; end if;
-  end if;
-
-  if v_dfs_last_synced_at is null then
-  elsif v_dfs_sync_age_hours > 240 then
-    v_issues := v_issues || ('dfs_sync_stale: '||round(v_dfs_sync_age_hours,1)||'h since last sync');
-    v_status := 'critical';
-  elsif v_dfs_sync_age_hours > 192 then
-    v_issues := v_issues || ('dfs_sync_aging: '||round(v_dfs_sync_age_hours,1)||'h since last sync');
-    if v_status = 'healthy' then v_status := 'degraded'; end if;
-  end if;
-
-  return query select
-    v_status, v_snapshot_refreshed_at, round(v_snapshot_age_hours, 2),
-    v_cron_last_status, v_cron_last_run, round(v_cron_age_hours, 2),
-    v_last_event_at, round(v_last_event_age_minutes, 1), v_events_last_60min,
-    v_gsc_last_day, round(v_gsc_data_age_days, 2), v_gsc_last_ingest, round(v_gsc_ingest_age_hours, 2),
-    v_dfs_last_synced_at, v_dfs_row_count, round(v_dfs_sync_age_hours, 2),
-    v_issues;
-end;
-$function$
-
-
--- ═══ public.refresh_seo_url_snapshot() ═══
-CREATE OR REPLACE FUNCTION public.refresh_seo_url_snapshot()
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-declare
-  now_ts timestamptz := now();
-begin
-  perform public.refresh_bot_fingerprints();
-  perform public.refresh_noise_sessions();
-
-  call public.cooked_events_window(
-    now_ts - interval '365 days',
-    now_ts,
-    'human',
-    'main'
-  );
-
-  drop table if exists _eh;
-  create temp table _eh on commit drop as
-    select id, anonymous_id, session_id, path, name, occurred_at,
-           referrer_hostname, utm_source, utm_medium, device_type, props
-    from _cooked_ev;
-  analyze _eh;
-
-  delete from public.seo_url_snapshot;
-
-  insert into public.seo_url_snapshot
-  with
-    all_paths as (
-      select distinct path from _eh
-      where path is not null and occurred_at >= now_ts - interval '365 days'
-    ),
-    o7 as (
-      with we as (select * from _eh where occurred_at >= now_ts - interval '7 days'   and occurred_at < now_ts),
-      pv as (select path, count(*) as views, count(distinct anonymous_id) as unique_visitors, count(distinct session_id) as sessions
-             from we where name='pageview' and path is not null group by path),
-      ss as (select session_id, min(occurred_at) as session_start, max(occurred_at) as session_end,
-                    count(*) filter (where name='pageview') as pages_viewed,
-                    (array_agg(path order by occurred_at)      filter (where name='pageview'))[1] as entry_path,
-                    (array_agg(path order by occurred_at desc) filter (where name='pageview'))[1] as exit_path
-             from we group by session_id),
-      sp as (select session_id, path,
-                    max((props->>'duration_seconds')::numeric) filter (where name='page_exit') as dwell,
-                    coalesce(max((props->>'percent')::numeric) filter (where name='scroll_depth'),0) as max_scroll
-             from we where path is not null group by session_id, path),
-      scroll_dwell as (select path, avg(dwell)::numeric as avg_dwell, avg(max_scroll)::numeric as scroll_avg,
-                    (percentile_cont(0.5) within group (order by max_scroll))::numeric as scroll_median,
-                    (100.0*count(*) filter (where max_scroll>=100)/nullif(count(*),0))::numeric as scroll_complete_pct
-             from sp group by path),
-      entry_exit as (select path, sum(is_entry)::bigint as entry_count, sum(is_exit)::bigint as exit_count, sum(is_bounce)::bigint as bounce_count
-             from (select ss.entry_path as path,1 as is_entry,0 as is_exit,
-                          case when ss.pages_viewed=1 and extract(epoch from (ss.session_end-ss.session_start))<10 then 1 else 0 end as is_bounce
-                   from ss where ss.entry_path is not null
-                   union all select ss.exit_path,0,1,0 from ss where ss.exit_path is not null) u group by path),
-      oc as (select path, count(*) as clicks from we where name='click_outbound' and path is not null group by path)
-      select pv.path, pv.views::bigint, pv.unique_visitors::bigint, pv.sessions::bigint,
-        coalesce(round((100.0*ee.bounce_count/nullif(ee.entry_count,0))::numeric,2),0) as bounce_rate,
-        coalesce(round(sd.avg_dwell,1),0) as avg_dwell_seconds, coalesce(round(sd.scroll_avg,1),0) as scroll_avg,
-        coalesce(round(sd.scroll_median,1),0) as scroll_median, coalesce(round(sd.scroll_complete_pct,1),0) as scroll_complete_pct,
-        coalesce(ee.entry_count,0)::bigint as entry_count, coalesce(ee.exit_count,0)::bigint as exit_count, coalesce(oc.clicks,0)::bigint as outbound_clicks
-      from pv left join scroll_dwell sd on sd.path=pv.path left join entry_exit ee on ee.path=pv.path left join oc on oc.path=pv.path
-    ),
-    o28 as (
-      with we as (select * from _eh where occurred_at >= now_ts - interval '28 days'  and occurred_at < now_ts),
-      pv as (select path, count(*) as views, count(distinct anonymous_id) as unique_visitors, count(distinct session_id) as sessions
-             from we where name='pageview' and path is not null group by path),
-      ss as (select session_id, min(occurred_at) as session_start, max(occurred_at) as session_end,
-                    count(*) filter (where name='pageview') as pages_viewed,
-                    (array_agg(path order by occurred_at)      filter (where name='pageview'))[1] as entry_path,
-                    (array_agg(path order by occurred_at desc) filter (where name='pageview'))[1] as exit_path
-             from we group by session_id),
-      sp as (select session_id, path,
-                    max((props->>'duration_seconds')::numeric) filter (where name='page_exit') as dwell,
-                    coalesce(max((props->>'percent')::numeric) filter (where name='scroll_depth'),0) as max_scroll
-             from we where path is not null group by session_id, path),
-      scroll_dwell as (select path, avg(dwell)::numeric as avg_dwell, avg(max_scroll)::numeric as scroll_avg,
-                    (percentile_cont(0.5) within group (order by max_scroll))::numeric as scroll_median,
-                    (100.0*count(*) filter (where max_scroll>=100)/nullif(count(*),0))::numeric as scroll_complete_pct
-             from sp group by path),
-      entry_exit as (select path, sum(is_entry)::bigint as entry_count, sum(is_exit)::bigint as exit_count, sum(is_bounce)::bigint as bounce_count
-             from (select ss.entry_path as path,1 as is_entry,0 as is_exit,
-                          case when ss.pages_viewed=1 and extract(epoch from (ss.session_end-ss.session_start))<10 then 1 else 0 end as is_bounce
-                   from ss where ss.entry_path is not null
-                   union all select ss.exit_path,0,1,0 from ss where ss.exit_path is not null) u group by path),
-      oc as (select path, count(*) as clicks from we where name='click_outbound' and path is not null group by path)
-      select pv.path, pv.views::bigint, pv.unique_visitors::bigint, pv.sessions::bigint,
-        coalesce(round((100.0*ee.bounce_count/nullif(ee.entry_count,0))::numeric,2),0) as bounce_rate,
-        coalesce(round(sd.avg_dwell,1),0) as avg_dwell_seconds, coalesce(round(sd.scroll_avg,1),0) as scroll_avg,
-        coalesce(round(sd.scroll_median,1),0) as scroll_median, coalesce(round(sd.scroll_complete_pct,1),0) as scroll_complete_pct,
-        coalesce(ee.entry_count,0)::bigint as entry_count, coalesce(ee.exit_count,0)::bigint as exit_count, coalesce(oc.clicks,0)::bigint as outbound_clicks
-      from pv left join scroll_dwell sd on sd.path=pv.path left join entry_exit ee on ee.path=pv.path left join oc on oc.path=pv.path
-    ),
-    o90 as (
-      with we as (select * from _eh where occurred_at >= now_ts - interval '90 days'  and occurred_at < now_ts),
-      pv as (select path, count(*) as views, count(distinct anonymous_id) as unique_visitors, count(distinct session_id) as sessions
-             from we where name='pageview' and path is not null group by path),
-      ss as (select session_id, min(occurred_at) as session_start, max(occurred_at) as session_end,
-                    count(*) filter (where name='pageview') as pages_viewed,
-                    (array_agg(path order by occurred_at)      filter (where name='pageview'))[1] as entry_path,
-                    (array_agg(path order by occurred_at desc) filter (where name='pageview'))[1] as exit_path
-             from we group by session_id),
-      sp as (select session_id, path,
-                    max((props->>'duration_seconds')::numeric) filter (where name='page_exit') as dwell,
-                    coalesce(max((props->>'percent')::numeric) filter (where name='scroll_depth'),0) as max_scroll
-             from we where path is not null group by session_id, path),
-      scroll_dwell as (select path, avg(dwell)::numeric as avg_dwell, avg(max_scroll)::numeric as scroll_avg,
-                    (percentile_cont(0.5) within group (order by max_scroll))::numeric as scroll_median,
-                    (100.0*count(*) filter (where max_scroll>=100)/nullif(count(*),0))::numeric as scroll_complete_pct
-             from sp group by path),
-      entry_exit as (select path, sum(is_entry)::bigint as entry_count, sum(is_exit)::bigint as exit_count, sum(is_bounce)::bigint as bounce_count
-             from (select ss.entry_path as path,1 as is_entry,0 as is_exit,
-                          case when ss.pages_viewed=1 and extract(epoch from (ss.session_end-ss.session_start))<10 then 1 else 0 end as is_bounce
-                   from ss where ss.entry_path is not null
-                   union all select ss.exit_path,0,1,0 from ss where ss.exit_path is not null) u group by path),
-      oc as (select path, count(*) as clicks from we where name='click_outbound' and path is not null group by path)
-      select pv.path, pv.views::bigint, pv.unique_visitors::bigint, pv.sessions::bigint,
-        coalesce(round((100.0*ee.bounce_count/nullif(ee.entry_count,0))::numeric,2),0) as bounce_rate,
-        coalesce(round(sd.avg_dwell,1),0) as avg_dwell_seconds, coalesce(round(sd.scroll_avg,1),0) as scroll_avg,
-        coalesce(round(sd.scroll_median,1),0) as scroll_median, coalesce(round(sd.scroll_complete_pct,1),0) as scroll_complete_pct,
-        coalesce(ee.entry_count,0)::bigint as entry_count, coalesce(ee.exit_count,0)::bigint as exit_count, coalesce(oc.clicks,0)::bigint as outbound_clicks
-      from pv left join scroll_dwell sd on sd.path=pv.path left join entry_exit ee on ee.path=pv.path left join oc on oc.path=pv.path
-    ),
-    o365 as (
-      with we as (select * from _eh where occurred_at >= now_ts - interval '365 days' and occurred_at < now_ts),
-      pv as (select path, count(*) as views, count(distinct anonymous_id) as unique_visitors, count(distinct session_id) as sessions
-             from we where name='pageview' and path is not null group by path),
-      ss as (select session_id, min(occurred_at) as session_start, max(occurred_at) as session_end,
-                    count(*) filter (where name='pageview') as pages_viewed,
-                    (array_agg(path order by occurred_at)      filter (where name='pageview'))[1] as entry_path,
-                    (array_agg(path order by occurred_at desc) filter (where name='pageview'))[1] as exit_path
-             from we group by session_id),
-      sp as (select session_id, path,
-                    max((props->>'duration_seconds')::numeric) filter (where name='page_exit') as dwell,
-                    coalesce(max((props->>'percent')::numeric) filter (where name='scroll_depth'),0) as max_scroll
-             from we where path is not null group by session_id, path),
-      scroll_dwell as (select path, avg(dwell)::numeric as avg_dwell, avg(max_scroll)::numeric as scroll_avg,
-                    (percentile_cont(0.5) within group (order by max_scroll))::numeric as scroll_median,
-                    (100.0*count(*) filter (where max_scroll>=100)/nullif(count(*),0))::numeric as scroll_complete_pct
-             from sp group by path),
-      entry_exit as (select path, sum(is_entry)::bigint as entry_count, sum(is_exit)::bigint as exit_count, sum(is_bounce)::bigint as bounce_count
-             from (select ss.entry_path as path,1 as is_entry,0 as is_exit,
-                          case when ss.pages_viewed=1 and extract(epoch from (ss.session_end-ss.session_start))<10 then 1 else 0 end as is_bounce
-                   from ss where ss.entry_path is not null
-                   union all select ss.exit_path,0,1,0 from ss where ss.exit_path is not null) u group by path),
-      oc as (select path, count(*) as clicks from we where name='click_outbound' and path is not null group by path)
-      select pv.path, pv.views::bigint, pv.unique_visitors::bigint, pv.sessions::bigint,
-        coalesce(round((100.0*ee.bounce_count/nullif(ee.entry_count,0))::numeric,2),0) as bounce_rate,
-        coalesce(round(sd.avg_dwell,1),0) as avg_dwell_seconds, coalesce(round(sd.scroll_avg,1),0) as scroll_avg,
-        coalesce(round(sd.scroll_median,1),0) as scroll_median, coalesce(round(sd.scroll_complete_pct,1),0) as scroll_complete_pct,
-        coalesce(ee.entry_count,0)::bigint as entry_count, coalesce(ee.exit_count,0)::bigint as exit_count, coalesce(oc.clicks,0)::bigint as outbound_clicks
-      from pv left join scroll_dwell sd on sd.path=pv.path left join entry_exit ee on ee.path=pv.path left join oc on oc.path=pv.path
-    ),
-    cwv as (
-      select path,
-        (percentile_cont(0.75) within group (order by (props->>'value')::numeric) filter (where props->>'metric'='LCP'))::numeric  as lcp_p75,
-        (percentile_cont(0.75) within group (order by (props->>'value')::numeric) filter (where props->>'metric'='INP'))::numeric  as inp_p75,
-        (percentile_cont(0.75) within group (order by (props->>'value')::numeric) filter (where props->>'metric'='CLS'))::numeric  as cls_p75,
-        (percentile_cont(0.75) within group (order by (props->>'value')::numeric) filter (where props->>'metric'='TTFB'))::numeric as ttfb_p75
-      from public.cooked_web_vitals_window(now_ts - interval '28 days',now_ts) where path is not null group by path
-    ),
-    top_ref as (select distinct on (path) path, referrer_hostname as top_referrer from (
-        select path, referrer_hostname, count(*) as c from _eh
-        where name='pageview' and path is not null and referrer_hostname is not null and occurred_at >= now_ts - interval '28 days'
-        group by path, referrer_hostname) r order by path, c desc),
-    top_src as (select distinct on (path) path, utm_source as top_source from (
-        select path, utm_source, count(*) as c from _eh
-        where name='pageview' and path is not null and utm_source is not null and occurred_at >= now_ts - interval '28 days'
-        group by path, utm_source) r order by path, c desc),
-    top_med as (select distinct on (path) path, utm_medium as top_medium from (
-        select path, utm_medium, count(*) as c from _eh
-        where name='pageview' and path is not null and utm_medium is not null and occurred_at >= now_ts - interval '28 days'
-        group by path, utm_medium) r order by path, c desc),
-    dev as (select path, jsonb_object_agg(device_type, pct) as split from (
-        select path, device_type, round((100.0*count(*)/sum(count(*)) over (partition by path))::numeric,1) as pct
-        from _eh where name='pageview' and path is not null and device_type is not null and occurred_at >= now_ts - interval '28 days'
-        group by path, device_type) d group by path),
-    phone_counts as (select path,
-        count(*) filter (where occurred_at >= now_ts - interval '7 days')   as p7,
-        count(*) filter (where occurred_at >= now_ts - interval '28 days')  as p28,
-        count(*) filter (where occurred_at >= now_ts - interval '90 days')  as p90,
-        count(*) filter (where occurred_at >= now_ts - interval '365 days') as p365
-      from _eh where name='cta_phone_click' and path is not null and occurred_at >= now_ts - interval '365 days' group by path),
-    booking_counts as (select path,
-        count(*) filter (where occurred_at >= now_ts - interval '7 days')   as b7,
-        count(*) filter (where occurred_at >= now_ts - interval '28 days')  as b28,
-        count(*) filter (where occurred_at >= now_ts - interval '90 days')  as b90,
-        count(*) filter (where occurred_at >= now_ts - interval '365 days') as b365
-      from _eh where name='cta_booking_click' and path is not null and occurred_at >= now_ts - interval '365 days' group by path),
-    pogo as (
-      with google_entries as (select distinct session_id, path from _eh
-             where name='pageview' and referrer_hostname like '%google%'
-               and occurred_at >= now_ts - interval '28 days' and occurred_at < now_ts),
-      session_pages as (select session_id, count(*) as pages from _eh
-             where name='pageview' and occurred_at >= now_ts - interval '28 days' and occurred_at < now_ts group by session_id),
-      session_exit as (select session_id, path,
-                    max((props->>'duration_seconds')::numeric) as dwell_s,
-                    max((props->>'max_scroll')::numeric)       as scroll
-             from _eh where name='page_exit' and occurred_at >= now_ts - interval '28 days' and occurred_at < now_ts
-             group by session_id, path)
-      select g.path, count(*)::bigint as google_sessions,
-        count(*) filter (where sp.pages=1 and (se.dwell_s<10 or se.dwell_s is null))::bigint as pogo_sticks,
-        count(*) filter (where sp.pages=1 and ((se.dwell_s<10 and se.scroll<5) or se.dwell_s is null))::bigint as hard_pogo,
-        round(100.0*count(*) filter (where sp.pages=1 and (se.dwell_s<10 or se.dwell_s is null))/nullif(count(*),0),1) as pogo_rate
-      from google_entries g
-      left join session_pages sp on sp.session_id=g.session_id
-      left join session_exit  se on se.session_id=g.session_id and se.path=g.path
-      group by g.path
-    ),
-    device_sessions as (select path,
-        count(distinct session_id) filter (where device_type='mobile')  as mob_s,
-        count(distinct session_id) filter (where device_type='desktop') as dsk_s
-      from _eh where name='pageview' and path is not null and occurred_at >= now_ts - interval '28 days' group by path),
-    device_cta as (select path,
-        count(*) filter (where device_type='mobile')  as mob_cta,
-        count(*) filter (where device_type='desktop') as dsk_cta
-      from _eh where name in ('cta_phone_click','cta_booking_click') and path is not null and occurred_at >= now_ts - interval '28 days' group by path)
-  select
-    p.path,
-    coalesce(o7.views,0), coalesce(o7.unique_visitors,0), coalesce(o7.sessions,0), coalesce(o7.bounce_rate,0),
-    coalesce(o7.avg_dwell_seconds,0), coalesce(o7.scroll_avg,0), coalesce(o7.scroll_median,0), coalesce(o7.scroll_complete_pct,0),
-    coalesce(o7.entry_count,0), coalesce(o7.exit_count,0), coalesce(o7.outbound_clicks,0),
-    coalesce(o28.views,0), coalesce(o28.unique_visitors,0), coalesce(o28.sessions,0), coalesce(o28.bounce_rate,0),
-    coalesce(o28.avg_dwell_seconds,0), coalesce(o28.scroll_avg,0), coalesce(o28.scroll_median,0), coalesce(o28.scroll_complete_pct,0),
-    coalesce(o28.entry_count,0), coalesce(o28.exit_count,0), coalesce(o28.outbound_clicks,0),
-    coalesce(o90.views,0), coalesce(o90.unique_visitors,0), coalesce(o90.sessions,0), coalesce(o90.bounce_rate,0),
-    coalesce(o90.avg_dwell_seconds,0), coalesce(o90.scroll_avg,0), coalesce(o90.scroll_median,0), coalesce(o90.scroll_complete_pct,0),
-    coalesce(o90.entry_count,0), coalesce(o90.exit_count,0), coalesce(o90.outbound_clicks,0),
-    coalesce(o365.views,0), coalesce(o365.unique_visitors,0), coalesce(o365.sessions,0), coalesce(o365.bounce_rate,0),
-    coalesce(o365.avg_dwell_seconds,0), coalesce(o365.scroll_avg,0), coalesce(o365.scroll_median,0), coalesce(o365.scroll_complete_pct,0),
-    coalesce(o365.entry_count,0), coalesce(o365.exit_count,0), coalesce(o365.outbound_clicks,0),
-    cwv.lcp_p75, cwv.inp_p75, cwv.cls_p75, cwv.ttfb_p75,
-    top_ref.top_referrer, top_src.top_source, top_med.top_medium, dev.split,
-    now_ts,
-    coalesce(phone_counts.p7,0)::bigint, coalesce(phone_counts.p28,0)::bigint, coalesce(phone_counts.p90,0)::bigint, coalesce(phone_counts.p365,0)::bigint,
-    coalesce(booking_counts.b7,0)::bigint, coalesce(booking_counts.b28,0)::bigint, coalesce(booking_counts.b90,0)::bigint, coalesce(booking_counts.b365,0)::bigint,
-    coalesce(pogo.google_sessions,0)::bigint, coalesce(pogo.pogo_sticks,0)::bigint, coalesce(pogo.hard_pogo,0)::bigint, pogo.pogo_rate,
-    coalesce(device_sessions.mob_s,0)::bigint, coalesce(device_sessions.dsk_s,0)::bigint,
-    case when coalesce(device_sessions.mob_s,0)>0 then round(100.0*coalesce(device_cta.mob_cta,0)/device_sessions.mob_s,2) else null end,
-    case when coalesce(device_sessions.dsk_s,0)>0 then round(100.0*coalesce(device_cta.dsk_cta,0)/device_sessions.dsk_s,2) else null end
-  from all_paths p
-    left join o7      on o7.path     = p.path
-    left join o28     on o28.path    = p.path
-    left join o90     on o90.path    = p.path
-    left join o365    on o365.path   = p.path
-    left join cwv     on cwv.path    = p.path
-    left join top_ref on top_ref.path = p.path
-    left join top_src on top_src.path = p.path
-    left join top_med on top_med.path = p.path
-    left join dev     on dev.path    = p.path
-    left join phone_counts   on phone_counts.path   = p.path
-    left join booking_counts on booking_counts.path = p.path
-    left join pogo            on pogo.path            = p.path
-    left join device_sessions on device_sessions.path = p.path
-    left join device_cta      on device_cta.path      = p.path;
-end;
+DECLARE b public.gsc_ingest_batches%ROWTYPE;
+BEGIN
+  status:='healthy'; issues:=ARRAY[]::text[];
+  SELECT max(s.refreshed_at) INTO snapshot_refreshed_at FROM public.seo_url_snapshot s;
+  snapshot_age_hours:=round(extract(epoch FROM now()-snapshot_refreshed_at)/3600,2);
+  cron_last_status:='suspended';
+  SELECT d.start_time INTO cron_last_run FROM cron.job j
+    JOIN cron.job_run_details d ON d.jobid=j.jobid
+    WHERE j.jobname='refresh_seo_url_snapshot' ORDER BY d.start_time DESC LIMIT 1;
+  cron_age_hours:=round(extract(epoch FROM now()-cron_last_run)/3600,2);
+  SELECT max(e.received_at) INTO last_event_at FROM public.events e;
+  last_event_age_minutes:=round(extract(epoch FROM now()-last_event_at)/60,1);
+  SELECT count(*) INTO events_last_60min FROM public.events e
+    WHERE e.received_at >= now()-interval '60 minutes';
+  IF last_event_at IS NULL OR last_event_age_minutes>360 THEN
+    issues:=issues||'ingestion_stopped'::text; status:='critical';
+  END IF;
+  SELECT max(g.day) INTO gsc_last_day FROM public.gsc_path_daily g;
+  gsc_data_age_days:=(public.paris_today()-gsc_last_day)::numeric;
+  SELECT max(g.completed_at) INTO gsc_last_ingest FROM public.gsc_ingest_batches g WHERE g.status='completed';
+  gsc_ingest_age_hours:=round(extract(epoch FROM now()-gsc_last_ingest)/3600,2);
+  SELECT * INTO b FROM public.gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1;
+  IF gsc_last_day IS NULL OR gsc_data_age_days>10
+     OR gsc_last_ingest IS NULL OR gsc_ingest_age_hours>72 THEN
+    issues:=issues||'gsc_source_stale'::text; status:='critical';
+  ELSIF gsc_data_age_days>6 OR gsc_ingest_age_hours>30 THEN
+    issues:=issues||'gsc_source_delayed'::text;
+    IF status='healthy' THEN status:='degraded'; END IF;
+  END IF;
+  IF b.status IN ('running','failed') AND b.started_at<now()-interval '3 hours' THEN
+    issues:=issues||'gsc_ingest_incomplete'::text; status:='critical';
+  END IF;
+  SELECT max(d.last_synced_at),count(*) INTO dfs_last_synced_at,dfs_row_count FROM public.dfs_keyword_volume d;
+  dfs_sync_age_hours:=round(extract(epoch FROM now()-dfs_last_synced_at)/3600,2);
+  RETURN NEXT;
+END;
 $function$
 
 
@@ -5862,228 +4111,43 @@ CREATE OR REPLACE FUNCTION public.run_rpc_contract_tests()
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
- SET statement_timeout TO '900s'
+ SET statement_timeout TO '120s'
 AS $function$
-DECLARE
-  t record;
+DECLARE t record;
 BEGIN
-  FOR t IN
-    SELECT * FROM (VALUES
-      ('snapshot_pages_export',
-       $q$select count(*) from public.snapshot_pages_export() where refreshed_at is not null$q$,
-       1, NULL),
-      ('site_context_export',
-       $q$select count(*) from public.site_context_export() where global_sessions_28d > 0$q$,
-       NULL, 1),
-      ('cta_breakdown_for_path',
-       $q$select count(*) from public.cta_breakdown_for_path('/', 28)
-          where cta_type in ('phone', 'email', 'booking')
-            and placement in ('header', 'footer', 'body', 'sticky')$q$,
-       NULL, NULL),
-      ('outbound_destinations_for_path',
-       $q$select count(*) from public.outbound_destinations_for_path('/', 28)$q$,
-       NULL, NULL),
-      ('behavior_pages_for_period',
-       $q$select count(*) from public.behavior_pages_for_period(now() - interval '7 days', now())$q$,
-       NULL, NULL),
-      ('engagement_density_for_path',
-       $q$select count(*) from public.engagement_density_for_path('/', 28)$q$,
-       NULL, NULL),
-      ('tracker_first_seen_global',
-       $q$select count(*) from (select public.tracker_first_seen_global() v) s where s.v is not null$q$,
-       NULL, 1),
-      ('refresh_pipeline_health',
-       $q$select count(*) from public.refresh_pipeline_health()$q$,
-       NULL, 1),
-      ('units_behavior_pages_for_period',
-       $q$select count(*) from public.behavior_pages_for_period(now() - interval '7 days', now())
-          where bounce_rate > 1 or bounce_rate_pct > 100 or abs(bounce_rate * 100 - bounce_rate_pct) > 0.02$q$,
-       NULL, 0),
-      ('units_seo_pages_overview',
-       $q$select count(*) from public.seo_pages_overview(now() - interval '7 days', now())
-          where bounce_rate > 1 or bounce_rate_pct > 100 or abs(bounce_rate * 100 - bounce_rate_pct) > 0.02$q$,
-       NULL, 0),
-      ('units_cooked_bounce_rate_range',
-       $q$select count(*) from (
-            select cooked_bounce_rate from public.gsc_page_performance('/', 'rolling_28')
-            union all
-            select cooked_bounce_rate from public.pages_overview_unified('rolling_28', 50)
-            union all
-            select cooked_bounce_rate from public.pages_overview_unified('rolling_7', 50)
-          ) u where cooked_bounce_rate > 100 or cooked_bounce_rate < 0$q$,
-       NULL, 0),
-      ('units_cooked_bounce_rate_unit',
-       $q$select case when count(*) >= 20 and max(cooked_bounce_rate) <= 1 then 1 else 0 end from (
-            select cooked_bounce_rate from public.pages_overview_unified('rolling_28', 50)
-            union all
-            select cooked_bounce_rate from public.pages_overview_unified('rolling_7', 50)
-          ) u$q$,
-       NULL, 0),
-      ('spam_share_events_human',
-       $q$select case when count(*) filter (where name = 'pageview') >= 100
-                    and 100.0 * count(*) filter (where name = 'pageview'
-                          and (lower(user_agent) = 'pc' or user_agent ilike '%sebot%'
-                               or public.cooked_is_spam_referrer(referrer_hostname)))
-                        / count(*) filter (where name = 'pageview') >= 1
-                  then 1 else 0 end
-          from public.events_human where occurred_at > now() - interval '7 days'$q$,
-       NULL, 0),
-      ('classify_channel_spam',
-       $q$select count(*) from (values ('m.baidu.com'), ('baidu.com')) v(h)
-          where public.classify_channel(v.h, null, null, 'www.jplouton-avocat.fr') <> 'spam'$q$,
-       NULL, 0),
-      ('gsc_pages_overview_28d_alignes',
-       $q$select abs(coalesce((select sum(gsc_clicks_28d) from public.gsc_pages_overview(100000)), 0)
-                 - coalesce((select sum(g.clicks) from public.gsc_path_daily g,
-                               public.cooked_period_bounds('rolling_28', 'gsc') b
-                             where g.day between b.n_start and b.n_end), 0))$q$,
-       NULL, 0),
-      ('cpi_sans_horloge',
-       $q$select count(*) from regexp_matches(
-            pg_get_functiondef('public.cooked_page_index(integer)'::regprocedure),
-            'now\(\)|current_date|current_timestamp|localtimestamp', 'gi')$q$,
-       NULL, 0),
-      ('contacts_28j_une_fenetre',
-       $q$with b as (select n_start, n_end from public.cooked_period_bounds('rolling_28', 'live_j1')),
-               s as (select sm.macro_conversions as n from b, public.site_macro_counts(b.n_start, b.n_end) sm),
-               m as (select coalesce(sum(contacts), 0) as n from public.macro_contacts_by_path(28)),
-               j as (select count(*) as n from public.conversion_journeys(28))
-          select abs((select n from s) - (select n from m)) + abs((select n from s) - (select n from j))$q$,
-       NULL, 0),
-      ('funnel_meme_total_que_journeys',
-       $q$with b as (select n_end from public.cooked_period_bounds('rolling_28', 'cross'))
-          select abs(coalesce((select sum(contacts) from public.seo_to_contact_funnel(28)), 0)
-                   - (select count(*) from b, public.conversion_journeys(28, b.n_end) j
-                      where j.entry_channel like 'organic%' and j.entry_path is not null))$q$,
-       NULL, 0),
-      ('classify_channel_gclid_paid',
-       $q$select count(*) from (values
-            ('www.google.com', 'gmb', null, 'https://www.jplouton-avocat.fr/?utm_source=gmb&gclid=abc'),
-            ('www.google.com', null, null, 'https://www.jplouton-avocat.fr/defense-penale?gbraid=xyz'),
-            (null, null, null, 'https://www.jplouton-avocat.fr/?wbraid=k')) v(r, s, m, u)
-          where public.classify_channel(v.r, v.s, v.m, 'www.jplouton-avocat.fr', v.u) is distinct from 'paid'$q$,
-       NULL, 0),
-      ('cpi_momentum_source_complete',
-       $q$select count(*) from regexp_matches(
-            pg_get_functiondef('public.cooked_page_index(integer)'::regprocedure),
-            'momf AS \(SELECT path,.*?FROM public\.gsc_path_daily', 'g')$q$,
-       1, NULL),
-      ('potentiel_sans_momentum_gate',
-       $q$select count(*) from public.cpi_opportunite_contact o
-          where o.potentiel is distinct from round(public.cpi_compose(o.zc, o.zr, o.zl, 0, 1, 1, true))::int$q$,
-       NULL, 0),
-      ('assistes_plus_non_attribuables_eq_site',
-       $q$with b as (select n_start, n_end from public.cooked_period_bounds('rolling_28', 'live_j1')),
-               s as (select sm.macro_conversions as n from b, public.site_macro_counts(b.n_start, b.n_end) sm),
-               a as (select coalesce(sum(contacts), 0) as n
-                     from public.assisted_contacts_by_entry_path((select n_start from b), (select n_end from b)))
-          select abs((select n from s) - (select n from a))$q$,
-       NULL, 0),
-      ('dashboard_annotations',
-       $q$select count(*) from public.dashboard_annotations('rolling_28')$q$,
-       NULL, NULL),
-      ('dashboard_article_detail',
-       $q$select count(*) from (select public.dashboard_article_detail('/post/abandon-de-poste-quels-risques', 'rolling_28') v) s where s.v ? 'path'$q$,
-       NULL, 1),
-      ('dashboard_assisted_quarter',
-       $q$select count(*) from (select public.dashboard_assisted_quarter() v) s where (s.v->>'value') is not null$q$,
-       NULL, 1),
-      ('dashboard_expertises_kpis',
-       $q$select count(*) from public.dashboard_expertises_kpis('rolling_28')$q$,
-       NULL, NULL),
-      ('dashboard_expertises_overview',
-       $q$select count(*) from public.dashboard_expertises_overview('rolling_28', 20)$q$,
-       NULL, NULL),
-      ('dashboard_expertises_trend',
-       $q$select count(*) from public.dashboard_expertises_trend('rolling_28')$q$,
-       NULL, NULL),
-      ('dashboard_honoraires_funnel',
-       $q$select count(*) from public.dashboard_honoraires_funnel('rolling_28')$q$,
-       NULL, NULL),
-      ('dashboard_intervention_effect',
-       $q$select count(*) from (select public.dashboard_intervention_effect('/', date '2026-09-01') v) s$q$,
-       NULL, NULL),
-      ('dashboard_resources_assisted',
-       $q$select count(*) from public.dashboard_resources_assisted('rolling_28')$q$,
-       NULL, NULL),
-      ('dashboard_resources_cohorts',
-       $q$select count(*) from (select public.dashboard_resources_cohorts() v) s where s.v is not null$q$,
-       NULL, 1),
-      ('dashboard_resources_kpis',
-       $q$select count(*) from public.dashboard_resources_kpis('rolling_28')$q$,
-       NULL, NULL),
-      ('dashboard_resources_overview',
-       $q$select count(*) from public.dashboard_resources_overview('rolling_28', 20)$q$,
-       NULL, NULL),
-      ('dashboard_resources_trend',
-       $q$select count(*) from public.dashboard_resources_trend('rolling_28')$q$,
-       NULL, NULL),
-      ('dashboard_seo_by_query',
-       $q$select count(*) from public.dashboard_seo_by_query('rolling_28', 'ressource', 0, 20)$q$,
-       NULL, NULL),
-      ('dashboard_seo_kpis',
-       $q$select count(*) from public.dashboard_seo_kpis('rolling_28', 'ressource')$q$,
-       NULL, NULL)
-      ,
-      -- I9 (T-11, 03/09/2026) : chaque ingestion GSC est suivie d'un refresh complet journalisé.
-      ('refresh_runs_after_ingest',
-       $q$select count(*) from public.refresh_runs
-          where step = '_total' and ok and started_at > now() - interval '36 hours'$q$,
-       1, NULL),
-      ('refresh_after_gsc_not_pending',
-       $q$select count(*) from public.cooked_refresh_after_gsc_pending() p
-          where p.pending and p.last_ingest < now() - interval '6 hours'$q$,
-       NULL, 0)
-      ,
-      -- I7 (T-10, 03/09/2026) : la couture d'identité est horodatée et couvre 100 % des sessions
-      -- humaines de J-2 (reconstruite à 05:40 Paris, contrôlée ici à 05:30 : J-1 n'est pas encore cousue).
-      ('identity_stitch_couvre_j2',
-       $q$select count(*) from (select distinct session_id from public.events_human
-            where public.paris_date(occurred_at) = public.paris_today() - 2
-              and anonymous_id not like 'webhook-%' and anonymous_id !~ '^[0-9a-f]{32}$') s
-          where not exists (select 1 from public.identity_stitch i
-                            where i.kind = 'sid' and i.key = s.session_id)$q$,
-       NULL, 0),
-      ('identity_stitch_horodatee',
-       $q$select count(*) from public.cooked_config
-          where key = 'identity_stitch_refreshed_at'
-            and value::timestamptz > now() - interval '30 hours'$q$,
-       NULL, 1)
-      ,
-      -- I8 (T-13, 03/09/2026) : budget de durée des RPC dashboard (mesuré sur ce même run —
-      -- rpc_health est alimentée au fil des tests). 03/09 : article_detail 1,2 s (34 s max le 25/07),
-      -- honoraires_funnel 1,6 s (12 s max mesuré en juillet), seo_by_query 2,8 s, les autres < 0,1 s.
-      ('dashboard_rpc_budget',
-       $q$select count(*) from public.rpc_health h
-          where h.checked_at > now() - interval '30 minutes'
-            and h.rpc_name like 'dashboard\_%'
-            and h.duration_ms > case h.rpc_name
-                                  when 'dashboard_article_detail'   then 20000
-                                  when 'dashboard_honoraires_funnel' then 15000
-                                  when 'dashboard_seo_by_query'      then 8000
-                                  else 5000 end$q$,
-       NULL, 0)
-      ,
-      -- I12 (T-16, 04/09/2026) : pont SECIB — la vue prod ne voit jamais le bac à sable ; le miroir de
-      -- normalisation tient sur les vecteurs « (0) » ; pas de nouveau doublon prospect (2 connus le 03/09,
-      -- nettoyage = décision Nicolas).
-      ('pont_test_jamais_dans_prod',
-       $q$select count(*) from public.pont_prospects_dossiers where secib_env is distinct from 'prod' and secib_env is not null$q$,
-       NULL, 0),
-      ('normalize_phone_vecteurs',
-       $q$select count(*) from (values
-            ('+33 (0)6 12 34 56 78', '+33612345678'), ('00 33 (0)6 12 34 56 78', '+33612345678'),
-            ('06.12.34.56.78', '+33612345678'), ('+41 79 123 45 67', '+41791234567'), ('12345', null)) v(i, o)
-          where public.cooked_normalize_phone_fr(v.i) is distinct from v.o$q$,
-       NULL, 0),
-      ('crm_prospects_doublons_email_minute',
-       $q$select case when (select doublons_email_minute from public.pont_couverture where env = 'prod') > 2 then 1 else 0 end$q$,
-       NULL, 0)
-    ) AS v(nom, requete, min_rows, exact_rows)
-  LOOP
-    PERFORM public.rpc_contract_check(t.nom, t.requete, t.min_rows, t.exact_rows);
+  FOR t IN SELECT * FROM (VALUES
+    ('core_visit_counts',
+      $q$SELECT count(*) FROM public.page_visits(public.paris_today()-2,public.paris_today()-1)
+        WHERE row_kind='page' AND (phone_visits>contact_visits OR form_visits>contact_visits
+          OR contact_visits>entries OR entries>visits OR contact_visits>phone_visits+form_visits
+          OR contact_visits<0 OR entries<0 OR visits<0)$q$,0),
+    ('core_unattributed_contacts',
+      $q$WITH visit_events AS MATERIALIZED (
+           SELECT * FROM public.cooked_visit_events(public.paris_today()-2,public.paris_today()-1)),
+         sources AS (
+           SELECT count(*) AS n FROM public.events_human e
+           WHERE e.occurred_at>=public.cooked_paris_ts_start(public.paris_today()-2)
+             AND e.occurred_at<public.cooked_paris_ts_start(public.paris_today())
+             AND (e.name='cta_phone_click'
+               OR (e.name='form_submit' AND public.form_submit_counts_as_macro(e.props))))
+         SELECT abs((SELECT count(*) FROM visit_events WHERE counts_as_macro)-(SELECT n FROM sources))$q$,0),
+    ('core_canonical_path',
+      $q$SELECT count(*) FROM (VALUES('/post/%C3%A9cole/','/post/école'),('/','/')) v(input,expected)
+         WHERE public.canonical_path(v.input) IS DISTINCT FROM v.expected$q$,0),
+    ('core_gsc_batch',
+      $q$SELECT CASE WHEN EXISTS(
+          SELECT 1 FROM public.gsc_ingest_batches WHERE status='completed'
+            AND completed_at>now()-interval '48 hours') THEN 0 ELSE 1 END$q$,0),
+    ('core_identity_fresh',
+      $q$SELECT CASE WHEN EXISTS(
+          SELECT 1 FROM public.cooked_config WHERE key='identity_stitch_refreshed_at'
+            AND value::timestamptz>now()-interval '30 hours') THEN 0 ELSE 1 END$q$,0),
+    ('core_private_surface',
+      $q$SELECT count(*) FROM public.alert_rule_exposure()$q$,0)
+  ) tests(name,sql,expected) LOOP
+    PERFORM public.rpc_contract_check(t.name,t.sql,NULL,t.expected);
   END LOOP;
-  DELETE FROM rpc_health WHERE checked_at < now() - interval '90 days';
+  DELETE FROM public.rpc_health WHERE checked_at<now()-interval '90 days';
 END;
 $function$
 
@@ -6189,51 +4253,30 @@ CREATE OR REPLACE FUNCTION public.seo_to_contact_funnel(days_back integer DEFAUL
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  -- T-09 (mission 02/09/2026, #110 — d-06/c-01) : UNE fenêtre pour les trois sources (GSC, entrées, contacts) = days_back
-  -- jours clos à gsc_last_data_day() (lens 'cross'), p_end pour surcharger. UN grain pour le ratio : le dénominateur compte
-  -- les entrées de VISITE RECOUSUE (identity_stitch, coupure 30 min — la clé de conversion_journeys), plus la session brute.
-  -- FULL JOIN entrées/contacts : un contact dont la page d'entrée n'a aucune entrée organique comptée reste visible
-  -- (organic_entries = 0, taux NULL) au lieu de disparaître — Σ contacts = conversion_journeys organiques (contract-test).
-  -- Avant : entrées sur session brute et `now()` glissant, GSC sur `current_date` UTC sans borne Google (24 j de données).
+  -- Comptes rectifiés au grain visite. Les actions sont observées avant la
+  -- clôture et seules les visites entrées dans cette fenêtre alimentent le taux.
+  -- Signature conservée ; contacts/phone/form désignent désormais les visites.
   with w as (
     select coalesce(p_end, b.n_end) as d_end,
            coalesce(p_end, b.n_end) - (days_back - 1) as d_start
     from public.cooked_period_bounds('rolling_28', 'cross') b
   ),
-  pv as (
-    select coalesce(ss.visitor_key, sa.visitor_key,
-                    'sid:' || coalesce(e.session_id, e.anonymous_id, 'inconnu')) as vk,
-           e.path, e.occurred_at as t, e.referrer_hostname, e.utm_source, e.utm_medium, e.url
-    from public.events_human e
-    left join public.identity_stitch ss on ss.kind = 'sid' and ss.key = e.session_id
-    left join public.identity_stitch sa on sa.kind = 'aid' and sa.key = e.anonymous_id
-    where e.name = 'pageview' and e.path is not null
-      -- bornes en sous-requêtes scalaires (InitPlan) : un CROSS JOIN sur w faisait perdre l'index idx_events_paris_date
-      and public.paris_date(e.occurred_at) between (select d_start from w) and (select d_end from w)
-  ),
-  entries as (
-    select s.vk, s.path, s.referrer_hostname, s.utm_source, s.utm_medium, s.url
-    from (
-      select pv.*, lag(pv.t) over (partition by pv.vk order by pv.t) as prev_t
-      from pv
-    ) s
-    where s.prev_t is null or s.t - s.prev_t > interval '30 minutes'
+  e as materialized (
+    select v.* from w cross join lateral public.cooked_visit_events(w.d_start,w.d_end) v
   ),
   organic as (
-    select en.path as entry_path, count(*) as organic_entries
-    from entries en
-    where public.classify_channel(en.referrer_hostname, en.utm_source, en.utm_medium,
-                                  'www.jplouton-avocat.fr', en.url) like 'organic%'
-    group by en.path
+    select e.entry_path,count(*) as organic_entries
+    from e where e.event_name='pageview' and e.event_id=e.visit_id
+      and e.entry_channel like 'organic%'
+    group by e.entry_path
   ),
   conv as (
-    select j.entry_path,
-      count(*) as contacts,
-      count(*) filter (where j.contact_kind = 'phone') as contacts_phone,
-      count(*) filter (where j.contact_kind = 'form')  as contacts_form
-    from public.conversion_journeys(days_back, (select d_end from w)) j
-    where j.entry_channel like 'organic%' and j.entry_path is not null
-    group by j.entry_path
+    select e.entry_path,count(distinct e.visit_id) as contacts,
+      count(distinct e.visit_id) filter(where e.event_name='cta_phone_click') as contacts_phone,
+      count(distinct e.visit_id) filter(where e.event_name='form_submit') as contacts_form
+    from e where e.counts_as_macro and e.entry_channel like 'organic%'
+      and e.entry_at>=public.cooked_paris_ts_start((select d_start from w))
+    group by e.entry_path
   ),
   gsc as (
     select g.path, sum(g.impressions) as impressions, sum(g.clicks) as clicks
@@ -6586,20 +4629,6 @@ END;
 $function$
 
 
--- ═══ public.site_seo_funnel(period_kind text) ═══
-CREATE OR REPLACE FUNCTION public.site_seo_funnel(period_kind text DEFAULT 'rolling_28'::text)
- RETURNS TABLE(period_start date, period_end date, impressions bigint, clicks bigint, google_sessions bigint, macro_contacts bigint, impr_to_click_pct numeric, click_to_session_pct numeric, session_to_contact_pct numeric, overall_impr_to_contact_pct numeric)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-BEGIN
-  RAISE EXCEPTION 'site_seo_funnel is deprecated: its former rates mixed incompatible acquisition scopes'
-    USING ERRCODE='0A000', HINT='Use public.seo_to_contact_funnel(days_back, p_end), with its explicit organic_entries, contacts and window bounds.';
-END;
-$function$
-
-
 -- ═══ public.snapshot_pages_export(paths text[]) ═══
 CREATE OR REPLACE FUNCTION public.snapshot_pages_export(paths text[] DEFAULT NULL::text[])
  RETURNS TABLE(path text, views_7d bigint, unique_visitors_7d bigint, sessions_7d bigint, bounce_rate_7d numeric, avg_dwell_seconds_7d numeric, scroll_avg_7d numeric, scroll_median_7d numeric, scroll_complete_pct_7d numeric, entry_count_7d bigint, exit_count_7d bigint, outbound_clicks_7d bigint, views_28d bigint, unique_visitors_28d bigint, sessions_28d bigint, bounce_rate_28d numeric, avg_dwell_seconds_28d numeric, scroll_avg_28d numeric, scroll_median_28d numeric, scroll_complete_pct_28d numeric, entry_count_28d bigint, exit_count_28d bigint, outbound_clicks_28d bigint, views_90d bigint, unique_visitors_90d bigint, sessions_90d bigint, bounce_rate_90d numeric, avg_dwell_seconds_90d numeric, scroll_avg_90d numeric, scroll_median_90d numeric, scroll_complete_pct_90d numeric, entry_count_90d bigint, exit_count_90d bigint, outbound_clicks_90d bigint, views_365d bigint, unique_visitors_365d bigint, sessions_365d bigint, bounce_rate_365d numeric, avg_dwell_seconds_365d numeric, scroll_avg_365d numeric, scroll_median_365d numeric, scroll_complete_pct_365d numeric, entry_count_365d bigint, exit_count_365d bigint, outbound_clicks_365d bigint, lcp_p75_28d_ms numeric, inp_p75_28d_ms numeric, cls_p75_28d numeric, ttfb_p75_28d_ms numeric, top_referrer_28d text, top_source_28d text, top_medium_28d text, device_split_28d jsonb, refreshed_at timestamp with time zone, phone_clicks_7d bigint, phone_clicks_28d bigint, phone_clicks_90d bigint, phone_clicks_365d bigint, email_clicks_7d bigint, email_clicks_28d bigint, email_clicks_90d bigint, email_clicks_365d bigint, booking_cta_clicks_7d bigint, booking_cta_clicks_28d bigint, booking_cta_clicks_90d bigint, booking_cta_clicks_365d bigint, google_sessions_28d bigint, pogo_sticks_28d bigint, hard_pogo_28d bigint, pogo_rate_28d numeric, mobile_sessions_28d bigint, desktop_sessions_28d bigint, cta_rate_mobile_28d numeric, cta_rate_desktop_28d numeric)
@@ -6782,6 +4811,10 @@ begin
   if input is null then
     return null;
   end if;
+  -- Le chemin déjà décodé est le cas courant ; le résultat de la boucle serait identique.
+  if strpos(input, '%') = 0 then
+    return input;
+  end if;
   while i <= len loop
     if substring(input from i for 1) = '%'
        and i + 2 <= len
@@ -6807,31 +4840,5 @@ exception
   when others then
     return input;
 end;
-$function$
-
-
--- ═══ public.weekly_conversions_report(p_week_start date) ═══
-CREATE OR REPLACE FUNCTION public.weekly_conversions_report(p_week_start date DEFAULT NULL::date)
- RETURNS TABLE(semaine date, page_entree text, page_conversion text, appels bigint, formulaires bigint, conversions bigint, canaux text)
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-  WITH w AS (
-    SELECT date_trunc('week',
-             COALESCE(p_week_start::timestamp,
-                      date_trunc('week', (now() AT TIME ZONE 'Europe/Paris')) - interval '7 days'))::date AS ws
-  )
-  SELECT c.week_start,
-         COALESCE(c.entry_path,   '(entree inconnue)'),
-         COALESCE(c.contact_path, '(page inconnue)'),
-         count(*) FILTER (WHERE c.contact_kind = 'phone'),
-         count(*) FILTER (WHERE c.contact_kind = 'form'),
-         count(*),
-         string_agg(DISTINCT COALESCE(c.entry_channel, 'inconnu'), ', ')
-  FROM public.conversion_weekly c, w
-  WHERE c.week_start = w.ws
-  GROUP BY 1, 2, 3
-  ORDER BY 6 DESC, 2, 3;
 $function$
 

@@ -33,6 +33,13 @@ export async function createDatabase() {
       CREATE VIEW events_no_bots AS SELECT * FROM events;
       CREATE VIEW events_human_outremer AS SELECT * FROM events WHERE false;
       INSERT INTO cooked_config(key,value) VALUES('cpi_definition_version','2.2.5');`);
+    // Le préambule crée seulement la table des lots. Rejouer toute l’ancienne
+    // migration après le miroir écraserait les définitions courantes.
+    const batchMigration = fs.readdirSync(root + '/supabase/migrations')
+      .find(name => name.endsWith('_audit_data_integrity_and_ingest_completion.sql'));
+    const batchSchema = fs.readFileSync(root + '/supabase/migrations/' + batchMigration, 'utf8')
+      .split('CREATE OR REPLACE FUNCTION')[0].replace(/\bBEGIN;/, '');
+    await db.exec(batchSchema);
     const source = fs.readFileSync(process.env.SQL_RPC_MIRROR ?? root + '/supabase/rpcs.sql', 'utf8');
     for (const chunk of source.split(/\n-- ═══ /).slice(1)) {
       const start = chunk.indexOf('CREATE OR REPLACE');
@@ -41,7 +48,6 @@ export async function createDatabase() {
       if (/FUNCTION public.unaccent/.test(ddl)) continue;
       await db.exec(ddl + ';');
     }
-    await applyMigration(db, '_audit_data_integrity_and_ingest_completion.sql');
     return db;
   } catch (error) {
     await db.close();

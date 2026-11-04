@@ -1,5 +1,7 @@
 # Documentation Cooked — index du dossier `docs/`
 
+État du socle éditorial et arrêt des anciens recalculs — [SIMPLIFICATION.md](SIMPLIFICATION.md).
+
 Carte de la documentation. **Racine du repo** (standard mainteneur) :
 [README.md](../README.md) · [AGENTS.md](../AGENTS.md) · [CONTRIBUTING.md](../CONTRIBUTING.md) ·
 [CHANGELOG.md](../CHANGELOG.md) · [CLAUDE.md](../CLAUDE.md) (règles agent, lu à chaque session) ·
@@ -12,7 +14,7 @@ Carte de la documentation. **Racine du repo** (standard mainteneur) :
 - [`RELIABILITY.md`](RELIABILITY.md) — corrections du 20/10/2026, contrats de mesure, états de déploiement et limites.
 - [`OPERATIONS.md`](OPERATIONS.md) — architecture, events captés, RPCs publiées, crons, déploiement, dépannage.
 - [`PLAYBOOK-analyse-seo.md`](PLAYBOOK-analyse-seo.md) — recettes d'analyse SEO × GSC et les pièges déjà payés.
-- [`../supabase/rpcs.sql`](../supabase/rpcs.sql) — miroir lecture des **143 corps de RPC** (régénéré depuis la prod par le workflow `rpcs-regenerate`, gate CI Arch #5 + prod-drift T-12).
+- [`../supabase/rpcs.sql`](../supabase/rpcs.sql) — miroir lecture des **122 corps de RPC** (régénéré depuis la prod par le workflow `rpcs-regenerate`, gate CI Arch #5 + prod-drift T-12).
 - [`rgpd-pont-secib.md`](rgpd-pont-secib.md) — RGPD du pont SECIB : textes à publier, registre, arbitrages ouverts.
 - [`adr/`](adr/) — décisions d'architecture (ADR-0001 source unique de la profondeur de lecture, ADR-0002 registre des contrats de fraîcheur).
 - [`mission-2026-09-02/`](mission-2026-09-02/) — mission précision/fiabilité/hygiène : [`00-baseline.md`](mission-2026-09-02/00-baseline.md), [`01-audit.md`](mission-2026-09-02/01-audit.md) (86 constats, 7 causes racines, 13 invariants), [`02-plan.md`](mission-2026-09-02/02-plan.md) (22 tickets), [`journal.md`](mission-2026-09-02/journal.md), [`02-apres.md`](mission-2026-09-02/02-apres.md) (re-mesure du 04/09, 14 invariants), [`03-passation.md`](mission-2026-09-02/03-passation.md) (finale, 04/09).
