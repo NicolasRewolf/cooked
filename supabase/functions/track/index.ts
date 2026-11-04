@@ -1,33 +1,9 @@
-// COOKED — track Edge Function (v31 — 20/10/2026 : iOS détecté avant macOS ; v30 — 04/09/2026 : T-19/T-22 — url réduite aux paramètres de campagne,
-// title plus écrit, ingest_drops agrégés (1 appel / 100 drops ou / minute) ; v29 — 04/09/2026 : gate x-cooked-key fail-fast, T-18 mission 02/09 —
-// COOKED_INGEST_KEY absent ⇒ le boot échoue au lieu d'ouvrir la porte ; v28 — 03/09/2026 : bot UA « pc »/SEBot droppés à l'ingestion, T-04 mission 02/09 ;
-// v27 — 25/07/2026 : x-cooked-key ingest gate, audit n°3)
-// POST /functions/v1/track
-// Auth: this function does NOT verify a JWT. Authorization is via the Velo proxy
-// which holds the Supabase secret key server-side and forwards it as `apikey`.
-// The Edge Function itself uses the auto-injected service-role key to insert.
-//
-// D4 — toute la construction des rows vit dans _shared/track_row.ts (module
-// pur, testé par deno test). Le handler ne garde que : env, HTTP/CORS,
-// parsing du batch, appel du builder, INSERT, réponse.
-
+// COOKED — track Edge Function (v32 — 04/11/2026 : réception HTTP testable, comptages inchangés).
+// POST /functions/v1/track — gate x-cooked-key via le proxy Velo, sans vérification JWT.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { ingestKeyMatches, requireIngestKey } from "../_shared/ingest_gate.ts";
-import { IngestDropBuffer } from "../_shared/ingest_drops.ts";
-import {
-  buildEventRow,
-  clientIp,
-  hashAnonymous,
-  isBotUa,
-  parseUserAgent,
-} from "../_shared/track_row.ts";
+import { createTrackHandler } from "../_shared/track_delivery.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-// New-format keys (sb_secret_*) populate SUPABASE_SECRET_KEY;
-// legacy JWT keys populate SUPABASE_SERVICE_ROLE_KEY. Try new first.
-// Sprint 25 — fail-fast at boot if neither is set. Without it the
-// service-role insert would 401 silently and we'd lose events with
-// only a cryptic Edge log entry.
 const SECRET_KEY =
   Deno.env.get("SUPABASE_SECRET_KEY") ??
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -37,146 +13,15 @@ if (!SECRET_KEY) {
     "set it in the Supabase Dashboard before deploying this function.",
   );
 }
-// Sprint 25 — fail-fast if ANON_SALT is missing OR still the placeholder.
-// Sprint 22 made the browser-supplied UUID primary, but ANON_SALT is
-// still used in the IP+UA hash fallback (visitors without localStorage).
-// A predictable salt would let anyone re-identify those visitors.
-const ANON_SALT = Deno.env.get("ANON_SALT");
-if (!ANON_SALT || ANON_SALT === "cooked-default-salt-CHANGE-ME-IN-DASHBOARD") {
-  throw new Error(
-    "[track] ANON_SALT env var is required and must not be the placeholder — " +
-    "set a strong random value in the Supabase Dashboard before deploying.",
-  );
-}
-const ALLOWED_ORIGIN =
-  Deno.env.get("ALLOWED_ORIGIN") ?? "https://www.jplouton-avocat.fr";
-// T-18 (b-02) — fail-fast : la gate ne tourne jamais ouverte (_shared/ingest_gate.ts, testé).
-const COOKED_INGEST_KEY = requireIngestKey(Deno.env.get("COOKED_INGEST_KEY"));
 
 const supabase = createClient(SUPABASE_URL, SECRET_KEY, {
   auth: { persistSession: false },
 });
 
-// T-19 (b-07) — drops agrégés : un appel record_ingest_drop par ≥ 100 drops ou par minute,
-// au lieu d'un par requête de bot (3,6 M appels / 28 j).
-const dropBuffer = new IngestDropBuffer(async (reason, n) => {
-  const { error } = await supabase.rpc("record_ingest_drop", { p_reason: reason, p_n: n });
-  if (error) console.error("[track] record_ingest_drop error:", error.message);
-});
-
-function corsHeaders(origin: string): Record<string, string> {
-  return {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type, apikey, authorization, x-client-info, x-cooked-key",
-    "Access-Control-Max-Age": "86400",
-    Vary: "Origin",
-  };
-}
-
-Deno.serve(async (req) => {
-  const reqOrigin = req.headers.get("origin") ?? "";
-  const allowOrigin =
-    ALLOWED_ORIGIN === "*"
-      ? "*"
-      : reqOrigin === ALLOWED_ORIGIN
-      ? reqOrigin
-      : ALLOWED_ORIGIN;
-  const cors = corsHeaders(allowOrigin);
-
-  const jsonError = (status: number, error: string) =>
-    new Response(JSON.stringify({ ok: false, error }), {
-      status,
-      headers: { ...cors, "content-type": "application/json" },
-    });
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: cors });
-  }
-  if (req.method !== "POST") {
-    return jsonError(405, "method_not_allowed");
-  }
-
-  if (!ingestKeyMatches(COOKED_INGEST_KEY, req.headers.get("x-cooked-key"))) {
-    return jsonError(401, "unauthorized");
-  }
-
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return jsonError(400, "invalid_json");
-  }
-
-  const events: any[] = Array.isArray(body?.events)
-    ? body.events
-    : Array.isArray(body)
-    ? body
-    : [body];
-
-  if (!events.length || events.length > 50) {
-    return jsonError(400, "invalid_batch_size");
-  }
-
-  const ip = clientIp(req);
-  const ua = req.headers.get("user-agent") ?? "";
-
-  // v26 (audit 25/07/2026, n°5/R2) — les crawlers/headless ne sont plus
-  // écrits : leur UA matche la taxonomie ua_bot que refresh_noise_sessions
-  // appliquait après coup (90 % des writes). Compteur ingest_drops pour
-  // l'audit ; réponse 200 pour ne rien révéler au bot (et éviter tout retry).
-  if (isBotUa(ua)) {
-    await dropBuffer.add("bot_ua", events.length);
-    return new Response(JSON.stringify({ ok: true, inserted: 0 }), {
-      status: 200,
-      headers: { ...cors, "content-type": "application/json" },
-    });
-  }
-
-  const serverHash = await hashAnonymous(ip, ua, ANON_SALT);
-  const device = parseUserAgent(ua);
-
-  const now = new Date().toISOString();
-  const rows = [];
-  let droppedMissingFields = 0;
-  let droppedDisallowedName = 0;
-
-  for (const e of events) {
-    const built = buildEventRow(e, { serverHash, ua, device, now });
-    if (!built.ok) {
-      if (built.reason === "missing_fields") droppedMissingFields++;
-      else droppedDisallowedName++;
-      continue;
-    }
-    rows.push(built.row);
-  }
-
-  if (droppedMissingFields > 0 || droppedDisallowedName > 0) {
-    console.warn(
-      `[track] dropped events in batch (size=${events.length}): ` +
-      `missing_fields=${droppedMissingFields} disallowed_name=${droppedDisallowedName}`,
-    );
-    // v26 — mêmes drops qu'avant, désormais comptés (auditabilité n°5).
-    for (const [reason, cnt] of [
-      ["missing_fields", droppedMissingFields],
-      ["disallowed_name", droppedDisallowedName],
-    ] as const) {
-      if (cnt > 0) await dropBuffer.add(reason, cnt);
-    }
-  }
-
-  if (!rows.length) {
-    return jsonError(400, "no_valid_events");
-  }
-
-  const { error } = await supabase.from("events").insert(rows);
-  if (error) {
-    console.error("[track] insert error:", error.message);
-    return jsonError(500, error.message);
-  }
-
-  return new Response(JSON.stringify({ ok: true, inserted: rows.length }), {
-    status: 200,
-    headers: { ...cors, "content-type": "application/json" },
-  });
-});
+Deno.serve(createTrackHandler({
+  ingestKey: Deno.env.get("COOKED_INGEST_KEY") ?? "",
+  anonSalt: Deno.env.get("ANON_SALT") ?? "",
+  allowedOrigin: Deno.env.get("ALLOWED_ORIGIN"),
+  insertEvents: (rows) => supabase.from("events").insert(rows),
+  recordDrop: (reason, n) => supabase.rpc("record_ingest_drop", { p_reason: reason, p_n: n }),
+}));
