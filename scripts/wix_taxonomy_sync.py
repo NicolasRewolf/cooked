@@ -3,7 +3,7 @@
 
   python3 scripts/wix_taxonomy_sync.py
   python3 scripts/wix_taxonomy_sync.py --dry-run
-  python3 scripts/wix_taxonomy_sync.py --from-file tests/fixtures/wix_blog_posts_2026-09-03.txt --dry-run
+  python3 scripts/wix_taxonomy_sync.py --from-file /chemin/inventaire-complet.json --dry-run
 """
 from __future__ import annotations
 

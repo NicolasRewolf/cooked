@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {createDatabase} from './helpers.mjs';
+import {createDatabase, applyMigration} from './helpers.mjs';
 
 const db = await createDatabase();
 try {
@@ -26,8 +26,12 @@ try {
   const sync = async (value, dry = false) => (await db.query(
     'SELECT * FROM page_taxonomy_sync_wix($1::jsonb,$2)', [JSON.stringify(value), dry])).rows[0];
   const before = await rows();
-  assert.equal((await sync(inventory, true)).inserted, 3);
+  const preview = await sync(inventory, true);
+  await applyMigration(db, '_complete_wix_inventory_only.sql');
+  assert.deepEqual(await sync(inventory, true), preview, 'complete-inventory preview survives the migration');
+  assert.equal(preview.inserted, 3);
   assert.deepEqual(await rows(), before, 'dry-run changes neither taxonomy nor publication');
+  assert.equal(await writes(), 0);
   const result = await sync(inventory);
   assert.deepEqual([result.inserted, result.updated, result.unpublished], [3,1,1]);
   let current = await rows();
@@ -52,25 +56,59 @@ try {
   for (const bad of corruptions) {
     await assert.rejects(sync(bad));
     assert.deepEqual(await rows(), current, 'invalid/incomplete/stale input is atomic');
+    assert.equal(await writes(), writesBeforeReplay);
   }
-  // Legacy scripts still update categories, but cannot unpublish any static page.
+  // Only a complete observation can update the inventory, even in dry-run mode.
   const legacy = Array.from({length:300}, (_,i) => ({slug:i===0?'existing':`legacy-${i}`,category:'classique'}));
-  await sync(legacy);
-  assert.equal((await rows()).find(r=>r.path==='/post/existing').category, 'classique');
-  assert.equal((await rows()).find(r=>r.path==='/suivi-de-dossier').is_published, true);
-  assert.equal((await rows()).find(r=>r.path==='/post/legacy-1').is_published, null);
+  for (const bad of [legacy, [], null, 'historical|r|2026-09-03', 12, true, {}]) {
+    for (const dry of [false, true]) {
+      await assert.rejects(sync(bad, dry));
+      assert.deepEqual(await rows(), current, 'legacy and scalar input cannot change any row');
+      assert.equal(await writes(), writesBeforeReplay);
+    }
+  }
+  await assert.rejects(db.query('SELECT * FROM page_taxonomy_sync_wix(NULL,false)'));
+  assert.deepEqual(await rows(), current);
+  assert.equal(await writes(), writesBeforeReplay);
+
+  // A later observation discovers a new article independently of event traffic.
+  const nextStamp = (await db.query('SELECT clock_timestamp()::text AS stamp')).rows[0].stamp;
+  const nextInventory = {...inventory, observed_at:nextStamp,
+    counts:{...inventory.counts, posts:2},
+    pages:[...inventory.pages, {path:'/post/newly-published', category:'classique'}]};
+  const nextPreview = await sync(nextInventory, true);
+  assert.deepEqual(nextPreview, {inserted:1, updated:0, unpublished:1,
+    inserted_paths:['/post/newly-published'], updated_paths:[]});
+  assert.deepEqual(await rows(), current);
+  assert.equal(await writes(), writesBeforeReplay);
+  assert.deepEqual(await sync(nextInventory), nextPreview);
+  const previousPaths = current.map(r => r.path);
   current = await rows();
+  assert.equal(current.find(r => r.path === '/post/newly-published').is_published, true);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM events')).rows[0].n, 0);
+  assert.ok(previousPaths.every(path => current.some(r => r.path === path)), 'all historical pages remain stored');
+  assert.equal(current.find(r => r.path === '/post/retired').is_published, false);
+  assert.equal(current.find(r => r.path === '/post/existing').is_published, true);
+  const writesAfterNewArticle = await writes();
+  await sync(nextInventory);
+  assert.deepEqual(await rows(), current);
+  assert.equal(await writes(), writesAfterNewArticle, 'replaying the new observation writes nothing');
+
   // A storage failure after inserts rolls back the entire complete snapshot.
   await db.exec(`CREATE FUNCTION fail_inventory() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN RAISE EXCEPTION 'simulated database failure'; END; $$;
     CREATE TRIGGER fail_inventory BEFORE UPDATE OF is_published ON page_taxonomy
     FOR EACH ROW EXECUTE FUNCTION fail_inventory();`);
-  await assert.rejects(sync({...inventory, pages:inventory.pages.map(p=>p.path==='/post/existing'?{...p,path:'/post/brand-new'}:p)}));
+  const failureStamp = (await db.query('SELECT clock_timestamp()::text AS stamp')).rows[0].stamp;
+  await assert.rejects(sync({...nextInventory, observed_at:failureStamp,
+    pages:nextInventory.pages.map(p=>p.path==='/post/existing'?{...p,path:'/post/brand-new'}:p)}),
+  /simulated database failure/);
   assert.deepEqual(await rows(), current);
+  assert.equal(await writes(), writesAfterNewArticle);
   for (const role of ['anon','authenticated']) {
     assert.equal((await db.query(`SELECT has_function_privilege($1,'public.page_taxonomy_sync_wix(jsonb,boolean)','execute') AS allowed`, [role])).rows[0].allowed, false);
   }
-  console.log('Published inventory: zero-traffic, complete atomic update, idempotency, stale/partial rejection, legacy and permissions verified.');
+  console.log('Published inventory: new zero-traffic articles, atomic update, idempotency, stale/partial/legacy rejection and permissions verified.');
 } finally {
   await db.close();
 }

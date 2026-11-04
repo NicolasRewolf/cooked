@@ -1284,7 +1284,6 @@ CREATE OR REPLACE FUNCTION public.page_taxonomy_sync_wix(p_posts jsonb, p_dry_ru
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  v_complete boolean := jsonb_typeof(p_posts) = 'object';
   v_pages jsonb;
   v_observed_at timestamptz;
   v_count integer;
@@ -1296,28 +1295,16 @@ BEGIN
   IF p_posts IS NULL OR p_dry_run IS NULL THEN
     RAISE EXCEPTION 'Wix inventory and dry-run flag are required' USING ERRCODE='22023';
   END IF;
-  IF v_complete THEN
-    IF jsonb_typeof(p_posts->'pages') IS DISTINCT FROM 'array'
-       OR jsonb_typeof(p_posts->'counts') IS DISTINCT FROM 'object' THEN
-      RAISE EXCEPTION 'Complete Wix inventory requires pages and source counts' USING ERRCODE='22023';
-    END IF;
-    v_pages := p_posts->'pages';
-    v_observed_at := (p_posts->>'observed_at')::timestamptz;
-    IF v_observed_at IS NULL OR v_observed_at > clock_timestamp() + interval '5 minutes'
-       OR v_observed_at < clock_timestamp() - interval '24 hours' THEN
-      RAISE EXCEPTION 'Wix observation timestamp missing or outside accepted range' USING ERRCODE='22023';
-    END IF;
-  ELSIF jsonb_typeof(p_posts) = 'array' AND jsonb_array_length(p_posts) >= 300 THEN
-    -- Backward compatibility for old CLI clients / historical fixtures:
-    -- only blog categories change. Publication status and observation never do.
-    SELECT jsonb_agg(jsonb_build_object('path', path, 'category', category)) INTO v_pages
-    FROM (
-      SELECT DISTINCT public.canonical_path('/post/' || (e->>'slug')) AS path,
-        CASE WHEN e->>'category'='ressource' THEN 'ressource' ELSE 'classique' END AS category
-      FROM jsonb_array_elements(p_posts) e WHERE coalesce(e->>'slug','')<>''
-    ) w;
-  ELSE
-    RAISE EXCEPTION 'Unsupported or incomplete Wix inventory' USING ERRCODE='22023';
+  IF jsonb_typeof(p_posts) IS DISTINCT FROM 'object'
+     OR jsonb_typeof(p_posts->'pages') IS DISTINCT FROM 'array'
+     OR jsonb_typeof(p_posts->'counts') IS DISTINCT FROM 'object' THEN
+    RAISE EXCEPTION 'Complete Wix inventory requires pages and source counts' USING ERRCODE='22023';
+  END IF;
+  v_pages := p_posts->'pages';
+  v_observed_at := (p_posts->>'observed_at')::timestamptz;
+  IF v_observed_at IS NULL OR v_observed_at > clock_timestamp() + interval '5 minutes'
+     OR v_observed_at < clock_timestamp() - interval '24 hours' THEN
+    RAISE EXCEPTION 'Wix observation timestamp missing or outside accepted range' USING ERRCODE='22023';
   END IF;
 
   IF EXISTS (
@@ -1337,10 +1324,10 @@ BEGIN
     count(*) FILTER(WHERE path NOT LIKE '/post/%' AND path NOT LIKE '/blog/categories/%')
     INTO v_count, v_unique, v_posts, v_categories, v_static
   FROM jsonb_to_recordset(v_pages) w(path text, category text);
-  IF v_count=0 OR v_count<>v_unique OR (NOT v_complete AND v_count<300) THEN
+  IF v_count=0 OR v_count<>v_unique THEN
     RAISE EXCEPTION 'Incomplete or repeated Wix paths' USING ERRCODE='22023';
   END IF;
-  IF v_complete AND (
+  IF (
     v_posts < 1 OR v_categories < 1 OR v_static < 1
     OR v_posts IS DISTINCT FROM (p_posts->'counts'->>'posts')::integer
     OR v_categories IS DISTINCT FROM (p_posts->'counts'->>'categories')::integer
@@ -1353,7 +1340,7 @@ BEGIN
   -- Serialise inventory writes and the existing heuristic updater. Any failure
   -- rolls back both category changes and all publication changes in this RPC.
   LOCK TABLE public.page_taxonomy IN SHARE ROW EXCLUSIVE MODE;
-  IF v_complete AND v_observed_at < (SELECT max(publication_checked_at) FROM public.page_taxonomy) THEN
+  IF v_observed_at < (SELECT max(publication_checked_at) FROM public.page_taxonomy) THEN
     RAISE EXCEPTION 'A newer Wix inventory has already been applied' USING ERRCODE='22023';
   END IF;
   SELECT coalesce(array_agg(w.path ORDER BY w.path), '{}') INTO inserted_paths
@@ -1364,8 +1351,7 @@ BEGIN
   JOIN public.page_taxonomy t USING(path)
   WHERE w.path LIKE '/post/%' AND t.category IS DISTINCT FROM w.category;
   SELECT count(*) INTO unpublished FROM public.page_taxonomy t
-  WHERE (v_complete OR t.path LIKE '/post/%')
-    AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE w.path=t.path);
+  WHERE NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE w.path=t.path);
   inserted := cardinality(inserted_paths);
   updated := cardinality(updated_paths);
   IF NOT p_dry_run THEN
@@ -1376,14 +1362,12 @@ BEGIN
     UPDATE public.page_taxonomy t SET category=w.category, updated_at=clock_timestamp()
       FROM jsonb_to_recordset(v_pages) w(path text, category text)
       WHERE w.path=t.path AND t.path=ANY(updated_paths);
-    IF v_complete THEN
-      UPDATE public.page_taxonomy t SET
-        is_published=EXISTS (SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE w.path=t.path),
-        publication_checked_at=v_observed_at
-      WHERE t.publication_checked_at IS DISTINCT FROM v_observed_at
-        OR t.is_published IS DISTINCT FROM EXISTS (
-          SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE w.path=t.path);
-    END IF;
+    UPDATE public.page_taxonomy t SET
+      is_published=EXISTS (SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE w.path=t.path),
+      publication_checked_at=v_observed_at
+    WHERE t.publication_checked_at IS DISTINCT FROM v_observed_at
+      OR t.is_published IS DISTINCT FROM EXISTS (
+        SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE w.path=t.path);
   END IF;
   RETURN NEXT;
 END;
