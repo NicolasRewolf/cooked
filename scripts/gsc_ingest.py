@@ -5,8 +5,8 @@ Ingestion GSC → Supabase Cooked.
   python3 scripts/gsc_ingest.py all
   python3 scripts/gsc_ingest.py all --daily   # fenêtre cron (2 mois)
 
-Les modes path / query-page sont partiels : ils ferment le refresh
-aval et ne publient pas de lot complet. Rejouer all pour le rétablir.
+Les modes path / query-page sont partiels : leur manifeste reste incomplet.
+Rejouer all sur la même fenêtre pour compléter les deux sources.
 
 Env : SUPABASE_SECRET_KEY (requis), SUPABASE_URL, GSC_CREDENTIALS_PATH,
       GSC_SITE_URL, GSC_END_DATE. Voir cooked.gsc.

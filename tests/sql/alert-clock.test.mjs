@@ -1,8 +1,23 @@
 import assert from 'node:assert/strict';
-import {createDatabase} from './helpers.mjs';
+import {createDatabase, applyMigration} from './helpers.mjs';
 
 const db = await createDatabase();
 try {
+  await applyMigration(db, '_remove_retired_alert_exceptions.sql');
+  const {rows: [first]} = await db.query("SELECT raise_cooked_alert('gsc_path_daily_stale','warn','test') AS added");
+  const {rows: [repeat]} = await db.query("SELECT raise_cooked_alert('gsc_path_daily_stale','warn','repeat') AS added");
+  assert.equal(first.added, 1);
+  assert.equal(repeat.added, 0, 'same kind and severity stay deduplicated for 24 hours');
+  await db.exec(`INSERT INTO alerts(kind,severity,detail,created_at)
+    SELECT 'gsc_path_daily_stale','warn','history',now()-make_interval(days=>d)
+    FROM generate_series(1,5) d;`);
+  const {rows: escalated} = await db.query('SELECT * FROM alert_rule_warn_escalation()');
+  assert.equal(escalated.length, 1, 'persistent warnings still escalate');
+  assert.equal(escalated[0].severity, 'critical');
+  await db.exec("UPDATE alerts SET acked=true WHERE created_at>now()-interval '1 hour'");
+  assert.equal((await db.query('SELECT * FROM alert_rule_warn_escalation()')).rows.length, 0,
+    'an acknowledged warning stops escalation');
+
   for (const [at, expected] of [
     ['2026-03-28T11:00:00Z',12], ['2026-03-29T10:00:00Z',12],
     ['2026-10-25T11:00:00Z',12], ['2026-10-25T22:00:00Z',23],

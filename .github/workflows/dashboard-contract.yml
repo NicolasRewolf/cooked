@@ -27,4 +27,10 @@ jobs:
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm test
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: synthetic-public-key
+          DASHBOARD_ALLOWED_EMAILS: synthetic@example.invalid

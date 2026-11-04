@@ -16,7 +16,6 @@ import hashlib
 import json
 import os
 import re
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,16 +58,8 @@ def rpcs_body_sha(text: str) -> str:
     """Hash des corps seulement (après l'en-tête), comme rpc_snapshot_meta.content_sha256."""
     idx = text.find(BODY_MARKER)
     body = text[idx:] if idx >= 0 else text
-    # generate_rpcs_sql écrit body + "\n" puis file = header+body+"\n"
-    if not body.endswith("\n"):
-        body = body + "\n"
-    # meta content_sha256 = hash(body) sans le newline final du fichier ?
-    # generate_rpcs_sql: content = header + body + "\n" ; content_sha256 = sha256(body.encode())
-    # où body = row[0] or ""  (sans newline forcé dans write: header + body + "\n")
-    raw = text[idx:] if idx >= 0 else text
-    if raw.endswith("\n"):
-        raw = raw[:-1]
-    return hashlib.sha256(raw.encode()).hexdigest()
+    # Le générateur ajoute exactement un newline au corps SQL exporté.
+    return hashlib.sha256(body.removesuffix("\n").encode()).hexdigest()
 
 
 def main() -> int:

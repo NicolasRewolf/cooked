@@ -1,16 +1,15 @@
-// COOKED Sprint 38 — attribution des formulaires (à coller dans masterPage.js)
+// COOKED — attribution des formulaires (à coller dans masterPage.js)
 // ============================================================================
 // Wix Forms V2 ne rend pas les champs cachés dans le DOM de la page publiée
 // (vérifié en prod le 11/06/2026) : le tracker ne peut pas les remplir.
-// Chaîne retenue, 100 % APIs officielles :
+// Chaîne d'attribution :
 //   tracker (Custom Code)  → expose cooked_aid/cooked_sid en query params
-//                            (history.replaceState — URL jamais liée, donc
-//                            jamais crawlée : pas d'impact SEO)
+//                            via history.replaceState
 //   ce code (masterPage)   → lit wixLocation.query, écrit dans les champs
 //                            cachés via setFieldValues() — même rail que le
 //                            page_source de public/faq-system.js
-//   form-webhook v12       → lit field:cooked_aid / field:cooked_sid (inchangé)
-//   form_submits_attributed() → méthode hidden_field (~95 % attendu)
+//   form-webhook          → conserve les identifiants explicites dans l'événement
+//                            pour le rapprochement avec une visite observable
 //
 // Pré-requis côté éditeur de formulaires : chaque Wix Form doit avoir les
 // 2 champs cachés avec pour CLÉ exacte (onglet Avancé) `cooked_aid` et
@@ -19,7 +18,7 @@
 // ============================================================================
 import wixLocation from 'wix-location';
 
-const COOKED_DEBUG = false; // chaîne vérifiée le 11/06/2026 (1re attribution hidden_field) — T-17 : off ; la CI refuse `= true`
+const COOKED_DEBUG = false; // la CI refuse `= true` pour ne pas exposer les identifiants en console
 
 $w.onReady(() => {
   seedCookedIds();

@@ -293,7 +293,7 @@ BEGIN
          AND c.gap_window_days IS NOT NULL THEN
         -- Début de série borné au premier jour réellement présent : une
         -- source plus jeune que la fenêtre ne doit pas compter « manquants »
-        -- les jours d'avant sa naissance (clamp hérité de feu cpi_stale).
+        -- les jours d'avant sa naissance.
         EXECUTE format(
           'SELECT count(*)::int, string_agg(to_char(d.d::date, %L), '', '' ORDER BY d.d) '
           'FROM generate_series(GREATEST(%L::date, (SELECT min(%I) FROM public.%I)), %L::date, interval ''1 day'') d(d) '
@@ -692,7 +692,6 @@ AS $function$
     SELECT DISTINCT ON (kind) kind, detail
     FROM public.alerts
     WHERE severity = 'warn' AND created_at > now() - interval '26 hours'
-      AND kind NOT IN ('cpi_drop')
     ORDER BY kind, created_at DESC
   ) a
   WHERE EXISTS (
@@ -1509,16 +1508,11 @@ AS $function$
 DECLARE
   v_topic text;
   v_last_acked boolean;
-  v_sev text := p_sev;
   v_crit_since_ack int;
 BEGIN
-  IF p_kind IN ('cpi_drop') AND v_sev = 'critical' THEN
-    v_sev := 'warn';
-  END IF;
-
   IF EXISTS (
     SELECT 1 FROM public.alerts
-    WHERE kind = p_kind AND severity = v_sev
+    WHERE kind = p_kind AND severity = p_sev
       AND created_at > now() - interval '24 hours'
   ) THEN
     RETURN 0;
@@ -1530,7 +1524,7 @@ BEGIN
   ORDER BY a.created_at DESC
   LIMIT 1;
 
-  INSERT INTO public.alerts (kind, severity, detail) VALUES (p_kind, v_sev, p_detail);
+  INSERT INTO public.alerts (kind, severity, detail) VALUES (p_kind, p_sev, p_detail);
 
   SELECT count(*) INTO v_crit_since_ack
   FROM public.alerts
@@ -1540,7 +1534,7 @@ BEGIN
       '-infinity'::timestamptz
     );
 
-  IF v_sev = 'critical'
+  IF p_sev = 'critical'
      AND coalesce(v_last_acked, false) = false
      AND v_crit_since_ack <= 2 THEN
     BEGIN

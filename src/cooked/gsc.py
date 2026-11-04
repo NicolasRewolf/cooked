@@ -1,5 +1,5 @@
 """
-Shared GSC → Supabase ingest (backfill + future cron).
+Ingestion GSC → Supabase : historique et synchronisation quotidienne.
 
 Contract path (C3 — contrat partagé contracts/canonical_path_vectors.json) :
   decode → Unicode NFC → strip trailing slash (sauf /)
@@ -229,10 +229,9 @@ def run_ingestion(
 ) -> None:
     """Publie uniquement un lot dont les deux sources ont été ingérées.
 
-    Begin ferme le refresh aval AVANT la première écriture. Une interruption
-    laisse ce verrou logique fermé ; le prochain lot complet reprend la
-    fenêtre. Les anciens modes partiels restent utiles au diagnostic mais ne
-    peuvent jamais annoncer une photographie complète.
+    Le manifeste passe à running avant la première écriture et n'est complété
+    qu'après les deux sources. Les modes partiels restent utiles au diagnostic
+    mais ne peuvent jamais annoncer un lot complet.
     """
     if mode not in {"all", "path", "query-page"}:
         raise ValueError("Mode GSC inconnu")
@@ -255,8 +254,8 @@ def run_ingestion(
         if mode != "all":
             store.rpc("gsc_ingest_fail", {"p_run_id": run_id})
             print(
-                "Lot GSC partiel : le rafraîchissement aval reste suspendu. "
-                "Exécuter `gsc_ingest.py all` avec la même fenêtre pour publier.",
+                "Lot GSC partiel : le manifeste reste incomplet. "
+                "Exécuter `gsc_ingest.py all` avec la même fenêtre pour le compléter.",
                 flush=True,
             )
             return
@@ -268,7 +267,7 @@ def run_ingestion(
         })
     except BaseException:
         # Un crash ne doit pas publier un lot partiel. Ne pas masquer l'erreur
-        # initiale si la base est elle-même indisponible : running reste fermé.
+        # initiale si la base est indisponible : running reste incomplet.
         try:
             store.rpc("gsc_ingest_fail", {"p_run_id": run_id})
         except Exception:

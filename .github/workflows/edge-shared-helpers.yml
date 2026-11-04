@@ -36,5 +36,6 @@ jobs:
           deno check supabase/functions/track/index.ts
           deno test supabase/functions/_shared/form_row_test.ts
           deno test supabase/functions/_shared/form_delivery_test.ts
+          deno check supabase/functions/form-webhook/index.ts
           deno test supabase/functions/_shared/ingest_gate_test.ts
           deno test supabase/functions/_shared/ingest_drops_test.ts

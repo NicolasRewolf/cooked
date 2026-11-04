@@ -1,73 +1,17 @@
 <!--
-  COOKED — first-party SEO tracker (cookieless)
-  Version: sprint43 (20/10/2026) — contexte URL figé par route pour finir A
-    avant B ; CWV au grain document, sans rejouer les buffers sur les routes
-    SPA. Les valeurs révisées après reprise portent measurement_id + revision :
-    les lecteurs SQL gardent une seule observation finale par document/métrique.
-  Version: sprint42 (04/09/2026, mission T-17) — CLS explicite : un chargement
-    sans layout shift émet CLS = 0 quand l'observer est attaché (Chromium) ;
-    CLS arrondi à 3 décimales. Aucun autre changement de comportement.
-  Version: sprint41 (12/07/2026) — identifiants auto-réparants. Un wipe/
-    transition de storage en cours de page faisait tourner le sid (relu à
-    chaque event) puis l'aid (jamais ré-écrit → tournait à la navigation
-    suivante) : ~22 % des sessions coupées, ~95 % des cta_phone_click sans
-    amont visible. Quatre gestes, iso-comportement si le storage est sain :
-      1. cache mémoire _cachedSid {id,start,last}, miroir du blob '_ckd' :
-         si le blob disparaît du storage mais que la fenêtre 30 min court
-         encore en mémoire, on RÉ-ÉCRIT le blob au lieu de minter un sid ;
-      2. aid re-vérifié / ré-écrit opportunistement dans localStorage
-         (healAid, adossé au debounce 5 s de l'écriture du blob session —
-         aucune I/O ajoutée par event) ;
-      3. lecture sessionStorage sur MISS localStorage (plus seulement sur
-         exception), avec rapatriement : aid/sid survivent à une phase
-         « localStorage bloqué (écrit en sessionStorage) puis revenu vide » ;
-      4. exposeIds() rejoué au flush si la paire (aid,sid) exposée dans
-         l'URL a tourné (champs cachés des forms + referrer toujours à jour).
-    Le format des ids ne change pas : rid() garde son suffixe Date.now()
-    en base36 (sert au diagnostic), et le batching fige toujours les ids à
-    l'enqueue.
-  (sprint40 02/07/2026, audit T-14 — page_exit ré-armé au retour
-    d'onglet (visibilitychange) : avant, un visiteur qui masquait l'onglet
-    puis revenait lire n'émettait JAMAIS de page_exit final (dwell/scroll
-    figés au premier masquage). Corollaire SQL : max(duration) par
-    session×path — une session peut émettre plusieurs page_exit à durées
-    croissantes.)
-  Refactor D9 (10/07/2026) — helpers internes hissés en tête d'IIFE
-    (stripSlash, base commune de normPC/normalizePath ; inStickyAncestor ;
-    labelOf). Strictement iso-comportement : aucun event, payload, seuil
-    ni cap modifié ; COOKED_VERSION inchangé (bump décidé au déploiement).
-  (Sprint 38: form attribution v2 — Wix Forms V2 ne rend PAS les champs
-    cachés dans le DOM de la page publiée (vérifié en prod le 11/06/2026 :
-    payloads sans field:cooked_aid, 0 input cooked_* dans le DOM). Le
-    seeding DOM du Sprint 37 (fillCkd/setNV) était donc mort-né : remplacé
-    par exposeIds() — les ids sont exposés en query params (?cooked_aid=…&
-    cooked_sid=…) via history.replaceState ; le masterPage.js Velo les lit
-    (wixLocation.query) et les pose dans les forms via setFieldValues(),
-    même rail que le page_source de public/faq-system.js (Rewolf).
-    replaceState ne crée pas d'URL crawlable (jamais liée → pas d'impact
-    SEO) ; les paths Cooked sont canonicalisés sans query (pas d'impact
-    data). URL partagée portant l'aid d'autrui : le tracker écrase avec
-    SES valeurs au premier pageview.)
-  (Sprint 37: execution guard window.__cookedLoaded — snippet embarqué 2×
-    → clics dupliqués même-seconde ; batching {events:[…]} flush 30 s /
-    10 events / pagehide, critiques immédiats, −60/70 % de requêtes ;
-    fix double-tick flushExit)
-  (Sprint 36: click_internal — attribution nav interne)
-  (Sprint 35: cta_anchor_click ne compte plus le chrome UI)
-  (Sprint 30: bfcache, SPA nav, placement & debounce fixes)
-  (Sprint 28: session_id en localStorage — fix self-referral)
-  (Sprint 26: version stamp props._v) (Sprint 22: anonymous_id stable)
+  COOKED — first-party tracker (cookieless)
+  Version: sprint44 (04/11/2026) — rejets du transport fetch gérés, sans retry.
+  Les événements, identifiants, délais et règles de comptage restent inchangés.
 
-  Events emitted (see Edge Function ALLOWED_EVENTS for the canonical list):
-    pageview, scroll_depth, engagement_tick, web_vitals, page_exit,
-    cta_phone_click, cta_booking_click, cta_anchor_click, click_internal,
-    click_outbound.
+  Événements navigateur : pageview, scroll_depth, engagement_tick, web_vitals,
+  page_exit, cta_phone_click, cta_booking_click, cta_anchor_click,
+  click_internal, click_outbound. La liste acceptée est dans track_row.ts.
 
-  `form_submit` is server-side only and never flows through this tracker;
-  it's inserted by the `form-webhook` Edge Function on every Wix Forms
-  submission via Wix Automations. Sprint 38: the tracker exposes the ids
-  (query params) that masterPage.js seeds into the hidden form fields the
-  webhook reads for attribution.
+  form_submit vient uniquement du webhook Wix. Les identifiants exposés en
+  query params sont transmis aux champs cachés par wix/masterpage-cooked.js.
+  Les CWV restent au grain document. measurement_id et revision distinguent
+  l'observation de ses révisions ; aucun lecteur CWV n'est actif dans le socle.
+  L'historique est dans Git ; ce fichier décrit le comportement courant.
 -->
 <script>
 (function () {
@@ -92,7 +36,7 @@
   // version label never appears after a Wix republish, the paste
   // failed or was truncated. Bump this string on every meaningful
   // tracker change.
-  var COOKED_VERSION       = 'sprint43';
+  var COOKED_VERSION       = 'sprint44';
 
   function rid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 
@@ -154,9 +98,8 @@
   // directly if it looks valid; otherwise it falls back to the IP hash
   // (backward-compat for old events already stored).
   //
-  // Privacy: identifiant pseudonyme persistant, pas une preuve d'anonymat
-  // ni d'exemption de consentement. Le rapprochement CRM et la durée de
-  // conservation doivent être pris en compte (voir SECURITY.md).
+  // Identifiant pseudonyme persistant, pas une preuve d'anonymat ni
+  // d'exemption de consentement. Voir SECURITY.md pour sa conservation.
   // ==============================================================
   // Sprint 25 — closure cache. Without it, when localStorage is blocked
   // (Safari ITP strict, Firefox private "strict", privacy extensions —
@@ -391,7 +334,7 @@
   // Sprint 37 — batching. L'Edge /track accepte {events:[…]} (cap 50)
   // depuis toujours mais le tracker envoyait 1 POST par event :
   // engagement_tick seul = 60 % du trafic réseau (6,2 POST/session).
-  // File d'attente : flush à 10 events, toutes les 5 s, au pagehide
+  // File d'attente : flush à 10 events, toutes les 30 s, au pagehide
   // (sendBeacon), et IMMÉDIATEMENT pour les events critiques (pageview,
   // clics, page_exit) pour garder la visibilité temps réel des contacts.
   // basePayload() est capturé à l'enqueue (pas au flush) pour que le path
@@ -426,7 +369,7 @@
         keepalive: true,
         headers:   { 'content-type': 'application/json' },
         body:      body
-      });
+      }).catch(function () {}); // best effort, sans retry ni doublon
     } catch (e) {}
   }
 
@@ -957,7 +900,8 @@
   // SPA routes are not new Performance Timelines. Observers remain attached;
   // their buffered records are consumed once, never replayed for another path.
   // A hidden tab can resume, so emit changed values with a stable document ID.
-  // SQL MUST select the last revision per measurement_id + metric before p75.
+  // measurement_id + metric identify one observation; revision tracks updates.
+  // There is no active CWV reader in the current editorial data layer.
   // bfcache keeps the same document/measurement; it creates no extra sample.
   // ==============================================================
   var vitals         = { lcp: 0, cls: 0, inp: 0 };
@@ -1089,25 +1033,13 @@
   });
 
   // ==============================================================
-  // 7. Sprint 38 — form attribution : ids exposés en query params
-  //
-  // Wix Forms V2 ne rend pas les champs cachés dans le DOM de la page
-  // publiée (vérifié en prod le 11/06/2026 : 0 input cooked_*, payloads
-  // webhook sans field:cooked_aid) : le seeding DOM du Sprint 37
-  // (fillCkd/setNV) ne pouvait pas fonctionner. À la place :
-  // cooked_aid/cooked_sid sont exposés dans l'URL (history.replaceState) ;
-  // le masterPage.js Velo les lit via wixLocation.query et les pose dans
-  // les champs cachés des forms via setFieldValues() — même rail que le
-  // page_source de public/faq-system.js. Le webhook form-webhook v10 lit
-  // ensuite field:cooked_aid / field:cooked_sid, inchangé.
-  //
-  // - replaceState : URL jamais liée → jamais crawlée (pas d'impact SEO) ;
-  //   les paths Cooked sont canonicalisés sans query (pas d'impact data).
-  // - URL partagée portant l'aid d'un autre visiteur : écrasée par les
-  //   valeurs locales au premier pageview (q.set inconditionnel).
-  // - Ré-exposé à chaque nav SPA (cf. onPMC) : la query suit la page.
-  // - Vieux navigateurs sans URLSearchParams : catch silencieux (pas
-  //   d'attribution hidden_field, le fallback temporal du webhook reste).
+  // 7. Attribution formulaire : identifiants exposés en query params.
+  // Le code Velo de wix/masterpage-cooked.js les lit puis les transmet
+  // aux champs cachés via setFieldValues(). Le webhook les conserve pour
+  // le rapprochement explicite avec une visite observable.
+  // Les chemins de mesure sont canonicalisés sans query. Une URL partagée
+  // est réécrite avec les identifiants locaux ; chaque nav SPA les réexpose.
+  // Si l'exposition échoue, aucun rapprochement temporel n'est inventé.
   // ==============================================================
   function exposeIds() {
     // sprint41 — mémorise la paire exposée AVANT le replaceState (getters

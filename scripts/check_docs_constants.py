@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
-"""T-14 (mission 02/09/2026, #115) — les constantes des docs vivants suivent la prod. Invariant I13.
+"""Les guides maintenus suivent le catalogue et leurs liens locaux existent.
 
 Source unique : contracts/doc_constants.json (mis à jour depuis la prod ; check_prod_drift.py
 compare ses compteurs à la prod chaque matin et sur chaque PR SQL).
 
-Contrôles, sur les « docs vivants » (racine + docs/, hors archives et dossier de mission) :
+Contrôles sur les guides maintenus :
   1. nombres près d'un mot-clé (« N routines », « N corps de RPC », « N RPC dashboard »,
      « N règles d'alerte », « N jobs pg_cron ») = la valeur du JSON ;
   2. versions canoniques (tracker, Edge track, Edge form-webhook) : les motifs
      `sprint<NN>` / « Edge `track` : vNN » / « Edge `form-webhook` : vNN » d'AGENTS.md
-     et CLAUDE.md sont ceux du JSON ;
+     sont présents exactement une fois et correspondent au JSON ;
   3. objets fantômes (fonctions/crons/alertes supprimés) absents des docs vivants ;
   4. chaque job pg_cron du JSON est cité dans docs/OPERATIONS.md ;
-  5. orphelins : tout .md de la racine et de docs/ (hors annexes de mission) est référencé
-     par docs/README.md, AGENTS.md ou CLAUDE.md.
+  5. chaque document déclaré existe ; les liens locaux des Markdown publiés aboutissent ;
+  6. tout .md de la racine et de docs/ est lié par un index déclaré.
 """
 from __future__ import annotations
 
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 CONSTANTS = json.loads((ROOT / "contracts" / "doc_constants.json").read_text(encoding="utf-8"))
@@ -32,7 +32,13 @@ INDEXES = [ROOT / p for p in DOCS["index_docs"]]
 
 
 def read(p: Path) -> str:
-    return p.read_text(encoding="utf-8") if p.exists() else ""
+    return p.read_text(encoding="utf-8")
+
+
+def check_required_files(failures: list[str]) -> None:
+    for path in sorted(set(LIVING + INDEXES)):
+        if not path.is_file():
+            failures.append(f"{path.relative_to(ROOT)} : document déclaré absent")
 
 
 def check_numbers(failures: list[str]) -> None:
@@ -57,21 +63,21 @@ def check_numbers(failures: list[str]) -> None:
 
 def check_versions(failures: list[str]) -> None:
     v = CONSTANTS["versions"]
-    # Seules les lignes « canoniques » comptent (tableau « Versions canoniques » d'AGENTS.md,
-    # bloc « Versions canoniques » de CLAUDE.md) — pas le récit des sprints.
+    # AGENTS.md est l'unique tableau canonique ; les récits de livraison sont datés.
     checks = [
-        (r"^(?:- Tracker : \*\*`|\| Tracker \| `)(sprint\d+)`", v["tracker"]),
-        (r"^(?:- Edge `track` : \*\*v|\| Edge `track` \| v)(\d+)", str(v["edge_track"])),
-        (r"^(?:- Edge `form-webhook` : \*\*v|\| Edge `form-webhook` \| `v)(\d+)", str(v["edge_form_webhook"])),
+        ("Tracker", r"^\| Tracker \| `(sprint\d+)` \|", v["tracker"]),
+        ("Edge track", r"^\| Edge `track` \| v(\d+) \|", str(v["edge_track"])),
+        ("Edge form-webhook", r"^\| Edge `form-webhook` \| `v(\d+)` \|", str(v["edge_form_webhook"])),
     ]
-    for path in [ROOT / "AGENTS.md", ROOT / "CLAUDE.md"]:
-        text = read(path)
-        for rx, expected in checks:
-            hits = list(re.finditer(rx, text, re.M))
-            for m in hits:
-                if m.group(1) != expected:
-                    line = text.count("\n", 0, m.start()) + 1
-                    failures.append(f"{path.relative_to(ROOT)}:{line}: version « {m.group(0)} » ≠ {expected}")
+    text = read(ROOT / "AGENTS.md")
+    for label, rx, expected in checks:
+        hits = list(re.finditer(rx, text, re.M))
+        if len(hits) != 1:
+            failures.append(f"AGENTS.md : version canonique {label} attendue une fois, trouvée {len(hits)} fois")
+        for m in hits:
+            if m.group(1) != expected:
+                line = text.count("\n", 0, m.start()) + 1
+                failures.append(f"AGENTS.md:{line}: version « {m.group(0)} » ≠ {expected}")
 
 
 def check_ghosts(failures: list[str]) -> None:
@@ -93,35 +99,74 @@ def check_crons(failures: list[str]) -> None:
             failures.append(f"docs/OPERATIONS.md : job pg_cron `{job['jobname']}` absent du tableau des crons")
 
 
-def check_orphans(failures: list[str]) -> None:
-    index_text = "\n".join(read(p) for p in INDEXES)
+def published_markdown() -> list[Path]:
     # Les rapports privés et autres artefacts ignorés ne font pas partie de la
     # documentation publiée. Inclure les nouveaux fichiers non ignorés aussi.
     published = subprocess.check_output(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "*.md"],
         cwd=ROOT,
     ).decode().split("\0")
-    candidates = [
-        ROOT / rel for rel in set(published)
-        if rel and ("/" not in rel or rel.startswith("docs/"))
-    ]
-    for md in sorted(candidates):
+    return sorted({ROOT / rel for rel in published if rel and (ROOT / rel).is_file()})
+
+
+def local_links(path: Path) -> list[tuple[int, Path]]:
+    """Liens et images inline, définitions de liens ; exemples de code exclus."""
+    links = []
+    fence = None
+    for line_no, line in enumerate(read(path).splitlines(), 1):
+        marker = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
+        if fence:
+            if re.match(rf"^\s{{0,3}}{re.escape(fence[0])}{{{len(fence)},}}\s*$", line):
+                fence = None
+            continue
+        if marker:
+            fence = marker.group(1)
+            continue
+        line = re.sub(r"(`+).*?\1", "", line)
+        destinations = re.findall(r"\[[^\]\n]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))", line)
+        destinations += re.findall(r"^\s{0,3}\[[^\]\n]+\]:\s*(?:<([^>\n]+)>|(\S+))", line)
+        for angled, plain in destinations:
+            target = urlsplit(angled or plain)
+            if target.scheme or target.netloc or not target.path:
+                continue
+            target_path = unquote(target.path)
+            base = ROOT if target_path.startswith("/") else path.parent
+            links.append((line_no, (base / target_path.lstrip("/")).resolve()))
+    return links
+
+
+def check_links(published: list[Path], failures: list[str]) -> None:
+    for path in published:
+        for line, target in local_links(path):
+            if not target.is_relative_to(ROOT):
+                failures.append(f"{path.relative_to(ROOT)}:{line}: lien local hors du dépôt")
+            elif not target.exists():
+                failures.append(f"{path.relative_to(ROOT)}:{line}: lien local absent : {target.relative_to(ROOT)}")
+
+
+def check_orphans(published: list[Path], failures: list[str]) -> None:
+    indexed = {target for path in INDEXES for _, target in local_links(path)}
+    for md in published:
         rel = md.relative_to(ROOT).as_posix()
-        if any(rel.startswith(x) for x in DOCS["orphan_check_exclude_prefixes"]):
+        if "/" in rel and not rel.startswith("docs/"):
             continue
-        if md.name == "README.md" and md.parent == ROOT / "docs":
-            continue
-        if md.name not in index_text and rel not in index_text:
-            failures.append(f"{rel} : n'est référencé par aucun index (docs/README.md, AGENTS.md, CLAUDE.md)")
+        if md not in indexed:
+            failures.append(f"{rel} : n'est lié par aucun index déclaré")
 
 
 def main() -> int:
     failures: list[str] = []
+    check_required_files(failures)
+    if failures:
+        print("\n".join(failures))
+        return 1
     check_numbers(failures)
     check_versions(failures)
     check_ghosts(failures)
     check_crons(failures)
-    check_orphans(failures)
+    published = published_markdown()
+    check_links(published, failures)
+    check_orphans(published, failures)
     if failures:
         print("I13 docs-constants FAIL :\n")
         print("\n".join(f"  • {f}" for f in failures))

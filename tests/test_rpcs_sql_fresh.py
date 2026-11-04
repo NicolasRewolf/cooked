@@ -88,7 +88,7 @@ def test_rpc_change_with_snapshot_and_metadata_passes(repo, event):
     add_rpc(repo, snapshot=True, metadata=True)
     result = run_guard(repo, event)
     assert result.returncode == 0
-    assert "1 RPC(s) redéfinie(s)" in result.stdout
+    assert "1 RPC(s) modifiée(s)" in result.stdout
 
 
 @pytest.mark.parametrize("event", ["push", "pull_request"])
@@ -121,6 +121,45 @@ def test_incomplete_snapshot_fails(repo, metadata, marker, expected):
     assert expected in result.stdout
 
 
+@pytest.mark.parametrize("statement", [
+    "CREATE FUNCTION public.example() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;",
+    "CREATE PROCEDURE public.example() LANGUAGE sql AS $$ SELECT 1 $$;",
+    "DROP FUNCTION IF EXISTS public.example();",
+    "DROP PROCEDURE public.example();",
+    "ALTER FUNCTION public.example() SET search_path = public;",
+])
+def test_routine_changes_require_updated_snapshot(repo, statement):
+    write(repo, MIGRATION, statement + "\n")
+    commit(repo)
+    result = run_guard(repo, "pull_request")
+    assert result.returncode == 1
+    assert "supabase/rpcs.sql doit être régénéré" in result.stdout
+    assert "contracts/rpc_snapshot_meta.json doit être mis à jour" in result.stdout
+
+
+def test_dropped_routine_does_not_require_a_marker_for_removed_function(repo):
+    write(repo, MIGRATION, "DROP FUNCTION public.example();\n")
+    write(repo, "supabase/rpcs.sql", "-- updated snapshot after removal\n")
+    write(repo, "contracts/rpc_snapshot_meta.json", '{"sha256":"updated"}\n')
+    commit(repo)
+    result = run_guard(repo, "pull_request")
+    assert result.returncode == 0, result.stdout
+
+
+@pytest.mark.parametrize("recreated", [False, True])
+def test_marker_requirement_follows_final_create_or_drop(repo, recreated):
+    create = "CREATE FUNCTION public.example() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;"
+    drop = "DROP FUNCTION public.example();"
+    statements = [drop, create] if recreated else [create, drop]
+    write(repo, MIGRATION, "\n".join(statements) + "\n")
+    write(repo, "supabase/rpcs.sql", "-- snapshot without example\n")
+    write(repo, "contracts/rpc_snapshot_meta.json", '{"sha256":"updated"}\n')
+    commit(repo)
+    result = run_guard(repo, "pull_request")
+    assert result.returncode == int(recreated), result.stdout
+    assert ("Marqueurs absents dans rpcs.sql : example" in result.stdout) == recreated
+
+
 def test_push_checks_all_commits_in_event(repo, tmp_path):
     before = git(repo, "rev-parse", "HEAD")
     add_rpc(repo)
@@ -147,3 +186,47 @@ def test_unusable_push_event_does_not_fall_back_to_incomplete_diff(repo, tmp_pat
     assert result.returncode == 1
     assert "Bornes du push GitHub indisponibles" in result.stderr
     assert "Arch #5 OK" not in result.stdout
+
+
+@pytest.mark.parametrize("state", ["staged", "unstaged", "untracked"])
+@pytest.mark.parametrize("snapshot", [False, True])
+def test_local_guard_includes_uncommitted_changes(repo, state, snapshot):
+    if state == "unstaged":
+        write(repo, MIGRATION, "SELECT 1;\n")
+        commit(repo)
+        git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    write(repo, MIGRATION, "CREATE FUNCTION public.example() RETURNS int "
+          "LANGUAGE sql AS $$ SELECT 1 $$;\n")
+    if snapshot:
+        write(repo, "supabase/rpcs.sql", "-- ═══ public.example() ═══\n")
+        write(repo, "contracts/rpc_snapshot_meta.json", '{"sha256":"working-copy"}\n')
+    if state == "staged":
+        git(repo, "add", ".")
+    result = run_guard(repo, "")
+    assert result.returncode == (0 if snapshot else 1), result.stdout
+    assert "example" in result.stdout
+    assert "aucune migration modifiée" not in result.stdout
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_ci_payload_keeps_its_committed_scope(repo, tmp_path, event):
+    before = git(repo, "rev-parse", "HEAD")
+    write(repo, "README.md", "Only this committed file belongs to the event.\n")
+    after = commit(repo)
+    write(repo, MIGRATION, "CREATE FUNCTION public.example() RETURNS int "
+          "LANGUAGE sql AS $$ SELECT 1 $$;\n")
+    git(repo, "add", MIGRATION)
+    event_file = tmp_path / "event.json"
+    event_file.write_text(json.dumps({"before": before, "after": after}), encoding="utf-8")
+    result = run_guard(repo, event, GITHUB_EVENT_PATH=str(event_file))
+    assert result.returncode == 0, result.stderr
+    assert "aucune migration modifiée" in result.stdout
+
+
+def test_local_guard_excludes_ignored_untracked_files(repo):
+    write(repo, ".gitignore", MIGRATION + "\n")
+    write(repo, MIGRATION, "CREATE FUNCTION public.ignored() RETURNS int "
+          "LANGUAGE sql AS $$ SELECT 1 $$;\n")
+    result = run_guard(repo, "")
+    assert result.returncode == 0, result.stderr
+    assert "aucune migration modifiée" in result.stdout

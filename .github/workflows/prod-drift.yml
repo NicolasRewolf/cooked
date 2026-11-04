@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install psycopg2
-        run: pip install psycopg2-binary requests
+        run: pip install psycopg2-binary
       - name: T-12 — drift prod ↔ repo
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_RO }}

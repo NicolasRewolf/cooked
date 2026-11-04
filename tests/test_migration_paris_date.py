@@ -144,3 +144,20 @@ def test_local_full_scan_remains_available(date_repo: Path):
     result = run_guard(date_repo, GITHUB_ACTIONS="", GITHUB_BASE_REF="missing")
     assert result.returncode == 0, result.stderr
     assert "1 fichier(s) scanné(s)" in result.stdout
+
+
+@pytest.mark.parametrize("state", ["staged", "unstaged", "untracked"])
+def test_local_diff_scan_checks_uncommitted_migrations(date_repo: Path, state: str):
+    migration = date_repo / "supabase/migrations/20261102120000_uncommitted.sql"
+    if state == "unstaged":
+        migration.write_text("SELECT paris_today();\n", encoding="utf-8")
+        commit(date_repo, "tracked migration")
+        git(date_repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    migration.write_text("SELECT current_date;\n", encoding="utf-8")
+    if state == "staged":
+        git(date_repo, "add", str(migration))
+    # make check enables diff mode without a GitHub push/PR payload.
+    result = run_guard(date_repo, GITHUB_EVENT_NAME="")
+    assert result.returncode == 1
+    assert "C6c contract violation" in result.stdout
+    assert migration.name in result.stdout

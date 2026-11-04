@@ -17,7 +17,7 @@ Contacter Nicolas Rewolf par le canal habituel Rewolf Studio / cabinet. Ne pas o
 
 Un identifiant aléatoire ou une IP hachée ne démontre pas l’anonymat. `localStorage._ckd_aid` n’a pas d’expiration propre ; la rétention serveur ne l’expire pas. L’absence de cookies ne suffit pas à établir une exemption de consentement. Les finalités, informations publiées, accès et durées doivent être évalués ensemble ; voir les [conditions CNIL](https://www.cnil.fr/fr/cookies-solutions-pour-les-outils-de-mesure-daudience).
 
-La catégorie Wix `ESSENTIAL` a été conservée lors de la correction du 20/10/2026, à la demande de Nicolas de maintenir la collecte. Cette décision technique et le retrait CRM ne certifient ni l’exemption ni la conformité du traitement. Les anciens arbitrages sont conservés, datés, dans [rgpd-pont-secib.md](docs/rgpd-pont-secib.md).
+La catégorie Wix `ESSENTIAL` a été conservée lors de la correction du 20/10/2026, à la demande de Nicolas de maintenir la collecte. Cette décision technique et le retrait CRM ne certifient ni l’exemption ni la conformité du traitement. Les arbitrages antérieurs restent datés dans [l’historique Git](https://github.com/NicolasRewolf/cooked/blob/b6aa6370b9041763814bc0b1253182ece2694772/docs/rgpd-pont-secib.md).
 
 ## Secrets interdits dans le dépôt et les sorties
 

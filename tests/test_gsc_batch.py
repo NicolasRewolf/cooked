@@ -1,4 +1,4 @@
-"""Le refresh ne voit jamais une ingestion GSC partielle comme complète."""
+"""Le manifeste ne présente jamais une ingestion GSC partielle comme complète."""
 from datetime import date
 
 import pytest
@@ -66,7 +66,7 @@ def test_partial_commands_cannot_publish(monkeypatch, mode, capsys):
     assert calls[0][0] == "gsc_ingest_begin"
     assert all(name != "gsc_ingest_complete" for name, _ in calls)
     assert calls[-1][0] == "gsc_ingest_fail"
-    assert "rafraîchissement aval reste suspendu" in capsys.readouterr().out
+    assert "le manifeste reste incomplet" in capsys.readouterr().out
 
 
 def test_empty_batch_is_not_a_success(monkeypatch):
@@ -80,7 +80,7 @@ def test_begin_failure_prevents_source_writes(monkeypatch):
     store, calls = prepare(monkeypatch)
 
     def unavailable(_):
-        raise RuntimeError("refresh already holds lock")
+        raise RuntimeError("another ingestion holds the lock")
 
     store.rpc_handlers["gsc_ingest_begin"] = unavailable
     with pytest.raises(RuntimeError):

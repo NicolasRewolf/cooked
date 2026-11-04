@@ -14,20 +14,24 @@ export default function LoginPage() {
     e.preventDefault();
     setStatus("sending");
     setMessage("");
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    );
-    // Anti open-redirect : on ne propage qu'un chemin interne dans le lien de retour.
-    const next = safeNext(new URLSearchParams(window.location.search).get("next"));
-    const redirect = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
-    // shouldCreateUser: false (g-06) — un e-mail hors allowlist ne crée pas de compte.
-    const { error } = await supabase.auth.signInWithOtp(otpSignInPayload(email, redirect));
-    if (error) {
+    try {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      );
+      // Le callback ne reçoit qu'un chemin interne ; aucun compte n'est créé.
+      const next = safeNext(new URLSearchParams(window.location.search).get("next"));
+      const redirect = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+      const { error } = await supabase.auth.signInWithOtp(otpSignInPayload(email, redirect));
+      if (error) {
+        setStatus("error");
+        setMessage(error.message);
+      } else {
+        setStatus("sent");
+      }
+    } catch {
       setStatus("error");
-      setMessage(error.message);
-    } else {
-      setStatus("sent");
+      setMessage("L’envoi du lien a échoué. Réessaie dans un instant.");
     }
   }
 

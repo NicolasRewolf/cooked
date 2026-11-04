@@ -11,7 +11,7 @@
 // Wix dev URL (until publish): https://www.jplouton-avocat.fr/_functions-dev/track
 //
 // Why this proxy:
-//   1. Same-origin endpoint  → 100% bypass of adblockers
+//   1. Same-origin endpoint for the browser tracker.
 //   2. The Supabase URL & service-role key stay server-side (never reach the
 //      browser).
 //
@@ -24,7 +24,7 @@
 
 import { fetch } from 'wix-fetch';
 import { getSecret } from 'wix-secrets-backend';
-import { ok, response, badRequest, serverError } from 'wix-http-functions';
+import { response, badRequest, serverError } from 'wix-http-functions';
 
 const ALLOWED_ORIGIN = 'https://www.jplouton-avocat.fr';
 

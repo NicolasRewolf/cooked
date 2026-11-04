@@ -51,7 +51,7 @@ Définitions détaillées : [CONTEXT.md](CONTEXT.md). Recette de lecture : [PLAY
 
 ## Règles techniques et sécurité
 
-Aucun secret ni donnée personnelle dans le dépôt public, les réponses, les logs, les issues ou les PR. Ne jamais imprimer les valeurs d’environnement, URLs authentifiées ou payloads de formulaires. Lire [SECURITY.md](SECURITY.md) ; ses sections datées décrivent aussi l’ancien pont CRM, retiré du produit le 04/11/2026.
+Aucun secret ni donnée personnelle dans le dépôt public, les réponses, les logs, les issues ou les PR. Ne jamais imprimer les valeurs d’environnement, URLs authentifiées ou payloads de formulaires. Lire [SECURITY.md](SECURITY.md) pour les données, accès et limites du socle conservé.
 
 Les événements restent pseudonymes. L’absence de cookies ne démontre pas l’anonymat ou une exemption de consentement. Le webhook v17 conserve uniquement l’événement filtré ; son authentification n’a pas changé.
 
@@ -71,6 +71,6 @@ Les migrations appliquées portent leur timestamp réel dans la même PR. Après
 
 ## Références
 
-[AGENTS.md](AGENTS.md) oriente l’entrée ; [CONTRIBUTING.md](CONTRIBUTING.md) décrit la CI ; [OPERATIONS.md](docs/OPERATIONS.md) les sources et les déploiements. [docs/README.md](docs/README.md) distingue guides actifs et archives. [CHANGELOG.md](CHANGELOG.md), [HISTORY-sprints.md](docs/HISTORY-sprints.md) et les migrations conservent les décisions et incidents antérieurs.
+[AGENTS.md](AGENTS.md) oriente l’entrée ; [CONTRIBUTING.md](CONTRIBUTING.md) décrit la CI ; [OPERATIONS.md](docs/OPERATIONS.md) les sources et les déploiements. [docs/README.md](docs/README.md) indexe les guides maintenus et les ADR. [CHANGELOG.md](CHANGELOG.md) suit les changements du socle ; les anciennes recettes restent dans l’historique Git, les migrations appliquées dans le dépôt.
 
-Les issues et PRD vivent dans GitHub Issues ; voir [issue-tracker.md](docs/agents/issue-tracker.md), [triage-labels.md](docs/agents/triage-labels.md) et [domain.md](docs/agents/domain.md). Lire les ADR qui concernent le changement avant de contredire une décision existante.
+Les issues et PRD vivent dans GitHub Issues ; leurs conventions sont dans [CONTRIBUTING.md](CONTRIBUTING.md). Lire les ADR qui concernent le changement avant de contredire une décision existante.

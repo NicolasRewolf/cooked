@@ -1,6 +1,5 @@
-// Magic-link : charge utile passée à supabase.auth.signInWithOtp (T-13, constat g-06 — 25/07 puis 02/09/2026).
-// shouldCreateUser: false = un e-mail hors allowlist ne crée jamais de compte auth.users et ne consomme
-// pas le quota d'e-mails du projet ; défense en profondeur, indépendante du réglage console Supabase.
+// Magic-link réservé aux comptes existants. L'allowlist est contrôlée après
+// authentification par le proxy et la page serveur.
 
 export type OtpPayload = {
   email: string;

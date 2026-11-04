@@ -8,6 +8,7 @@ on:
     paths:
       - 'contracts/canonical_path_vectors.json'
       - 'src/cooked/path.py'
+      - 'pyproject.toml'
       - 'supabase/functions/_shared/canonical_path.ts'
       - 'supabase/functions/_shared/canonical_path_test.ts'
       - 'tests/test_canonical_path_contract.py'
@@ -18,8 +19,12 @@ on:
     paths:
       - 'contracts/canonical_path_vectors.json'
       - 'src/cooked/path.py'
+      - 'pyproject.toml'
       - 'supabase/functions/_shared/canonical_path.ts'
+      - 'supabase/functions/_shared/canonical_path_test.ts'
+      - 'tests/test_canonical_path_contract.py'
       - 'supabase/migrations/*canonical_path*'
+      - '.github/workflows/canonical-path-contract.yml'
 
 jobs:
   canonical-path-contract:

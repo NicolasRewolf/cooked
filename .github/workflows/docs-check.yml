@@ -16,6 +16,7 @@ on:
       - '**/*.md'
       - 'contracts/doc_constants.json'
       - 'scripts/check_docs_constants.py'
+      - '.github/workflows/docs-check.yml'
 
 jobs:
   docs-constants:
