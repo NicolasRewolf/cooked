@@ -45,6 +45,8 @@ Les trois vues sont `events_main`, `events_no_bots` et `events_human`. Elles iso
 
 `page_view_counts(p_days)` est l’unique lecteur du tableau. Il accepte 30, 60 ou 90 jours Paris clos, avec 90 par défaut, et renvoie un objet JSON : bornes de période, jours attendus/observés, date de vérification de l’inventaire et pages publiées avec leur type, catégorie et nombre de vues. Chaque `pageview` humain compte une vue ; la jointure avec `page_taxonomy` conserve les pages à zéro. Le calcul lit directement les sources, sans nouvelle table, cache, snapshot ou planification.
 
+Cette fonction dispose d’un délai REST de 30 secondes : la lecture de 90 jours peut dépasser les 8 secondes héritées du rôle `authenticator`. Ce réglage reste propre à `page_view_counts`, sans modifier les délais globaux ni les règles de comptage. Après changement, recharger le schéma PostgREST et vérifier un appel REST réel ; un appel SQL direct ne reproduit pas ce délai.
+
 Expertises regroupe les types `hub` et `expertise`. Articles contient les `post` hors catégorie `ressource` ; Ressources et notions juridiques contient les `post` de cette catégorie. Les deux ensembles sont disjoints. Toutes conserve aussi les autres types de pages. La catégorie provient de l’inventaire Wix existant, sans liste d’articles dupliquée dans le dashboard.
 
 Le serveur vérifie la session et l’allowlist avec `requireUser` avant tout appel. Le module `server-only` utilise `SUPABASE_SECRET_KEY` pour obtenir les comptes agrégés ; cette clé n’est pas transmise au navigateur. Une erreur de lecture reste une erreur et une couverture partielle est signalée. Les visites, contacts et données Google ci-dessous restent disponibles pour les analyses du socle, sans être ajoutés à cet écran.

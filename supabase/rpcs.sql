@@ -1402,6 +1402,7 @@ CREATE OR REPLACE FUNCTION public.page_view_counts(p_days integer DEFAULT 90)
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
+ SET statement_timeout TO '30s'
 AS $function$
 DECLARE
   v_today date := public.paris_today();

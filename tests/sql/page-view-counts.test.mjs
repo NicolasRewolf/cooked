@@ -4,6 +4,11 @@ import {createDatabase, applyMigration} from './helpers.mjs';
 const db = await createDatabase();
 try {
   await applyMigration(db, '_page_view_counts.sql');
+  await applyMigration(db, '_page_view_counts_timeout.sql');
+  const {rows: [settings]} = await db.query(
+    "SELECT proconfig FROM pg_proc WHERE oid='public.page_view_counts(integer)'::regprocedure");
+  assert.ok(settings.proconfig.includes('statement_timeout=30s'),
+    'the REST deadline is scoped to this aggregate, without changing role defaults');
   const at = async (stamp) => db.exec(`CREATE OR REPLACE FUNCTION pg_catalog.now()
     RETURNS timestamptz LANGUAGE sql STABLE AS $$SELECT '${stamp}'::timestamptz$$;`);
   const counts = async (days = 90) => (await db.query(
