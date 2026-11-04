@@ -1,7 +1,7 @@
 name: Python ingest contracts
 
-# C7 — pures cooked.gsc / cooked.dfs / cooked.store (sans credentials prod).
-# T-16 — + SECIB (vecteurs de normalisation partagés), import Wix, GBP, taxonomie Wix.
+# Contrats du socle GSC, stockage, inventaire Wix et rapprochement des formulaires.
+# Tous les tests utilisent des données synthétiques, sans credentials prod.
 
 on:
   pull_request:
@@ -12,7 +12,6 @@ on:
       - 'Makefile'
       - 'tests/test_*.py'
       - 'tests/fixtures/**'
-      - 'contracts/normalize_vectors.json'
       - '.github/workflows/python-ingest-contract.yml'
   push:
     branches: [main]
@@ -22,7 +21,6 @@ on:
       - 'pyproject.toml'
       - 'Makefile'
       - 'tests/test_*.py'
-      - 'contracts/normalize_vectors.json'
 
 jobs:
   python-ingest-contract:
@@ -35,23 +33,16 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install test deps
-        run: pip install ".[dev,math]"
+        run: pip install ".[dev]"
       - name: Ingestion et gardes CI — tests locaux
         run: |
           python3 -m pytest \
             tests/test_gsc_common.py \
             tests/test_gsc_batch.py \
-            tests/test_dfs_common.py \
             tests/test_cooked_store.py \
             tests/test_wix_taxonomy_sync.py \
-            tests/test_secib_ingest.py \
-            tests/test_wix_forms_import.py \
             tests/test_wix_forms_reconcile.py \
-            tests/test_gbp_ingest.py \
             tests/test_rpcs_sql_fresh.py \
             tests/test_migration_paris_date.py \
             tests/test_check_prod_command.py \
-            tests/test_advanced_math_analytics.py \
             -q
-      - name: I12 — vecteurs de normalisation (Python ; SQL dans prod-drift)
-        run: python3 scripts/check_normalize_vectors.py

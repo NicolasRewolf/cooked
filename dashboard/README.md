@@ -1,264 +1,52 @@
-# Dashboard Cooked — articles ressources
+# Cooked — page de transition
 
-> **Depuis le 4 novembre 2026** — les anciens recalculs CPI, dashboard, SEO et maths sont suspendus. Le socle utilise le comptage commun des visites et l’inventaire publié. Lire [la simplification et les limites de lecture](../docs/SIMPLIFICATION.md) avant les recettes historiques ci-dessous.
+L’ancienne interface de métriques est retirée. Une page authentifiée explique
+que les anciens indicateurs ont été retirés, que la nouvelle interface sera
+traitée séparément et que les données sources sont conservées. Elle ne consulte
+aucune table ni RPC métier et ne présente aucun état de santé en direct.
 
-Tableau de bord (lecture seule) qui synthétise le **comportement** (Cooked) et le **SEO par requête**
-(volume DataForSEO en référence) des articles « Ressources et notions juridiques » de
-jplouton-avocat.fr.
+Les anciennes adresses `/expertises`, `/seo`, `/lab` et `/article/*` redirigent
+vers `/`. Les redirections sont temporaires afin de ne pas figer les futures URL.
 
-Sous-app **isolée** du pipeline (`/scripts`, `/wix`, `/supabase/migrations`). Le contrat
-avec la base = RPC Postgres `dashboard_*` (corps lisibles dans `../supabase/rpcs.sql`).
+## Accès
 
-## Stack
-Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · `@supabase/supabase-js`
-(lecture, clé service, serveur uniquement) · `@supabase/ssr` (auth) · zod. Déploiement Vercel.
+Supabase Auth reste utilisé pour le magic-link et les cookies de session.
+`proxy.ts` vérifie l’adresse dans l’allowlist ; `requireUser()` répète cette
+vérification côté serveur avant d’afficher la page. Une allowlist vide refuse
+l’accès. La demande de magic-link conserve `shouldCreateUser: false` et le
+callback limite la destination à une URL interne. La déconnexion utilise POST,
+puis une redirection 303 vers la connexion.
 
-## Architecture (pourquoi)
-Tous les RPC sont `service_role` et les tables en RLS deny-all → **un navigateur avec la clé anon ne
-lit rien**. Donc toutes les lectures passent **côté serveur** avec `SUPABASE_SECRET_KEY` (jamais
-exposée : `src/lib/supabase-admin.ts` est marqué `import "server-only"`). La clé anon ne sert qu'à
-l'authentification (magic-link), qui ne lit aucune donnée métier.
+Le dashboard n’a plus besoin de clé service. Les variables nécessaires sont :
 
-```
-src/
-  env.ts                 validation zod (serveur)
-  proxy.ts               gate auth (ex-middleware Next 16) : session + allowlist d'emails
-  lib/                   supabase-admin, types RPC, format fr-FR, dates, chart-geometry (D8), momentum, trend-math
-  data/                  dashboard.ts (appels RPC), view-models.ts (D7 — pages → props UI)
-  components/            KpiHeader, ResourcesTable, ExpertisesTable, SeoTable, metric-columns (D6), …
-  app/                   / · /expertises · /seo · /article/[slug] · /login · /auth/{callback,signout}
-```
+| Variable | Usage |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Projet d’authentification |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clé publique du flux Auth |
+| `DASHBOARD_ALLOWED_EMAILS` | Adresses autorisées, séparées par des virgules |
 
-**Tests** : `npm test` (view-models, chart-geometry, metric-columns, RPC schemas, contrat RPC ↔ prod, redirections et historique CPI…) ; 16 tests supplémentaires parsent des réponses prod réelles en CI (`prod-drift.yml`, T-13).
+Copier `.env.local.example` vers `.env.local` pour le développement ; ne jamais
+committer les valeurs réelles. Les réglages Supabase Auth existants restent
+nécessaires : inscriptions désactivées et URL de callback autorisées, dont
+`https://data.rewolf.studio/auth/callback`.
 
-## Données (couche serveur, source de vérité)
-Le dashboard consomme **16 RPC `dashboard_*`** (`service_role` — corps complets dans
-`../supabase/rpcs.sql`, contrat depuis la prod dans `../contracts/dashboard_rpc_columns.json`) qui figent
-les leçons de mesure.
+## Développement et vérification
 
-**Appelées par `src/data/dashboard.ts`** (14) :
-- `dashboard_honoraires_funnel(period_kind)` — tunnel intention → formulaire sur /honoraires-rendez-vous.
-- `dashboard_resources_overview(period_kind, max_rows)` — 1 ligne / article ressource.
-- `dashboard_resources_kpis(period_kind)` — KPI d'en-tête N vs N-1.
-- `dashboard_resources_assisted(period_kind)` — contacts assistés par article (voir ci-dessous).
-- `dashboard_resources_cohorts()` — cohortes mensuelles (clics cumulés depuis la 1re impression GSC).
-- `dashboard_assisted_quarter()` — contacts assistés ressources du trimestre (snapshot figé depuis le 04/11 ; pas d’objectif posé).
-- `dashboard_article_detail(p_path, period_kind)` — fiche `/article/[slug]`.
-- `dashboard_annotations(period_kind)` — interventions/événements de la table `annotations`.
-- `dashboard_intervention_effect(p_path, p_day)` — avant/après GSC d'une intervention (marée soustraite).
-- `dashboard_expertises_overview(period_kind, max_rows)` — les 14 pages expertise (liste business explicite).
-- `dashboard_expertises_kpis(period_kind)` — KPI d'en-tête expertises N vs N-1.
-- `dashboard_seo_by_query(period_kind, scope, min_volume, max_rows)` — requêtes + volume DFS.
-- `dashboard_seo_kpis(period_kind, scope)` — totaux SEO calculés SQL (quick wins, 2 niveaux de clics) indépendants du cap du tableau.
-- `dashboard_lab_gsc_weekly(p_weeks)` — onglet Lab : clics/impressions GSC par semaine ISO close et type de page.
+Next.js 16, React 19, TypeScript et Tailwind ; identité IBM Plex et orange rewolf
+conservée. Les couleurs vivent dans `src/app/globals.css`.
 
-**Appelées par `src/data/trend.ts`** (2) : `dashboard_resources_trend(period_kind)` et
-`dashboard_expertises_trend(period_kind)` — séries quotidiennes des sparklines.
-
-Les tableaux ressources/expertises, leurs KPI et tendances, les contacts
-assistés et le trimestre lisent des **instantanés conservés**, dont les
-producteurs sont retirés depuis le 04/11/2026. Leurs dates ne sont pas déplacées
-artificiellement. L’avis permanent de `Header` annonce le gel ; `/` et
-`/expertises` recalculent à l’affichage l’ancienneté de `refreshed_at` et la fin
-des données `cooked_end` via `FreshnessBanner` (alerte après 36 heures).
-
-Les requêtes Google, les cohortes, les effets d’intervention et le Lab restent
-lus directement depuis GSC. La fiche article associe des séries site/Google
-directes à un CPI et à des contacts assistés historiques : lire les bornes de
-chaque source et l’avis de gel. Le lecteur trimestriel ne fournit pas de
-`refreshed_at` propre ; il conserve son contrat pendant cette transition.
-DataForSEO reste une référence datée, actualisée seulement à la demande.
-
-Avant le 04/11, un orchestrateur post-ingestion GSC reconstruisait CPI puis les
-quatre familles de snapshots dashboard. Cette séquence est retirée ; ne pas
-réactiver son cron ni rechercher un lot « en attente de refresh ». L’ingestion
-GSC et la couture d’identité continuent, indépendamment des archives affichées.
-La refonte fonctionnelle du dashboard est une étape séparée.
-
-Garanties des lectures conservées : visiteurs **uniques** par page ou périmètre du KPI (pas sessions, ni somme des lignes), spam **Baidu exclu** (filtrage
-inline dans les RPC `dashboard_*` ; la vue `events_human_clean` d'origine a été dropée), lecture sur
-sorties de page par session×page (referrer Facebook/LinkedIn exclu pour Ressources), totaux Google depuis `gsc_path_daily`,
-requêtes **de marque exclues**, volume **DataForSEO** (France, 2250).
-
-### Contacts assistés — lecture des archives d’avant le 04/11/2026
-
-Cette section décrit les instantanés conservés, sans recalcul. La méthode
-courante du socle est documentée dans [CONTEXT.md](../CONTEXT.md) : activité
-observable, coupure de 30 minutes, aucune page après le contact, inconnus
-conservés et taux de visites calculé sur la cohorte d’entrées.
-
-Deux compteurs de contacts coexistent, avec deux sémantiques différentes :
-- **« Contacts » du tableau** (colonne `contacts` de `dashboard_resources_overview`) : comptage
-  **au path de l'event** via `macro_contacts_by_path` — le contact est attribué à la page où le
-  `cta_phone_click` / `form_submit` a eu lieu.
-- **« Contacts assistés »** (`dashboard_resources_assisted`) : l'**entrée** d'un contact = la
-  **première pageview de la visite recousue** via `identity_stitch` — visites segmentées aux trous
-  > 30 min, contact rattaché à la dernière pageview ≤ 6 h avant ; fallback session brute quand
-  l'identité n'est pas recousable. Un article est « assistant » si la visite du contact y est entrée.
-
-Le passage à la visite recousue (v2 de `refresh_dashboard_resources_assisted`, 12/07/2026) a fait
-passer les contacts assistés « ressource » 28 j de **16 → 37** — le bug de rotation aid/sid
-(corrigé côté tracker en `sprint41`) coupait ~22 % des sessions et masquait l'amont des contacts.
-Garde-fou hérité de `refresh_identity_stitch` : ne **jamais** coudre via un `anonymous_id` 32-hex
-(fallback serveur hash IP|UA, partageable entre visiteurs).
-
-Depuis T-08 (03/09/2026) : les formulaires sans `cooked_sid`/`cooked_aid` et les contacts sans
-visite appariée apparaissent sur la ligne **`(non attribuable)`** de `assisted_contacts_by_entry_path`
-(Σ = totaux site). Cette ligne **n'entre pas** dans le tableau ressources ni dans le compteur
-trimestre (JOIN `page_taxonomy` catégorie ressource). Phrase de lecture : « les formulaires sans
-identifiant sont désormais comptés à part ».
-
-### Facteurs de pilotage historiques (lecture du 20/10/2026, calculs gelés le 04/11)
-Pour répondre à « est-ce que ça va ou pas ? » au niveau de chaque ligne (et pas juste des KPI
-d'en-tête), les tableaux croisent les sources existantes. Ajout **additif** : la table snapshot
-gagne des colonnes, `dashboard_resources_overview` (SETOF) les expose sans changement de signature.
-
-- **Tableau Articles** — colonnes snapshot : `unique_visitors_prev`, `gsc_clicks_prev`
-  (tendance N-1, déjà chargée par le refresh) ; `cpi`, `cpi_grade`, `momentum`, `potentiel`,
-  `convertit` (croisés depuis `cpi_daily` / `cpi_opportunite_contact` par `path`). Rendu UI :
-  - **Santé** = verdict momentum relatif au site (monte / stable / ralentit) + ⭐ *opportunité de contact*
-    (Fiabilité S/A/B mais sans contact). On affiche le **potentiel hors-conversion**, pas le CPI brut —
-    le CPI complet est tiré vers le bas par la conversion, rare sur des articles éducatifs, et
-    ferait passer une page saine pour malade (le score CPI reste en infobulle).
-  - **Tendance ▲▼** inline sur Visiteurs et Clics Google.
-  - **CTR observé** = clics / impressions, sans attente ni prescription dérivée de la position moyenne.
-  - Aucun badge de source : clics GSC ÷ visiteurs Cooked ne mesure pas un canal d'acquisition.
-- **Tableau SEO** — clics, impressions, position pondérée, tendances, CTR observé et volume
-  national DFS de référence. Le filtre position 5–15 / volume ≥100 sert à explorer, sans qualifier
-  la pertinence métier. Le podium de gisements, le gain mensuel et la « captation » théorique
-  ont été retirés : un volume national ne prédit pas l'audience accessible à l'article.
-  Les champs RPC historiques `ctr_expected`, `capture_pct` et `opportunity_clicks` restent
-  acceptés par Zod pour compatibilité, mais ne sont plus affichés comme diagnostics.
-- **Fiche CPI** — `cpi_version` conservé sur le score et chaque point. La trajectoire ne relie
-  que la dernière séquence de jours consécutifs de la version courante ; elle est masquée avec
-  une explication si les versions sont absentes ou si moins de cinq points sont comparables.
-  L'écart au modèle CTR n'est pas présenté comme un gain récupérable.
-
-Composant `Trend` partagé dans `components/ui.tsx`. Le contrat typé de ces colonnes vit dans
-`lib/types.ts` (`ResourceRow`, `SeoQueryRow`).
-
-### Lab (`/lab`)
-
-L’observatoire présente les clics de Google Search Console par type de page sur 70 semaines ISO closes. La route authentifiée lit la RPC `dashboard_lab_gsc_weekly(70)` côté serveur. Les dates, les catégories et les annotations proviennent de Cooked.
-
-Les filtres s’appliquent au volume, à la répartition sur 100 % et aux indicateurs. L’évolution compare les quatre dernières semaines aux quatre précédentes. Le curseur et le journal permettent de lire une semaine précise. La méthode détaille les sources, le CTR et les pics par catégorie.
-
-Le modèle de lecture se trouve dans `src/data/lab-view-models.ts`. Les interactions sont dans `src/components/LabExplorer.tsx` et le graphique SVG dans `src/components/LabChart.tsx`.
-
-## Système visuel (tokens + chrome de tableau)
-
-Identité inchangée : **angles vifs, orange rewolf `#FF4F04`, IBM Plex**, thème clair.
-Ce qui a été importé de [beautiful-ui](https://beautiful-ui-five.vercel.app/), c'est
-l'**architecture**, pas l'esthétique.
-
-**Tous les tokens vivent dans `src/app/globals.css`** (`@theme inline`) — surfaces en
-couches (`paper` / `panel` / `inset` / `hover` / `field`), échelle d'encres
-(`ink` › `ink-2` › `muted` › `faint` › `dim`), filets gradués (`line-soft` / `line` /
-`line-strong`), sémantique doublée d'une teinte (`up` + `up-tint`, idem `down` / `warn` /
-`info`), élévation par anneau (`shadow-overlay`, `shadow-sticky`).
-
-> **Règle dure — aucune couleur en dur dans un composant.** Avant ce chantier, 41 hex
-> étaient disséminés dans 14 composants (`#45423c` seul revenait 14 fois) : le système
-> de tokens fuyait et une retouche de palette demandait 14 éditions. Une couleur qui
-> n'existe pas encore se déclare dans `globals.css`, elle ne s'écrit pas dans le JSX.
-> Les `<svg>` lisent les tokens via `stroke="var(--color-…)"`.
-
-**Chrome de tableau** (`SortableTable`, d'après « Records Table ») — en-tête, première
-colonne et ligne de totaux **collants** dans une zone de défilement plafonnée
-(`maxHeight`, défaut `min(70vh, 760px)`) :
-- le plafond de hauteur est ce qui rend `sticky top-0` utile — sans lui le conteneur ne
-  défile jamais verticalement et l'en-tête ne colle à rien ;
-- `border-collapse: separate` est **obligatoire** : en `collapse`, les bordures des
-  cellules collantes disparaissent au défilement ;
-- empilement : cellule figée 2 · tfoot 4 · thead 5 · coin tfoot 6 · coin thead 7 ;
-- le popover `Info` est rendu **par portail** sur `<body>` — un `th` collant avec
-  z-index ouvre un contexte d'empilement, un `position: fixed` resté dedans passerait
-  sous la colonne figée.
-
-**Totaux** : une colonne peut déclarer `total: (rows) => …`, qui reçoit les lignes
-**visibles** (filtrées + triées) — le pied décrit ce qu'on regarde. Volontairement
-**sans total** : les visiteurs (les mêmes personnes peuvent visiter plusieurs pages), la position
-(une moyenne inter-pages est le piège n°2 du playbook) et la lecture (une médiane de médianes
-n'est pas une médiane). Le CTR, lui, s'agrège
-correctement : `aggregateCtrPct` = Σ clics / Σ impressions, testé.
-
-**Chips de santé** (`ResourcesTable`, d'après « Filter Table ») : remplacent le `<select>`.
-Les compteurs se calculent sur les lignes filtrées par **tous les autres** critères, donc
-un compteur annonce ce qu'on obtiendra en cliquant ; un seau vide s'affiche mais n'est pas
-cliquable. `santeFromMomentum` étant exclusif, les 5 seaux partitionnent l'ensemble.
-
-## Développement local
-Node 22.12+ ou 24 (Vitest 5). Next.js et `eslint-config-next` restent sur la même version.
-
-```bash
-cp .env.local.example .env.local   # puis remplir les clés
-npm install
-npm run dev                        # http://localhost:3000
+```sh
+npm ci
+npm test
+npm run lint
+npm run build
+npm run dev
 ```
 
-### Variables (`.env.local`)
-| Var | Rôle | Exposée navigateur ? |
-|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | URL projet | oui (sûr) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | flux auth uniquement | oui — flux auth seulement ; ne doit lire **aucune** donnée : RLS deny-all + `REVOKE`, vérifié par `alert_rule_exposure()` et la CI prod-drift (T-01, 02/09/2026 — deux objets étaient lisibles avant) |
-| `SUPABASE_SECRET_KEY` | lecture des données (`sb_secret_…`) | **NON — serveur only** |
-| `DASHBOARD_ALLOWED_EMAILS` | allowlist (séparée par virgules) | non |
+Les tests vérifient les destinations du callback, le payload magic-link,
+l’allowlist, le refus sans session, la déconnexion et l’absence de dépendance
+à une clé service. Ils ne déclenchent aucun courriel ni accès à la production.
 
-## Authentification (Supabase Auth — magic-link + allowlist) — réglages OBLIGATOIRES
-Le gate `proxy.ts` est **fail-closed** : allowlist vide ⇒ personne ne passe. `DASHBOARD_ALLOWED_EMAILS`
-est donc requis (le build échoue s'il manque). Défense en profondeur : chaque page serveur
-re-vérifie via `requireUser()` (`src/lib/auth.ts`). Côté Supabase (projet `mxycmjkeotrycyneacje`) :
-1. **Auth → URL Configuration** : Site URL = l'URL du dashboard ; **Redirect URLs** = ajouter
-   `http://localhost:3000/auth/callback` et `https://data.rewolf.studio/auth/callback`.
-2. **OBLIGATOIRE — Auth → Sign In / Providers → Email** : désactiver « Allow new users to sign up »
-   (sinon n'importe qui peut se créer un compte ; seule l'allowlist le bloquerait). Activer le
-   rate-limit OTP.
-3. Renseigner les emails autorisés dans `DASHBOARD_ALLOWED_EMAILS` (obligatoire).
-
-## Déploiement (Vercel)
-1. Nouveau projet Vercel pointant sur ce repo, **Root Directory = `dashboard`** (framework Next.js
-   auto-détecté).
-2. Environment Variables : les 4 ci-dessus (scope **Production + Preview** ; `SUPABASE_SECRET_KEY`
-   sans préfixe `NEXT_PUBLIC_`).
-3. Domaine : pointer le sous-domaine rewolf.
-4. Ajouter l'URL de prod aux Redirect URLs Supabase (étape Auth ci-dessus).
-
-## À savoir
-- `params`/`searchParams` sont **async** (Next 16) ; pages `/`, `/expertises`, `/seo` et
-  `/article/[slug]` en `force-dynamic` (pas de cache de page ; cela ne rafraîchit
-  pas les anciens instantanés en base).
-- La **validation runtime** des réponses RPC vit dans `src/data/rpc-schemas.ts` (schémas zod) ;
-  `src/lib/types.ts` ne fait que ré-exporter les types inférés (+ types UI purs). Si
-  une signature RPC change : migration + régénération de `../supabase/rpcs.sql`, puis mise à jour
-  du schéma zod correspondant.
-- **Contrat depuis la prod (T-13, 03/09/2026)** : `../contracts/dashboard_rpc_columns.json` est
-  généré par `../scripts/generate_dashboard_contracts.py` (catalogue Postgres : colonnes, NOT NULL,
-  clés jsonb d'un appel réel). `src/data/rpc-contract.test.ts` vérifie que chaque schéma zod a les
-  mêmes clés et qu'un champ zod non nullable est une colonne NOT NULL ; en CI `prod-drift.yml`
-  régénère le JSON depuis la prod (`--check`) et parse un appel réel par RPC avec les schémas zod
-  (`DASHBOARD_RPC_SAMPLES`). Une RPC qui change en prod sans son zod → CI rouge, plus une page morte
-  15 jours (incident `/seo` du 25/07/2026). Depuis le gel du 04/11, les contrôles
-  nocturnes SQL portent sur le socle ; les 16 contrats dashboard restent vérifiés
-  par cette CI, sans leur ancienne sonde nocturne de budget de durée.
-- **Magic-link** : `signInWithOtp` reçoit `shouldCreateUser: false` (`src/lib/otp.ts`) — un e-mail
-  hors allowlist ne crée pas de compte et ne consomme pas le quota d'e-mails, quel que soit le
-  réglage console.
-- Le bandeau de fraîcheur affiche la fin des données site (`cooked_end`) et le décalage Google (lag J-3 normal) — le dashboard dit toujours à
-  quelle est la fin de ses données, y compris après suspension des calculs. Ce décalage est recalculé à la lecture en jours calendaires Paris depuis
-  la date Google, jamais repris du lag figé dans le snapshot. Les journées Google (Pacifique)
-  et Cooked (Paris) ne couvrent pas exactement les mêmes heures.
-- Les contacts mesurent des **clics téléphone** et des formulaires hors recrutement. Ils
-  ne prouvent ni un appel abouti ni un nouveau client.
-- Le callback refuse les caractères de contrôle et vérifie l'origine de l'URL résolue pour
-  `next`. La destination normalisée reste interne même après une seconde résolution URL.
-
-### Maintenance des dépendances — 20/10/2026
-
-Next.js / configuration ESLint 16.4.2, React 19.3.1, Vitest 5.0.5. Après mise à jour
-des transitives compatibles, `npm audit --omit=dev` ne signale aucune vulnérabilité.
-L'audit complet conserve une cause amont de développement : `braces` 3.0.3, dernière
-version publiée, via `micromatch` → `fast-glob` → plugin ESLint Next (cinq paquets
-signalés « high »). [Avis amont](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
-Cette chaîne sert au lint, pas au serveur déployé. Une rétrogradation vers la
-configuration Next 14 suggérée par `audit --force` n'est pas une correction
-compatible retenue ; réexaminer l'avis à la prochaine publication corrigée.
+Vercel conserve `dashboard` comme Root Directory. L’indexation reste interdite,
+et les en-têtes de sécurité existants restent en place. Le générateur de contrats
+et les schémas des anciennes RPC dashboard ont été retirés avec leurs lecteurs.

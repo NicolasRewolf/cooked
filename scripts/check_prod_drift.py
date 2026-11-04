@@ -182,6 +182,7 @@ def main() -> int:
                   (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                     WHERE n.nspname = 'public' AND p.proname LIKE 'dashboard\\_%'),
                   (SELECT count(*) FROM pg_views WHERE schemaname = 'public'),
+                  (SELECT count(*) FROM pg_tables WHERE schemaname = 'public'),
                   (SELECT count(*) FROM public.freshness_contract),
                   (SELECT count(*) FROM public.cooked_ci_cron_jobs() WHERE active)
                 """
@@ -189,7 +190,7 @@ def main() -> int:
             live_counts = cur.fetchone()
             for key, live in zip(
                 ("routines_pg_proc", "routines_cooked", "alert_rules", "dashboard_rpcs",
-                 "views", "freshness_sources", "cron_jobs_count"),
+                 "views", "tables", "freshness_sources", "cron_jobs_count"),
                 live_counts,
             ):
                 if key in constants and int(constants[key]) != int(live):

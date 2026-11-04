@@ -33,7 +33,6 @@ function request(body: unknown = payload(), token = SECRET): Request {
 
 function fake() {
   const events = new Map<string, unknown>();
-  const prospects = new Map<string, unknown>();
   const alerts: string[] = [];
   const logs: string[] = [];
   const calls: string[] = [];
@@ -48,15 +47,6 @@ function fake() {
         error: duplicate ? { code: "23505" } : null,
       });
     },
-    insertProspect(row) {
-      calls.push("crm");
-      const id = row.wix_submission_id as string;
-      const duplicate = prospects.has(id);
-      if (!duplicate) prospects.set(id, row);
-      return Promise.resolve({
-        error: duplicate ? { code: "23505" } : null,
-      });
-    },
     raiseAlert(detail) {
       alerts.push(detail);
       return Promise.resolve({ error: null });
@@ -65,10 +55,10 @@ function fake() {
       logs.push(message);
     },
   };
-  return { deps, events, prospects, alerts, logs, calls };
+  return { deps, events, alerts, logs, calls };
 }
 
-Deno.test("delivery — successful retry produces one analytics event and one confined prospect", async () => {
+Deno.test("delivery — successful retry produces one analytics event with no identity write", async () => {
   const f = fake();
   const handler = createFormWebhookHandler(f.deps);
   const first = await handler(request());
@@ -81,15 +71,33 @@ Deno.test("delivery — successful retry produces one analytics event and one co
     dedup: true,
   });
   assertEquals(f.events.size, 1);
-  assertEquals(f.prospects.size, 1);
-  assertEquals(f.calls, ["crm", "events", "crm", "events"]);
+  assertEquals(f.calls, ["events", "events"]);
   assert(!JSON.stringify([...f.events.values()]).includes(IDENTITY));
   assert(!JSON.stringify([...f.events.values()]).includes("Synthetic free text"));
-  assert(JSON.stringify([...f.prospects.values()]).includes(IDENTITY));
   assertEquals(f.alerts, []);
 });
 
-Deno.test("delivery — transient event failure returns 503, next request repairs only missing data", async () => {
+Deno.test("delivery — HTTP acknowledgement waits for the database result", async () => {
+  const f = fake();
+  let started!: () => void;
+  const writeStarted = new Promise<void>((resolve) => started = resolve);
+  let complete!: (result: { error: null }) => void;
+  f.deps.insertEvent = () => {
+    started();
+    return new Promise<{ error: null }>((resolve) => complete = resolve);
+  };
+  let acknowledged = false;
+  const response = createFormWebhookHandler(f.deps)(request()).then((result) => {
+    acknowledged = true;
+    return result;
+  });
+  await writeStarted;
+  assertEquals(acknowledged, false);
+  complete({ error: null });
+  assertEquals((await response).status, 200);
+});
+
+Deno.test("delivery — transient event failure returns 503, next request stores the event", async () => {
   const f = fake();
   const insert = f.deps.insertEvent;
   let fail = true;
@@ -105,33 +113,20 @@ Deno.test("delivery — transient event failure returns 503, next request repair
     error: "delivery_incomplete",
   });
   assertEquals(f.events.size, 0);
-  assertEquals(f.prospects.size, 1);
   fail = false;
   assertEquals((await handler(request())).status, 200);
   assertEquals(f.events.size, 1);
-  assertEquals(f.prospects.size, 1);
   assert(f.alerts[0].includes("stage=events, code=08006"));
   assert(!JSON.stringify([f.alerts, f.logs]).includes(IDENTITY));
 });
 
-Deno.test("delivery — CRM failure remains retriable even when analytics event is already stored", async () => {
+Deno.test("delivery — a non-duplicate constraint error is not acknowledged", async () => {
   const f = fake();
-  const insert = f.deps.insertProspect;
-  let fail = true;
-  f.deps.insertProspect = (row) => fail
-    ? Promise.resolve({ error: { code: "23514" } })
-    : insert(row);
+  f.deps.insertEvent = () => Promise.resolve({ error: { code: "23514" } });
   const handler = createFormWebhookHandler(f.deps);
   assertEquals((await handler(request())).status, 503);
-  assertEquals(f.events.size, 1);
-  assertEquals(f.prospects.size, 0);
-  fail = false;
-  const repaired = await handler(request());
-  assertEquals(repaired.status, 200);
-  assertEquals((await repaired.json()).dedup, true);
-  assertEquals(f.events.size, 1);
-  assertEquals(f.prospects.size, 1);
-  assert(f.alerts[0].includes("stage=crm_prospects"));
+  assertEquals(f.events.size, 0);
+  assert(f.alerts[0].includes("stage=events, code=23514"));
 });
 
 Deno.test("delivery — response lost after database commit is repaired without duplicate contacts", async () => {
@@ -189,7 +184,7 @@ Deno.test("delivery — top-level Wix payload keeps its stable submission ID", a
   assert(f.events.has(SUBMISSION));
 });
 
-Deno.test("delivery — no extracted identity requires only analytics acknowledgement", async () => {
+Deno.test("delivery — a submission without identity still stores its analytics event", async () => {
   const f = fake();
   const { "field:email": _email, ...data } = payload().data;
   assertEquals(
@@ -197,7 +192,7 @@ Deno.test("delivery — no extracted identity requires only analytics acknowledg
     200,
   );
   assertEquals(f.calls, ["events"]);
-  assertEquals(f.prospects.size, 0);
+  assertEquals(f.events.size, 1);
 });
 
 Deno.test("delivery — error codes are bounded, never reflected messages or identities", async () => {

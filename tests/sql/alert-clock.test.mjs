@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
-import {createDatabase, applyMigration} from './helpers.mjs';
+import {createDatabase} from './helpers.mjs';
 
 const db = await createDatabase();
 try {
-  await applyMigration(db, '_fix_alert_wall_clock_hours.sql');
   for (const [at, expected] of [
     ['2026-03-28T11:00:00Z',12], ['2026-03-29T10:00:00Z',12],
     ['2026-10-25T11:00:00Z',12], ['2026-10-25T22:00:00Z',23],
@@ -18,7 +17,6 @@ try {
   for (const now of ['2026-03-29T10:30:00Z','2026-10-25T11:30:00Z','2026-11-02T11:30:00Z']) {
     const clockDb = await createDatabase();
     try {
-    await applyMigration(clockDb, '_fix_alert_wall_clock_hours.sql');
     await clockDb.exec(`CREATE OR REPLACE FUNCTION pg_catalog.now() RETURNS timestamptz
       LANGUAGE sql STABLE AS $$SELECT '${now}'::timestamptz$$;
       DELETE FROM events;

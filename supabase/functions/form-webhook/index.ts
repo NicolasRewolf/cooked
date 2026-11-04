@@ -1,9 +1,8 @@
-// COOKED — form-webhook Edge Function (v16 — 20/10/2026 : livraison idempotente,
-// accusé HTTP 200 seulement après events + CRM ; échec/état incertain → 503).
+// COOKED — form-webhook Edge Function (v17 — 04/11/2026 : événement uniquement,
+// accusé HTTP 200 après insertion ou doublon ; échec/état incertain → 503).
 // POST /functions/v1/form-webhook?token=<WEBHOOK_SECRET>
-// Wix Automations → events (sans identité) + crm_prospects (identité confinée).
-// Les index uniques sur submission_id / wix_submission_id rendent la reprise
-// sûre, y compris si une seule des deux écritures avait réussi.
+// Wix Automations → events, avec le même payload analytics filtré.
+// L'index unique sur submission_id rend la reprise idempotente.
 // verify_jwt=false : authentification par secret, jamais de payload en log.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -27,7 +26,6 @@ const supabase = createClient(SUPABASE_URL, SECRET_KEY, {
 Deno.serve(createFormWebhookHandler({
   secret: WEBHOOK_SECRET,
   insertEvent: async (row) => await supabase.from("events").insert(row),
-  insertProspect: async (row) => await supabase.from("crm_prospects").insert(row),
   raiseAlert: async (detail) =>
     await supabase.rpc("raise_cooked_alert", {
       p_kind: "form_submit_dropped",

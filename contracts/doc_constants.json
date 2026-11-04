@@ -1,6 +1,6 @@
 {
   "project_id": "mxycmjkeotrycyneacje",
-  "rpc_function_count_expected_min": 120,
+  "rpc_function_count_expected_min": 60,
   "cron_jobs": [
     {
       "jobname": "run_rpc_contract_tests",
@@ -32,21 +32,20 @@
     "20260902182316",
     "20260902212045"
   ],
-  "notes": "Compte des crons actifs uniquement (six actifs, quatre suspendus conservés). Les 15 lignes freshness incluent six sources désactivées. T-12/T-14 comparent ces constantes à la production.",
+  "notes": "Six crons utiles, cinq sources de fraîcheur actives. Tables/vues/routines comparées à la production par T-12/T-14.",
   "measured_at": "2026-11-04",
-  "routines_pg_proc": 122,
-  "routines_cooked": 118,
-  "routines_note": "122 objets pg_proc dans public (f+p) = 118 routines Cooked + 4 fonctions unaccent. Simplification du 04/11/2026 : 23 retraits, deux fonctions communes de comptage.",
+  "routines_pg_proc": 60,
+  "routines_cooked": 56,
+  "routines_note": "60 objets pg_proc dans public = 56 routines Cooked et quatre fonctions unaccent. CPI, CRM/SECIB, copies dashboard et analyses abandonnées retirés.",
   "alert_rules": 15,
-  "dashboard_rpcs": 16,
-  "views": 11,
-  "freshness_sources": 15,
+  "dashboard_rpcs": 0,
+  "views": 3,
+  "freshness_sources": 5,
   "cron_jobs_count": 6,
   "versions": {
     "tracker": "sprint43",
     "edge_track": 31,
-    "edge_form_webhook": 16,
-    "cpi_model": "v2.2"
+    "edge_form_webhook": 17
   },
   "docs": {
     "living_docs": [
@@ -60,9 +59,6 @@
       "docs/OPERATIONS.md",
       "docs/ROADMAP.md",
       "docs/PLAYBOOK-analyse-seo.md",
-      "docs/cpi-cooked-page-index.md",
-      "docs/cpi-modele-mathematique.md",
-      "docs/rgpd-pont-secib.md",
       "dashboard/README.md",
       "dashboard/CLAUDE.md",
       "docs/agents/domain.md",
@@ -98,5 +94,6 @@
     "min_chars_baseline": 14460,
     "soft_limit_chars": 14500,
     "note": "sprint43 : 14 460 caractères, sous la cible 14 500 ; limite Wix 15 000. Cliquet conservé."
-  }
+  },
+  "tables": 13
 }

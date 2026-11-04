@@ -1,4 +1,4 @@
-"""C7 — adaptateur store partagé GSC/DFS."""
+"""C7 — adaptateur store de l'ingestion GSC."""
 from __future__ import annotations
 
 from cooked.store import FakeStore
@@ -19,8 +19,8 @@ def test_fake_store_batches_upserts() -> None:
 def test_fake_store_rpc() -> None:
     store = FakeStore(
         rpc_handlers={
-            "dfs_keywords_to_sync": lambda p: [{"keyword": "garde à vue"}],
+            "gsc_ingest_begin": lambda p: [{"run_id": p["p_run_id"]}],
         }
     )
-    resp = store.rpc("dfs_keywords_to_sync", {"limit_n": 3})
-    assert resp.data == [{"keyword": "garde à vue"}]
+    resp = store.rpc("gsc_ingest_begin", {"p_run_id": "synthetic-run"})
+    assert resp.data == [{"run_id": "synthetic-run"}]

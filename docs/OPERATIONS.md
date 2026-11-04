@@ -1,1022 +1,152 @@
-# Cooked — Opérations & référence technique
+# Cooked — exploitation du socle
 
-> **Depuis le 4 novembre 2026** — les anciens recalculs CPI, dashboard, SEO et maths sont suspendus. Le socle utilise le comptage commun des visites et l’inventaire publié. Lire [la simplification et les limites de lecture](SIMPLIFICATION.md) avant les recettes historiques ci-dessous.
+Référence du **04/11/2026**. Le produit conserve les événements du site, deux grains Google Search Console et l’inventaire des pages publiées. Les anciens écrans et calculs CPI, SEO, maths, DFS, GBP et CRM/SECIB sont retirés. La future interface est un chantier distinct. Voir [SIMPLIFICATION.md](SIMPLIFICATION.md) et [CONTEXT.md](../CONTEXT.md).
 
-> Ce fichier est la **référence opérationnelle** : architecture détaillée,
-> events captés, ingestion GSC/DataForSEO, crons, déploiement, sécurité,
-> dépannage, historique des sprints. **L'ambition et la vue d'ensemble du
-> système vivent dans [README.md](../README.md)** — commencer par là.
-> Contenu déplacé tel quel depuis l'ancien README le 10/06/2026.
->
-> **Livraison du 20/10/2026** : [RELIABILITY.md](RELIABILITY.md) distingue les
-> correctifs prêts et les versions effectivement servies. Les procédures
-> ci-dessous décrivent le nouveau contrat ; leur présence dans le dépôt
-> n'atteste pas leur activation en production.
+## Flux conservés
 
----
+```text
+Navigateur Wix → proxy Velo → Edge track ──────────────┐
+Automatisation Forms Wix → Edge form-webhook ─────────┤
+                                                     ↓
+                                                  events
+                                                     ↓
+                           events_main → events_no_bots → events_human
+                                                     ↓
+                                identity_stitch → cooked_visit_events
+                                                     ↓
+                                                page_visits
 
-## Architecture détaillée
-
-```
-Browser (Wix Custom Code <head>)
-   │  tracker.html — pageview / scroll / engagement / web_vitals /
-   │                  click_outbound / page_exit / cta_phone_click /
-   │                  cta_booking_click / cta_anchor_click / click_internal
-   ▼ POST /_functions/track  (same-origin, no CORS)
-
-   (form_submit is server-side only — see "Configuring form submission
-   tracking" below: Wix Automation → form-webhook Edge Function.)
-
-Wix Velo HTTP proxy
-   │  http-functions.js — injects Bearer key server-side
-   │                       (key never reaches the browser)
-   ▼ POST with Authorization: Bearer <service_role>
-
-Supabase Edge Function `/track` (Deno)
-   │  resolve anonymous_id (browser-supplied UUID or IP+UA hash fallback)
-   │  parse UA → device / browser / os
-   │  canonicalPath(path)        (decode + NFC + strip slash — Sprint 13 ; v22/S39 : aussi props.target_path des click_internal)
-   │  reject `props` arrays (Sprint 30 hardening)
-   ▼ INSERT
-
-Postgres
-   │  events table (raw)
-   │     ↓ refresh_bot_fingerprints + refresh_noise_sessions (hourly)
-   │     ↓ events_human view (events MINUS bots MINUS noise)
-   │
-   │  pg_cron 03:40 UTC
-   │     ↓ refresh_identity_stitch(90)
-   │  identity_stitch — couture d'identité (12/07/2026) : sid|aid →
-   │     visitor_key (composantes connexes aid↔sid, historique conservé).
-   │     ↓ cooked_visit_events(start, end) — activité, coupure > 30 min
-   │     ↓ page_visits(start, end) — consultations, entrées, contacts/entrées
-   │     ↓ lecteurs historiques de contacts compatibles
-   │
-   │  seo_url_snapshot / dashboard_*_snapshot / cpi_daily / math_*_snapshot
-   │     archives figées depuis le 04/11/2026, producteurs arrêtés
-   │
-   │  Google Search Console (Sprint 31-32, ingested via scripts/gsc_ingest.py)
-   │     ↓ Service Account JWT → GSC API
-   │     ↓ cooked.path.canonical_path() (decode + NFC + slash ; URLs GSC complètes)
-   │     ↓ upsert
-   │  gsc_path_daily        — day × path
-   │  gsc_query_daily       — day × query
-   │  gsc_query_page_daily  — day × path × query (brique critique)
-   │
-   ▼ RPCs cross-source (migrations Sprint 33+)
-     │
-     ▼ Requêtes ad-hoc via Claude Code + MCP Supabase (mode principal)
-       (Nicolas pose une question, Claude appelle les RPCs)
-       + dashboard de lecture (articles ressources) sur data.rewolf.studio
+Inventaire Wix complet → page_taxonomy
+Google Search Console → gsc_path_daily + gsc_query_page_daily
+                        suivi commun : gsc_ingest_batches
 ```
 
-> **Historique & état** — Une 1ʳᵉ app `dashboard/` a vécu du 22 au
-> 25/05/2026 (Sprint 33), supprimée pour repartir sur Claude Code + MCP.
-> Puis une **V1 lecture-seule a été reconstruite le 29/06/2026** (Next.js
-> 16, sous-app isolée `dashboard/`, articles ressources) — live sur
-> **data.rewolf.studio** (Vercel, rootDir=`dashboard`). Le Q/R ad-hoc
-> reste le mode principal ; le dashboard le complète. Détails :
-> `dashboard/README.md`. Le contrat RPC publié reste l'API canonique
-> (le dashboard consomme un sous-ensemble `dashboard_*`).
+Le proxy injecte les secrets côté serveur ; ils ne doivent pas être imprimés. Les deux Edge Functions conservent leur authentification existante avec `verify_jwt=false`. Cela ne signifie pas qu’elles acceptent un appel sans leur secret. Le webhook v17 ne réalise plus d’extraction ni d’écriture CRM.
 
----
+## Données conservées
 
-## Privacy & RGPD (détail technique)
+Le catalogue comprend **13 tables, trois vues et 60 routines** publiques (56 Cooked et quatre `unaccent`). Les valeurs contrôlées sont dans [doc_constants.json](../contracts/doc_constants.json) ; les corps exacts dans [rpcs.sql](../supabase/rpcs.sql).
 
-- **Pas de cookies** : `localStorage` assure l'identification pseudonyme du navigateur et la continuité des sessions.
-- `anonymous_id` = random alphanumeric string (~28 chars), stored in `localStorage._ckd_aid` since Sprint 22 (15/05/2026). Persists indefinitely on the device. Falls back to `sha256(IP | User-Agent | daily-salt)` server-side hash if `localStorage` is blocked (Safari ITP strict, Firefox strict, privacy extensions)
-- `session_id` lives in `localStorage._ckd` with a 30-minute sliding idle window since Sprint 28 (21/05/2026). Survives hard navigations (the previous `sessionStorage`-only design was producing ~10 % of fake "referral" sessions because Wix Studio's hard-nav was dropping the per-tab storage). Falls back to `sessionStorage` if `localStorage` is blocked
-- IPs are never stored — only used as input for the server-side hash fallback, and rotated daily via the salt
-- The browser-side identifiers (`_ckd_aid`, `_ckd`) are inspectable in DevTools → Application → Local Storage → the visitor can delete them at any time
-- **Ids auto-réparants depuis le tracker `sprint41` (12/07/2026)** : sur un wipe de storage en cours de visite (ITP, extensions privacy), les trackers ≤ `sprint40` re-mintaient un `sid` neuf à chaque event pendant que l'`aid` (en closure) n'était jamais ré-écrit — rotation croisée qui coupait ~22 % des sessions. `sprint41` garde le `sid` en cache mémoire et **ré-écrit** les deux ids dans le storage au lieu d'en re-minter (détail : section « Couture d'identité » ci-dessous)
-
-**Pseudonymisation, pas anonymat démontré.** Les champs `cooked_aid` et
-`cooked_sid` existent aussi dans `crm_prospects` : un recoupement avec les
-identités est techniquement possible. L'absence de cookies ne suffit pas à
-qualifier une exemption de consentement. Évaluer le traitement complet,
-l'information, les finalités et les durées selon les
-[conditions CNIL pour la mesure d'audience](https://www.cnil.fr/fr/cookies-solutions-pour-les-outils-de-mesure-daudience).
-La durée de rétention serveur ne met pas automatiquement une expiration sur
-`localStorage._ckd_aid`. Les textes proposés dans `rgpd-pont-secib.md` restent
-des brouillons à valider ; leur publication n'est pas attestée ici.
-
----
-
-## Couture d'identité (12/07/2026)
-
-### Le bug (trackers ≤ sprint40)
-
-Le `sid` était relu dans le storage **à chaque event** et re-minté sur miss,
-tandis que l'`aid` vivait en closure et n'était **jamais ré-écrit** dans le
-storage. Sur un wipe de storage en cours de visite, les deux ids tournaient
-donc de façon croisée : **~22 % des sessions étaient coupées** en deux ou
-plus, et **~95 % des `cta_phone_click` apparaissaient sans amont** visible
-(contact « sans parcours »).
-
-### Le fix tracker (`sprint41`, déployé le 12/07/2026)
-
-Quatre gestes, comportement identique par ailleurs :
-
-1. **Cache mémoire `_cachedSid`** : sur miss storage, le `sid` connu est
-   **ré-écrit** dans le storage au lieu d'en re-minter un nouveau.
-2. **`healAid()` opportuniste** : l'`aid` en closure est ré-écrit dans le
-   storage dès qu'il en a disparu.
-3. **`sessionStorage` lu sur MISS**, avec rapatriement vers `localStorage`.
-4. **`exposeIds()` rejoué au flush** — les query params
-   `cooked_aid`/`cooked_sid` (attribution formulaires) restent posés.
-
-Vérification J+1 faite le 13/07/2026 — OK (procédure : « Vérifier un
-déploiement tracker (J+1) » plus bas).
-
-### Couture et visites — définition du 4 novembre 2026
-
-`identity_stitch` associe les clés `sid` et `aid` à un `visitor_key`. La
-reconstruction porte sur **tout l’historique conservé** et itère jusqu’à
-convergence réelle. L’argument historique `refresh_identity_stitch(90)` reste
-accepté pour compatibilité ; il ne limite plus la couture à 90 jours.
-Les identités `webhook-%` et les aid 32-hex de repli serveur sont exclus du
-rapprochement : ces derniers peuvent être partagés par plusieurs navigateurs.
-
-Le cron `refresh-identity-stitch` reste à 03:40 UTC. La fonction horodate sa fin
-et son nombre de lignes dans `cooked_config`. La règle dédiée surveille absence,
-âge et couverture de cette couture ; les six contrôles du socle passent à
-03:50 UTC, après cette reconstruction.
-
-`cooked_visit_events(start, end)` est la définition commune. L’activité
-observable d’un navigateur appartient à la même visite tant qu’aucun écart ne
-dépasse 30 minutes. `web_vitals` ne prolonge pas cette activité. L’entrée reste
-la première page vue, même antérieure au début de la fenêtre ; aucun événement
-postérieur au contact n’entre dans son parcours. Un formulaire sans identifiant
-explicite ou sans visite observable reste non attribué : la proximité temporelle
-seule ne suffit plus.
-
-`page_visits(start, end)` compte les consultations par visite distincte et les
-entrées commencées dans les jours Paris clos demandés. Les numérateurs
-phone/form/union comptent les visites de cette cohorte ayant réalisé l’action
-avant la clôture. Une visite avec plusieurs actions ne compte qu’une fois dans
-l’union ; sans entrée, le taux reste NULL. La ligne `coverage` conserve les
-contacts macro non attribuables et la couverture observée.
-
-`conversion_journeys`, `form_submits_attributed` et
-`assisted_contacts_by_entry_path` relisent ce socle en gardant leur signature.
-Les snapshots dashboard historiques ne sont pas recalculés : leurs dernières
-dates et définitions restent nécessaires à leur lecture. L’ancien modèle
-rattachait un contact à une pageview jusque six heures avant et autorisait une
-petite marge après le contact ; il ne décrit plus la méthode courante.
-
-## Events captés
-
-The browser-side `tracker.html` emits these events. Anything else is rejected by the Edge Function's allow-list.
-
-| Event | When it fires | Useful props |
-|---|---|---|
-| `pageview` | Initial load + every SPA navigation | `path`, `title`, `referrer`, `utm_*`, `viewport_*` |
-| `scroll_depth` | 25 / 50 / 75 / 100 % milestones (once per page) | `percent` |
-| `engagement_tick` | Every 10s of active time (paused on idle / hidden tab). **Sprint 37**: batched — non-critical events queue and flush every 30 s / 10 events / pagehide in a single `{events:[…]}` POST (−60/70 % network requests); critical events (pageview, clicks, page_exit) still flush immediately | `active_ms` |
-| `web_vitals` | Mesures au grain document initial ; valeurs révisées après reprise | `metric`, `value`, `measurement_id`, `revision`, `scope` (nouveau tracker) |
-| `click_outbound` | Click on an external `<a>` | `href`, `hostname`, `anchor` |
-| `page_exit` | `pagehide` / `beforeunload` / tab hidden | `duration_seconds`, `max_scroll` |
-| `cta_phone_click` | Click on any `<a href="tel:…">` | `phone`, `anchor`, `placement` (header / footer / sticky / body) |
-| `cta_booking_click` | Click on any `<a>` pointing to `/honoraires-rendez-vous` | `anchor`, `placement` (header / footer / sticky / body), `target_path`, `href` |
-| `click_internal` (Sprint 36) | Click on any internal `<a>` to **another** page (except `/honoraires-rendez-vous` → that stays `cta_booking_click`). Captures *which* UI element drives each page-to-page hop (the journey itself is already in the `pageview` sequence; this adds element attribution). Self-links (same path, no `#`/`data-anchor`) skipped. | `target_path`, `anchor`, `placement` (header / footer / sticky / body), `href` |
-| `cta_anchor_click` (Sprint 19) | Click on an in-page anchor: classic `href="#x"`, Wix anchor-menu (`<a href=current data-anchor="anchors-xxx">`), or any interactive element inside a sticky container. **Sprint 35**: UI chrome is excluded — the Cookiebot consent banner (`#CybotCookiebotDialog`), the mobile burger toggle, and plain nav links (no `#hash`/`data-anchor`) no longer count. | `target_section` (slugified label or hash), `anchor`, `placement` (header / footer / sticky / body), `source` (`click` / `hashchange` / `sticky-fallback`), `data_anchor` (Wix internal ID, optional) |
-| `form_submit` (Sprint 18) | Wix Form successfully submitted — fired **server-side** by the `form-webhook` Edge Function, triggered by a Wix Automation on form submission. **Sprint 38**: Wix Forms V2 ne rendant pas les champs cachés dans le DOM, le tracker expose `cooked_aid`/`cooked_sid` en query params (`replaceState`) et `wix/masterpage-cooked.js` (Velo) les écrit dans les champs cachés via `setFieldValues()` ; le webhook (code v16, version Supabase 25 depuis le 20/10/2026 ; correctif `country` v15 déployé le 19/09) les stocke dans `props` → attribution via `form_submits_attributed()` (hidden_field ou unresolved depuis le 04/11/2026). Première attribution hidden_field : 11/06/2026 08:53 | `form_id`, `submission_id`, `page_source`, `cooked_aid`, `cooked_sid`, `capture_source: 'wix-webhook'` |
-
-### Anchor capture convention (depuis le 10/05/2026)
-
-The `anchor` field in `cta_*_click` events is captured with this priority:
-
-1. **`aria-label`** if present (semantic intent, accessible name)
-2. **`textContent`** as fallback
-
-On jplouton-avocat.fr, all CTA buttons use the convention:
-
-```
-aria-label = "<Action> — <Location>"
-```
-
-Examples:
-- `Appeler le cabinet — hero`
-- `Prendre rendez-vous — header`
-- `Appeler le cabinet — barre mobile expertise`
-- `Demander un RDV — formulaire expertise`
-
-This makes per-emplacement analytics a 1-line query (`split_part(anchor, ' — ', 2)`) instead of guessing from raw textContent.
-
----
-
-## Layout du repo
-
-```
-cooked/
-├── AGENTS.md                          — point d'entrée agents IA / mainteneurs
-├── CONTRIBUTING.md                    — workflow Git, migrations, CI
-├── CHANGELOG.md                       — historique des jalons
-├── SECURITY.md                      — secrets, signalement failles
-├── LICENSE                            — propriétaire (tous droits réservés)
-├── .env.example                       — modèle variables d'environnement
-├── CLAUDE.md                          — Claude Code agent instructions
-│                                        + site taxonomy + rules of thumb
-├── README.md                          — ambition & vue d'ensemble du système
-├── Makefile                           — `make check` = gates CI locales
-├── pyproject.toml                     — paquet `cooked` + une liste de dépendances
-├── src/cooked/                        — libs ingest (gsc, dfs, gbp, secib, wix, store, path)
-├── scripts/
-│   ├── minify-tracker.py              — Minify tracker.html before Wix paste
-│   ├── gsc_ingest.py                  — CLI GSC : path-query | query-page
-│   ├── dfs_sync.py                    — CLI sync manuelle top 500 keywords GSC → DFS
-│   ├── gbp_ingest.py                  — CLI Google Business Profile
-│   ├── secib_ingest.py                — CLI pont SECIB
-│   ├── wix_taxonomy_sync.py           — CLI synchro blog Wix → page_taxonomy
-│   ├── generate_rpcs_sql.py           — Régénère supabase/rpcs.sql (DATABASE_URL)
-│   ├── check_rpcs_sql_fresh.py        — Gate CI : RPC modifiée → miroir à jour
-│   ├── check_migration_paris_date.py  — Gates CI C6 (cast Paris brut), C6b (inlining), C6c (bornes d'horloge)
-│   ├── validate_gsc_is_branded.sql    — Pilote Arch #3 branded
-│   ├── validate_period_bounds_live_j1.sql — Pilote Arch #1 live_j1
-│   ├── cpi_validation_j28.sql         — Harnais validation prédictive CPI (tir réel validé le 11/07/2026)
-│   └── cooked_events_window_contract.sql — Contrat cooked_events_window (MANUEL, non exécuté par la CI)
-├── contracts/
-│   ├── canonical_path_vectors.json    — Contrat C3 canonical_path
-│   ├── branded_query_vectors.json     — Contrat Arch #3 gsc_is_branded
-│   └── rpc_snapshot_meta.json         — Hash + count du miroir rpcs.sql
-├── .github/workflows/
-│   ├── gsc-daily-ingest.yml           — cron GSC quotidien (06:00 UTC)
-│   ├── dfs-weekly-sync.yml            — DataForSEO manuel uniquement
-│   ├── sql-contracts.yml              — C6/C6b/C6c paris_date + Arch #5 rpcs.sql
-│   ├── canonical-path-contract.yml    — C3 SQL / Edge / Python
-│   ├── python-ingest-contract.yml     — C7 tests GSC/DFS
-│   ├── dashboard-contract.yml         — C9 vitest dashboard
-│   ├── tracker-test.yml               — Suite jsdom tracker
-│   └── edge-shared-helpers.yml        — Deno tests Edge _shared/
-├── supabase/
-│   ├── schema.sql                     — events table + indexes + RLS (référence)
-│   ├── migrations/                    — DDL nommé (**source de vérité déploiement**)
-│   ├── rpcs.sql                       — corps complets des 122 routines (généré depuis la prod en CI, lecture seule)
-│   ├── views.sql                      — vues + signatures RPC (référence partielle)
-│   └── functions/
-│       ├── track/index.ts             — Tracker ingest Edge Function
-│       └── form-webhook/index.ts      — Wix Automations webhook for forms
-├── docs/
-│   ├── OPERATIONS.md                  — ce fichier
-│   ├── PLAYBOOK-analyse-seo.md        — SEO analysis playbook (traps & recipes)
-│   ├── cpi-cooked-page-index.md       — CPI v2.2 spec
-│   ├── ROADMAP-sprint38-handoff.md    — remaining work P0/P1/P2
-│   ├── HISTORY-sprints.md             — sprint chronology
-│   ├── data-quality-audit-*.md        — trust audits
-│   └── agents/                        — engineering-skills config
-├── tests/
-│   ├── tracker.test.js                — suite jsdom (source + minifié), câblée en CI (.github/workflows/tracker-test.yml)
-│   └── test_dfs_common.py             — DataForSEO sanitize tests
-└── wix/
-    ├── http-functions.js              — Velo proxy backend
-    └── tracker.html                   — Wix Custom Code <head>
-```
-
----
-
-## RPCs internes (analyses historiques)
-
-All RPCs are `granted to service_role only`. No `anon` / `authenticated` access.
-
-| RPC | Returns |
+| Tables | Rôle |
 |---|---|
-| `snapshot_pages_export(paths text[])` | Latest snapshot rows (70 cols : 4 windows × ~11 metrics + CWV + provenance + device + CTAs + pogo + device CTA rate, post-Sprint-30 ; réparée S39 : colonnes `email_clicks_*` droppées au S30 renvoyées en `0::bigint`, contrat préservé). Filter by paths optional. |
-| `site_context_export()` | One row of site-wide context 28d (sessions, bounce rate, top sources, sessions trend) |
-| `behavior_pages_for_period(from, to)` | One row / URL with 12-col subset over the requested window |
-| `seo_pages_overview(from, to)` | Same as above, parametric date range |
-| `outbound_destinations_for_path(path, days)` | Top external hostnames clicked from a given page |
-| `cta_breakdown_for_path(path, days)` | CTA clicks split by `(cta_type, placement, anchor)` |
-| `engagement_density_for_path(path, days)` | Dwell distribution (p25 / median / p75 + evenness_score) — detects bimodal patterns (bouncers + deep readers) |
-| `pogo_rates_for_period(from, to)` | Pogo-stick detection per page (Google sessions returning to SERP) |
-| `tracker_first_seen_global()` | Earliest event timestamp (used for pro-rating capture rate during bootstrap) |
+| `events` | Événements reçus : pages vues, activité, clics, formulaires et signaux techniques |
+| `gsc_path_daily`, `gsc_query_page_daily`, `gsc_ingest_batches` | Totaux Google par page, requêtes révélées par page et état des lots |
+| `page_taxonomy` | Inventaire publié, chemins et catégories |
+| `identity_stitch` | Rapprochement des identifiants navigateur |
+| `bot_fingerprints`, `noise_sessions`, `ingest_drops` | Filtrage partagé et visibilité des rejets |
+| `alerts`, `rpc_health`, `freshness_contract`, `cooked_config` | Incidents, contrôles, fraîcheur et paramètres |
 
-### RPCs cross-source (Sprint 33+, migrations `supabase/migrations/`)
+Les trois vues sont `events_main`, `events_no_bots` et `events_human`. Elles isolent le site principal puis appliquent les filtres communs. Pour une analyse métier, utiliser `events_human` ou les fonctions de visite, pas les événements bruts.
 
-Consommées en ad-hoc via le MCP Supabase quand Nicolas pose une question à Claude. Toutes `service_role` only.
+## Visites et contacts
 
-**Périodes** : `period_kind` = `today` | `week` | `month` | `rolling_28` | `rolling_90`.
-**Lens** (`cooked_period_bounds`) : `live` (Cooked, calendrier Paris, KPIs « aujourd'hui »)
-| `live_j1` (dashboard : fin J-1 Paris) | `gsc` | `cross` (fin alignée sur dernier jour GSC ingéré).
-**Branded GSC** : `gsc_is_branded(query)` — ne pas réécrire `plouton` à la main.
+`refresh_identity_stitch()` reconstruit les correspondances sur l’historique conservé et contrôle la convergence avant de dater la réussite. Son argument historique de durée reste accepté ; il ne limite plus la reconstruction à 90 jours. Les identifiants serveur de repli 32-hex ne servent pas à fusionner des navigateurs.
 
-| RPC | Rôle |
-|---|---|
-| `gsc_last_data_day()` | Dernier jour consolidé GSC + lag en jours |
-| `cooked_period_bounds(period_kind, data_lens)` | Bornes `n_start` / `n_end` selon zone (live / gsc / cross) |
-| `site_kpis_compare(period_kind)` | KPIs Cooked N vs N-1 (lens **live**) |
-| `site_gsc_kpis_compare(period_kind)` | KPIs GSC N vs N-1 (lens **gsc**) |
-| `pages_overview_unified(period_kind, max_rows)` | Univers ~490 paths, tri sessions |
-| `gsc_page_performance(target_path, period_kind)` | Fiche page : GSC + Cooked + CWV + device |
-| `gsc_top_queries_for_path(path, period_kind, max)` | Top requêtes Google sur une landing |
-| `gsc_pages_overview(max_rows)` | Top pages SEO (tri clics) ; GSC = 28 jours clos à `gsc_last_data_day()` (T-05, 03/09/2026 — la doc promettait un `period_kind` qui n'a jamais existé) ; contacts macro = phone + form |
-| `gsc_top_queries_global(period_kind, max)` | Top requêtes site + page cible + `volume_fr` / `cpc` / `click_yield_pct` (DataForSEO) |
-| `gsc_x_dfs_opportunities(min_vol, pos_min, pos_max, period_kind, max)` | Quick wins SEO (pos 5–15, volume FR ≥ 100) |
-| `dfs_keywords_to_sync(limit_n)` | Top N keywords = union clics GSC **28j ∪ 90j** (`scripts/dfs_sync.py`) |
-| `site_pulse(period_kind, …)` / `pages_pulse(period_kind, …)` | Quadrants GSC 28v28 × Cooked 7v7 |
-| `gsc_page_daily_series(path, days, end_date)` / `cooked_page_daily_series(…)` | Séries journalières par page |
-| `refresh_pipeline_health()` | Santé des sources actives events/GSC ; dates SEO/DFS informatives, cron dérivé suspendu |
+`cooked_visit_events(début, fin)` segmente l’activité observable à plus de 30 minutes d’écart. Les Web Vitals tardifs ne prolongent pas la visite. L’entrée est sa première page vue, y compris avant la fenêtre du contact. Un formulaire sans identifiants explicites reste non attribué ; aucun rapprochement par simple voisinage temporel ou page future.
 
-**Contacts (canonique)** : macro = `cta_phone_click` + `form_submit`. Micro intent RDV =
-`cta_booking_click` (`cooked_booking_intent_*`). Ne jamais additionner booking aux contacts.
+`page_visits(début, fin)` renvoie les lignes `page` et une ligne `coverage`. Pour les pages : visites ayant consulté, entrées dans la fenêtre, visites de cette cohorte avec téléphone, formulaire et union, puis taux de l’union. Les actions sont bornées à la clôture. Sans entrée, le taux vaut `NULL`. La couverture porte sur les jours observés et les contacts non attribués, sans garantir une collecte continue à chaque minute.
 
-### RPCs d’attribution et de santé — socle courant
+Les candidatures sont exclues des contacts métier. Un clic téléphone ne prouve pas un appel abouti. La répétition de plusieurs actions dans une visite ne crée pas plusieurs visites ayant contacté. Définition complète et comparaison 90 jours : [playbook](PLAYBOOK-analyse-seo.md).
 
-- `cooked_visit_events(start_date, end_date)` et `page_visits(start_date, end_date)` :
-  méthode décrite ci-dessus, jours Paris clos, service_role uniquement.
-- `form_submits_attributed(days_back, p_end)` : formulaire avec attribution
-  `hidden_field` ou `unresolved`, statut macro via `form_submit_counts_as_macro`.
-- `conversion_journeys(days_back, p_end)` : une ligne par contact macro, parcours
-  limité à l’activité précédant le contact, bornes window_start/window_end.
-- `assisted_contacts_by_entry_path(start_date, end_date)` : total conservé avec
-  ligne `(non attribuable)` ; `macro_contacts_by_path(start_date, end_date)` reste
-  le comptage au lieu de l’action. L’ancienne surcharge à un entier est retirée.
-- `content_performance` et `seo_to_contact_funnel` : lecteurs historiques conservés.
-  Pour un taux de visites entrées puis converties, utiliser `page_visits` ; un
-  nombre d’événements contacts ne se substitue pas au numérateur de visites.
-- `page_taxonomy` : référentiel unique, enrichi par l’inventaire Wix complet
-  (publication, titre, URL et date de vérification), y compris sans trafic.
-- `alerts` et `cooked_alerts_refresh()` : surveillance des sources actives.
-  `latest_rpc_health()` ne présente que les six contrôles du socle ; absence ou
-  exécution trop ancienne reste visible, sans ressusciter les contrôles retirés.
-- `annotations` : consulter les changements historiques avant de lire une série.
+## Google Search Console
 
-Les tables CPI, SEO, dashboard, math et conversions hebdomadaires sont conservées.
-Les producteurs CPI, les anciens refreshers et les fonctions de classement
-retirées le 04/11 ne sont plus une API opérationnelle. `cpi_movers` et
-`cpi_opportunite_contact` restent des lectures d’archives ; elles ne prescrivent
-plus une action à partir d’un nouveau calcul. La spécification historique CPI
-reste dans `docs/cpi-cooked-page-index.md`.
+`scripts/gsc_ingest.py` importe uniquement `date × page` et `date × page × requête`. Le premier grain garde les totaux de page ; le second ne contient que les requêtes révélées par Google. Le grain requête/site a été retiré, sans prétendre qu’il était un doublon exact.
 
----
-
-## Google Search Console (Sprint 31-32)
-
-Cooked ingère GSC dans les mêmes tables Supabase. Permet les analyses cross-source (acquisition search × comportement on-page).
-
-### 3 tables, granularités distinctes
-
-| Table | Grain | Volume (16 mois) | Usage |
-|---|---|---|---|
-| `gsc_path_daily` | day × path | 121 746 rows, 6.6M imp | Trafic SEO total par page (inclut les impressions sans query identifiable) |
-| `gsc_query_daily` | day × query | 872 564 rows, 2.6M imp | Demande globale sur le site, vue search-side seule |
-| `gsc_query_page_daily` | day × path × query | **1 005 653 rows, 3.05M imp** | **Brique critique** : attribution "quelle requête a amené sur quelle page" |
-
-### Path canonicalisation (contrat partagé)
-
-Même règle partout : **decode → NFC → slash final retiré (sauf `/`)**.
-
-| Couche | Où |
-|--------|-----|
-| Ingestion tracker | Edge `canonicalPath()` dans `supabase/functions/track/index.ts` |
-| Ingestion GSC | `cooked.path.canonical_path()` (+ strip domain/query sur URLs GSC) |
-| Jointures SQL historiques | `canonical_path(events.path) = gsc_path_daily.path` (fonction Postgres, voir migration GSC) |
-
-→ Nouveaux events : jointure directe `events.path = gsc_path_daily.path`.
-→ Historique pré-NFC/slash : passer par `canonical_path()` côté SQL.
-
-### Anonymisation GSC
-
-La liste des requêtes révélées ne restitue pas tous les clics ni toutes les
-impressions. Le niveau de couverture varie par page et par période : les
-tables avec dimension `query` servent à analyser ce qui est révélé, et les
-totaux de trafic par page viennent de `gsc_path_daily`. Ne jamais assimiler
-la somme des clics révélés au trafic total ni promettre une couverture fixe.
-
-### Horloge des jours
-
-L'API Search Analytics fournit `startDate`/`endDate` en heure du Pacifique,
-alors que les événements Cooked sont regroupés en heure de Paris.
-Conserver la date GSC telle que fournie ; afficher les bornes des deux
-sources. Un alignement des dates laisse généralement neuf heures de
-décalage, temporairement huit autour des changements d'heure.
-Référence : [Search Analytics query](https://developers.google.com/webmaster-tools/v1/searchanalytics/query).
-
-### Auth
-
-Service Account Google Cloud `gsc-cooked@rewolf-507310.iam.gserviceaccount.com` (projet GCP central `rewolf-507310` depuis le 01/09/2026 — l'ancien projet `plouton-472207` et son SA `gsc-mcp-claude@…` ont été supprimés lors du ménage GCP), credentials JSON en `~/.claude/gsc-credentials.json` (NON commité, miroir base64 dans le secret GitHub `GSC_CREDENTIALS_B64`). Ajouté comme utilisateur sur la propriété GSC `https://www.jplouton-avocat.fr/`. Côté GBP, l'approbation est liée au projet et ne migre pas avec les credentials. Le quota nul constaté le 20/10 est résolu : Google a approuvé `rewolf-507310` (numéro `1005289878572`) le 21/10/2026, et la collecte a repris le 26/10. Voir la procédure GBP ci-dessous.
-
-### Re-ingestion GSC
+Un lot n’est déclaré complet que lorsque ses deux grains ont réussi. Un import partiel ou échoué reste visible dans `gsc_ingest_batches` et ne devient pas une référence complète. La reprise est idempotente. L’import quotidien reprend les deux derniers mois pour absorber les révisions de fin de mois ; le mode de reprise longue reste disponible dans l’aide du script.
 
 ```bash
-pip install -r scripts/requirements-gsc.txt
-
-# Backfill complet 16 mois (~4-7 min). --end-date défaut = hier.
-export SUPABASE_SECRET_KEY='sb_secret_...'
-# optionnel : SUPABASE_URL, GSC_CREDENTIALS_PATH (~/.claude/gsc-credentials.json)
-
-python3 scripts/gsc_ingest.py all
+python3 scripts/gsc_ingest.py --help
+python3 scripts/gsc_ingest.py --daily
 ```
 
-Le mode `all` ouvre un lot (`gsc_ingest_begin`), alimente les trois tables
-sur une même fenêtre, puis publie `gsc_ingest_complete`. Une erreur publie
-`gsc_ingest_fail` quand la base est joignable ; un lot resté `running`
-ne devient pas un lot complet. Les modes `path-query` / `query-page` sont réservés
-au diagnostic et ne valident pas l’exhaustivité des trois tables. Après interruption, vérifier que le processus s'est arrêté
-avant de marquer son lot en échec, puis relancer `all`.
-Le verrou du protocole de lot est conservé. Aucun ancien recalcul dashboard
-n’est attendu après la clôture depuis le 04/11/2026.
+Les accès Google utilisent le service account existant, en lecture Search Console. Les identifiants restent hors dépôt ; noms d’environnement dans [.env.example](../.env.example). Aucun ancien recalcul de dashboard n’est attendu après cet import.
 
-DDL : migrations GSC, puis
-`20261020094908_audit_data_integrity_and_ingest_completion.sql` pour le
-protocole de lot ; ce protocole reste actif après retrait de l’orchestrateur.
+Les dates `day` sont celles de GSC, pas des timestamps convertis en Paris. Conserver cette différence lors d’un recoupement avec Cooked. Additionner clics/impressions et pondérer les positions par les impressions ; ne pas attribuer les requêtes masquées ni relier une requête à un formulaire individuel.
 
-### Cron quotidien (Sprint 33, 22/05/2026)
+## Wix : inventaire et formulaires
 
-GitHub Actions workflow `.github/workflows/gsc-daily-ingest.yml` lance
-`python3 scripts/gsc_ingest.py all --daily`
-tous les jours à 06:00 UTC (≈08:00 Paris en été) — heure **planifiée** : depuis le
-27/08/2026 l'ordonnanceur GitHub retarde le run de 4 à 12 h (27/08 17:15, 28/08 18:07,
-03/09 10:35 UTC). Upsert idempotent — re-ingère les 2 derniers mois pour capturer
-les refinements GSC. La validation porte sur un **lot complet des trois tables**.
-Le marqueur récent de la seule table pages ne prouve pas cette complétude.
-Les anciens recalculs en aval sont suspendus. Le script
-rejoue deux mois en mode quotidien pour conserver les fins de mois et
-reprendre les révisions tardives de Google.
+Le workflow `wix-taxonomy-sync` valide un inventaire public complet avant une synchronisation transactionnelle de `page_taxonomy`. Il inclut articles, pages statiques et catégories. Une source inaccessible ou incomplète fait échouer le run sans déclarer disparues les pages précédemment connues. `publication_checked_at` date ce contrôle ; l’ancien `updated_at` seul ne prouve pas la publication.
 
-**Secrets à configurer une fois** dans le repo GitHub (Settings → Secrets and variables → Actions) :
+Le webhook v17 exige un identifiant stable de soumission. Il construit l’événement canonique existant, puis répond HTTP 200 après insertion ou doublon `23505`. Une erreur DB ou une réponse réseau incertaine produit HTTP 503 avec `Retry-After: 60`. Les logs et alertes contiennent des libellés fixes et codes bornés, pas le payload ni le message DB brut. L’idempotence permet une reprise ; elle ne garantit pas que Wix la déclenche.
 
-| Secret | Valeur |
-|---|---|
-| `GSC_CREDENTIALS_B64` | base64 du JSON service account (`base64 -w0 < ~/.claude/gsc-credentials.json`) |
-| `SUPABASE_SECRET_KEY` | clé `sb_secret_*` du projet Cooked |
+L’attribution Forms utilise les champs cachés `page_source`, `cooked_aid` et `cooked_sid`, alimentés via [masterpage-cooked.js](../wix/masterpage-cooked.js). La collecte conserve les formulaires sans attribution ; ne pas inventer leur entrée.
 
-Run manuel via le bouton **"Run workflow"** sur l'onglet Actions (ou `gh workflow run
-gsc-daily-ingest.yml`). Monitoring via `refresh_pipeline_health()` axe GSC
-(gsc_data_age_days, gsc_ingest_age_hours) et `gsc_ingest_batches`. Les lots
-`failed` et `running` nécessitent une reprise complète. `refresh_runs` garde
-l’historique des anciens calculs ; aucune fraîcheur de cet historique n’est attendue.
+Le workflow `wix-forms-reconcile` compare les nombres de soumissions Wix confirmées aux événements Cooked, par jour Paris sur une période close. Il utilise `WIX_API_KEY` et publie des écarts agrégés uniquement. Un échec API ou une différence n’entraîne ni réimport automatique ni suppression. La réussite d’un test local ne prouve pas les droits de l’API en production.
 
-### Rapprochement quotidien des formulaires Wix
+## Planification
 
-`.github/workflows/wix-forms-reconcile.yml` est programmé à 07:10 UTC
-(`schedule` GitHub, exécution pouvant être retardée). Il compare les
-soumissions Wix **confirmées** aux `form_submit` Cooked, jour par jour sur
-28 jours Paris clos à J−1, candidatures incluses. Commande manuelle :
+**6 jobs pg_cron actifs**, horaires UTC. Les quatre anciens jobs de calcul ont été supprimés, pas laissés en attente de réactivation.
 
-```bash
-python3 scripts/wix_forms_reconcile.py --days 28
-```
-
-L'accès Forms de `WIX_API_KEY` doit être vérifié ; la permission Blog seule
-ne suffit pas. Le script n'écrit aucune soumission ni identité, n'effectue
-aucun rattrapage et ne publie que des agrégats. Un jour discordant déclenche
-`form_reconciliation_mismatch` et fait échouer le workflow. Une API
-inaccessible ne devient jamais un total zéro validé. Un accord des comptes
-quotidiens est un contrôle de volume, pas une bijection prouvée des IDs.
-
----
-
-## DataForSEO — synchronisation manuelle depuis le 4 novembre 2026
-
-Source de vérité pour le volume mensuel France et le CPC sur les top
-500 keywords du site (union **28j + 90j** GSC, réévalué chaque run).
-Alimente `gsc_top_queries_global` (colonnes `volume_fr` / `cpc` /
-`click_yield_pct`) et `gsc_x_dfs_opportunities` (quick wins SEO).
-Le workflow `.github/workflows/dfs-weekly-sync.yml` ne conserve que
-`workflow_dispatch`. Les volumes déjà acquis restent disponibles avec leur
-date ; aucune fréquence ni dépense périodique n’est attendue. Une valeur trop
-ancienne ou absente ne doit pas devenir un zéro observé.
-
-**Secrets GitHub Actions** : `DFS_USERNAME`, `DFS_PASSWORD`,
-`SUPABASE_SECRET_KEY` (login + mot de passe **API** DataForSEO, pas le
-mot de passe du site web).
-
-**Run manuel en local** :
-
-```bash
-pip install -r scripts/requirements-dfs.txt
-cp scripts/.env.dfs.example scripts/.env.dfs   # puis remplir
-set -a && source scripts/.env.dfs && set +a
-python3 scripts/dfs_sync.py --limit 500
-```
-
-Sans `DFS_*` en env → le script s'arrête tout de suite (normal). Les
-volumes passent par ce sync → table `dfs_keyword_volume` (le MCP
-DataForSEO de l'agent permet aussi des lookups live, voir CLAUDE.md).
-
-**Tests sanitize (local)** :
-
-```bash
-pip install -r scripts/requirements-dev.txt
-python3 -m pytest tests/test_dfs_common.py -q
-```
-
----
-
-## Bot filtering (Sprint 17) & crons
-
-Cooked detects and excludes crawler traffic at the analytics layer, without touching raw events.
-
-```
-events (raw — le bruit > 28 j est purgé chaque dimanche, cf. purge_cooked_noise)
-   ↓
-bot_fingerprints  (anonymous_ids flagged as bots, refreshed nightly)
-   ↓
-events_human VIEW  (events MINUS bot_fingerprints MINUS noise_sessions)
-   ↓
-ALL RPCs + snapshot read from events_human
-```
-
-**Detection rule** : `anonymous_id` with > 20 pageviews/day AND 0 scroll events = crawler. Catches the nightly Ahrefs audit crawler and similar bots.
-
-**État depuis le 4 novembre 2026 : 6 jobs pg_cron actifs, quatre tâches
-suspendues conservées.** Horaires ci-dessous en UTC (Paris UTC+1 l’hiver, UTC+2 l’été).
-Le catalogue contient dix lignes au total, y compris les tâches suspendues ;
-`contracts/doc_constants.json` distingue les tâches actives de ce total.
-Contrôle : `SELECT jobname,schedule,active FROM cron.job ORDER BY jobname`.
-
-| Job pg_cron | Horaire UTC | État et rôle |
+| Job | Horaire UTC | Travail |
 |---|---|---|
-| `refresh-identity-stitch` | `40 3 * * *` | Actif — couture sur l’historique conservé, convergence puis horodatage |
-| `run_rpc_contract_tests` | `50 3 * * *` | Actif — six contrôles du socle après la couture ; résultats dans rpc_health |
-| `purge_old_events_monthly` | `0 4 1 * *` | Actif — rétention existante de 13 mois ; aucune modification de durée dans la simplification |
-| `cooked-purge-noise-weekly` | `30 4 * * 0` | Actif — bruit bot/noise > 28 jours, TTL noise_sessions 90 jours |
-| `refresh_noise_filters_hourly` | `5 * * * *` | Actif — filtrage bots et bruit |
-| `cooked-alerts-hourly` | `15 * * * *` | Actif — sources, échecs et lecture du dernier contrôle du socle |
-| `refresh_seo_url_snapshot` | `0 3 * * *` | Suspendu — historique SEO conservé |
-| `cooked-refresh-after-gsc` | `0 6-21 * * *` | Suspendu — historiques CPI et dashboard conservés |
-| `math-refresh-snapshots-weekly` | `10 5 * * 0` | Suspendu — historiques math conservés |
-| `cpi-calibration-monthly` | `0 5 1 * *` | Suspendu — historique de calibration conservé |
+| `refresh-identity-stitch` | `40 3 * * *` | Couture sur l’historique conservé |
+| `run_rpc_contract_tests` | `50 3 * * *` | Six contrôles du comptage, après la couture |
+| `purge_old_events_monthly` | `0 4 1 * *` | Rétention des événements : 13 mois |
+| `cooked-purge-noise-weekly` | `30 4 * * 0` | Bruit bot/noise de plus de 28 jours ; entrées noise de plus de 90 jours |
+| `refresh_noise_filters_hourly` | `5 * * * *` | Filtres bots et bruit |
+| `cooked-alerts-hourly` | `15 * * * *` | Sources, incidents et résultats des contrôles |
 
-| Workflow GitHub | Déclenchement | Rôle |
+| Workflow GitHub | Déclenchement UTC | Travail |
 |---|---|---|
-| `wix-taxonomy-sync` | Quotidien 05:00 UTC + manuel | Inventaire public complet Wix et synchro atomique ; échec sans dépublication déduite |
-| `gbp-daily-ingest` | Quotidien 05:30 UTC + manuel | Fiche Google, client OAuth dédié ; contrôle du retard de source |
-| `gsc-daily-ingest` | Quotidien 06:00 UTC + manuel | Lots complets des trois tables, reprise des deux derniers mois |
-| `wix-forms-reconcile` | Quotidien 07:10 UTC + manuel | Comparaison agrégée des soumissions confirmées Wix et Cooked |
-| `dfs-weekly-sync` | Manuel uniquement | Volumes DataForSEO à la demande |
-| `backup-weekly.yml` | Manuel uniquement | Planification désactivée ; sauvegarde externe déclinée le 02/07/2026 |
+| `wix-taxonomy-sync` | Quotidien 05:00 + manuel | Inventaire publié complet |
+| `gsc-daily-ingest` | Quotidien 06:00 + manuel | Deux grains GSC et lot commun |
+| `wix-forms-reconcile` | Quotidien 07:10 + manuel | Écarts de comptes Wix/Cooked |
+| `prod-drift` | Quotidien 06:20 + CI/manuellement selon workflow | Cohérence dépôt/production |
+| `backup-weekly` | Manuel uniquement | Export partiel des tables sources |
 
-Les horaires GitHub sont planifiés, pas une garantie de début effectif. Les
-retards mesurés en août/septembre appartiennent à l’historique. Les anciens
-producteurs ont été retirés ; ne pas réactiver leurs crons sans restaurer les
-routines et leurs dépendances dans une opération explicitement décidée.
+Les horaires GitHub ne garantissent pas le début effectif du run. Ne pas exécuter plusieurs reconstructions ou lectures lourdes en parallèle. Un `statement_timeout` doit être posé avant le statement concerné, pas seulement dans le corps d’une fonction déjà lancée.
 
-⚠️ **Piège `statement_timeout`** : un `SET statement_timeout` posé *dans*
-une fonction ne protège **pas** un statement déjà lancé. C'est pourquoi les
-crons lourds posent le `SET` **séparément dans la commande cron, avant
-l'appel** de la fonction (cf. `cron.job` en prod).
-
----
-
-## Recettes & garde-fous (audit 01-03/07/2026)
-
-### Google Business Profile — connexion dédiée et reprise (26/10/2026)
-
-Le client **« Cooked - collecte Business Profile »** appartient au projet
-`rewolf-507310`, approuvé par Google le 21/10/2026. Son audience **Interne**
-a été vérifiée dans la console le 26/10. L'autorisation porte uniquement sur
-`https://www.googleapis.com/auth/business.manage` : ce droit permet de gérer
-les fiches, mais le collecteur Cooked effectue des lectures API seulement.
-
-Le secret GitHub `GBP_CREDENTIALS_B64` contient le JSON `authorized_user`
-du client dédié, encodé en base64, avec son refresh token. Il ne contient
-ni scope `cloud-platform` ni `quota_project_id`. Le workflow le décode dans
-un fichier temporaire privé (0600), le désigne par
-`GOOGLE_APPLICATION_CREDENTIALS`, puis le supprime. Le résolveur
-`google.auth.default` sait charger ce format sans changement du collecteur.
-
-Les fichiers locaux `~/.claude/gbp-oauth-client.json` et
-`~/.claude/gbp-token.json` restent hors dépôt, en permissions 0600. L'ADC
-global gcloud n'a pas été modifié et reste prioritaire en l'absence de
-configuration explicite. Pour tester la connexion dédiée en lecture seule :
-
-```bash
-GOOGLE_APPLICATION_CREDENTIALS="$HOME/.claude/gbp-token.json" python3 scripts/gbp_ingest.py probe --days 30
-```
-
-En cas de diagnostic `GBP_AUTH`, réautoriser **ce client existant** avec le
-compte gestionnaire de la fiche et le seul scope `business.manage`, en
-demandant l'accès hors connexion pour obtenir un refresh token. Mettre à
-jour le fichier local puis `GBP_CREDENTIALS_B64`, sans afficher leur contenu
-dans les logs ou le dépôt. Ne pas recréer un client ni repasser par la
-connexion gcloud par défaut. Vérifier un renouvellement et un appel API,
-puis déclencher `gbp-daily-ingest` avec une fenêtre `days` couvrant tout le
-retard, et contrôler les jours et les neuf mesures en base. L'upsert par
-`day,location,metric` permet le chevauchement avec les jours déjà présents.
-
-**Preuves du 26/10/2026 :** le [rattrapage](https://github.com/NicolasRewolf/cooked/actions/runs/40370720729)
-a écrit 792 lignes sur 88 jours (28/07–23/10) et récupéré les 64 jours du
-21/08 au 23/10. L'historique contrôlé contient 5 652 cellules, sans trou.
-La [bascule sur le client dédié](https://github.com/NicolasRewolf/cooked/actions/runs/40379206471)
-a réussi à 19:36 Paris : 252 lignes, neuf mesures par jour sur les 28 jours
-du 26/09 au 23/10. Le JSON fourni à ce run ne contenait aucun access token
-préenregistré : la CI a donc renouvelé l'accès depuis le refresh token.
-Les valeurs API et base concordent ; la règle de fraîcheur ne signale plus
-GBP. Les trois jours finaux à zéro ont été écartés par l'heuristique du
-collecteur, pas certifiés comme journées sans activité.
-
-Le workflow quotidien est actif, mais ces exécutions manuelles ne prouvent
-pas un futur déclenchement planifié. Le renouvellement automatique réduit
-la dépendance à la session Google Cloud ; une révocation ou un changement
-de politique Google peut encore imposer une autorisation. Conserver les
-alertes. Un quota nul (`GBP_QUOTA_ZERO`) relève de l'approbation du projet,
-pas d'un renouvellement OAuth. Références :
-[OAuth Business Profile](https://developers.google.com/my-business/content/implement-oauth)
-et [expiration des refresh tokens](https://developers.google.com/identity/protocols/oauth2#expiration).
-
-### One-shot pg_cron (exécuter du SQL lourd côté serveur, > 60 s MCP)
-
-Le connecteur MCP coupe à ~60 s (et rollback). Pour toute requête lourde
-(capture CPI, gros refresh) : job pg_cron temporaire — **JAMAIS de
-self-unschedule dans la commande** (pg_cron tue le run en cours, gotcha
-re-payé le 02/07) :
+## Santé du socle
 
 ```sql
-SELECT cron.schedule('oneshot-<sujet>', '* * * * *',
-  $$SET statement_timeout='540s';
-    CREATE TABLE IF NOT EXISTS _oneshot_result AS SELECT ...;$$);
--- attendre le top de minute + la durée du run, vérifier la table,
--- PUIS déschéduler DE L'EXTÉRIEUR :
-SELECT cron.unschedule('oneshot-<sujet>');
-```
-`CREATE TABLE IF NOT EXISTS` rend les re-tirs par minute inoffensifs.
-Nettoyer : table + `SELECT * FROM cron.job` vide de one-shots.
-
-### Swarm de bots (depuis ~20/06/2026) — état & trigger de réouverture
-
-Signature : ~12 k `anonymous_id`/j, UA Chrome Windows desktop, uniquement
-web_vitals/engagement_tick/page_exit **sans pageview**. `events_human`
-reste propre (~10-11 k events/j) ; le brut a culminé à ~69 k/j. Contenu
-par : filtres incrémentaux (T-08) + purge hebdo > 28 j (T-09). Le **guard
-d'ingestion** (rejet à l'Edge) a été volontairement SKIPPÉ (02/07) — le
-ré-instruire si : bruts > 120 k/j soutenus 7 j, OU purge insuffisante pour
-tenir `events` < ~2 Go, OU pollution d'`events_human`. Mesure « ce qui
-serait rejeté » (shadow, sans toucher l'Edge) :
-
-```sql
--- batches non-pageview de visiteurs sans pageview sur 24 h (candidats au rejet)
-SELECT count(*) FROM events e
-WHERE e.occurred_at > now() - interval '24 hours'
-  AND e.name IN ('web_vitals','engagement_tick','page_exit')
-  AND NOT EXISTS (SELECT 1 FROM events p WHERE p.anonymous_id = e.anonymous_id
-    AND p.name='pageview' AND p.occurred_at > now() - interval '24 hours');
+SELECT * FROM alerts WHERE NOT acked;
+SELECT * FROM refresh_pipeline_health();
+SELECT * FROM latest_rpc_health();
+SELECT status, day_start, day_end, completed_at
+FROM gsc_ingest_batches ORDER BY batch_no DESC LIMIT 1;
 ```
 
-### Alertes — surveillance courante et mesures historiques
+La surveillance conserve **15 règles d'alerte** et cinq sources de fraîcheur : `gsc_path_daily`, `gsc_query_page_daily`, `form_submit`, `cta_phone_click`, `page_taxonomy`. La couture a ses contrôles dédiés. Les règles horaires lisent les résultats des contrôles nocturnes, sans relancer leurs sondes lourdes à chaque passage.
 
-Les distributions ci-dessous datent du 03/09/2026 ; elles ne décrivent pas
-les volumes actuels. Depuis le 04/11, cpi_drop, cpi_calibration,
-refresh_after_gsc_stale, refresh_budget et les alertes de fraîcheur des six
-sources retirées sont désactivées. Leurs lignes ci-dessous documentent
-l’ancien modèle. Une absence de recalcul volontaire n’est plus un incident.
+`refresh_pipeline_health()` résume la réception des événements et les lots GSC ; ce n’est pas un certificat global de justesse des données. Pour un résultat métier, lire aussi l’inventaire, les bornes de couverture et les contrôles concernés. Consulter les seuils courants dans `freshness_contract` et les corps SQL, sans les recopier dans plusieurs guides.
 
-La règle GSC surveille le dernier lot incomplet depuis trois heures et l’absence
-de lot complet du jour UTC après midi. L’alerte RPC lit les six contrôles
-nocturnes, sans relancer les sondes lourdes à chaque heure. Acquitter seulement
-les alertes expliquées et contrôlées ; ne pas vider globalement le stock.
-
-| Kind | Seuil | Distribution / replay | Push ntfy |
-|---|---|---|---|
-| `pipeline_dead` | âge `now() - max(received_at) > 90 min` **et** cette heure Paris a une médiane ≥ 1 event / 7 j | 40 j : 1 trou diurne 166 min (01/08 13:16→16:02, détecté) ; 3 trous nuit 61-69 min (dont 22/08, **non** détectés). 0 faux positif nocturne | critical, cap 2 / épisode |
-| `cpi_drop` | chute ≥ 15 pts, grades **S/A** aux deux dates, **momentum < 0,90**, vrai decay (Δmom ≤ −0,10 ou Δzc ≤ −0,5), clics réels non croissants | 03/09 : 3 pages en v3 (2 S/A à momentum 1,01 / 1,09 + 1 B) → **0** en v4. Grade B = consultatif (`cpi_movers`), pas d'alerte | warn seulement, **jamais critical** |
-| `warn_escalation` | warn ≥ 5 j non acquitté, hors kinds éditoriaux (`cpi_drop`) | avant : 9 escalades cpi_drop en 9 j | critical, cap 2 / épisode |
-| `volume_floor` | heure Paris précédente (9-18 h), pageviews < 50 % de la médiane 7 j, médiane ≥ 30 | 7 j heures bureau : 2 horaires auraient sonné (med ≥ 30) ; 0 si med ≥ 40 | warn |
-| `form_submit_dropped` | insert form échoué → `raise_cooked_alert` (Edge v14) | 0 ligne historique (jamais passé par raise) | critical, cap 2 |
-| `gsc_ingest_missed` | **T-11** : dès 12:00 UTC, aucune ingestion GSC datée du **jour UTC** (attendue 06:00 UTC) — correctif du 04/09 (`20260904064833`) : la comparaison en jour Paris sonnait à tort de 22:00 à 24:00 UTC (faux positif du 03/09 22:15 UTC, acquitté) | 27/08, 28/08, 31/08 : 3 retards de +6 à +12 h, tous rattrapés le jour même | warn |
-| `refresh_after_gsc_stale` | **T-11** : `cooked_refresh_after_gsc_pending()` = true et ingestion > 3 h, entre 8 h et 23 h UTC, sans `refresh_step_failed_*` dans les 6 h | 0 cas historique reconstituable (la garde « ingestion du jour » masquait le cas) | critical, cap 2 |
-| `refresh_budget` | **T-11** : dernier `_total` de `refresh_runs` (48 h) ≥ 80 % de `refresh_after_gsc_budget_s` (2 400 s) | 30 j : p50 ≈ 1 600 s (67 %), max 2 166 s le 05/08 (90 % — aurait sonné), 26/07 : 7 runs à 100 % | warn |
-| `identity_stitch_empty` | **T-10** : `identity_stitch` vide | jamais observé (30 succès / 30 j) — une couture vidée était un « succeeded » muet | critical, cap 2 |
-| `identity_stitch_stale` | **T-10** : `cooked_config.identity_stitch_refreshed_at` absent (critical), > 30 h (warn), > 54 h (critical) | 30 j : 30 reconstructions à 05:40 Paris, 17-25 s ; 0 cas | warn / critical |
-| `identity_stitch_coverage` | **T-10** : après la reconstruction du jour, sessions humaines de J-1 (hors webhook, hors aid 32-hex) absentes de la couture | 03/09 : J-1 429/429, J-2 416/416 cousues (0,5 s) | warn |
-| `cpi_calibration` | **T-20** : dernier `cpi_calibration_checks` — R² < 0,85 (critère liant du §3) → critical ; sinon médiane \|écart\| > 30 % → warn | 11/07 : R² 0,930 / 20,1 % ; 02/09 : 0,909 / 28,8 % ; 04/09 : 0,913 / 25,5 % → 0 ligne | critical / warn |
-| `dashboard_resources_snapshot_stale` (registre) | **T-10** : mesuré sur `max(cooked_end)` (fin des données), plus sur `refreshed_at` ; warn > 2 j, critical > 4 j | 28/08 : J-2 affiché en vert de 00:00 à 21:00 Paris — invisible de l'ancien registre | warn / critical |
-| `page_taxonomy_stale` (registre) | **T-10** : `max(updated_at)` > 21 j (aucune synchro Wix Blog) | dernière synchro 31/08 11:05 | warn |
-| `form_fields_missing` | **T-18** : par formulaire, 28 j (webhook) : > 10 % sans `page_source` ou sans objet (≥ 3 envois), ou 100 % sans page | 180 j : « Divorce » 3/3, « Demande dossier en cours » 1/1, « Prise de contact » 18/252 sans page, 30 sans objet — **sonne au 04/09** tant que les champs ne sont pas câblés (action Nicolas) | warn (escalade critical à 5 j) |
-| `contact_sans_amont` | **T-17** : ≥ 3 `cta_phone_click`/`cta_booking_click` sur 24 h sans pageview antérieure dans la même session (détection d'injection via `/_functions/track`, garde d'origine forgeable — ou tracker cassé) | 28 j au 04/09 : 0/128 phone, 4/331 booking sans amont | warn ; critical ≥ 10 |
-
-Le stock du 03/09 (55 non acquittées) n'est **pas** vidé par la migration — ack = décision Nicolas.
-
-### Registre de fraîcheur `freshness_contract` — état du 4 novembre 2026
-
-Seules les lignes `enabled=true` sont actives. Depuis le 04/11, les six sources
-CPI/calibration/dashboard/SEO/math/DFS ci-dessous sont désactivées : leurs seuils
-restent historiques et ne créent plus d’alerte attendue.
-`alert_rule_freshness()` (cron horaire) lit `last_point_sql`, compare à
-`paris_today()` et sonne `<source>_stale` (warn / critical) ou `<source>_gap` (trous dans la série).
-Le `repair_hint` de chaque ligne est la consigne de réparation embarquée dans l'alerte.
-
-| Source | Dernier point mesuré sur | Lag normal | warn > | critical > | Note |
-|---|---|---|---|---|---|
-| `gsc_path_daily` (+ `_query_daily`, `_query_page_daily`) | `max(day)` | 3 j | 6 j | 10 j (12 j pour les deux tables requêtes) | trous sur 90 j → `gsc_path_daily_gap` |
-| `gbp_daily` | `max(day)` | 4 j | 7 j | 14 j | une panne d'authentification n'est pas un retard normal ; relire le dernier run |
-| `dfs_keyword_volume` — désactivée le 04/11 | `max(last_synced_at)` | 7 j | 10 j | 21 j | hebdo |
-| `cpi_daily` — désactivée le 04/11 | `max(day)` | 1 j | 1 j | 1 j | trous sur 7 j → `cpi_daily_gap` |
-| `dashboard_resources_snapshot` — désactivée le 04/11 | **`max(cooked_end)`** (fin des données, T-10) | 1 j | 2 j | 4 j | J-2 le matin est normal ; le grain horaire est aux alertes T-11 |
-| `seo_url_snapshot` — désactivée le 04/11 | `max(refreshed_at)` | 1 j | 1 j | 2 j | |
-| `form_submit`, `cta_phone_click`, `crm_prospects` | dernier événement | 0 | 2 j | 4 j | cadence événementielle |
-| `math_visit_sequences_snapshot` — désactivée le 04/11 | `max(computed_at)` | 7 j | 9 j | 16 j | hebdo |
-| `cpi_calibration_checks` — désactivée le 04/11 | `max(day)` (T-20) | 31 j | 35 j | 62 j | mensuel (1er du mois) |
-| `page_taxonomy` | `max(publication_checked_at)` | 1 j | 2 j | 7 j | inventaire Wix quotidien complet ; updated_at seul ne prouve pas la publication |
-| `secib_dossiers` | `max(synced_at)` | 1 j | 3 j | 7 j | **désactivée** (`enabled = false`) tant que le devis SECIB+ n'est pas signé |
-
-`identity_stitch` n'est pas au registre (grain jour) : règle dédiée `alert_rule_identity_stitch()` (T-10).
-
-### Restatements des séries (lire l'historique sans conclure à tort)
-
-Les corrections rétroactives suivantes ont modifié des séries historiques.
-Un « avant/après » qui enjambe une de ces dates n'est **pas** un signal
-(ni un decay, ni un progrès) :
-
-| Date | Restatement | Effet |
-|---|---|---|
-| 09/06/2026 (Sprint 37) | Dédup des clics dupliqués même-seconde (double-embed) | `cta_phone_click` corrigé rétroactivement de **−13,6 %** |
-| 02/07/2026 | CPI — passage au grain lectures session×path | **±7 pts max** sur 4 pages A/B ; 8 pages C sorties du scoring |
-| 02/07/2026 | `classify_channel` v2 — IA détectée aussi par `utm_source` | restatement des canaux (~35 % du canal `organic_ai` récupéré) |
-| 12/07/2026 | CPI — conversion recousue (couture d'identité) | **seule la composante conversion zv bouge** (zc/zr/zl/momentum/gate inchangés) ; delta moyen −0,1 pt ; **0 changement de grade** ; 7 movers ≥ 15 pts (ex. arnaque-en-ligne 41→100, /nos-affaires 67→12) |
-| 12/07/2026 | Contacts assistés « ressource » (dashboard) — attribution sur la visite recousue | **16 → 37** sur 28 j |
-| 27/07/2026 | `classify_channel` v3 — GMB sort d'`organic_google` | home : n_org 305→164, grade S→A ; CPI/journeys/funnel restatés (annotation posée) |
-| 03/09/2026 (T-09) | Contacts : `conversion_journeys` / `form_submits_attributed` / `macro_contacts_by_path` sur N jours clos à J-1 ; funnel sur une fenêtre GSC unique au grain recousu ; `classify_channel` v5 (gclid ⇒ paid) ; CPI zv sur la fenêtre du score | « contacts 28 j » **191 partout** (avant 183 / 189 / 195) ; funnel 5 860 entrées, 55 contacts, 0,94 % ; CPI : seul zv bouge, delta moyen +0,3, **0 changement de grade**, 6 movers ≥ 15 pts (annotation posée) |
-| 03/09/2026 (T-06) | CPI : momentum sur `gsc_path_daily` moins brandé révélé (option (b), décision Nicolas) au lieu de `gsc_query_page_daily` non brandé (16-28 % des clics) ; `cpi_opportunite_contact.potentiel` hors momentum/gate ; `cpi_drop` ignore une page dont les clics réels montent | seul le momentum bouge (132 pages), delta moyen +3,7, médiane \|Δ\| 4, **0 changement de grade**, 8 movers fiables ≥ 15 pts ; contrefactuel : 0 page fiable en direction inverse (avant 15/47) ; CPI pondéré 45,7 → 45,9 (annotation posée) |
-| 03/09/2026 (T-08) | Contacts assistés : forms sans identifiant + contacts sans visite → ligne `(non attribuable)` ; `dashboard_assisted_quarter` lit un snapshot (plus de calcul à l'affichage) | Σ assistés = totaux site (191 = 191 le 03/09, dont 12 non attribuables). Le compteur « articles » du dashboard **ne prend pas** ces 12. Pas d'objectif trimestriel (décision Nicolas). |
-| 04/09/2026 (T-20) | `cpi_daily.cpi_version` (2.2.0 → 2.2.5, rétro-rempli par date de rupture) ; `cooked_config.cpi_definition_version` lu par `cooked_cpi_snapshot()` ; 3 annotations manquantes posées (02/07 grain lectures + `classify_channel` v2, 25/07 momentum sur requêtes révélées + `convertit`, 31/08 périmètre `page_taxonomy` +12 articles) | aucun score ne change ; **deux lignes de `cpi_daily` de `cpi_version` différentes ne se comparent pas sans lire `annotations`** (invariant I10) |
-
-**Migration appliquée le 20/10/2026 ; premier snapshot à vérifier** : définition CPI 2.2.6,
-badge `convertit` réservé aux contacts macro, CWV révisés dédupliqués par
-document/métrique avant le gate. Le poids des intentions est conservé et
-les bookings sont bornés à la fenêtre canonique. Annotation posée par la migration ; aucune réécriture des anciens
-snapshots. Le changement de contexte SPA prendra effet avec le nouveau tracker,
-séparément du déploiement SQL.
-
-Tous les restatements (02/07, 12/07, 25/07, 27/07, 31/08 et 03/09/2026) sont annotés dans la table
-`annotations` : la consulter avant d'interpréter un mouvement dans
-`cpi_daily`. Les tables d'audit `cpi_pre_restatement_20260712` / `_20260727` ont
-été supprimées le 10/08/2026 (migration `rangement_post_pivot_secib`) ;
-`cpi_pre_restatement_20260903` (phases `t05_avant` / `t09_avant` / `t06_avant`)
-est à supprimer au ticket T-19.
-
-### Redémarrage après sinistre — briques ajoutées
-
-- **`dashboard/`** : sous-app Next 16 (Vercel, rootDir=`dashboard`,
-  data.rewolf.studio). Env requis : `NEXT_PUBLIC_SUPABASE_URL`,
-  `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable), `SUPABASE_SECRET_KEY`
-  (service, server-only), allowlist e-mail. Local : `.claude/launch.json`
-  + `dashboard/.env.local` (gitignored).
-- **`wix/masterpage-cooked.js`** : à coller dans masterPage.js (Wix Studio)
-  — c'est le rail de l'attribution formulaires (lit `cooked_aid`/`cooked_sid`
-  des query params → `setFieldValues()`). Sans lui, l'attribution
-  `hidden_field` meurt. Chaque Wix Form doit porter les 3 champs cachés
-  `page_source`, `cooked_aid`, `cooked_sid` (clé exacte, onglet Avancé).
-
----
+Une alerte datée peut être historique. Acquitter seulement une cause vérifiée ou un périmètre explicitement retiré. Les contacts sans amont, champs Forms absents et différences de comptes restent visibles ; un acquittement ne reconstitue pas les données manquantes.
 
 ## Déploiement
 
-### Re-deploying Edge Functions
+Les migrations sont le journal DDL. Les miroirs `supabase/rpcs.sql` et `supabase/views.sql` servent à lire l’état courant, pas à recréer seuls une base complète. Ne pas prétendre qu’une restauration ou un bootstrap est validé sans l’avoir exécuté et contrôlé.
+
+Après livraison SQL : régénérer les miroirs et leurs métadonnées, vérifier les privilèges, les contrôles pertinents et les advisors. Les tables restent protégées par RLS, les vues par `security_invoker` et les fonctions métier par des droits explicites. Voir [CONTRIBUTING.md](../CONTRIBUTING.md) et [SECURITY.md](../SECURITY.md).
+
+Pour les Edge, conserver les secrets déjà configurés et les modules `_shared` :
 
 ```bash
-brew install supabase/tap/supabase
-supabase login
-supabase link --project-ref mxycmjkeotrycyneacje
 supabase functions deploy track --no-verify-jwt
 supabase functions deploy form-webhook --no-verify-jwt
 ```
 
-Versions vérifiées le 20/10/2026 à 11:49 Paris : **track v31 / Supabase 41**
-(UA iOS corrigé), **form-webhook v16 / Supabase 25** (livraison idempotente,
-HTTP 503 si incomplète), toutes deux ACTIVE. Le Custom Code Wix **sprint43**
-a été enregistré à 11:50 Paris ; le script servi dans le HTML public a été
-vérifié identique au minifié. La réception d'événements sprint43 a été
-confirmée à 13:20 Paris. La migration SQL `20261020094908` est appliquée ;
-les cinq étapes du recalcul ont réussi à 13:25 Paris, avec des snapshots CPI
-du jour en 2.2.6 et aucun lot GSC en attente de refresh.
-Le déploiement v15 du 19/09/2026 avait réparé l'incident T-19 : l'ancien
-bundle écrivait encore `events.country` après sa suppression.
-Les protections d'ingestion restent la gate `x-cooked-key` fail-fast,
-le filtre bots avant INSERT, l'URL limitée aux campagnes/attribution,
-`title` non écrit et les drops agrégés.
+Le CLI doit viser le projet Cooked. Déploiements de référence : **track v31 / Supabase 41** le 20/10/2026 ; **form-webhook v17 / Supabase 26** le 04/11/2026. Comparer le bundle distant au code livré. Une réponse 401 ou 405 vérifie une garde HTTP, pas la réception complète d’un formulaire. Aucun faux contact de production pour tester.
 
-Comparer chaque bundle distant aux sources après déploiement ; les sondes
-405/401 vérifient le périmètre HTTP, pas une ingestion métier réussie.
-Modules testables dans `supabase/functions/_shared/` : `events_row`,
-`track_row`, `form_row`, `form_delivery` (+ tests Deno, CI `edge-shared-helpers`).
-
-`--no-verify-jwt` is required: requests come from the Velo proxy without a Supabase user JWT (auth is via service-role key injected by the proxy).
-
-### Re-applying the schema
-
-**Source de vérité = `supabase/migrations/*.sql`** (timestamps réels), à
-rejouer via `supabase migration up`. C'est la procédure de bootstrap
-canonique d'une base fraîche.
-
-**Miroirs de lecture (ne pas rejouer en déploiement)** :
-
-| Fichier | Contenu | Régénération |
-|---|---|---|
-| `supabase/rpcs.sql` | **Corps complets** des 122 routines `pg_proc` de `public` (118 Cooked + 4 `unaccent` ; compte dans `contracts/doc_constants.json`) | workflow `rpcs-regenerate.yml` (`gh workflow run rpcs-regenerate.yml --ref <branche>`, rôle `cooked_ci_ro`) ; gate CI Arch #5 si migration touche une RPC + prod-drift (sha = prod) |
-| `supabase/views.sql` | DDL complet des 5 vues + **signatures** RPC | Requêtes en bas de fichier (MCP / psql) |
-| `supabase/schema.sql` | Table `events` + indexes (référence) | Manuel / dump ciblé |
-
-Les migrations restent le journal ; `rpcs.sql` évite l'archéologie dans
-12+ redéfinitions de la même RPC. **Ne jamais éditer `rpcs.sql` à la main**
-— régénérer depuis la prod après merge d'une migration SQL.
-
-### Updating the browser tracker
-
-Wix Custom Code is capped at **15 000 characters**. The source
-`wix/tracker.html` is ~40 KB (comments + formatting kept for auditability),
-so it must be minified before pasting into Wix.
-
-**Workflow:**
+Le tracker source est **sprint43**, déployé et reçu le 20/10/2026. Avant collage Wix :
 
 ```bash
-# One-time setup
-pip3 install jsmin
-
-# Each deploy
 python3 scripts/minify-tracker.py --copy
 ```
 
-The script writes `wix/tracker.min.html` (gitignored — it's a build artifact,
-the source of truth is `tracker.html`) and copies its content to the macOS
-clipboard. It also enforces the 15 k limit and exits non-zero if the output
-overflows.
+Le script impose la limite Wix de 15 000 caractères. Le minifié est un artefact, `wix/tracker.html` reste la source. Après mise à jour du Custom Code, comparer le HTML public au minifié et vérifier la réception de la version sur trafic réel. D’anciens onglets peuvent continuer à émettre l’ancienne version. Ne pas publier des brouillons Wix sans rapport avec le tracker.
 
-Then in Wix:
-**Wix Admin → Settings → Custom Code → Edit the "Cooked tracker" snippet →
-Cmd+A, Cmd+V → Save → Publish.**
+Le dashboard conserve Supabase Auth, l’allowlist et une page de transition. Il n’utilise plus de clé service pour lire des métriques. Configuration et build : [dashboard/README.md](../dashboard/README.md).
 
-After publishing, confirm the new version is live (replace with the current
-`COOKED_VERSION` from `tracker.html`):
+## Conservation et sauvegarde
 
-```sql
-SELECT props->>'_v' AS version, COUNT(*)
-FROM events
-WHERE occurred_at > now() - interval '15 minutes'
-GROUP BY 1 ORDER BY 2 DESC;
-```
+La simplification ne change pas les durées de rétention des sources : purge mensuelle des événements de plus de 13 mois, purge du bruit de plus de 28 jours et nettoyage des entrées noise de plus de 90 jours. Une durée serveur n’expire pas automatiquement l’identifiant du navigateur.
 
-If the new version label does not appear after 15 min, inspect the public HTML,
-the saved Custom Code and recent traffic before concluding deployment failed.
-Cached responses and tabs opened before the update can still serve or emit
-the previous version. Do not publish unrelated editor drafts to diagnose this.
+Le workflow `backup-weekly` est manuel. Il exporte `events`, les deux tables GSC, `page_taxonomy` et `alerts` vers des fichiers CSV compressés, avec artifact GitHub de 90 jours. Il ne sauvegarde ni tout le schéma, ni les rôles, ni l’authentification, ni les secrets ; ce n’est pas une restauration complète. Son existence ne prouve pas qu’un export récent a réussi. Le backup externe a été décliné le 02/07/2026 ; ne pas le réactiver ou le reproposer hors décision de Nicolas.
 
-Version source : **`sprint43`**. Custom Code enregistré le 20/10/2026 à
-11:50 Paris après déploiement de la déduplication CWV SQL. Le HTML public
-contient le script exact de 14 460 caractères ; réponses avec et sans cache
-vérifiées `sprint43` à 13:17 Paris. La réception des événements sprint43 a
-été confirmée à 13:20 Paris ; les onglets déjà ouverts peuvent conserver
-l'ancienne version.
+Les secrets restent hors dépôt et ne doivent jamais apparaître dans les commandes partagées, URLs copiées ou logs. Le retrait CRM n’efface pas les contraintes de confidentialité des anciennes sauvegardes ou archives privées. Les règles de [SECURITY.md](../SECURITY.md) restent applicables ; ses inventaires historiques doivent être lus avec leur date.
 
-Le tracker clôt la route précédente avec son contexte URL figé avant de
-créer la suivante. Les observers CWV restent attachés au **document** et
-les valeurs gardent le chemin du chargement initial. Après reprise visible,
-seules les valeurs modifiées sont renvoyées, avec `measurement_id`,
-`revision` croissante et `scope: document`. Les RPC prennent la dernière
-révision avant percentile ; un événement ancien sans cet identifiant garde
-son grain historique. Le retour bfcache conserve le document et son ID.
-L'indicateur historique nommé INP reste un maximum Event Timing ; ce n'est
-pas une implémentation certifiée de l'algorithme INP complet.
+## En cas d’écart
 
-### Vérifier un déploiement tracker (J+1)
+Localiser la source et la période avant de recalculer : réception, filtre, couture, lot GSC ou inventaire Wix. Comparer les comptes agrégés et les dates ; éviter d’extraire des identités ou du contenu de formulaire. Une absence de données reste inconnue tant que sa cause n’est pas établie.
 
-Le lendemain d'un déploiement tracker, quatre contrôles (réflexe posé pour
-`sprint41`, vérification J+1 du 13/07/2026 : OK) :
-
-1. **Version** — les events du jour portent `props->>'_v'` = nouvelle
-   version (requête ci-dessus, fenêtre élargie à 24 h).
-2. **Sessions saines** — chaque session a une pageview et **un seul
-   `anonymous_id`**.
-3. **Signature de split ≈ 0** — sessions sans pageview dont l'`aid` a une
-   pageview dans une session sœur (c'était la trace du bug de rotation
-   corrigé par `sprint41`).
-4. **`cooked_config.expected_tracker_version` bumpé** (migration
-   `20260713000733` pour `sprint41`, `20260904081320` pour `sprint42`) — sinon l'alerte `tracker_drift` se
-   déclenche (grâce 48 h).
-
-### Updating the Velo proxy
-
-Copy `wix/http-functions.js` into the Velo backend:
-**Wix Admin → Code → Backend → http-functions.js**
-
-The Velo secrets `SUPABASE_TRACK_URL` and `SUPABASE_SERVICE_KEY` must be set in Wix Admin → Settings → Secrets Manager.
-
-### Configuring form submission tracking (Sprint 18 — webhooks)
-
-Form submissions are tracked **server-side** via a Wix Automation webhook
-that posts to the dedicated `form-webhook` Edge Function. This avoids
-the unreliability of browser-side intercepts on Wix Forms V2.
-
-Setup once:
-
-1. Generate a secret token (`openssl rand -hex 24`)
-2. Set the env var `FORM_WEBHOOK_SECRET` on the `form-webhook` Edge
-   Function (Supabase Dashboard → Edge Functions → form-webhook →
-   Secrets)
-3. In Wix Admin → Automations, create an automation:
-   - **Trigger**: Form Submitted (on every form)
-   - **Action**: Send HTTP Request (POST, JSON body)
-   - **URL**:
-     `https://mxycmjkeotrycyneacje.supabase.co/functions/v1/form-webhook?token=<SECRET>`
-4. Activate
-
-After this, every Wix Form submission inserts a `form_submit` event into
-the `events` table with the form name, submission ID, page source, and
-the hidden fields `cooked_aid`/`cooked_sid` (Sprint 37, PII stripped since
-Sprint 30).
-
-The webhook bypasses the browser entirely — but it is only as reliable as
-the Wix Automation that fires it, and that automation lives outside the
-repo, unversioned, deletable by a click. Proven on 11/08/2026: a rework of
-the site's automations silently removed it, and 22 submissions (12–21/08)
-were lost until an audit caught the silence 11 days later (backfilled by
-migration `20260823112541`). Le workflow quotidien de rapprochement décrit
-plus haut contrôle désormais les volumes dès son activation et vérification.
-Il ne remplace ni la présence de l'automatisation Wix ni une reprise contrôlée.
-L'attribution est résolue en lecture par `form_submits_attributed()`.
-
-**Contrat de livraison v16 (déployé le 20/10/2026).** Le webhook exige un
-`submission_id` stable avant toute écriture, sans génération ni troncature.
-Il tente la ligne prospect si une identité est extraite, puis la ligne
-analytics. Seul un insert réussi ou un doublon `23505` vaut succès. Une
-réponse perdue ou un échec de l'une des écritures produit HTTP 503 avec
-`Retry-After: 60` ; un retry tente les deux, sans dupliquer celle déjà écrite.
-Les alertes/logs ne reprennent aucun message DB ni contenu personnel.
-Le retour 503 permet une reprise ; il ne prouve pas une politique de retry
-Wix. Une clé de soumission invalide produit HTTP 400 et une alerte sans ID.
-Tester ce contrat via `form_delivery_test.ts`, pas en injectant de faux
-contacts dans la production.
-
----
-
-## Project IDs (reference)
-
-- **Supabase project ref** : `mxycmjkeotrycyneacje`
-- **Project URL** : `https://mxycmjkeotrycyneacje.supabase.co`
-- **Edge Function URL** : `https://mxycmjkeotrycyneacje.supabase.co/functions/v1/track`
-- **Region** : `eu-west-1` (Ireland)
-- **Live endpoint (same-origin)** : `https://www.jplouton-avocat.fr/_functions/track`
-
----
-
-## Security model
-
-Defense-in-depth on the Supabase side:
-
-- **`events`, `seo_url_snapshot`, `bot_fingerprints` (etc.) have RLS enabled with no policies — by design.** This is the deny-all-to-clients pattern: only `service_role` bypasses RLS. The "RLS enabled, no policies" INFO-level advisor flag is expected and acceptable.
-- **`rls_auto_enable()` event trigger** auto-enables RLS on every newly-created table in `public` — belt-and-suspenders against forgetting the `enable row level security` in a future migration.
-- **All RPCs are granted to `service_role` only** — `REVOKE … FROM PUBLIC, anon, authenticated` on every function (`FROM public` alone is defeated by Supabase default privileges : regressions on 25/07 and 31/08/2026). **Invariant I1** (T-01, 02/09/2026) : `alert_rule_exposure()` hourly + `check_prod_drift.py` in CI list any SECURITY DEFINER function or view readable by `anon`/`authenticated`. Exception : `cooked_ci_ro` (CI read-only role) may EXECUTE the 16 `dashboard_*` RPCs (T-13). Full picture : [SECURITY.md](../SECURITY.md).
-- **`SECURITY DEFINER` functions pin `search_path`** to prevent search_path injection.
-- **`security_invoker = true`** on views (`events_human`, `cpi_movers`, …) — enforces caller's RLS, not creator's.
-- Invariant de sortie de sprint : **advisors security = 0 ERROR**, chaque WARN
-  listé et justifié dans le bilan, conformément à `SECURITY.md`.
-
----
-
-## Maintenance
-
-```sql
--- Les anciens snapshots sont figés ; pas de commande de recalcul.
--- Compter les empreintes détectées sans sortir leurs identifiants
-SELECT count(*) FROM public.bot_fingerprints;
-
--- Santé du pipeline / alertes / santé des RPCs
-SELECT * FROM refresh_pipeline_health();
-SELECT * FROM alerts WHERE NOT acked;
-SELECT * FROM latest_rpc_health();
-```
-
-To rotate `ANON_SALT` : update the Edge Function secret. Old `anonymous_id`s will no longer collide with new ones (rotation is daily anyway, so the impact is limited).
-
----
-
-## Troubleshooting
-
-| Symptom | Likely cause |
-|---|---|
-| `404` on `/_functions/track` | Site not republished after adding the Velo file |
-| `403 forbidden_origin` | Tracker loading from a host other than `www.jplouton-avocat.fr` |
-| `500 proxy_error` | Velo Secret missing — check `SUPABASE_TRACK_URL` & `SUPABASE_SERVICE_KEY` |
-| Edge Function `401` | JWT verification was re-enabled — redeploy with `--no-verify-jwt` |
-| No rows in `events` | Adblocker on `/_functions/track`? Curl from another network to confirm |
-| Snapshot vide ou ancien | Calculs suspendus depuis le 04/11/2026 ; vérifier les dates et l’historique conservé, sans relancer l’ancien producteur |
-| Anchor stuck on `"Read More"` | Wix icon-only button without aria-label — add `aria-label` in Wix Studio settings |
-| `form-webhook` crashes on startup | `FORM_WEBHOOK_SECRET` env var missing — set it in Supabase Dashboard → Edge Functions → form-webhook → Secrets, then redeploy |
-| `cta_anchor_click` events with `target_section: anchors-xxx` | The clicked button has no `aria-label` / `textContent` — slugify fell back to the raw Wix ID. Add a label on the Wix anchor-menu button for readability |
-
----
-
-## Sprint history (recent)
-
-> Chronologie une-ligne-par-sprint complète : `docs/HISTORY-sprints.md`.
-
-| Sprint | Date | Scope |
-|---|---|---|
-| **39 — Consolidation & prod opérationnelle** | 15-18/06/2026 | Edge `track` v22 (`target_path` décodé + backfill 143), `snapshot_pages_export` réparée, **CPI v2.2** (momentum continu + EB dynamique), alertes recalibrées (`double_embed_suspect` seuil 30 ; `cpi_drop` vrai decay), vue `cpi_gisement` (pilotage conversion), 3 revues experts → outil suffisant, croisement Wix↔form_submit fiable. Passage focus site. |
-| **38 — CPI & form attribution v2** | 10-11/06/2026 | CPI v2.1 (`cooked_page_index`, `cpi_daily`, cron 07:30 UTC) + vue `cpi_movers` + alerte `cpi_drop`, harnais de validation J+28 (`scripts/cpi_validation_j28.sql`), idées v2.2 instruites. **11/06** : Wix Forms V2 ne rend pas les champs cachés dans le DOM → seeding DOM S37 mort-né ; tracker `sprint38` (ids en query params via replaceState) + `wix/masterpage-cooked.js` (setFieldValues). Première attribution `hidden_field` 08:53. |
-| **37 / 37b — Attribution & fiabilité** | 09/06/2026 | Tracker sprint37 (execution guard, batching, seeding champs cachés), webhook v10, `form_submits_attributed` / `conversion_journeys` / `content_performance` / `seo_to_contact_funnel`, dédup double-embed rétroactive (phone 110→95/28j, restatement), table `alerts` + cron horaire, taxonomie `page_taxonomy`, aid stable Safari privé. |
-| **36 — click_internal** | 04/06/2026 | Nav interne : quel élément UI mène à quelle page (placement + target_path). |
-| **35 — Anchor chrome filter** | 03/06/2026 | `cta_anchor_click` ne compte plus le chrome UI (~90 % du volume était Cookiebot/burger/nav). Fix tracker + helper `cooked_is_chrome_anchor` + exclusion rétroactive dans `events_human` (7 318 → 689). |
-| **34 — Dashboard removal** | 25/05/2026 | Suppression de l'app Next.js `dashboard/`. Choix produit : questions directes à Claude Code (MCP Supabase) — les RPCs publiées suffisent. |
-| **33 / 33+ — Dashboard & pulse** | 22-24/05/2026 | RPCs `site_kpis_compare`, `pages_overview_unified`, `site_pulse`/`pages_pulse`, `site_seo_funnel`, séries quotidiennes, cron GSC GitHub Actions, fix contacts macro. |
-| **32 — Attribution query × page** | 22/05/2026 | 3e table GSC `gsc_query_page_daily` (1M rows, 16 mois) — débloque l'attribution requête → landing. |
-| **31 — Ingestion GSC** | 21/05/2026 | Cooked devient l'unique data platform (projet Seo séparé supprimé). `gsc_path_daily` + `gsc_query_daily`, 16 mois, Service Account, canonicalisation symétrique. |
-| **30 — Audit chirurgical** | 21/05/2026 | Audit 7 agents : fixes `cta_breakdown` (anchor_nav), `engagement_density` (+19 %), `pogo_rates` (+26 %), Edge track v14, webhook v6 (PII stripped), tracker sprint30 (bfcache, SPA), drop zombies. |
-| **29 — Audit hardening** | 21/05/2026 | `form_submit` forge bloquée côté `/track`, guard horloges clients ±2j, REVOKE anon sur RPCs orphelines. |
-| **28 — session_id localStorage** | 21/05/2026 | Fix inflation self-referral (sliding 30 min), RPC `classify_channel`. |
-| **27 — AMDEC Tier 3** | 17/05/2026 | Contract tests RPC nightly (`rpc_health`), rétention `purge_old_events` (>400j). |
-| **26 — Version stamp** | 17/05/2026 | `COOKED_VERSION` dans `props._v` → rollout Wix monitorable. |
-| **25 — Hardening Edge** | 17/05/2026 | Fail-fast secrets, webhook idempotent (23505), `refresh_pipeline_health()`. |
-| **22-24** | 15-16/05/2026 | `anonymous_id` stable localStorage, filtres noise/prefetch, pipeline bot/noise sériel, anchor dans cta_breakdown. |
-| **17-21** | 09-15/05/2026 | Bot filtering `events_human`, form_submit server-side (webhook), anchor-menu Wix, aria-label convention. |
-| **0-13bis** | 06-07/05/2026 | Déploiement initial (tracker, Velo proxy, Edge, events, snapshot, cron), fix URL-encoding, premier contrat RPC. |
+Les archives [RELIABILITY.md](RELIABILITY.md), [HISTORY-sprints.md](HISTORY-sprints.md) et les [audits](README.md) expliquent les incidents antérieurs. Elles ne prescrivent plus de relancer un calcul CPI, CRM ou snapshot retiré.

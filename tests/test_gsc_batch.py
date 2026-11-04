@@ -17,11 +17,11 @@ def prepare(monkeypatch, *, fail_at=None, empty=False):
 
     store = Store()
 
-    def path_query(end_date, months_back, *, store):
-        calls.append(("path_query", None))
-        if fail_at == "path_query":
+    def path(end_date, months_back, *, store):
+        calls.append(("path", None))
+        if fail_at == "path":
             raise RuntimeError("synthetic path failure")
-        return {"gsc_path_daily": 0 if empty else 10, "gsc_query_daily": 0 if empty else 20}
+        return {"gsc_path_daily": 0 if empty else 10}
 
     def query_page(end_date, months_back, *, store):
         calls.append(("query_page", None))
@@ -29,7 +29,7 @@ def prepare(monkeypatch, *, fail_at=None, empty=False):
             raise RuntimeError("synthetic query-page failure")
         return {"gsc_query_page_daily": 0 if empty else 30}
 
-    monkeypatch.setattr(gsc, "run_path_query", path_query)
+    monkeypatch.setattr(gsc, "run_path", path)
     monkeypatch.setattr(gsc, "run_query_page", query_page)
     return store, calls
 
@@ -38,18 +38,18 @@ def test_publish_happens_only_after_all_sources(monkeypatch):
     store, calls = prepare(monkeypatch)
     gsc.run_ingestion("all", date(2026, 7, 1), 2, store)
     assert [name for name, _ in calls] == [
-        "gsc_ingest_begin", "path_query", "query_page", "gsc_ingest_complete"
+        "gsc_ingest_begin", "path", "query_page", "gsc_ingest_complete"
     ]
     begin, complete = calls[0][1], calls[-1][1]
     assert begin["p_start"] == "2026-06-01"
     assert begin["p_end"] == "2026-07-01"
     assert begin["p_run_id"] == complete["p_run_id"]
     assert complete["p_row_counts"] == {
-        "gsc_path_daily": 10, "gsc_query_daily": 20, "gsc_query_page_daily": 30,
+        "gsc_path_daily": 10, "gsc_query_page_daily": 30,
     }
 
 
-@pytest.mark.parametrize("fail_at", ["path_query", "query_page"])
+@pytest.mark.parametrize("fail_at", ["path", "query_page"])
 def test_interrupted_batch_is_never_published(monkeypatch, fail_at):
     store, calls = prepare(monkeypatch, fail_at=fail_at)
     with pytest.raises(RuntimeError):
@@ -59,7 +59,7 @@ def test_interrupted_batch_is_never_published(monkeypatch, fail_at):
     assert calls[-1][0] == "gsc_ingest_fail"
 
 
-@pytest.mark.parametrize("mode", ["path-query", "query-page"])
+@pytest.mark.parametrize("mode", ["path", "query-page"])
 def test_partial_commands_cannot_publish(monkeypatch, mode, capsys):
     store, calls = prepare(monkeypatch)
     gsc.run_ingestion(mode, date(2026, 7, 1), 2, store)
@@ -106,3 +106,53 @@ def test_invalid_run_does_not_touch_database(monkeypatch, mode, months):
     with pytest.raises(ValueError):
         gsc.run_ingestion(mode, date(2026, 7, 1), months, store)
     assert calls == []
+
+
+def test_full_retry_replays_both_sources_after_partial_failure(monkeypatch):
+    store, calls = prepare(monkeypatch, fail_at="query_page")
+    end = date(2026, 7, 1)
+    with pytest.raises(RuntimeError):
+        gsc.run_ingestion("all", end, 2, store)
+    first_begin = calls[0][1]
+    def recovered_query_page(*args, **kwargs):
+        calls.append(("query_page", None))
+        return {"gsc_query_page_daily": 30}
+    monkeypatch.setattr(gsc, "run_query_page", recovered_query_page)
+    calls.clear()
+    gsc.run_ingestion("all", end, 2, store)
+    assert [name for name, _ in calls] == ["gsc_ingest_begin", "path", "query_page", "gsc_ingest_complete"]
+    retry_begin, complete = calls[0][1], calls[-1][1]
+    assert retry_begin["p_run_id"] != first_begin["p_run_id"]
+    assert (retry_begin["p_start"], retry_begin["p_end"]) == (first_begin["p_start"], first_begin["p_end"])
+    assert complete["p_row_counts"] == {"gsc_path_daily": 10, "gsc_query_page_daily": 30}
+
+
+@pytest.mark.parametrize("queries_revealed", [True, False])
+def test_ingestion_fetches_and_upserts_only_the_two_page_grains(monkeypatch, queries_revealed):
+    fetched = []
+    manifests = []
+    store = FakeStore(rpc_handlers={"gsc_ingest_complete": manifests.append})
+    monkeypatch.setattr(gsc, "gsc_api_clients", lambda: (object(), "synthetic-site"))
+
+    def fetch(client, site, dimensions, start, end):
+        fetched.append(dimensions)
+        keys = ["2026-07-01", "https://www.jplouton-avocat.fr/post/test/"]
+        if dimensions == ["date", "page", "query"]:
+            if not queries_revealed:
+                return []
+            keys.append("synthetic query")
+        else:
+            assert dimensions == ["date", "page"]
+        return [{"keys": keys, "impressions": 100, "clicks": 10, "position": 2}]
+
+    monkeypatch.setattr(gsc, "fetch_gsc", fetch)
+    gsc.run_ingestion("all", date(2026, 7, 1), 1, store)
+    assert fetched == [["date", "page"], ["date", "page", "query"]]
+    expected_upserts = [("gsc_path_daily", "day,path")]
+    if queries_revealed:
+        expected_upserts.append(("gsc_query_page_daily", "day,path,query"))
+    assert [(call.table, call.on_conflict) for call in store.upserts] == expected_upserts
+    assert store.upserts[0].rows[0]["path"] == "/post/test"
+    assert manifests[0]["p_row_counts"] == {
+        "gsc_path_daily": 1, "gsc_query_page_daily": int(queries_revealed),
+    }

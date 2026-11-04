@@ -1,48 +1,47 @@
 # Analyser les pages et les requêtes
 
-Socle du 4 novembre 2026. Les décisions éditoriales restent celles du cabinet ; Cooked fournit les observations. Les anciennes recettes CPI et maillage sont dans l'historique Git. Voir [SIMPLIFICATION.md](SIMPLIFICATION.md) pour la définition des visites et des contacts.
+Référence du **04/11/2026**. Cooked fournit les observations ; Nicolas décide de l’intérêt du sujet et de l’action éditoriale. Lire [CONTEXT.md](../CONTEXT.md) pour les grains et [SIMPLIFICATION.md](SIMPLIFICATION.md) pour le périmètre.
 
-## Lire les données disponibles
+## Vérifier la période disponible
 
 ```sql
+SELECT * FROM alerts WHERE NOT acked;
 SELECT * FROM refresh_pipeline_health();
 SELECT * FROM latest_rpc_health();
 SELECT gsc_last_data_day();
 ```
 
-Une alerte ancienne non acquittée ne prouve pas une panne actuelle. Vérifier sa date et la source concernée. Un trou de collecte signifie une mesure incomplète, pas zéro visite.
+Lire les dates et l’état du dernier lot `gsc_ingest_batches`. Une alerte ancienne ne prouve pas une panne actuelle. Une santé correcte aujourd’hui ne démontre pas la couverture des mois précédents. Un trou de collecte signifie une mesure partielle, pas zéro visite.
 
 ## Pages publiées, visites et contacts
 
-Le référentiel est `page_taxonomy WHERE is_published`. Son horodatage `publication_checked_at` atteste la publication au dernier contrôle, pas la date initiale de publication. Il contient aussi les pages sans trafic et conserve les anciennes pages avec `is_published=false`.
+Le référentiel est `page_taxonomy WHERE is_published`. `publication_checked_at` date le dernier inventaire complet, pas la publication initiale. Les pages sans trafic y figurent aussi ; les anciennes URLs restent connues avec un statut non publié.
 
 ```sql
--- 90 jours Paris clos, indépendants de l'heure d'exécution.
+-- 90 jours Paris clos.
 SELECT * FROM page_visits(paris_today()-90, paris_today()-1);
--- Les 90 jours précédents, avec exactement la même définition.
+-- Les 90 jours précédents, même définition et durée.
 SELECT * FROM page_visits(paris_today()-180, paris_today()-91);
 ```
 
-Les lignes `row_kind='page'` sont les statistiques observées. Faire une jointure gauche du référentiel publié vers ces lignes pour afficher toutes les pages. La ligne `coverage` précise le nombre de jours avec au moins une page vue et les contacts non attribuables. Une absence de ligne ne devient zéro que lorsque la couverture de la période est établie ; cette couverture journalière ne prouve pas une disponibilité à chaque minute.
+Joindre à gauche le référentiel publié aux lignes `row_kind='page'`. La ligne `coverage` indique les jours avec au moins une page vue et les événements téléphone/formulaire non attribués. Cette couverture journalière ne prouve pas une disponibilité à chaque minute. N’afficher zéro que si la fenêtre permet cette lecture ; sinon indiquer inconnu ou partiel et éviter un delta trompeur.
 
-`visits` compte les visites ayant consulté la page ; `entries` celles commencées dessus. `phone_visits`, `form_visits` et `contact_visits` concernent ces mêmes entrées et les actions observées avant la clôture. L'union déduplique une visite ayant réalisé plusieurs actions. Présenter le nombre avec le taux. Un clic téléphone ne prouve pas un appel abouti ; une soumission ne prouve pas un prospect unique.
+`visits` compte les visites ayant consulté la page ; `entries` celles commencées dessus. `phone_visits`, `form_visits` et `contact_visits` portent sur ces mêmes entrées et les actions observées avant la clôture. L’union déduplique une visite qui a fait plusieurs actions. Présenter nombres et taux ensemble ; sans entrée, le taux est inconnu.
 
-`cooked_visit_events` fournit le détail nécessaire aux contrôles. `conversion_journeys` et `form_submits_attributed` gardent un grain événement : ne pas les additionner comme s'il s'agissait de visites distinctes. Les anciennes lectures du dashboard et `content_performance` conservent leurs contrats historiques ; elles ne définissent pas le nouveau tableau.
+Un clic téléphone ne prouve pas un appel abouti ; une soumission ne prouve pas un prospect unique. Les candidatures sont exclues. Les contacts sans amont certain restent comptés séparément, sans entrée inventée. `cooked_visit_events` fournit le détail événementiel nécessaire à une contre-vérification ; ne pas additionner ses événements comme des visites distinctes.
 
-## Requêtes Google d'une page
+## Requêtes Google d’une page
 
-Les clics et impressions complets par page viennent de `gsc_path_daily`. Les requêtes révélées viennent de `gsc_query_page_daily`. Google masque une partie des requêtes : leur somme n'est donc pas le total de la page et ne permet pas d'attribuer individuellement une soumission à une requête.
+Les totaux de page viennent de `gsc_path_daily`, les requêtes révélées de `gsc_query_page_daily`. Google masque une partie des requêtes : leur somme ne reconstitue pas tous les clics et ne permet pas d’attribuer individuellement une soumission à une requête.
 
-Pour chaque requête, comparer deux fenêtres de même durée se terminant au dernier jour GSC complet. Additionner les clics et impressions ; calculer la position moyenne en pondérant par les impressions. Ne pas faire la moyenne simple des moyennes quotidiennes. Une requête absente d'une fenêtre peut être masquée ou sans observation ; ne pas en déduire une disparition certaine.
+Comparer deux fenêtres de même durée, bornées au dernier jour Google complet. Additionner les clics et impressions ; calculer la position par `sum(position * impressions) / sum(impressions)`, avec dénominateur nul traité comme inconnu. Ne pas faire une moyenne simple des moyennes quotidiennes.
 
-La date limite Google peut précéder celle du tracker. Pour une lecture croisée, borner les deux sources au même dernier jour complet. Pour une lecture séparée, conserver leurs dates affichées.
+Une requête absente d’une fenêtre peut être masquée ou sans observation. Une baisse de clics à position stable invite à regarder la demande et la page de résultats ; une baisse de position invite à examiner la page et ses concurrents. Ces indices n’établissent pas seuls une cause.
 
-Une baisse de clics avec une position stable invite à regarder la demande et la page de résultats. Une baisse de position invite à examiner le contenu et ses concurrents. Ces constats orientent l'examen de l'article sans établir automatiquement la cause ni décider de sa suppression.
+Les dates Google conservent leur horloge source. Le dernier jour disponible peut précéder celui du tracker. Pour un recoupement, aligner les bornes calendaires et signaler la différence d’horloge ; pour deux lectures séparées, afficher les dates de chaque source. Il n’existe pas d’égalité attendue entre clics GSC et visites Cooked.
 
-## Limites de comparaison
+## Décider sans surinterpréter
 
-- La même définition de visite s'applique à tout l'historique conservé, avec une coupure après plus de 30 minutes sans activité observable.
-- La disponibilité des identifiants de formulaire a évolué. Comparer les taux avec la part attribuable de chaque période ; les liaisons manquantes ne sont pas inventées.
-- Les faibles volumes rendent les taux instables. Garder les nombres visibles et examiner l'intérêt du sujet pour le cabinet.
-- Les filtres bots/bruit peuvent reclasser des événements historiques. Conserver la date d'extraction lors d'une comparaison avant/après.
-- Les scores CPI, snapshots SEO/dashboard et modèles de maillage sont figés depuis le 4 novembre. DataForSEO est manuel. Leurs anciennes valeurs ne décrivent pas la période courante.
+Contre-vérifier tout chiffre soutenant une recommandation, par décomposition ou source comparable. Si cela n’a pas été possible, le dire. Garder les nombres à côté des taux : une niche avec peu de visites peut convertir fortement, tandis qu’un article large peut amener davantage de contacts en volume.
+
+La disponibilité des identifiants Forms et les filtres ont évolué. Examiner la part attribuable et la couverture des deux périodes ; conserver la date d’extraction. Les liaisons historiques manquantes ne sont pas reconstituées par supposition. La décision de supprimer ou réécrire un article repose aussi sur son intérêt pour le cabinet, pas sur un score automatique.

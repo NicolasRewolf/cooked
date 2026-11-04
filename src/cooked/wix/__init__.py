@@ -1,1 +1,1 @@
-"""Import Wix : taxonomie blog + historique formulaires."""
+"""Wix : inventaire publié et rapprochement des formulaires."""

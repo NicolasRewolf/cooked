@@ -22,9 +22,11 @@ L’inventaire complet est validé avant un appel transactionnel. Une source ina
 
 ## Retraits
 
-Les recalculs périodiques du CPI, des anciennes pages dashboard, du snapshot SEO et des modèles de maillage sont arrêtés. Leurs tables historiques restent disponibles avec leurs dates. Les procédures de production et les alertes exclusivement associées sont retirées lorsque leurs lecteurs actifs n’en dépendent plus. Les lectures du dashboard gardent leur contrat pendant la transition, avec un avis global de suspension des anciens indicateurs.
+Le retrait est appliqué en production : 24 tables, huit vues et 62 anciennes routines ont été supprimées. Il reste 13 tables, trois vues et 60 routines, dont les quatre fonctions de l’extension `unaccent`. Le CPI, les copies dashboard, le rapprochement CRM/SECIB et les modèles de maillage n’ont plus de stockage ou de calcul actif.
 
-DataForSEO reste interrogeable à la demande. Sa synchronisation périodique cesse ; ses anciennes valeurs ne deviennent pas des zéros. Google Search Console, la fiche Google, le rapprochement de formulaires et l’inventaire Wix continuent à être alimentés.
+Les intégrations DataForSEO et fiche Google sont retirées de Cooked. Google Search Console conserve deux sources : les totaux par page et les requêtes par page. Un lot doit terminer ces deux imports pour être complet. Les anciens manifestes à trois sources restent des preuves historiques, sans être réécrits.
+
+Le webhook v17 écrit uniquement l’événement de formulaire. Son identifiant de soumission évite les doublons ; une erreur d’écriture demande une reprise. Le rapprochement quotidien avec les formulaires Wix et l’inventaire des pages publiées continuent. Le code Velo des identifiants cachés et le tracker ne changent pas pour ce retrait.
 
 La surveillance garde les sources, les échecs et les contrôles du comptage commun. Les sondes lourdes tournent une fois par nuit ; les alertes horaires lisent leur résultat. Les anciennes sondes restent dans leur historique mais ne définissent plus la santé du socle.
 
@@ -32,4 +34,4 @@ La surveillance garde les sources, les échecs et les contrôles du comptage com
 
 Les migrations et leurs tests décrivent le changement déployable. Les corps SQL sont régénérés depuis la production après livraison. Les constantes du catalogue suivent `contracts/doc_constants.json`.
 
-Le rapport privé avant/après contient les fenêtres fixes de contre-vérification, les contrôles de production et le registre de chaque objet. Les sources d’origine et les tables historiques ne sont pas supprimées. La refonte fonctionnelle du dashboard reste une étape ultérieure.
+Les migrations `20261104080927_gsc_two_grain_batches.sql` et `20261104081230_retire_unused_data_surface.sql` portent ce retrait. Le rapport privé avant/après contient les fenêtres fixes de contre-vérification, les contrôles de production et le registre de chaque objet. Les événements bruts, les deux sources GSC utiles et l’inventaire publié sont conservés. La refonte fonctionnelle du dashboard reste une étape ultérieure.

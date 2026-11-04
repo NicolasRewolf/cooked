@@ -1,53 +1,45 @@
-# Documentation Cooked — index du dossier `docs/`
+# Documentation Cooked
 
-État du socle éditorial et arrêt des anciens recalculs — [SIMPLIFICATION.md](SIMPLIFICATION.md).
+**Référence du 04/11/2026 : socle éditorial simplifié.** Les guides actifs décrivent les pages publiées, les visites, les contacts observés et les requêtes Google. Les anciens modules ne sont plus des recettes de travail.
 
-Carte de la documentation. **Racine du repo** (standard mainteneur) :
-[README.md](../README.md) · [AGENTS.md](../AGENTS.md) · [CONTRIBUTING.md](../CONTRIBUTING.md) ·
-[CHANGELOG.md](../CHANGELOG.md) · [CLAUDE.md](../CLAUDE.md) (règles agent, lu à chaque session) ·
-[SECURITY.md](../SECURITY.md) (PII, secrets, surface d'attaque) · [CONTEXT.md](../CONTEXT.md) (glossaire de domaine et invariants).
+## Guides actifs
 
-## Docs vivants (font foi)
+| Besoin | Document |
+|---|---|
+| Vue d’ensemble | [README.md](../README.md) |
+| Entrée agents et versions | [AGENTS.md](../AGENTS.md) |
+| Autonomie, sécurité d’analyse et invariants | [CLAUDE.md](../CLAUDE.md) |
+| Vocabulaire des visites, contacts et périodes | [CONTEXT.md](../CONTEXT.md) |
+| Périmètre retenu et retraits | [SIMPLIFICATION.md](SIMPLIFICATION.md) |
+| Git, migrations et CI | [CONTRIBUTING.md](../CONTRIBUTING.md) |
+| Collecte, crons et exploitation | [OPERATIONS.md](OPERATIONS.md) |
+| Lecture des pages et des requêtes | [PLAYBOOK-analyse-seo.md](PLAYBOOK-analyse-seo.md) |
+| Secrets et droits d’accès | [SECURITY.md](../SECURITY.md) |
+| Suite produit | [ROADMAP.md](ROADMAP.md) |
+| Authentification et page de transition | [dashboard/README.md](../dashboard/README.md) |
+| SQL exact courant | [rpcs.sql](../supabase/rpcs.sql), [views.sql](../supabase/views.sql) et [migrations](../supabase/migrations/) |
 
-### Opérer & analyser
-- [Fenêtres d’analyse et provenance des snapshots](ANALYTICS_WINDOWS.md) — dates comparées, cache et interprétation d’un rapport maths partiel.
-- [`RELIABILITY.md`](RELIABILITY.md) — corrections du 20/10/2026, contrats de mesure, états de déploiement et limites.
-- [`OPERATIONS.md`](OPERATIONS.md) — architecture, events captés, RPCs publiées, crons, déploiement, dépannage.
-- [`PLAYBOOK-analyse-seo.md`](PLAYBOOK-analyse-seo.md) — recettes d'analyse SEO × GSC et les pièges déjà payés.
-- [`../supabase/rpcs.sql`](../supabase/rpcs.sql) — miroir lecture des **122 corps de RPC** (régénéré depuis la prod par le workflow `rpcs-regenerate`, gate CI Arch #5 + prod-drift T-12).
-- [`rgpd-pont-secib.md`](rgpd-pont-secib.md) — RGPD du pont SECIB : textes à publier, registre, arbitrages ouverts.
-- [`adr/`](adr/) — décisions d'architecture (ADR-0001 source unique de la profondeur de lecture, ADR-0002 registre des contrats de fraîcheur).
-- [`mission-2026-09-02/`](mission-2026-09-02/) — mission précision/fiabilité/hygiène : [`00-baseline.md`](mission-2026-09-02/00-baseline.md), [`01-audit.md`](mission-2026-09-02/01-audit.md) (86 constats, 7 causes racines, 13 invariants), [`02-plan.md`](mission-2026-09-02/02-plan.md) (22 tickets), [`journal.md`](mission-2026-09-02/journal.md), [`02-apres.md`](mission-2026-09-02/02-apres.md) (re-mesure du 04/09, 14 invariants), [`03-passation.md`](mission-2026-09-02/03-passation.md) (finale, 04/09).
-- [`../dashboard/README.md`](../dashboard/README.md) — sous-app de lecture (articles ressources), Next 16 + Supabase, live sur data.rewolf.studio depuis le 29/06/2026.
+Les [constantes du catalogue](../contracts/doc_constants.json) portent les compteurs vérifiés. Les [ADR](adr/) conservent les décisions communes. Pour les agents : [domain.md](agents/domain.md), [issue-tracker.md](agents/issue-tracker.md), [triage-labels.md](agents/triage-labels.md).
 
-### CPI — Cooked Page Index (score de priorisation par page)
-- [`cpi-cooked-page-index.md`](cpi-cooked-page-index.md) — spec, usage & grille de lecture (**v2.2**).
-- [`cpi-modele-mathematique.md`](cpi-modele-mathematique.md) — formules détaillées (support de relecture experte).
+## Historique, à lire avec sa date
 
-### Mémoire & suivi
-- [`HISTORY-sprints.md`](HISTORY-sprints.md) — chronologie et corrections préparées le **20/10/2026**.
-- [`../CHANGELOG.md`](../CHANGELOG.md) — jalons par date (Keep a Changelog).
-- [`ROADMAP.md`](ROADMAP.md) — **reste à faire courant** et vérifications de livraison.
-- [`JOURNAL-actions-contenu.md`](JOURNAL-actions-contenu.md) — archive des vagues contenu 1-2 (source canonique depuis le 11/06/2026 : table `annotations`).
+[CHANGELOG.md](../CHANGELOG.md) et [HISTORY-sprints.md](HISTORY-sprints.md) suivent les jalons. Les archives ci-dessous expliquent les choix et incidents anciens ; elles ne prouvent pas l’état courant et leurs commandes visant des objets retirés ne doivent pas être rejouées.
 
-## Archives datées (contexte historique, ne font plus foi)
+- [RELIABILITY.md](RELIABILITY.md) : correction et état de livraison du 20/10/2026.
+- [ANALYTICS_WINDOWS.md](ANALYTICS_WINDOWS.md) : anciennes fenêtres et copies de calculs.
+- [JOURNAL-actions-contenu.md](JOURNAL-actions-contenu.md) : interventions éditoriales historiques.
+- [ROADMAP-sprint38-handoff.md](ROADMAP-sprint38-handoff.md) et [BASELINE-demandes-historiques.md](BASELINE-demandes-historiques.md) : anciennes passations et références.
 
-### Audits fiabilité — le plus récent : **02/09/2026** (`mission-2026-09-02/01-audit.md`, docs vivants ci-dessus)
-- [`audit-architecture-2026-07-25.md`](audit-architecture-2026-07-25.md) — revue d'architecture n°2 du **25/07/2026** (48 constats — lire l'avertissement de fiabilité en tête).
-- [`audit-fable5-2026-07-02.md`](audit-fable5-2026-07-02.md) — audit complet multi-agents du **02/07/2026** (référence fiabilité la plus récente ; plan de correction exécuté à 100 % le 03/07/2026).
-- [`plan-correction-audit-2026-07-02.md`](plan-correction-audit-2026-07-02.md) — plan T-01→T-19 issu de l'audit, exécuté à 100 %.
-- [`data-quality-audit-2026-06-10.md`](data-quality-audit-2026-06-10.md) — audit fiabilité Sprint 37 + addendum Sprint 39 (superseded par l'audit du 02/07/2026).
-- [`data-quality-audit-2026-05-24.md`](data-quality-audit-2026-05-24.md) — audit antérieur (superseded).
-- [`audit-vitesse-avocat-divorce-bordeaux.md`](audit-vitesse-avocat-divorce-bordeaux.md) — audit perf d'une page expertise (mesures du 03/06/2026).
+### Modules retirés
 
-### CPI — revue experte (close le 18/06/2026)
-- [`cpi-prompt-revue-expert.md`](cpi-prompt-revue-expert.md) — prompt de challenge soumis aux experts.
-- [`cpi-revue-expert-reponse.md`](cpi-revue-expert-reponse.md) — revue reçue + trace de la décision « garder l'essentiel, ne pas complexifier » (confirmée par la validation J+28 du 11/07/2026).
+- CPI : [spécification et lecture](cpi-cooked-page-index.md), [modèle mathématique](cpi-modele-mathematique.md), [prompt de revue](cpi-prompt-revue-expert.md), [réponse experte](cpi-revue-expert-reponse.md).
+- CRM/SECIB : [ancien dossier de traitement et décisions](rgpd-pont-secib.md). Les contraintes de confidentialité des archives subsistent ; ce pont n’est plus une fonction active de Cooked.
+- Maths : [analyse avancée du 29/07/2026](analyse-mathematique-avancee-2026-07-29.md).
 
-### Passations & baselines
-- [`ROADMAP-sprint38-handoff.md`](ROADMAP-sprint38-handoff.md) — handoff historique 09/06→03/07/2026 (remplacé par [`ROADMAP.md`](ROADMAP.md)).
-- [`BASELINE-demandes-historiques.md`](BASELINE-demandes-historiques.md) — baseline des demandes entrantes, figée au 10/06/2026 (a servi la validation CPI du 11/07/2026).
+### Audits datés
 
-## Skills d'ingénierie (agent)
-- [`agents/`](agents/) — [`issue-tracker.md`](agents/issue-tracker.md), [`triage-labels.md`](agents/triage-labels.md), [`domain.md`](agents/domain.md).
-- [`analyse-mathematique-avancee-2026-07-29.md`](analyse-mathematique-avancee-2026-07-29.md) — framework d'analyse mathématique (Markov, Shapley, causal) et ses limites de conclusion.
+- Mission de septembre : [baseline](mission-2026-09-02/00-baseline.md), [audit](mission-2026-09-02/01-audit.md), [plan](mission-2026-09-02/02-plan.md), [journal](mission-2026-09-02/journal.md), [mesures après](mission-2026-09-02/02-apres.md), [passation](mission-2026-09-02/03-passation.md).
+- [Architecture du 25/07/2026](audit-architecture-2026-07-25.md).
+- [Fiabilité du 02/07/2026](audit-fable5-2026-07-02.md) et [plan de correction](plan-correction-audit-2026-07-02.md).
+- [Qualité du 10/06/2026](data-quality-audit-2026-06-10.md) et [du 24/05/2026](data-quality-audit-2026-05-24.md).
+- [Performance de la page divorce](audit-vitesse-avocat-divorce-bordeaux.md).

@@ -1,5 +1,7 @@
 > ⚠️ Archive du 18/06/2026 — revue experte close le 18/06/2026, verdict : outil suffisant, ne pas complexifier.
 
+> **Archive historique — module retiré le 04/11/2026.** Ce document conserve les définitions et décisions du CPI antérieur. Ses tables, fonctions et commandes ne décrivent plus le socle actif et ne doivent pas être relancées. Voir [SIMPLIFICATION.md](SIMPLIFICATION.md) et [CONTEXT.md](../CONTEXT.md).
+
 # Prompt — Revue critique experte du « Cooked Page Index » (CPI v2.2)
 
 > **Comment utiliser ce document.** Copiez-le tel quel à un·e mathématicien·ne,

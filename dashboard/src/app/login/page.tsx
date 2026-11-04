@@ -44,14 +44,14 @@ export default function LoginPage() {
           </span>
           <div>
             <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint">Cooked</p>
-            <h1 className="text-lg font-semibold tracking-[-0.01em] text-ink">Tableau de bord</h1>
+            <h1 className="text-lg font-semibold tracking-[-0.01em] text-ink">Espace privé</h1>
           </div>
         </div>
 
         {status === "sent" ? (
           <div className="border border-line bg-panel p-4 text-sm text-muted">
             Lien de connexion envoyé à <strong className="text-ink">{email}</strong>. Ouvre-le sur cet
-            appareil pour accéder au dashboard.
+            appareil pour accéder à Cooked.
           </div>
         ) : (
           <form onSubmit={onSubmit} className="space-y-3">

@@ -1,5 +1,5 @@
 """
-Adaptateur Supabase partagé (GSC + DFS ingest).
+Adaptateur Supabase pour l'ingestion GSC.
 
 C7 — une couture store injectable : prod via from_env(), FakeStore en test.
 """

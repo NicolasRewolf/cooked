@@ -1,216 +1,59 @@
-# Cooked — Contexte du domaine
+# Cooked — vocabulaire du socle éditorial
 
-Système d'analytics first-party pour le site du cabinet Plouton. Ce fichier
-fige le **vocabulaire des conversions et de leur attribution** — la source de
-confusion identifiée le 13/07/2026 (trois « contacts » différents à l'écran,
-dont un calculé avec une méthode obsolète). Il **complète** la taxonomie
-macro / micro / engagement de `CLAUDE.md` en tranchant la question de
-l'**attribution**.
+Référence du **04/11/2026**. Le produit mesure l’audience et les contacts observés des pages du site. Les choix de sujets et d’actions éditoriales restent ceux de Nicolas. Les anciennes notions CPI, CRM et snapshots sont documentées dans les archives, pas dans le contrat courant.
 
-> **Depuis le 4 novembre 2026** — la définition courante est celle du socle
-> décrit dans [SIMPLIFICATION.md](docs/SIMPLIFICATION.md). Les anciens
-> instantanés CPI, dashboard, SEO et math restent des archives datées.
+## Pages et sources
 
-## Language
+**Page publiée** : URL présente dans le dernier inventaire Wix complet. `page_taxonomy.is_published` porte ce statut ; `publication_checked_at` date sa vérification, pas sa publication initiale. Le référentiel inclut les articles, pages statiques et catégories, indépendamment du trafic. Une URL absente de l’inventaire reste connue avec un statut non publié.
 
-### Conversions
+**Chemin canonique** : chemin partagé entre Wix, GSC et Cooked, décodé, normalisé Unicode NFC et sans slash final sauf `/`. Un changement de cette règle doit rester identique en SQL, Edge et Python.
 
-**Conversion** / **Contact** :
-Un **clic sur un numéro** (`cta_phone_click`) ou un **formulaire envoyé** (`form_submit`
-comptant comme macro). Un seul concept, deux mots par convention :
-**« conversion »** est le terme technique (code, specs, RPC) ; **« contact »**
-est le mot **affiché** dans l'UI (plus lisible pour Me Plouton). = la
-macro-conversion de `CLAUDE.md`.
-Le clic n'atteste pas que l'appel a abouti ; ce compteur ne mesure ni les
-clients acquis ni les dossiers facturés.
-_Avoid_ : « lead », « conversion » comme libellé d'écran, « contact » dans
-le code. « **Prospect** » a un sens précis depuis le 10/08/2026 : une row de
-`crm_prospects` (identité issue d'un formulaire web, pont SECIB) — ne pas
-l'employer pour une conversion web ordinaire.
+**Événement observable** : action reçue par Cooked. L’absence d’événement ne prouve pas l’absence d’activité réelle. `events_human` applique les filtres communs du site principal ; `events` brut sert au diagnostic explicite du système.
 
-**Intention** (micro) :
-Un clic « prendre RDV » (`cta_booking_click`) qui ne se matérialise pas.
-**N'est PAS une conversion / un contact.**
-_Avoid_ : compter une intention comme une conversion (erreur de l'audit du
-15/05/2026 : 157 « conversions » pour 37 vrais contacts).
-Dans les archives CPI, le badge `convertit` utilise les contacts macro directs
-ou assistés. La contribution pondérée des intentions au score historique reste
-distincte du badge ; ce score n’est plus recalculé depuis le 04/11/2026.
+## Visites et entrées
 
-### Attribution — deux vues d'une conversion, jamais fusionnées
+**Visite observée** : activité d’un même navigateur rapprochée par `identity_stitch`, coupée lorsqu’un écart dépasse 30 minutes. `web_vitals` ne prolonge pas cette activité. La couture est reconstruite sur l’historique conservé, jusqu’à convergence, sans utiliser les identifiants serveur de repli 32-hex pour rapprocher des navigateurs. Une identité technique ne prouve pas une personne unique.
 
-**Conversion sur la page** :
-Conversion attribuée à la page **où l'action a eu lieu** (le lecteur tape le
-numéro pendant qu'il lit l'article). Source : `macro_contacts_by_path`
-(attribution au `path` de l'event).
-_Avoid_ : « contacts » tout court — ambigu avec l'attribution à l'entrée.
+**Entrée** : première page vue de cette visite. Elle peut précéder la période d’extraction d’un contact. Une page postérieure au contact ne fait jamais partie de son amont. Le comptage commun vient de `cooked_visit_events(début, fin)`.
 
-**Conversion attribuée** (à l'entrée) :
-Conversion attribuée à la page **par laquelle le visiteur est entré** sur le
-site, avant de convertir au cours de la **même visite**. Attribution
-**toujours via la visite recousue** — une seule méthode, partout.
-_Avoid_ : « assisté » employé seul sans qualifier ; toute variante calculée
-sur la session brute.
+**Visite d’une page** : visite ayant au moins une page vue sur cette page dans la fenêtre. Plusieurs consultations dans une visite comptent une fois. Les visites distinctes par page ne s’additionnent pas en visiteurs uniques du site.
 
-**Visite observée et recousue** :
-Activité d’un même navigateur rapprochée par `identity_stitch` (aid ↔ sid),
-segmentée dès qu’un écart d’activité dépasse 30 minutes. La couture couvre
-l’historique conservé et converge réellement ; l’argument historique de durée
-ne tronque plus ce rapprochement. `web_vitals` ne prolonge pas une visite.
-La première page vue est l’entrée, même si elle précède la période demandée.
-Le parcours d’un contact ne contient jamais de page postérieure à ce contact.
-Ne jamais coudre via un `anonymous_id` 32-hex de repli serveur, partageable entre
-navigateurs. Une identité technique ne prouve pas une personne distincte.
-_Avoid_ : « session » brute comme base d’attribution à l’entrée.
+**Cohorte d’entrée** : visites dont l’entrée appartient à la période. `page_visits(début, fin)` compte leurs contacts observés avant la clôture de cette période. Les visites commencées avant ne grossissent pas son dénominateur.
 
-**Contact non attribué** :
-Contact compté dans le site mais sans visite observable certaine. Un formulaire
-sans identifiant explicite ne reçoit plus de page par simple proximité dans le
-temps. Il reste conservé comme inconnu, jamais attribué à la page suivante.
+## Contacts
 
-**Visite ayant contacté** :
-Visite distincte ayant produit au moins un clic téléphone ou un formulaire macro.
-Le téléphone, le formulaire et leur union sont trois compteurs : leurs nombres
-ne s’additionnent pas si la même visite a fait les deux. `page_visits(start,end)`
-calcule le taux sur la cohorte des visites **entrées dans la fenêtre**, actions
-observées avant sa clôture. Sans entrée, le taux est inconnu (`NULL`). Une visite
-qui consulte une page sans entrer dessus augmente les consultations, pas le
-dénominateur des contacts attribués à cette page d’entrée.
+**Contact observé** : clic téléphone (`cta_phone_click`) ou formulaire éligible (`form_submit`, `counts_as_macro`). Un clic ne prouve pas un appel abouti ; une soumission ne prouve pas un prospect unique, un rendez-vous ou un dossier signé.
 
-**Conversions du site** :
-Total des conversions **toutes pages confondues** — le chiffre business de
-référence au grain des actions. Se présente **avec son détail** : clics téléphone
-vs formulaires, et la part
-qui touche les articles ressources. Source : `site_macro_counts`.
-_Avoid_ : présenter un total scopé (ressources seules) comme « les contacts du
-site » — c'est le piège de la tuile actuelle (36 affichés pour 210 réels au
-13/07/2026).
+**Candidature** : formulaire dont l’objet relève de « nous rejoindre », exclu des contacts métier. La règle partagée est testée par `recruitment_objet_vectors.json`.
 
-### Lecture — vocabulaire historique conservé
+**Intention** : clic de prise de rendez-vous (`cta_booking_click`). Ce n’est pas un contact. Les signaux de lecture, scroll et performance ne sont pas non plus des contacts.
 
-Cette section décrit les indicateurs de lecture et les archives CPI d’avant le
-04/11/2026. Elle ne définit pas le nouveau taux de visites ayant contacté.
+**Visite ayant contacté** : visite de la cohorte ayant produit au moins une action éligible. `phone_visits`, `form_visits` et `contact_visits` sont respectivement le téléphone, le formulaire et leur union. Une visite ayant fait les deux ne compte qu’une fois dans l’union. Le taux est l’union divisée par les entrées, en pourcentage ; sans entrée, il est inconnu (`NULL`). Présenter aussi les deux nombres et leurs dénominateurs.
 
-Le CPI historique repose à parts égales sur quatre composantes, dont deux — `zr` rétention
-et `zl` lecture — relèvent de ce vocabulaire. Il a été figé le 28/07/2026, après
-avoir constaté que la lecture était redérivée à la main dans **8 RPC** avec trois
-définitions divergentes (grain, source du scroll, traitement du zéro).
+**Contact sur une page** et **contact attribué à une entrée** : le premier décrit le lieu de l’action, le second la première page de la visite. Ils ne s’additionnent pas et ne portent jamais un libellé ambigu commun.
 
-**Lecture** :
-Une visite d'**une page** par un visiteur, avec sa **durée** (`dwell_s`) et sa
-**profondeur** (`scroll_pct`). Grain : **une ligne par (session × path)** — une
-même visite qui voit trois pages produit trois lectures, et repasser sur une page
-au cours de la même visite n'en crée pas une seconde (on garde le `max`).
-Source : `page_exit`.
-_Avoid_ : « dwell » ou « temps passé » sans dire de quel grain ; agréger au
-niveau session quand la question porte sur une page.
+**Contact non attribué** : événement éligible sans visite certaine. Un formulaire doit porter des identifiants explicites pour être rapproché ; la proximité temporelle seule ne suffit pas. Ces contacts restent conservés et comptés dans le total des événements du site. Ils ne sont pas forcés dans le taux d’une page.
 
-**Retenue** :
-Lecture qui franchit le seuil de survie — `dwell_s >= 15` **OU** la visite compte
-au moins 2 pageviews. C'est le dénominateur de `zl` et le numérateur de `zr`.
-_Avoid_ : « rebond » (notion importée de GA, jamais définie ici).
+## Périodes, zéros et Google
 
-**Lecture qualifiée** :
-Parmi les retenues, celle dont la durée **et** la profondeur dépassent toutes deux
-les médianes de son **type de page** (`cooked_page_type`). C'est ce que `zl`
-mesure — une profondeur relative aux pairs, jamais un seuil absolu.
-_Avoid_ : parler de « lecture complète » ou d'un seuil fixe (75 %, 2 min) : les
-seuils sont calculés par type à chaque run.
+**Période Cooked** : jours Paris clos, bornes inclusives dans les fonctions à dates. La comparaison envisagée est de 90 jours aux 90 précédents, modifiable. Une période partielle doit être affichée comme telle ; pas de delta de performance présenté comme complet.
 
-**Couverture de lecture** :
-Part des visites pour lesquelles `page_exit` est bien arrivé. **Elle n'est pas de
-100 % et ne le sera jamais** : mesurée à **59 %** sur 28 j au 27/07/2026 (66 %
-mobile, **50 % desktop**), et elle varie de 40 % à 92 % selon la page. En desktop,
-94,9 % des visites sans `page_exit` sont pourtant actives — ce sont des onglets
-laissés ouverts, pas des rebonds.
-_Avoid_ : présenter un dwell médian comme un fait sans sa couverture.
+**Couverture** : disponibilité des données nécessaires au calcul. La ligne `coverage` de `page_visits` donne les jours avec au moins une page vue et les événements téléphone/formulaire non attribués. Elle ne prouve pas la disponibilité à chaque minute. La couverture des identifiants de formulaires a évolué dans l’historique.
 
-### Sources & fraîcheur (23/08/2026 — ADR-0002)
+**Zéro visite** : absence de visite mesurée pour une page publiée dans une fenêtre dont la couverture a été examinée. Une panne, un import incomplet ou une absence de source donnent un résultat inconnu ou partiel, pas un zéro certain.
 
-**Horloge de source** :
-Cooked regroupe les événements par jour Paris ; la date GSC correspond au jour
-Pacifique fourni par Google. Les comparaisons affichent les bornes de chaque
-source. Une même date n'assure pas une même tranche de 24 heures.
+**Total Google par page** : `gsc_path_daily`, incluant les clics dont la requête est masquée. **Requêtes révélées d’une page** : `gsc_query_page_daily`. Ces grains ne sont pas interchangeables. Les dates GSC restent celles de Google ; le dernier jour disponible peut différer de celui du tracker.
 
-**Lot GSC terminé** :
-Une ingestion n’est complète qu’après succès des trois tables sur une même
-fenêtre. `gsc_ingest_begin` ouvre le lot, `gsc_ingest_complete` le clôt ; erreur
-ou mode partiel impose `gsc_ingest_fail`. Depuis le 04/11/2026, aucun ancien
-recalcul dashboard n’est attendu en aval.
-Un timestamp récent dans la seule table pages n'est pas une preuve d'exhaustivité.
+**Position moyenne** : moyenne pondérée par les impressions, jamais moyenne simple des positions quotidiennes. Une requête absente peut être masquée ou sans observation. Les clics GSC ne sont pas des visites Cooked et ne se relient pas individuellement aux formulaires.
 
-**Source** :
-Un flux qui alimente Cooked en données : tracker (events), formulaires
-(webhook Wix), GSC, GBP, DataForSEO, snapshots internes (CPI, SEO,
-dashboard), ou SECIB. `freshness_contract` conserve leur registre ; seules les
-lignes `enabled=true` ont une fraîcheur attendue. Les six sources
-CPI/calibration/dashboard/SEO/math/DFS sont désactivées depuis le 04/11/2026 ;
-leur ancienneté reste visible dans les archives sans devenir une panne.
-_Avoid_ : « pipeline » pour désigner une source précise (le pipeline est
-l'ensemble).
+## Santé et limites
 
-**Lag normal** :
-Le retard structurel d'une source en jours, dû à son fournisseur — GSC
-consolide à ~J-3 (registre `freshness_contract` : normal 3, warn > 6, critical > 10),
-GBP à ~J-4/J-5. Les snapshots suspendus n’ont plus de cadence attendue.
-Un âge ≤ lag normal n'est jamais une anomalie.
+**Fraîcheur** : âge de la dernière donnée source. **Complétude d’un lot** : les deux grains attendus par l’import GSC ont réussi ; `gsc_ingest_batches` distingue les lots complets, en cours ou échoués. Un lot complet ne restitue pas les requêtes masquées par Google.
 
-**Retard** (`<source>_stale`) :
-L'âge du dernier jour de donnée dépasse le lag normal au-delà des seuils du
-contrat (warn puis critical). Se mesure toujours avec `paris_today()`.
-_Avoid_ : « stale » appliqué à une source dont l'âge est dans son lag normal.
+**Alerte** : résultat d’un contrôle à une date donnée. Un acquittement signifie « examiné » et ne démontre pas la réparation. La santé doit être lue avec les dates et la source affectée, sans acquittement global.
 
-**Trou** (`<source>_gap`) :
-Un jour manquant À L'INTÉRIEUR de la série, alors que des jours plus
-récents existent (ex. la fenêtre mois-calendaire GSC qui perdait les fins
-de mois). Un trou ne se voit pas dans l'âge du dernier point.
+Toute recommandation s’appuie sur des chiffres contre-vérifiés et leurs limites. Les faibles volumes rendent les taux instables. Une corrélation, une baisse de clics ou une position moyenne ne suffisent pas à expliquer seuls la performance éditoriale.
 
-**Silence** :
-Une source événementielle qui n'émet plus alors que sa cadence historique
-en prévoyait (forms : ~45/mois → warn > 2 j, critical > 4 j). Le Silence
-est le mode de panne des deux incidents d'août 2026 : le système savait
-dire « donnée dégradée », jamais « donnée absente ».
-_Avoid_ : confondre avec le Retard d'un snapshot — le Silence porte sur des
-événements humains, sa normalité dépend de la cadence réelle du site.
+Les événements de lecture et Web Vitals restent dans la collecte. Leur sémantique historique demeure : profondeur issue de `page_exit.max_scroll`, Web Vitals au grain document avec révisions dédupliquées. Ils n’alimentent plus un score CPI.
 
-**Escalade** :
-Un warn ininterrompu ≥ 5 jours devient critical (et pousse sur ntfy), sous
-réserve des exclusions existantes. Au plus deux pushs par épisode, puis silence
-jusqu’à acquittement. Acquitter signifie « vu, je gère » ; ce n’est pas une preuve
-de correction. Cibler les alertes contrôlées, sans vider globalement le stock.
-Les familles de calculs retirées sont acquittées explicitement lors du gel.
-
-## Invariants
-
-- **Une seule méthode courante pour l’attribution à l’entrée : la visite observée.**
-  `cooked_visit_events` la fournit aux lecteurs de contacts ; `page_visits` compte
-  la cohorte d’entrées et les visites ayant contacté. Les contacts sans amont
-  restent dans le total site. Les anciennes tables dashboard conservent la
-  méthode de leur dernier calcul et ne sont pas présentées comme actualisées.
-- **« sur la page » et « à l'entrée » ne se somment jamais** et ne partagent
-  jamais un libellé nu « contacts ». Toujours qualifier lequel des deux.
-- **Conversion = macro uniquement.** Le booking (micro, intention) n'entre
-  jamais dans un décompte de conversions / contacts.
-- **Visiteurs distincts non additifs.** Le distinct d'un ensemble de pages ne
-  se déduit pas de la somme des distincts par page ; aucun footer filtré ne
-  remplace ce calcul par un total global.
-- **CWV au grain document.** Le tracker conserve le chemin du chargement
-  initial, y compris après navigation SPA. Une révision après retour d'onglet
-  remplace la précédente pour `measurement_id` × métrique avant percentile.
-  Les anciens événements sans identifiant gardent leur grain historique.
-- **Version CPI visible.** Deux définitions ne sont pas reliées comme une
-  série homogène. Le graphique conserve les ruptures et les annotations.
-- **Une seule source pour la profondeur de lecture : `page_exit.max_scroll`.**
-  Voir [ADR-0001](docs/adr/0001-source-unique-profondeur-lecture.md).
-  Constat historique du 28/07/2026 : des anciens lecteurs et le producteur SEO
-  utilisaient encore `scroll_depth.percent`. Le producteur SEO est retiré depuis
-  le 04/11/2026 ; ce constat ne constitue pas une nouvelle tâche de recalcul.
-- **Toute statistique de lecture se présente avec sa couverture.** Un dwell
-  médian sans son taux de `page_exit` n'est pas un chiffre livrable — la
-  couverture varie de 40 % à 92 % selon la page et elle est corrélée
-  négativement (−0,32) au dwell mesuré.
-- **Toute nouvelle source d'ingestion reçoit sa ligne `freshness_contract`
-  dans la migration qui la crée.** Une source sans contrat est invisible du
-  monitoring — c'est le trou par lequel les pannes d'août 2026 sont passées
-  (ADR-0002). `scripts/c2_alerts_contract.sql` vérifie la couverture des
-  sources attendues.
+[Guide d’analyse](docs/PLAYBOOK-analyse-seo.md) · [Exploitation](docs/OPERATIONS.md) · [Règles agent](CLAUDE.md) · [Archives](docs/README.md)

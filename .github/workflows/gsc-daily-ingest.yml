@@ -6,7 +6,7 @@ name: GSC Daily Ingest
 #   pg_cron tourne dans Postgres : pas d'accès aux APIs externes (GSC).
 #   Ce workflow exécute scripts/gsc_ingest.py qui parle à l'API Search
 #   Console, puis upserte vers Supabase. Idempotent grâce aux clés
-#   primaires composites (day, path) / (day, query) / (day, path, query).
+#   primaires composites (day, path) / (day, path, query).
 #
 # Fenêtre : --daily (= GSC_DAILY_MONTHS_BACK dans cooked.gsc).
 # Google refine les données jusqu'à J-3 ; avec un seul mois les derniers jours
@@ -62,7 +62,7 @@ jobs:
           # Sanity check (sans logger le contenu)
           test -s "$RUNNER_TEMP/gsc/credentials.json" || { echo "credentials.json vide ou base64 invalide" >&2; exit 1; }
 
-      - name: Ingest all three GSC sources and publish completed batch
+      - name: Ingest page totals and page queries, then complete the batch
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GSC_CREDENTIALS_PATH: ${{ runner.temp }}/gsc/credentials.json

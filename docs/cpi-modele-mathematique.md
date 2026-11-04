@@ -1,5 +1,7 @@
 # CPI — Cooked Page Index : spécification mathématique
 
+> **Archive historique — module retiré le 04/11/2026.** Ce document conserve les définitions et décisions du CPI antérieur. Ses tables, fonctions et commandes ne décrivent plus le socle actif et ne doivent pas être relancées. Voir [SIMPLIFICATION.md](SIMPLIFICATION.md) et [CONTEXT.md](../CONTEXT.md).
+
 > **Archive fonctionnelle depuis le 4 novembre 2026.** Le calcul CPI et ses alertes sont retirés de la production ; les scores historiques restent conservés. Les recettes ci-dessous décrivent l'ancien modèle et ne doivent plus être exécutées. Les anciennes définitions SQL se retrouvent dans l'historique Git, pas dans le miroir courant. Le socle actif est décrit dans [SIMPLIFICATION.md](SIMPLIFICATION.md).
 
 > Document destiné à une relecture par un mathématicien / statisticien.
