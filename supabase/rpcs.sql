@@ -231,7 +231,7 @@ BEGIN
 
   IF v_forms IS NOT NULL THEN
     kind := 'form_fields_missing'; severity := 'warn';
-    detail := format('Formulaires Wix sans page_source ou sans objet sur 28 j — un contact sans page_source est compté au total site mais invisible par page ; sans objet, il est compté macro par défaut (candidature ?). Câbler les champs cachés `page_source` (seedé par masterPage) et « Objet de ma demande » sur le formulaire (action Nicolas, T-18). %s', v_forms);
+    detail := format('Formulaires Wix sans page_source ou sans objet sur 28 j — une page_source absente limite le contexte ; le rattachement à l’entrée dépend des identifiants explicites et des pages observées ; sans objet, il est compté macro par défaut (candidature ?). Câbler les champs cachés `page_source` (seedé par masterPage) et « Objet de ma demande » sur le formulaire puis vérifier la prochaine soumission réelle. %s', v_forms);
     RETURN NEXT;
   END IF;
 END;
@@ -454,7 +454,7 @@ BEGIN
   FROM vus v
   LEFT JOIN public.page_taxonomy t ON t.path = v.path
   WHERE (t.path IS NULL OR t.category IS NULL)
-    -- la synchro hebdomadaire (wix-taxonomy-sync) a eu au moins une occasion de passer
+    -- la synchronisation de publication a eu plusieurs occasions de passer
     AND v.first_seen < now() - interval '8 days';
 
   IF v_n >= 1 THEN
@@ -462,7 +462,7 @@ BEGIN
       'page_taxonomy_gap'::text,
       CASE WHEN v_n >= 10 THEN 'critical' ELSE 'warn' END::text,
       format(
-        '%s article(s) avec du trafic (≥ 5 vues/30 j, vus depuis > 8 j) sans catégorie Wix dans page_taxonomy — toute lecture par catégorie (dashboard Articles Ressources, page_visits, contrat éditorial) les ignore. Vérifier les chemins (page réelle, redirection ou URL tronquée), leur catégorie Wix et le dernier workflow wix-taxonomy-sync (lundi 05:00 UTC). Une synchro réussie peut conserver une URL sans catégorie ; ne pas déduire un secret manquant de cette seule alerte. Concernés : %s',
+        '%s article(s) avec du trafic (≥ 5 vues/30 j, vus depuis > 8 j) sans catégorie Wix dans page_taxonomy — les visites restent comptées mais leur classement éditorial est incomplet. Vérifier les chemins (page réelle, redirection ou URL tronquée), leur catégorie Wix et le dernier workflow wix-taxonomy-sync (inventaire quotidien). Une synchro réussie peut conserver une URL sans catégorie ; ne pas déduire un secret manquant de cette seule alerte. Concernés : %s',
         v_n, left(coalesce(v_ex, ''), 400)
       );
   END IF;
