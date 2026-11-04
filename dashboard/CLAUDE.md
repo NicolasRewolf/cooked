@@ -27,4 +27,4 @@
    de la session et garde contre les redirections externes. Les anciennes routes
    continuent de rediriger vers `/`.
 7. Les couleurs sont des tokens de `src/app/globals.css`. Conserver IBM Plex,
-   orange rewolf, angles vifs, thème clair et tableau compact.
+   orange rewolf discret, thème clair, arrondis modérés et tableau compact.

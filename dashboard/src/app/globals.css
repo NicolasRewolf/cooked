@@ -1,18 +1,21 @@
 @import "tailwindcss";
 
-/* Identité conservée : IBM Plex, orange rewolf, angles vifs. */
+/* IBM Plex et orange rewolf, surfaces claires et bordures discrètes. */
 @theme inline {
   --font-sans: var(--font-ibm-plex-sans);
   --font-mono: var(--font-ibm-plex-mono);
   --color-accent: #ff4f04;
-  --color-ink: #141414;
-  --color-muted: #6b6b69;
-  --color-faint: #9a9a98;
-  --color-paper: #f4f4f2;
+  --color-accent-soft: #fff3ed;
+  --color-accent-ink: #b43800;
+  --color-ink: #18181b;
+  --color-muted: #71717a;
+  --color-faint: #a1a1aa;
+  --color-paper: #fafafa;
   --color-panel: #ffffff;
-  --color-line: #e7e7e5;
-  --color-line-strong: #e2e2e0;
-  --color-down: #c0392b;
+  --color-line: #e4e4e7;
+  --color-line-strong: #d4d4d8;
+  --color-up: #047857;
+  --color-down: #b91c1c;
 }
 
 html {
@@ -28,6 +31,19 @@ body {
 }
 
 ::selection {
-  background: var(--color-accent);
-  color: var(--color-panel);
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
+}
+
+:where(a, button, summary, input, select):focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -78,6 +78,10 @@ nécessaires : inscriptions désactivées et URL de callback autorisées, dont
 ## Développement et vérification
 
 Next.js 16, React 19, TypeScript et Tailwind ; IBM Plex et orange rewolf.
+Présentation claire inspirée des dashboards Shadcn : surfaces bordées, arrondis
+discrets, périodes segmentées et chiffres tabulaires. Le domaine apparaît dans
+l’en-tête ; chaque ligne conserve son chemin complet et son lien externe. Le tableau
+défile dans son panneau, avec en-têtes visibles et défilement horizontal sur mobile.
 Les couleurs vivent dans `src/app/globals.css`. Aucune dépendance d’exécution
 ajoutée pour ce tableau ; jsdom sert uniquement aux tests d’interaction.
 
