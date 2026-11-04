@@ -1,25 +1,17 @@
 "use client";
 
-// M9 : ne JAMAIS rendre le message d'erreur brut (fuite de schéma Postgres sur domaine public).
-// On affiche un message générique + le digest serveur ; le détail reste dans les logs serveur.
+// Ne pas rendre le message serveur brut.
 export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10">
-      <div className="rounded-xl border border-red-200 bg-red-50 p-5 dark:border-red-900 dark:bg-red-950/40">
-        <h2 className="text-sm font-semibold text-red-800 dark:text-red-300">
-          Impossible de charger les données
-        </h2>
-        <p className="mt-1 text-xs text-red-700 dark:text-red-400">
-          Une erreur est survenue côté serveur. Réessaie, ou reviens dans un moment.
-          {error.digest ? ` (réf. ${error.digest})` : ""}
-        </p>
-        <button
-          onClick={reset}
-          className="mt-3 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-        >
-          Réessayer
-        </button>
-      </div>
+    <main className="mx-auto max-w-3xl px-6 py-16 sm:px-8">
+      <h1 className="text-xl font-semibold">Impossible d’ouvrir Cooked</h1>
+      <p className="mt-3 text-sm text-muted">
+        Une erreur est survenue. Réessaie dans un moment.
+        {error.digest ? ` (réf. ${error.digest})` : ""}
+      </p>
+      <button onClick={reset} className="mt-6 bg-ink px-4 py-2 text-sm text-white hover:bg-accent">
+        Réessayer
+      </button>
     </main>
   );
 }

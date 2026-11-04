@@ -154,7 +154,7 @@ def aggregate_daily(
     return out
 
 
-def run_path_query(
+def run_path(
     end_date: date,
     months_back: int = MONTHS_BACK,
     store: CookedStore | None = None,
@@ -162,7 +162,7 @@ def run_path_query(
     store = store or SupabaseStore.from_env()
     gsc, site = gsc_api_clients()
     months = list_months(end_date, months_back)
-    total_p = total_q = 0
+    total_p = 0
     t0 = time.time()
 
     for i, (ms, me) in enumerate(months, 1):
@@ -177,21 +177,15 @@ def run_path_query(
         store.upsert_batches("gsc_path_daily", p_rows, "day,path", BATCH_SIZE)
         total_p += len(p_rows)
 
-        q_raw = fetch_gsc(gsc, site, ["date", "query"], ms, me)
-        q_rows = aggregate_daily(q_raw, ("query",), (lambda x: x,))
-        store.upsert_batches("gsc_query_daily", q_rows, "day,query", BATCH_SIZE)
-        total_q += len(q_rows)
-
         elapsed = time.time() - t_start
         print(
-            f"        path upsert={len(p_rows):>5}  |  query upsert={len(q_rows):>5}  |  {elapsed:.1f}s",
+            f"        path upsert={len(p_rows):>5}  |  {elapsed:.1f}s",
             flush=True,
         )
 
-    print(f"\n=== path-query DONE in {time.time() - t0:.1f}s ===")
+    print(f"\n=== path DONE in {time.time() - t0:.1f}s ===")
     print(f"  gsc_path_daily  : {total_p:,} rows upserted")
-    print(f"  gsc_query_daily : {total_q:,} rows upserted")
-    return {"gsc_path_daily": total_p, "gsc_query_daily": total_q}
+    return {"gsc_path_daily": total_p}
 
 
 def run_query_page(
@@ -233,14 +227,14 @@ def run_ingestion(
     months_back: int = MONTHS_BACK,
     store: CookedStore | None = None,
 ) -> None:
-    """Publie uniquement un lot dont les trois sources ont été ingérées.
+    """Publie uniquement un lot dont les deux sources ont été ingérées.
 
     Begin ferme le refresh aval AVANT la première écriture. Une interruption
     laisse ce verrou logique fermé ; le prochain lot complet reprend la
     fenêtre. Les anciens modes partiels restent utiles au diagnostic mais ne
     peuvent jamais annoncer une photographie complète.
     """
-    if mode not in {"all", "path-query", "query-page"}:
+    if mode not in {"all", "path", "query-page"}:
         raise ValueError("Mode GSC inconnu")
     if months_back < 1:
         raise ValueError("months_back doit être positif")
@@ -254,8 +248,8 @@ def run_ingestion(
     })
     try:
         counts: dict[str, int] = {}
-        if mode in {"all", "path-query"}:
-            counts.update(run_path_query(end_date, months_back, store=store))
+        if mode in {"all", "path"}:
+            counts.update(run_path(end_date, months_back, store=store))
         if mode in {"all", "query-page"}:
             counts.update(run_query_page(end_date, months_back, store=store))
         if mode != "all":
@@ -280,7 +274,7 @@ def run_ingestion(
         except Exception:
             print("Échec du signal de fin GSC : reprise explicite requise.", file=sys.stderr)
         raise
-    print("Lot GSC complet : les trois sources sont prêtes pour le refresh.", flush=True)
+    print("Lot GSC complet : pages et requêtes par page sont prêtes.", flush=True)
 
 
 def _add_run_flags(p: argparse.ArgumentParser) -> None:
@@ -308,8 +302,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     sub = parser.add_subparsers(dest="mode", required=True)
 
-    _add_run_flags(sub.add_parser("all", help="Les trois sources, un seul lot publiable"))
-    _add_run_flags(sub.add_parser("path-query", help="gsc_path_daily + gsc_query_daily"))
+    _add_run_flags(sub.add_parser("all", help="Les deux sources, un seul lot publiable"))
+    _add_run_flags(sub.add_parser("path", help="gsc_path_daily"))
     _add_run_flags(sub.add_parser("query-page", help="gsc_query_page_daily"))
 
     args = parser.parse_args(argv)

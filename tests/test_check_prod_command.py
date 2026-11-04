@@ -10,8 +10,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 CHECKS = [
     ("scripts/check_prod_drift.py", ""),
-    ("scripts/check_normalize_vectors.py", ""),
-    ("scripts/generate_dashboard_contracts.py", "--check"),
 ]
 
 

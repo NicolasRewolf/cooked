@@ -1,13 +1,10 @@
 import "server-only";
 import { z } from "zod";
 
-// Validation fail-fast des variables serveur. La clé service ne doit JAMAIS
-// porter le préfixe NEXT_PUBLIC_ (sinon Next l'inlinerait dans le bundle navigateur).
+// Auth uniquement : aucune clé service ni lecture des données métier.
 const schema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().min(1, "NEXT_PUBLIC_SUPABASE_URL manquante"),
-  SUPABASE_SECRET_KEY: z
-    .string()
-    .regex(/^sb_secret_/, "SUPABASE_SECRET_KEY doit commencer par sb_secret_ (clé service)"),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1, "NEXT_PUBLIC_SUPABASE_ANON_KEY manquante"),
   // OBLIGATOIRE : une allowlist vide bloquerait tout le monde (fail-closed côté proxy).
   // On exige au moins une adresse pour éviter un déploiement avec un gate inopérant.
   DASHBOARD_ALLOWED_EMAILS: z

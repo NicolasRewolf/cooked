@@ -38,9 +38,8 @@ DECLARE
 BEGIN
   SELECT string_agg(s, ', ') INTO missing
   FROM unnest(ARRAY[
-    'gbp_daily', 'gsc_path_daily', 'dfs_keyword_volume', 'cpi_daily',
-    'seo_url_snapshot', 'dashboard_resources_snapshot', 'form_submit',
-    'crm_prospects', 'cta_phone_click'
+    'gsc_path_daily', 'gsc_query_page_daily', 'page_taxonomy',
+    'form_submit', 'cta_phone_click'
   ]) s
   WHERE NOT EXISTS (
     SELECT 1 FROM public.freshness_contract fc WHERE fc.source = s AND fc.enabled

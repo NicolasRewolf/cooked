@@ -1,119 +1,60 @@
 # Sécurité
 
-> Réécrit le 03/09/2026 (mission 02/09, T-14, constat i-01) **sur l'état réel de la prod**.
-> La version du 07/08/2026 affirmait « pas de PII », « REVOKE sur toute RPC » et « RLS deny-all »
-> alors que le pivot SECIB du 10/08 stockait des identités en clair et que deux fonctions
-> `SECURITY DEFINER` restaient exécutables par `anon` (corrigé T-01, 02/09/2026).
+**Périmètre mis à jour le 04/11/2026.** Le socle conserve événements pseudonymes, sources Google par page, inventaire Wix et contrôles. Les tables CRM/SECIB, les anciennes métriques et leurs lecteurs ont été retirés ; le webhook v17 écrit uniquement l’événement analytique filtré. Les obligations de confidentialité des anciennes sauvegardes et archives privées subsistent.
 
 ## Signaler un problème
 
-Contacter **Nicolas Rewolf** directement (pas d'issue publique pour les failles — le dépôt est
-**public**). Email : via le canal habituel Rewolf Studio / cabinet. Délai de réponse visé : 48 h ouvrées.
+Contacter Nicolas Rewolf par le canal habituel Rewolf Studio / cabinet. Ne pas ouvrir d’issue publique pour une faille : le dépôt est public. Délai de réponse visé : 48 heures ouvrées.
 
-## Données personnelles : où elles sont, où elles ne sont pas
+## Données et accès
 
-| Objet | PII | Protection | Lecteurs |
-|---|---|---|---|
-| `crm_prospects` (formulaires Wix → `form-webhook` v13+, backfill 03/2025→08/2026) | **oui, en clair** : nom, prénom, email, téléphone (+ colonnes `*_norm`) — décision produit du 10/08/2026, hachage refusé | RLS deny-all sans policy | `service_role` uniquement (webhook, `scripts/secib_ingest.py`, `wix_forms_import.py`) |
-| `secib_dossiers` (API SECIB — bac à sable, 49 lignes `env = 'test'` au 03/09/2026) | **oui, en clair** | RLS deny-all | `service_role` |
-| `pont_prospects_dossiers` (vue de rapprochement) | oui (jointure des deux) | vue `security_invoker` sur tables deny-all | `service_role` |
-| `events`, `events_human`, RPC analytics, tables `dashboard_*`, `gsc_*`, `cpi_*` | sans nom/email/téléphone ni texte libre de formulaire ; les événements restent **pseudonymes**, avec identifiants persistants et possibilités de couture CRM | RLS deny-all + `REVOKE` | `service_role` ; le dashboard lit via sa clé service côté serveur |
-
-**Règle absolue** : `crm_prospects` / `secib_dossiers` ne transitent jamais dans une vue analytics,
-une RPC `dashboard_*`, un export, un rapport, un journal, une issue, un commit. Le texte libre des
-formulaires n'est pas stocké. Cadre RGPD (textes, registre, arbitrages ouverts) :
-[docs/rgpd-pont-secib.md](docs/rgpd-pont-secib.md).
-
-Un identifiant aléatoire ou une IP hachée ne démontre pas l'anonymat.
-`localStorage._ckd_aid` n'a pas d'expiration propre et `cooked_aid` /
-`cooked_sid` sont aussi présents côté CRM. L'exemption de consentement doit
-être évaluée sur le traitement complet (finalités, rapprochements, information,
-accès et durées), pas déduite de l'absence de cookies. Référence :
-[conditions CNIL pour la mesure d'audience](https://www.cnil.fr/fr/cookies-solutions-pour-les-outils-de-mesure-daudience).
-Ce dossier ne certifie ni cette exemption ni la publication des textes du site.
-Le Custom Code Wix était classé `ESSENTIAL` au contrôle du 20/10/2026 ; cette
-catégorie a été conservée lors de la correction technique. Nicolas a demandé
-explicitement le maintien de la collecte le 20/10 pour préserver sa qualité.
-Cette décision n'établit pas l'exemption de consentement ni la conformité du
-traitement ; la qualification juridique reste ouverte.
-
-## Ce qui ne doit jamais entrer dans le repo
-
-- Clés Supabase (`sb_secret_*`, `service_role`, tokens `sbp_*`), `DATABASE_URL*`
-- Credentials Google (service account GSC JSON, ADC gcloud, client OAuth GBP,
-  refresh tokens, `GBP_CREDENTIALS_B64`)
-- Identifiants DataForSEO, SECIB (`~/.claude/secib-credentials.json`)
-- `FORM_WEBHOOK_SECRET`, `ANON_SALT`, `COOKED_INGEST_KEY`, topic ntfy
-- Fichiers `.env`, `.env.local`, `*credentials*.json`
-
-En cas de fuite : **révoquer / régénérer** immédiatement (Supabase, Google, DataForSEO, Septeo), puis
-rejouer les déploiements qui portent la valeur (Edge, Velo, GitHub Actions, Vercel).
-
-## Où vivent les secrets (inventaire du 03/09/2026, GBP actualisé le 26/10/2026)
-
-| Secret | Protège | Emplacement |
+| Périmètre | Nature | Accès |
 |---|---|---|
-| `SUPABASE_SECRET_KEY` (clé service `sb_secret_*`) | toutes les lectures/écritures métier | Vercel (dashboard, serveur seulement), GitHub Actions, Edge Functions, `.env` local des scripts |
-| `COOKED_INGEST_KEY` | gate `x-cooked-key` de l'Edge `track` (v27+) — un appel sans la clé est rejeté 401 ; **fail-fast depuis v29 (T-18)** : le boot échoue si le secret manque, la gate ne tourne jamais ouverte ; le proxy Velo répond `ingest_key_missing` (500) plutôt que d'envoyer sans clé | Supabase Edge secrets ; Wix Velo Secrets Manager (`wix/http-functions.js`, `getSecret('COOKED_INGEST_KEY')`) |
-| `ANON_SALT` | hachage IP+UA → `anonymous_id` de repli | Supabase Edge secrets (`track`) |
-| `ALLOWED_ORIGIN` | garde d'origine du proxy Velo → Edge | Supabase Edge secrets (`track`) |
-| `FORM_WEBHOOK_SECRET` | token `?token=` de l'Edge `form-webhook` (Wix Automation) | Supabase Edge secrets ; Wix Automation (URL du webhook) |
-| `GSC_CREDENTIALS_B64` / `~/.claude/gsc-credentials.json` | service account `gsc-cooked@rewolf-507310` (Search Console) | GitHub Actions ; local |
-| `GBP_CREDENTIALS_B64` / client OAuth GBP dédié | OAuth utilisateur, seul scope `business.manage`, renouvellement automatique par refresh token (révocable) ; sans `cloud-platform` ni `quota_project_id` | GitHub Actions : JSON `authorized_user` en base64 ; local hors dépôt : `~/.claude/gbp-oauth-client.json` et `~/.claude/gbp-token.json`, permissions 0600 |
-| `DFS_USERNAME` / `DFS_PASSWORD` | DataForSEO (`dfs_sync.py`) | GitHub Actions uniquement (absents en local) |
-| `DATABASE_URL_RO` | rôle Postgres `cooked_ci_ro` — **lecture seule** (catalogue, `cron.job`, `schema_migrations`, `freshness_contract`, `cooked_config`, EXECUTE sur les 16 RPC `dashboard_*` pour le contrat T-13 ; `statement_timeout` 30 s, `default_transaction_read_only`) | GitHub Actions (prod-drift, rpcs-regenerate) |
-| `NTFY_TOPIC` / `cooked_config.ntfy_topic` | canal de push des alertes `critical` et des échecs de workflows | GitHub Actions ; table `cooked_config` (service_role) |
-| `DASHBOARD_ALLOWED_EMAILS` | allowlist du dashboard (après magic-link) | Vercel |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clé publishable) | flux d'authentification seulement — **ne doit lire aucune donnée** (voir surface d'attaque) | Vercel, navigateur (publique par construction) |
-| `WIX_API_KEY` | clé API Wix : Blog en lecture pour `page_taxonomy` ; lecture des soumissions Forms requise pour le rapprochement quotidien | GitHub Actions (clé posée le 04/09/2026 ; l'accès Forms doit être vérifié lors de la première exécution du nouveau workflow) |
-| Credentials SECIB (client_credentials, GUID cabinet) | API SECIB — bac à sable Septeo tant que le devis SECIB+ n'est pas signé | `~/.claude/secib-credentials.json` (local) — pas de secret CI tant qu'il n'y a pas d'ingestion prod |
+| Événements et couture | Identifiants pseudonymes persistants et activité du site ; les champs d’identité et le texte libre de formulaire ne doivent pas être copiés dans l’événement | RLS, rôles techniques autorisés et filtres communs |
+| GSC et inventaire Wix | Mesures agrégées par page/requête et contenu publié | Rôles techniques autorisés |
+| Alertes et contrôles | Comptes, codes et états techniques ; pas de payload personnel ni message DB brut | Rôles techniques autorisés |
+| Dashboard | Session et allowlist ; page de transition sans lecture de métriques métier | Supabase Auth, utilisateur autorisé |
 
-Modèle sans valeurs : [.env.example](.env.example) · dashboard : [dashboard/.env.local.example](dashboard/.env.local.example).
+Un identifiant aléatoire ou une IP hachée ne démontre pas l’anonymat. `localStorage._ckd_aid` n’a pas d’expiration propre ; la rétention serveur ne l’expire pas. L’absence de cookies ne suffit pas à établir une exemption de consentement. Les finalités, informations publiées, accès et durées doivent être évalués ensemble ; voir les [conditions CNIL](https://www.cnil.fr/fr/cookies-solutions-pour-les-outils-de-mesure-daudience).
 
-Le client GBP dédié est configuré en audience Interne dans le projet
-`rewolf-507310` (vérifié le 26/10/2026). Son scope permet techniquement de
-gérer les fiches ; Cooked l'utilise uniquement en lecture. La CI charge le
-JSON via `GOOGLE_APPLICATION_CREDENTIALS` et supprime le fichier temporaire
-après exécution. L'ADC global local reste inchangé : pointer explicitement
-vers le token dédié pour le tester. Procédure de renouvellement et limites :
-[docs/OPERATIONS.md](docs/OPERATIONS.md#google-business-profile--connexion-dédiée-et-reprise-26102026).
+La catégorie Wix `ESSENTIAL` a été conservée lors de la correction du 20/10/2026, à la demande de Nicolas de maintenir la collecte. Cette décision technique et le retrait CRM ne certifient ni l’exemption ni la conformité du traitement. Les anciens arbitrages sont conservés, datés, dans [rgpd-pont-secib.md](docs/rgpd-pont-secib.md).
 
-## Surface d'attaque et ce qui la vérifie
+## Secrets interdits dans le dépôt et les sorties
 
-- **Ingestion** (`track`) : proxy Velo same-origin → Edge avec clé service + `x-cooked-key` ;
-  events hors allow-list rejetés ; bots droppés à l'ingestion (v26+, compteur `ingest_drops`).
-  Limite connue : la garde d'origine Velo est forgeable par en-tête et il n'y a pas de rate-limit —
-  un burst de `cta_phone_click` forgés est **détecté** (alerte `volume_floor`, contacts sans amont), pas
-  bloqué (décision §7.5 de la mission : verrou HMAC avec le loader tracker, T-17).
-- **Formulaires** (`form-webhook`) : token dans l'URL, `submissionTime` validé (v11), insert échoué →
-  alerte `form_submit_dropped` (v14).
-  Le correctif v16 exige un `submission_id` stable avant écriture. HTTP 200
-  signifie que l'événement et le prospect extrait ont été insérés ou sont
-  déjà présents (`23505`). Erreur DB/réseau sur l'un des deux → HTTP 503 ;
-  aucune identité ni message DB brut dans les logs/alertes. Ce contrat rend
-  la reprise idempotente, sans garantir que Wix la déclenchera.
-- **Rapprochement Forms** : le workflow quotidien compare les nombres de
-  soumissions confirmées par jour Paris sur une fenêtre close. Les sorties
-  restent agrégées, sans contenu personnel ; un écart déclenche une alerte,
-  sans réimportation automatique ni suppression de données.
-- **Postgres** : RLS activée sans policy sur toutes les tables `public` (`rls_auto_enable()` sur les
-  nouvelles) ; **toute fonction `SECURITY DEFINER` est `REVOKE … FROM PUBLIC, anon, authenticated`** —
-  `REVOKE … FROM public` seul ne suffit pas (default privileges Supabase : récidives du 25/07 et du 31/08).
-  **Invariant I1 (T-01, 02/09/2026)** : `alert_rule_exposure()` liste chaque fonction ou vue lisible par
-  `anon`/`authenticated` (cron horaire → alerte `critical`) et `check_prod_drift.py` échoue en CI si
-  elle renvoie une ligne. Vues : `security_invoker = true`.
-- **Dashboard** (data.rewolf.studio) : magic-link Supabase (`shouldCreateUser: false` depuis T-13 — un
-  e-mail hors allowlist ne crée pas de compte) + allowlist `DASHBOARD_ALLOWED_EMAILS` ; toutes les
-  lectures passent par la clé service côté serveur (RPC `dashboard_*`, `service_role` only).
-  Les destinations de callback sont limitées à l'origine attendue après
-  rejet des caractères de contrôle et résolution de l'URL.
-- **CI** : le rôle `cooked_ci_ro` ne peut ni écrire ni lire `events`/`crm_prospects`/`secib_dossiers`.
-- Sortie de sprint : `get_advisors(security)` → 0 ERROR, chaque WARN listé et justifié.
+Ne jamais committer ou imprimer les clés Supabase, tokens d’accès, URLs de connexion, credentials Google/Wix, secrets Edge, topic ntfy, fichiers `.env` ou `*credentials*.json`. Les identifiants des intégrations retirées restent confidentiels ; la suppression du code ne prouve pas leur révocation externe.
 
-## Bonnes pratiques pour les contributeurs
+En cas de fuite : révoquer ou régénérer le secret auprès du service concerné, puis mettre à jour les déploiements qui le portent. Ne pas recopier la valeur compromise dans une issue, un rapport ou un log.
 
-- Aucune PII dans les réponses, journaux, issues, commits, PR — compter (`count(*)`), ne pas lister.
-- Requêtes ad-hoc : **`events_human`**, pas `events` brut (sauf audit du filtrage, annoncé).
-- Migrations : pas de secret en dur ; toute nouvelle fonction se termine par son `REVOKE`/`GRANT` ;
-  toute nouvelle table hérite du deny-all (vérifier `rls_auto_enable`).
-- Nouveau secret = une ligne dans le tableau ci-dessus **dans la même PR**.
+| Nom | Usage conservé | Emplacement attendu |
+|---|---|---|
+| `SUPABASE_SECRET_KEY` | Écritures/lectures techniques serveur | Edge, GitHub Actions, environnement local privé ; plus nécessaire à la page de transition |
+| `COOKED_INGEST_KEY` | Gate `x-cooked-key` de `track` | Secrets Edge et Wix Velo |
+| `ANON_SALT` | Repli de hachage IP + UA | Secrets Edge `track` |
+| `ALLOWED_ORIGIN` | Garde d’origine du proxy | Secrets Edge |
+| `FORM_WEBHOOK_SECRET` | Authentification de l’automatisation Forms | Secrets Edge et URL privée de l’automatisation Wix |
+| `GSC_CREDENTIALS_B64` / `GSC_CREDENTIALS_PATH` | Lecture Search Console | GitHub Actions / fichier local hors dépôt |
+| `WIX_API_KEY` | Rapprochement des soumissions Forms | GitHub Actions ; l’inventaire public n’en dépend pas |
+| `DATABASE_URL_RO` | Catalogue et contrôles via `cooked_ci_ro` | GitHub Actions ou environnement privé |
+| `SUPABASE_DB_URL` | Export manuel de sauvegarde | GitHub Actions, si configuré |
+| `NTFY_TOPIC` / `cooked_config.ntfy_topic` | Notifications d’incident | GitHub Actions / configuration protégée |
+| `DASHBOARD_ALLOWED_EMAILS` | Allowlist après authentification | Vercel |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Authentification uniquement ; clé publique par construction | Vercel et navigateur |
+
+Modèles sans valeurs réelles : [.env.example](.env.example), [dashboard/.env.local.example](dashboard/.env.local.example). Ne pas afficher leur équivalent privé pour vérifier une configuration.
+
+## Protections existantes et limites
+
+- **Tracker.** Proxy Velo → Edge avec clé serveur et gate `x-cooked-key`, fail-fast si le secret manque. Allowlist des événements, filtre bots avant insertion, rejets agrégés dans `ingest_drops`. La garde d’origine Velo est forgeable par en-tête et il n’existe pas de limite de débit bloquante : les alertes ne sont pas une preuve d’authenticité de chaque événement.
+- **Formulaires.** Secret dans l’URL, identifiant stable obligatoire et constructeur d’événement filtré. v17 répond 200 après insertion ou doublon `23505`, 503 sur erreur DB/réseau. Aucun nom, email, téléphone, texte libre ou message DB brut dans les logs/alertes. L’idempotence permet la reprise sans prouver que Wix l’exécutera.
+- **Rapprochement Wix.** Comptes confirmés agrégés par jour Paris, sans contenu personnel dans les sorties. Écart ou API inaccessible déclenche un échec ; aucune réimportation automatique.
+- **Postgres.** RLS sur les tables métier, vues `security_invoker`, fonctions métier avec `REVOKE` pour `PUBLIC`, `anon`, `authenticated`, puis droits explicites nécessaires. `alert_rule_exposure()` et `check_prod_drift.py` contrôlent l’exposition. `REVOKE FROM PUBLIC` seul ne couvre pas les droits explicites hérités des anciens déploiements.
+- **Dashboard.** Magic-link avec `shouldCreateUser: false`, allowlist et validation des destinations de callback. Les anciens lecteurs RPC et la clé service côté dashboard ont été retirés. L’authentification ne donne pas accès aux tables métier.
+- **CI.** `cooked_ci_ro` reste un rôle de lecture technique ; il n’a pas vocation à lire les payloads d’événements ni à écrire. Les privilèges sont vérifiés avec le catalogue, pas déduits de son nom.
+
+## Règles de contribution
+
+Aucune donnée personnelle dans les réponses, journaux, issues, commits, PR ou captures : compter et agréger plutôt que lister les soumissions. Les analyses métier lisent `events_human` ; l’usage d’`events` brut est réservé au diagnostic explicite.
+
+Chaque nouvelle fonction métier porte ses droits dans sa migration ; une nouvelle table doit garder la protection RLS attendue. Les secrets ne figurent jamais dans les migrations. Après un changement de privilèges, vérifier l’exposition réelle. Les advisors Supabase complètent ce contrôle sans remplacer la lecture des droits.
+
+Documenter un nouveau secret seulement si une fonctionnalité autorisée en a besoin. Ce ménage ne crée ni nouvelle authentification ni nouvelle procédure de collecte. [OPERATIONS.md](docs/OPERATIONS.md) décrit la rétention et les limites du backup manuel.

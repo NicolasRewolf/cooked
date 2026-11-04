@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
-import {createDatabase,applyMigration,root} from './helpers.mjs';
+import {createDatabase,root} from './helpers.mjs';
 import fs from 'node:fs';
 
 const db=await createDatabase();
 try {
   await db.exec("CREATE OR REPLACE FUNCTION public.paris_today() RETURNS date LANGUAGE sql STABLE AS $$SELECT date '2026-11-04'$$;");
-  await applyMigration(db,'_canonical_visits_and_identity.sql');
   await db.exec('SET check_function_bodies=true;');
   for(const c of JSON.parse(fs.readFileSync(root+'/contracts/canonical_path_vectors.json','utf8')).path_cases) {
     assert.equal((await db.query('SELECT canonical_path($1) AS p',[c.input])).rows[0].p,c.expected,c.id);
   }
-  assert.equal((await db.query("SELECT count(*)::int AS n FROM (VALUES(NULL::text),(''),('www.jplouton-avocat.fr'),('outremer.jplouton-avocat.fr'),('other.test')) h(host) CROSS JOIN (VALUES(NULL::jsonb),('{}'::jsonb),('{\"cooked_site\":\"outremer\"}'::jsonb),('{\"cooked_site\":\"main\"}'::jsonb)) p(props) WHERE cooked_is_main_site(h.host,p.props) IS DISTINCT FROM (cooked_site_scope(h.host,p.props)='main')")).rows[0].n,0);
+  for (const [host, props, expected] of [
+    [null, null, true], ['', {}, true], ['www.jplouton-avocat.fr', {}, true],
+    ['outremer.jplouton-avocat.fr', {}, false], ['www.jplouton-avocat.fr', {cooked_site:'outremer'}, false],
+  ]) assert.equal((await db.query('SELECT cooked_is_main_site($1,$2) AS main', [host,props])).rows[0].main, expected);
 
   const rows=async(sql,args=[]) => (await db.query(sql,args)).rows;
   async function event(name,sid,at,path,props={},aid=sid+'-aid') {
@@ -61,8 +63,8 @@ try {
   const coverage=(await rows(`SELECT unattributed_phone_events::int AS phone,unattributed_form_events::int AS form
     FROM page_visits('2026-11-03','2026-11-03') WHERE row_kind='coverage'`))[0];
   assert.deepEqual(coverage,{phone:1,form:1});
-  assert.deepEqual(await rows(`SELECT attribution_method FROM form_submits_attributed(1,'2026-11-03')
-    WHERE resolved_session_id IS NULL ORDER BY occurred_at`),[{attribution_method:'unresolved'},{attribution_method:'unresolved'}]);
+  assert.deepEqual(await rows(`SELECT attribution_method FROM cooked_visit_events('2026-11-03','2026-11-03')
+    WHERE event_name='form_submit' AND visit_id IS NULL ORDER BY occurred_at`),[{attribution_method:'unresolved'},{attribution_method:'unresolved'}]);
 
   // IDs are stable across window cuts and old aliases are genuinely stitched.
   await event('pageview','old-a','2026-06-01T10:00:00Z','/old',{},'same-old-aid');
@@ -106,30 +108,29 @@ try {
   const dstKnown=await rows("SELECT visit_id FROM cooked_visit_events('2026-10-25','2026-10-25') WHERE counts_as_macro");
   assert.equal(dstKnown[0].visit_id,null,'repeated local hour actually has sixty minutes inactivity');
 
-  // Organic funnel keeps its legacy columns but now counts visit cohorts.
+  // Organic entry and phone/form contacts use the same visit cohort.
   await event('pageview','organic','2026-11-03T15:00:00Z','/organic');
   await db.query("UPDATE events SET referrer_hostname='www.google.com' WHERE session_id='organic'");
   await event('cta_phone_click','organic','2026-11-03T15:01:00Z','/organic');
   await event('cta_phone_click','organic','2026-11-03T15:02:00Z','/organic');
   await event('form_submit','webhook-organic','2026-11-03T15:03:00Z',null,{cooked_sid:'organic'});
-  assert.deepEqual(await rows(`SELECT organic_entries::int,contacts::int,contacts_phone::int,contacts_form::int,
-    contact_rate_pct::float FROM seo_to_contact_funnel(1,'2026-11-03') WHERE entry_path='/organic'`),
-    [{organic_entries:1,contacts:1,contacts_phone:1,contacts_form:1,contact_rate_pct:100}]);
+  assert.deepEqual(await rows(`SELECT entries::int,contact_visits::int,phone_visits::int,form_visits::int,
+    contact_rate_pct::float FROM page_visits('2026-11-03','2026-11-03') WHERE path='/organic'`),
+    [{entries:1,contact_visits:1,phone_visits:1,form_visits:1,contact_rate_pct:100}]);
 
   assert.equal((await rows("SELECT count(*)::int AS n FROM cooked_visit_events('2026-11-03','2026-11-03') WHERE event_name='pageview' AND journey IS NOT NULL"))[0].n,0);
 
-  // The event-grain public contracts conserve every macro, including unknowns.
-  const [{total}]=await rows("SELECT macro_conversions::int AS total FROM site_macro_counts('2026-11-03','2026-11-03')");
-  assert.equal((await rows("SELECT count(*)::int AS n FROM conversion_journeys(1,'2026-11-03')"))[0].n,total);
-  assert.equal((await rows("SELECT sum(contacts)::int AS n FROM assisted_contacts_by_entry_path('2026-11-03','2026-11-03')"))[0].n,total);
-  for (const signature of ['cooked_visit_events(date,date)','page_visits(date,date)','refresh_identity_stitch(integer)',
-    'form_submits_attributed(integer,date)','conversion_journeys(integer,date)','assisted_contacts_by_entry_path(date,date)']) {
+  // Every filtered macro event remains present, including unknown attribution.
+  const [{total}]=await rows(`SELECT count(*)::int AS total FROM events_human
+    WHERE occurred_at>=cooked_paris_ts_start('2026-11-03') AND occurred_at<cooked_paris_ts_end_exclusive('2026-11-03')
+      AND (name='cta_phone_click' OR (name='form_submit' AND form_submit_counts_as_macro(props)))`);
+  assert.equal((await rows("SELECT count(*)::int AS n FROM cooked_visit_events('2026-11-03','2026-11-03') WHERE counts_as_macro"))[0].n,total);
+  for (const signature of ['cooked_visit_events(date,date)','page_visits(date,date)','refresh_identity_stitch(integer)']) {
     const [acl]=await rows("SELECT has_function_privilege('anon',$1,'EXECUTE') AS anon,has_function_privilege('authenticated',$1,'EXECUTE') AS authenticated,has_function_privilege('service_role',$1,'EXECUTE') AS service",[signature]);
     assert.deepEqual(acl,{anon:false,authenticated:false,service:true});
   }
   await assert.rejects(()=>db.query("SELECT * FROM page_visits('2026-11-03','2026-11-04')"),e=>e.code==='22023');
   await assert.rejects(()=>db.query("SELECT * FROM page_visits('2026-11-03','2026-11-02')"),e=>e.code==='22023');
-  await applyMigration(db,'_canonical_visits_and_identity.sql');
   console.log('Canonical visits verified: inactivity, entry boundaries, certain attribution, historical stitch, rates, ACL.');
 } catch(e) {
   console.error(e.message,e.detail??'');

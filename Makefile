@@ -16,15 +16,15 @@ help:
 	@echo "make check       — lint + tous les tests locaux (sans secret prod)"
 	@echo "make lint        — ruff (src/, scripts/, tests/)"
 	@echo "make test        — mêmes suites que la CI PR, hors prod-drift"
-	@echo "make check-prod  — T-12 / I12 / T-13 (DATABASE_URL ou DATABASE_URL_RO)"
+	@echo "make check-prod  — drift du socle (DATABASE_URL ou DATABASE_URL_RO)"
 	@echo "make deps        — crée .venv et installe le paquet cooked + outils de check"
 
 $(PYTHON):
 	python3 -m venv .venv
-	$(PYTHON) -m pip install -q -e ".[dev,math]"
+	$(PYTHON) -m pip install -q -e ".[dev]"
 
 deps: $(PYTHON)
-	$(PYTHON) -m pip install -q -e ".[dev,math]"
+	$(PYTHON) -m pip install -q -e ".[dev]"
 
 lint: $(PYTHON)
 	$(PYTHON) -m ruff check src scripts tests
@@ -45,19 +45,13 @@ test-python: $(PYTHON)
 	$(PYTHON) -m pytest \
 		tests/test_gsc_common.py \
 		tests/test_gsc_batch.py \
-		tests/test_dfs_common.py \
 		tests/test_cooked_store.py \
 		tests/test_wix_taxonomy_sync.py \
-		tests/test_secib_ingest.py \
-		tests/test_wix_forms_import.py \
 		tests/test_wix_forms_reconcile.py \
-		tests/test_gbp_ingest.py \
 		tests/test_rpcs_sql_fresh.py \
 		tests/test_migration_paris_date.py \
 		tests/test_check_prod_command.py \
-		tests/test_advanced_math_analytics.py \
 		-q
-	$(PYTHON) scripts/check_normalize_vectors.py
 
 test-paths: $(PYTHON)
 	$(PYTHON) -m pytest tests/test_canonical_path_contract.py -q
@@ -94,6 +88,4 @@ check-prod: $(PYTHON)
 		echo "DATABASE_URL_RO (ou DATABASE_URL) requis — rôle cooked_ci_ro, lecture seule."; \
 		exit 1; \
 	fi; \
-	DATABASE_URL="$$url" $(PYTHON) scripts/check_prod_drift.py; \
-	DATABASE_URL="$$url" $(PYTHON) scripts/check_normalize_vectors.py; \
-	DATABASE_URL="$$url" $(PYTHON) scripts/generate_dashboard_contracts.py --check
+	DATABASE_URL="$$url" $(PYTHON) scripts/check_prod_drift.py

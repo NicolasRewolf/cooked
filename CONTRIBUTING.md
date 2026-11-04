@@ -1,145 +1,69 @@
 # Contribuer à Cooked
 
-Cooked est un système **mono-tenant** (jplouton-avocat.fr), maintenu par Nicolas
-Rewolf avec assistance IA. Ce guide sert aux humains et aux agents qui reprennent
-le repo.
+Cooked reste mono-site `jplouton-avocat.fr`. Lire [CLAUDE.md](CLAUDE.md), [CONTEXT.md](CONTEXT.md), [OPERATIONS.md](docs/OPERATIONS.md) et [SECURITY.md](SECURITY.md) avant de modifier le socle.
 
-## Avant de coder
+## Workflow
 
-1. Lire [README.md](README.md) (vue d'ensemble) et [CLAUDE.md](CLAUDE.md) (règles
-   métier et réflexes SQL).
-2. En session d'analyse prod : `SELECT * FROM alerts WHERE NOT acked` puis
-   `SELECT * FROM refresh_pipeline_health()`.
-3. Ne jamais committer de secrets (voir [SECURITY.md](SECURITY.md)).
+Branche `codex/<sujet>` depuis `main`, changements ciblés, vérifications locales, puis PR et CI. Les restrictions de la mission sur les commits, publications et déploiements priment. Préserver les changements des autres intervenants.
 
-## Workflow Git
+Toute modification SQL livrée a sa migration exacte, avec timestamp réel, dans `supabase/migrations/` et dans la même PR. Ne pas faire de correction de données manuelle non tracée. Régénérer les miroirs SQL et `contracts/rpc_snapshot_meta.json` depuis la production après livraison ; ne pas modifier le miroir pour faire passer une garde.
 
-```
-main                          — prod stable
-codex/<sujet>                 — branche de travail (ou préfixe demandé)
-  → commit(s)
-  → git push -u origin HEAD
-  → gh pr create
-  → CI verte → gh pr merge --merge --delete-branch
-```
+L’autonomie technique ne couvre pas une nouvelle décision produit, une suppression irrécupérable de données ou un coût significatif sans autorisation. Ne pas redemander une autorisation déjà donnée dans la session. Le backup externe reste décliné depuis le 02/07/2026 ; ne pas le reproposer avant juin 2027 sans demande nouvelle.
 
-Règles :
+## Vérifier
 
-- **Une migration appliquée en prod** = son miroir exact dans
-  `supabase/migrations/` (timestamp réel) dans la **même PR**.
-- Si une **RPC** change : régénérer `supabase/rpcs.sql` +
-  `contracts/rpc_snapshot_meta.json` (`python3 scripts/generate_rpcs_sql.py`
-  avec `DATABASE_URL`, ou dump prod — gate CI Arch #5).
-- Pas de contenu placeholder ; pas de `UPDATE` manuel non tracé en prod.
-- Après migration : `latest_rpc_health()` + advisors Supabase OK.
-
-## Vérifier en local
-
-Une commande, les mêmes gates que la CI (sans secret prod) :
-
-```
+```bash
+make deps
 make check
 ```
 
-Python 3.12 (CI) / 3.12+ en local, Node 22 (dashboard), Deno 2. `make check` crée le `.venv` tout seul. `make check-prod` compare le repo à la prod (clé lecture seule).
+Python 3.12 en CI, Node 22 et Deno 2. `make deps` installe le paquet avec ses outils de développement ; le module maths n’est plus une dépendance. `make check` n’a pas besoin de secrets de production.
 
-`make deps` installe les extras `dev,math`, nécessaires aux tests du CLI
-d'analyse. Après récupération d'un changement de dépendances, relancer cette
-commande même si le `.venv` existe déjà.
-
-`make check-prod` s'arrête au premier contrôle en échec. Les gardes SQL
-échouent aussi si Git ne peut pas établir le diff : récupérer la référence
-de base ou l'historique manquant avant de relancer. En CI, un push est
-comparé entre les révisions `before` et `after` de son événement ; les
-tests locaux des gardes utilisent uniquement des dépôts temporaires et
-des commandes factices, sans accès production.
-
-`make check` inclut les scénarios PostgreSQL embarqués PGlite de `tests/sql/`
-(migrations et jeux synthétiques), les lots GSC complets/partiels, le
-rapprochement de comptes Wix, la livraison idempotente du webhook, le tracker
-source/minifié et les contrats dashboard. PGlite ne remplace pas la vérification
-des extensions, privilèges, plans et volumes de production.
-
-Pour vérifier explicitement le nouveau contrat de livraison sans réseau métier :
+Les tests couvrent les imports GSC à deux grains, l’inventaire Wix, le rapprochement agrégé des formulaires, le stockage, les scénarios SQL PGlite, le tracker, les helpers Edge et l’authentification du dashboard de transition. Les anciens lecteurs RPC/dashboard et leurs contrats ont été retirés.
 
 ```bash
+# Réception formulaire : insertion, doublon, erreur, reprise et validation HTTP.
 deno test supabase/functions/_shared/form_delivery_test.ts
+# Écart dépôt/production, avec le rôle de lecture seule déjà configuré.
+make check-prod
 ```
 
-Les échantillons RPC de production ne sont pas embarqués dans le dépôt :
-les fournir via `DASHBOARD_RPC_SAMPLES` au test de contrat. Les tests ignorés
-faute d'échantillons ne comptent pas comme une validation des réponses réelles.
-Voir [tests/sql/README.md](tests/sql/README.md) et
-[docs/RELIABILITY.md](docs/RELIABILITY.md).
+`make check-prod` s’arrête au premier échec. Il ne doit pas être lancé avec des identifiants imprimés dans la commande ou les logs. PGlite vérifie les régressions sur données synthétiques ; il ne prouve pas les plans, volumes, extensions ou privilèges de production.
 
-Les workflows GitHub restent la source d'exécution CI — le Makefile les enveloppe, il ne les remplace pas.
+Les gardes SQL comparent le diff à sa référence Git ; une référence absente doit être récupérée, jamais contournée. Les workflows dans `.github/workflows/` sont la source d’exécution CI ; le Makefile en reprend les suites locales.
 
-## Conventions de commit
-
-Format libre, en français ou anglais, **impératif court + contexte** :
-
-```
-fix(C6): cooked_period_bounds utilise paris_today()
-Arch #5: rpcs.sql régénéré depuis la prod + gate CI fraîcheur
-Docs : synchro arch 10/07 + rpcs.sql
-```
-
-## Structure du repo
+## Zones du dépôt
 
 | Zone | Rôle |
 |---|---|
-| `supabase/migrations/` | **Source de vérité DDL** (déploiement) |
-| `supabase/rpcs.sql` | Miroir lecture des corps RPC (généré) |
-| `supabase/functions/` | Edge Functions Deno (`track`, `form-webhook`) |
-| `wix/` | Tracker + proxy Velo (collé manuellement dans Wix) |
-| `src/cooked/` | Bibliothèques d'ingest (GSC, DFS, GBP, SECIB, Wix, store) |
-| `scripts/` | Points d'entrée (`python3 scripts/gsc_ingest.py`…), gardes CI, contrats SQL |
-| `dashboard/` | Sous-app Next.js isolée (Vercel) |
-| `contracts/` | Vecteurs de test partagés (voir tableau ci-dessous) |
-| `docs/` | Documentation approfondie |
-| `tests/` | Tests tracker (jsdom) + Python ingest |
+| `supabase/migrations/` | Historique de déploiement du schéma |
+| `supabase/rpcs.sql`, `views.sql` | Miroirs SQL lisibles, générés depuis la production |
+| `supabase/functions/` | Réception tracker et formulaires, helpers Deno |
+| `wix/` | Tracker, proxy Velo et champs d’attribution Forms |
+| `src/cooked/`, `scripts/` | GSC, inventaire Wix, rapprochement Forms et contrôles |
+| `dashboard/` | Authentification et page de transition ; refonte séparée |
+| `tests/` | Régressions Python, tracker et PostgreSQL embarqué |
+| `contracts/` | Vecteurs partagés et métadonnées contrôlées |
+| `docs/` | Guides actifs et archives explicitement datées |
 
-### Contrats (`contracts/`)
+Les contrats actifs portent notamment sur les chemins canoniques (`canonical_path_vectors.json`), les candidatures (`recruitment_objet_vectors.json`), le miroir SQL (`rpc_snapshot_meta.json`) et les constantes du catalogue (`doc_constants.json`). Une suppression fonctionnelle retire aussi ses consommateurs, contrôles et dépendances devenus inutiles.
 
-| Fichier | Rôle |
+## CI utile
+
+| Workflow | Vérification |
 |---|---|
-| `canonical_path_vectors.json` | C3 — paths SQL / Edge / Python |
-| `branded_query_vectors.json` | Arch #3 — `gsc_is_branded` |
-| `recruitment_objet_vectors.json` | D4 — filtrage macro `form_submit` |
-| `rpc_snapshot_meta.json` | Arch #5 — hash de `supabase/rpcs.sql` |
-| `dashboard_rpc_columns.json` | T-13 (ex-Arch #6) — contrat des 16 RPC dashboard généré DEPUIS LA PROD (`scripts/generate_dashboard_contracts.py`, `--check` en CI prod-drift) ↔ Zod (`rpc-contract.test.ts`) |
+| `sql-contracts` | Scénarios SQL, bornes Paris, cohérence des migrations et miroir RPC |
+| `canonical-path-contract` | Chemins identiques en SQL, Edge et Python |
+| `python-ingest-contract` | GSC, stockage et contrôles Wix |
+| `edge-shared-helpers` / `tracker-test` | Réception et événements navigateur |
+| `dashboard-contract` | Session, allowlist, magic-link et redirections |
+| `prod-drift` / `rpcs-regenerate` | Catalogue, migrations, accès et miroir SQL |
+| `docs-check` | Versions, compteurs, objets retirés et liens d’index |
 
-## Contrats CI (ne pas casser)
+Les ingestions quotidiennes GSC/Wix et le rapprochement Forms sont détaillés dans [OPERATIONS.md](docs/OPERATIONS.md). Aucun import CPI, DFS, GBP, maths ou SECIB ne fait partie du workflow actif.
 
-| Workflow | Rôle |
-|---|---|
-| `sql-contracts` | Scénarios PostgreSQL PGlite ; C6 pas de cast Paris brut ; C6c pas de `current_date` / `now() - make_interval` (migrations ≥ 20260903093320) ; Arch #5 rpcs.sql à jour |
-| `canonical-path-contract` | SQL / Edge / Python alignés |
-| `python-ingest-contract` | Tests GSC/DFS |
-| `dashboard-contract` | Vitest dashboard et contrat RPC ↔ Zod `rpc-contract.test.ts` ; aucun nombre figé de tests dans ce guide |
-| `prod-drift` | T-12 : migrations, `rpcs.sql`, crons, exposition anon = prod ; T-13 : contrat dashboard régénéré depuis la prod + échantillons réels parsés par Zod ; T-14 : compteurs de `doc_constants.json` = prod |
-| `docs-check` | T-14 / I13 : constantes, versions, objets fantômes et orphelins des docs vivants (`scripts/check_docs_constants.py`) |
-| `tracker-test` | Suite jsdom tracker |
-| `edge-shared-helpers` | Deno tests `_shared/` (events_row, track_row, form_row, form_delivery, gardes d'ingestion) |
-| `gsc-daily-ingest` / `dfs-weekly-sync` / `gbp-daily-ingest` | Crons ingestion (GitHub Actions) |
-| `wix-forms-reconcile` | Comptes Wix confirmés comparés à Cooked par jour Paris ; écart ou API inaccessible = échec, aucun rattrapage automatique |
+## Documentation
 
-## Issues
+Un changement de comportement met à jour son guide actif et [CHANGELOG.md](CHANGELOG.md). Les constantes de catalogue suivent `contracts/doc_constants.json`. Les anciens audits gardent leurs dates et ne deviennent pas des preuves courantes. Le journal de sprint reste dans [docs/HISTORY-sprints.md](docs/HISTORY-sprints.md).
 
-GitHub Issues : `gh issue create` — labels de triage dans
-[docs/agents/triage-labels.md](docs/agents/triage-labels.md).
-
-## Documentation à mettre à jour
-
-Quand le comportement change :
-
-- [CHANGELOG.md](CHANGELOG.md) — version / date du changement notable
-- [docs/HISTORY-sprints.md](docs/HISTORY-sprints.md) — jalon sprint si significatif
-- [README.md](README.md) ou [docs/OPERATIONS.md](docs/OPERATIONS.md) si impact opérationnel
-
-## Décisions qui demandent validation explicite (Nicolas)
-
-- Décision business / produit (multi-tenancy, UI client final)
-- Suppression irréversible de données (`DROP`, `DELETE` massif)
-- Coût significatif (plan Supabase supérieur, API tierce facturée)
-- Backup externe (décliné 02/07/2026 — ne pas re-proposer avant ~06/2027)
+Les issues sont suivies sur GitHub ; labels dans [docs/agents/triage-labels.md](docs/agents/triage-labels.md). Aucun secret ni contenu personnel dans les commits, PR ou captures.

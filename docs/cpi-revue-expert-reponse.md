@@ -1,5 +1,7 @@
 > ⚠️ Archive du 18/06/2026 — revue close le 18/06/2026 (verdict : outil suffisant), confirmé par la validation J+28 du 11/07/2026.
 
+> **Archive historique — module retiré le 04/11/2026.** Ce document conserve les définitions et décisions du CPI antérieur. Ses tables, fonctions et commandes ne décrivent plus le socle actif et ne doivent pas être relancées. Voir [SIMPLIFICATION.md](SIMPLIFICATION.md) et [CONTEXT.md](../CONTEXT.md).
+
 # Revue critique experte — CPI v2.2
 
 > Réponse au prompt `cpi-prompt-revue-expert.md`.  

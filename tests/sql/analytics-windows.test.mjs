@@ -23,11 +23,11 @@ try {
   await db.exec("INSERT INTO page_taxonomy(path,category,theme) VALUES('/post/start','ressource','boundary')");
   await event('page_exit','start','2026-10-05 00:02:00 Europe/Paris','/post/start',{duration_seconds:60,max_scroll:50});
   await event('cta_booking_click','start','2026-10-05 00:03:00 Europe/Paris','/post/start');
-  assert.deepEqual((await db.query(`SELECT pages,sessions::int,dwell_median::float,scroll_median::float,
-      booking_intents::int,contacts_assisted::int,contact_rate_pct::float
-    FROM content_performance(28) WHERE theme='boundary'`)).rows,[
-    {pages:1,sessions:1,dwell_median:60,scroll_median:50,booking_intents:1,contacts_assisted:1,contact_rate_pct:100}
-  ],'content denominators, reading and contacts cover the same first closed day');
+  assert.deepEqual((await db.query(`SELECT path,visits::int,entries::int,contact_visits::int,contact_rate_pct::float
+    FROM page_visits('2026-10-05','2026-11-01') WHERE path='/post/start'`)).rows,
+    [{path:'/post/start',visits:1,entries:1,contact_visits:1,contact_rate_pct:100}],
+    'entry and contact denominators share the first completed day');
+  assert.equal((await db.query("SELECT count(*)::int AS n FROM cooked_visit_events('2026-10-05','2026-11-01') WHERE path IN ('/post/before','/post/today')")).rows[0].n,0);
   for(const id of ['gclid','gbraid','wbraid']){
     const {rows:[r]}=await db.query("SELECT classify_channel('www.google.com','gmb',NULL,'jplouton-avocat.fr',$1) AS channel",
       ['https://www.jplouton-avocat.fr/post/source?'+id+'=synthetic']);
@@ -40,7 +40,7 @@ try {
   await event('pageview','dst-second','2026-10-25 02:30:00+01','/dst');
   await event('pageview','dst-last','2026-10-25 23:59:59+01','/dst');
   await event('pageview','dst-outside','2026-10-26 00:00:00+01','/dst');
-  assert.deepEqual((await db.query('SELECT sum(sessions)::int AS n FROM content_performance(1)')).rows,[{n:3}],
+  assert.deepEqual((await db.query("SELECT sum(visits)::int AS n FROM page_visits('2026-10-25','2026-10-25') WHERE row_kind='page'")).rows,[{n:3}],
     'one closed Paris day contains both repeated hours and excludes the next midnight');
-  console.log('Analytics windows: closed days, content counts, Ads precedence and autumn transition verified.');
+  console.log('Analytics windows: closed days, visit counts, Ads precedence and autumn transition verified.');
 } finally { await db.close(); }

@@ -17,8 +17,8 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cooked — Articles ressources",
-  description: "Tableau de bord SEO & comportement des articles ressources (jplouton-avocat.fr)",
+  title: "Cooked",
+  description: "Espace privé Cooked — interface en transition.",
   robots: { index: false, follow: false },
 };
 

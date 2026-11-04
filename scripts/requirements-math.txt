@@ -1,2 +1,0 @@
-# Source unique : pyproject.toml (extra [math] — advanced_math_analytics.py).
--e ".[math]"

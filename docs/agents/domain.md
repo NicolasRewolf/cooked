@@ -1,35 +1,11 @@
-# Domain Docs
+# Documentation de domaine
 
-How the engineering skills should consume this repo's domain documentation when exploring the codebase. **Layout: single-context.**
+Avant d’explorer Cooked, lire [CONTEXT.md](../../CONTEXT.md) pour le vocabulaire et [SIMPLIFICATION.md](../SIMPLIFICATION.md) pour le périmètre du 04/11/2026. [CLAUDE.md](../../CLAUDE.md) porte l’autonomie, les règles d’analyse et les invariants techniques.
 
-## Before exploring, read these
+Les concepts actifs sont : page publiée, événement, visite observée, entrée, cohorte d’entrée, clic téléphone, formulaire éligible, visite ayant contacté, contact non attribué et couverture. Ne pas les remplacer par « prospect », « client » ou « session » brute sans preuve correspondante.
 
-- **`CONTEXT.md`** at the repo root — the domain glossary for Cooked (event taxonomy, macro/micro/engagement conversions, page types, channel taxonomy…).
-- **`docs/adr/`** — read ADRs that touch the area you're about to work in.
+Le téléphone et le formulaire se recouvrent au grain des visites ; leur union n’est pas leur somme. Un clic de rendez-vous est une intention. Google par page et Google par requête × page sont deux grains distincts ; aucune attribution individuelle requête → formulaire n’est établie.
 
-If any of these files don't exist yet, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The producer skill (`/grill-with-docs`) creates them lazily when terms or decisions actually get resolved.
+Les anciens termes CPI, CRM, modèles mathématiques et snapshots appartiennent aux archives. Leur existence historique ne justifie pas de réintroduire le module ou de créer un nouveau score dans le socle.
 
-> Both exist since 2026: `CONTEXT.md` (13/07/2026 — conversions, attribution, lecture, fraîcheur, invariants) and `docs/adr/` (ADR-0001 28/07/2026, ADR-0002 23/08/2026). Read them first; `CLAUDE.md` carries the operating rules, `CONTEXT.md` the vocabulary.
-
-## File structure (single-context)
-
-```
-/
-├── CONTEXT.md            ← domain glossary for Cooked
-├── docs/adr/             ← architectural decision records
-│   ├── 0001-....md
-│   └── 0002-....md
-└── ...
-```
-
-## Use the glossary's vocabulary
-
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md` (or, for now, the conventions in `CLAUDE.md`). Don't drift to synonyms the glossary explicitly avoids — e.g. keep the macro / micro / engagement distinction, always say `events_human` (not `events`), and never conflate "contacts" with "booking_intent".
-
-If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/grill-with-docs`).
-
-## Flag ADR conflicts
-
-If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
-
-> _Contradicts ADR-0003 (chrome anchors excluded from events_human) — but worth reopening because…_
+Lire les [ADR](../adr/) pertinents avant de changer une règle commune. Signaler une contradiction avec une décision existante et sa conséquence concrète. Une lacune de vocabulaire ne justifie pas, à elle seule, l’ajout d’un document, d’un processus ou d’une couche logicielle.

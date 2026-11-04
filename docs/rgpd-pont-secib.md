@@ -1,5 +1,7 @@
 # RGPD — pont prospects ↔ dossiers SECIB
 
+> **Archive historique — pont CRM/SECIB retiré le 04/11/2026.** Ce dossier conserve les arbitrages et textes préparés pour l’ancien rapprochement. Il ne constitue plus une procédure active ni une preuve de publication ou de conformité. Les anciennes archives privées restent confidentielles. Voir [SECURITY.md](../SECURITY.md) pour le périmètre courant.
+
 > Rédigé le **10/08/2026**, jour de mise en service de la capture d'identité
 > (form-webhook v13 + backfill des 795 soumissions Wix historiques).
 >

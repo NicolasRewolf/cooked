@@ -1,18 +1,17 @@
 /**
- * form-webhook v16 — HTTP acknowledgement follows durable delivery.
- * Both tables have a unique submission ID: retrying a partial/uncertain
- * delivery is safe. Only SQLSTATE 23505 is acknowledged as already stored.
+ * form-webhook v17 — HTTP acknowledgement follows durable event delivery.
+ * The event's unique submission ID makes uncertain deliveries safe to retry.
+ * Only SQLSTATE 23505 is acknowledged as already stored.
  * No database message or request content may enter logs/alerts.
  */
 import { type CookedEventRow, plainObject } from "./events_row.ts";
-import { buildFormSubmitRow, buildProspectRow } from "./form_row.ts";
+import { buildFormSubmitRow } from "./form_row.ts";
 
 type WriteResult = { error: { code?: string } | null };
 
 export interface FormDeliveryDependencies {
   secret: string;
   insertEvent(row: CookedEventRow): PromiseLike<WriteResult>;
-  insertProspect(row: Record<string, unknown>): PromiseLike<WriteResult>;
   raiseAlert(detail: string): PromiseLike<{ error: unknown }>;
   log?(message: string): void;
 }
@@ -96,22 +95,15 @@ export function createFormWebhookHandler(deps: FormDeliveryDependencies) {
     }
 
     let build: ReturnType<typeof buildFormSubmitRow>;
-    let prospect: ReturnType<typeof buildProspectRow>;
     try {
       build = buildFormSubmitRow(body);
-      prospect = buildProspectRow(body, build);
     } catch {
       await report("payload", "invalid_payload");
       return json(400, { ok: false, error: "invalid_payload" });
     }
 
-    // Preserve each durable part even if the other fails. A subsequent
-    // request re-attempts BOTH; a duplicate on one never skips the other.
-    const crm = prospect
-      ? await write("crm_prospects", () => deps.insertProspect(prospect!))
-      : { ok: true, duplicate: false };
     const event = await write("events", () => deps.insertEvent(build.row));
-    if (!crm.ok || !event.ok) {
+    if (!event.ok) {
       return json(503, { ok: false, error: "delivery_incomplete" });
     }
     return json(200, {

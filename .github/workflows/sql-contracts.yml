@@ -3,10 +3,6 @@ name: SQL contracts
 # C6 — bloque les casts Paris bruts dans les nouvelles migrations.
 # C6c — bloque current_date / now() - make_interval (bornes d'horloge) dans les migrations ≥ T-09 (03/09/2026).
 # Arch #5 — rpcs.sql régénéré si une RPC change dans les migrations.
-# (Arch #6 / T-13 — le contrat RPC dashboard ↔ Zod vit dans dashboard-contract.yml (vitest) et
-#  prod-drift.yml (contrat régénéré depuis la prod + échantillons réels).)
-# (Le contrat cooked_events_window — scripts/cooked_events_window_contract.sql —
-#  est un contrat MANUEL, exécuté hors CI : voir docs/OPERATIONS.md.)
 
 on:
   pull_request:
@@ -15,7 +11,6 @@ on:
       - 'supabase/rpcs.sql'
       - 'contracts/rpc_snapshot_meta.json'
       - 'tests/sql/**'
-      - 'docs/proposals/analytics-overviews.sql'
       - 'scripts/check_migration_paris_date.py'
       - 'scripts/check_rpcs_sql_fresh.py'
       - 'scripts/git_changes.py'

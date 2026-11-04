@@ -1,34 +1,10 @@
 name: Backup Weekly
 
-# Backup externe décliné par Nicolas le 02/07/2026 (risque assumé) —
-# déclenchement manuel uniquement. Le cron hebdomadaire a été retiré :
-# il échouait en rouge chaque dimanche (secret SUPABASE_DB_URL jamais créé).
-#
-# T-10 (02/07/2026) — backup des tables clés Cooked → artifact GitHub
-#
-# ⚠️ PIS-ALLER ASSUMÉ. Ce workflow dumpe les tables critiques en CSV gzippé et
-# les pousse comme ARTIFACT GitHub (rétention 90 jours MAX — voir
-# retention-days ci-dessous). Ce n'est PAS un backup durable :
-#   - au-delà de 90 jours GitHub purge l'artifact automatiquement ;
-#   - un artifact n'est pas versionné/immuable comme un bucket objet.
-# La cible durable est un bucket objet (Backblaze B2 / Cloudflare R2 / S3),
-# que Nicolas créera plus tard. Quand le bucket existe, remplacer le step
-# "Upload artifact" par un `aws s3 cp` / `rclone copy` vers le bucket et
-# porter la rétention côté bucket (lifecycle policy). En attendant, l'artifact
-# hebdo couvre le risque « perte totale du projet Supabase » sur une fenêtre
-# glissante de 90 jours.
-#
-# Secrets à configurer une fois dans GitHub
-# (Settings → Secrets and variables → Actions → New repository secret) :
-#   SUPABASE_DB_URL : connection string Postgres du projet Cooked
-#                     (ex. postgresql://postgres:<pwd>@db.<ref>.supabase.co:5432/postgres
-#                      ou l'URL du pooler Supavisor — IPv4, à privilégier). À créer par Nicolas.
-#   NTFY_TOPIC      : topic ntfy.sh pour la notification d'échec (T-11) — optionnel,
-#                     le step notify-failure est inerte tant qu'il est absent.
-#
-# Note volumétrie : la table `events` fait ~1M lignes → son \copy est
-# volumineux (plusieurs dizaines de Mo une fois gzippé). Acceptable pour un
-# artifact hebdomadaire.
+# Sauvegarde externe déclinée le 02/07/2026 : déclenchement manuel uniquement.
+# Le workflow exporte les tables sources conservées en CSV gzip vers un artifact
+# GitHub de 90 jours. Il ne constitue pas une restauration complète du projet.
+# SUPABASE_DB_URL est nécessaire ; aucune sauvegarde exécutée n’est présumée.
+# NTFY_TOPIC reste optionnel pour la notification d’échec.
 
 on:
   workflow_dispatch: # bouton "Run workflow" manuel — seul déclencheur
@@ -73,15 +49,12 @@ jobs:
 
           mkdir -p backup
 
-          # Liste EXACTE des tables à sauvegarder (T-10)
+          # Tables sources conservées après le ménage du 04/11/2026
           tables=(
             events
             gsc_path_daily
-            gsc_query_daily
             gsc_query_page_daily
-            cpi_daily
             page_taxonomy
-            annotations
             alerts
           )
 

@@ -5,6 +5,10 @@
 - Comptage commun des visites, entrées et actions, avec rattachements inconnus conservés.
 - Inventaire des pages publiées indépendant du trafic dans le référentiel existant. Écriture vérifiée via l’API et GitHub ; seules les observations modifiées sont réécrites.
 - Arrêt des recalculs automatiques des anciens indicateurs et retrait de leurs procédures inutilisées.
+- Ménage final appliqué : 24 tables, huit vues et 62 routines retirées ; restent 13 tables, trois vues et 60 routines. Les index attachés disparaissent avec les tables : 62 → 27.
+- Webhook v17 : une seule écriture analytique, dédoublonnage par soumission et reprise sur échec conservés. CRM/SECIB, CPI, DataForSEO, fiche Google, copies dashboard et modèles avancés retirés du fonctionnement actif.
+- Import GSC réduit aux pages et aux requêtes par page ; manifestes historiques conservés. Six crons et cinq sources de fraîcheur utiles.
+- Les anciennes pages dashboard sont retirées au profit d’une transition avec authentification, en attendant la refonte séparée.
 - Contrôles du socle et rapport avant/après. Détails et sémantique dans [SIMPLIFICATION.md](docs/SIMPLIFICATION.md).
 
 Format basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
@@ -15,7 +19,7 @@ Versions datées (pas de semver strict) — jalons opérationnels du système Co
 - Le Lab présente les clics hebdomadaires de Google Search Console en volume et en répartition. Les filtres recalculent les indicateurs sur les catégories visibles. Le curseur et le journal ouvrent le détail d’une semaine.
 - Le filtre des articles indique directement « 0 contact via la recherche · 28 j ». Une fois activé, il précise que les colonnes de contacts couvrent tous les canaux sur la période choisie.
 
-## [Unreleased] — Périodes cohérentes, lecture des mesures et contrôles fiables
+## [Historique — périmètre retiré le 04/11/2026] — Périodes cohérentes, lecture des mesures et contrôles fiables
 
 - Les analyses de parcours et de contenu utilisent des jours Paris clos.
   Les snapshots maths portent leurs bornes,

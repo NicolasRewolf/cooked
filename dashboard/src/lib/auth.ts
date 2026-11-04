@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { allowedEmails } from "@/env";
 
 // Défense en profondeur (M2) : en plus du gate proxy.ts, chaque page serveur
-// re-vérifie la session + l'allowlist avant de lire des données. Si le proxy
+// re-vérifie la session + l'allowlist avant d’afficher la page. Si le proxy
 // régressait, les pages resteraient fermées.
 export async function requireUser() {
   const cookieStore = await cookies();

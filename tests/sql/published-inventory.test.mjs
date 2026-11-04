@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
-import {createDatabase, applyMigration} from './helpers.mjs';
+import {createDatabase} from './helpers.mjs';
 
 const db = await createDatabase();
 try {
   await db.exec(`INSERT INTO page_taxonomy(path,category,theme,source)
     VALUES('/post/existing','classique','manual-theme','manual'),('/post/retired','ressource','old','manual');`);
-  await applyMigration(db, '_published_page_inventory.sql');
-  await applyMigration(db, '_filter_publication_updates.sql');
   // Count physical publication updates, not just equal final values. This
   // catches a replay that needlessly writes every row again.
   await db.exec(`CREATE TEMP TABLE inventory_write_count(total integer);
