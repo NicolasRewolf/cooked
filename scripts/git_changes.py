@@ -35,14 +35,25 @@ def comparison_revisions() -> tuple[str, ...]:
 
 def changed_paths(root: Path) -> list[Path]:
     revisions = comparison_revisions()
+    commands = [["git", "diff", "--name-only", "-z", *revisions, "--"]]
+    github_event = (
+        os.environ.get("GITHUB_EVENT_NAME") in {"push", "pull_request"}
+        and bool(os.environ.get("GITHUB_EVENT_PATH"))
+    )
+    if not github_event:
+        # Before commit, check the index, working copy and new files too.
+        # GitHub events keep their original PR/push commit boundaries.
+        commands.extend([
+            ["git", "diff", "--name-only", "-z", "HEAD", "--"],
+            ["git", "ls-files", "--others", "--exclude-standard", "-z", "--"],
+        ])
+    paths: set[Path] = set()
     try:
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "-z", *revisions, "--"],
-            capture_output=True,
-            text=True,
-            cwd=root,
-            check=True,
-        )
+        for command in commands:
+            result = subprocess.run(
+                command, capture_output=True, text=True, cwd=root, check=True,
+            )
+            paths.update(root / path for path in result.stdout.split("\0") if path)
     except subprocess.CalledProcessError as exc:
         detail = exc.stderr.strip() or f"code de sortie {exc.returncode}"
         raise RuntimeError(
@@ -51,4 +62,4 @@ def changed_paths(root: Path) -> list[Path]:
         ) from exc
     except OSError as exc:
         raise RuntimeError(f"Impossible d’exécuter Git : {exc}") from exc
-    return [root / path for path in result.stdout.split("\0") if path]
+    return sorted(paths)

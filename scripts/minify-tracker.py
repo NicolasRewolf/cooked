@@ -3,8 +3,8 @@
 Minify wix/tracker.html → wix/tracker.min.html for Wix Custom Code.
 
 Wix Studio's Custom Code field has a **15 000 character limit**. The
-source tracker (wix/tracker.html) is ~27 KB with all the comments and
-formatting that make it auditable. This script strips comments and
+source tracker (wix/tracker.html) keeps comments and formatting for
+review. This script strips comments and
 whitespace via jsmin (which preserves regex, string literals, and
 automatic semicolon insertion).
 
@@ -18,7 +18,10 @@ Requires:
 Outputs:
   wix/tracker.min.html   (gitignored — regenerate before each deploy)
 """
-import json, os, re, subprocess, sys
+import json
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 try:
@@ -34,6 +37,15 @@ WIX_LIMIT = 15_000
 CONSTANTS = ROOT / "contracts" / "doc_constants.json"
 
 def main(copy_to_clipboard: bool):
+    try:
+        tracker = json.loads(CONSTANTS.read_text(encoding="utf-8"))["tracker"]
+        soft = tracker["soft_limit_chars"]
+        baseline = tracker["min_chars_baseline"]
+        if any(type(value) is not int or not 0 < value <= WIX_LIMIT for value in (soft, baseline)):
+            raise ValueError("bornes tracker invalides")
+    except (OSError, ValueError, KeyError, TypeError):
+        print("error: contrat tracker absent ou invalide dans contracts/doc_constants.json", file=sys.stderr)
+        sys.exit(1)
     html = SRC.read_text(encoding="utf-8")
 
     # 1. Strip HTML comments (the big version-history banner).
@@ -67,23 +79,16 @@ def main(copy_to_clipboard: bool):
         print("Trim a comment or factor out a helper before redeploying.", file=sys.stderr)
         sys.exit(2)
 
-    # T-17 (mission 02/09/2026, a-05) — cliquet : au-dessus de la marge de sécurité, la CI refuse
-    # tout AJOUT net. Le monolithe est à 98 % de la limite ; sans le loader first-party (décision
-    # §7.1 de la mission) il ne reste pas la place d'un sprint. Réduire passe, grossir non.
-    try:
-        constants = json.loads(CONSTANTS.read_text(encoding="utf-8"))
-        soft = int(constants.get("tracker", {}).get("soft_limit_chars", 14_500))
-        baseline = int(constants.get("tracker", {}).get("min_chars_baseline", size))
-    except (OSError, ValueError):
-        soft, baseline = 14_500, size
+    # Au-dessus de la cible, aucune augmentation par rapport à la taille de
+    # référence déclarée dans le contrat. La limite Wix reste toujours stricte.
     if size > soft and size > baseline:
         print()
         print(f"T-17 : minifié {size:,} > baseline {baseline:,} au-dessus de la marge de sécurité ({soft:,}).", file=sys.stderr)
-        print("Pas d'ajout net sans le loader first-party (décision Nicolas §7.1) : réduire ailleurs, ou", file=sys.stderr)
-        print("mettre à jour contracts/doc_constants.json → tracker.min_chars_baseline dans la même PR, en le disant.", file=sys.stderr)
+        print("Réduire le tracker, ou justifier une nouvelle taille de référence dans", file=sys.stderr)
+        print("contracts/doc_constants.json → tracker.min_chars_baseline dans la même PR.", file=sys.stderr)
         sys.exit(3)
     if size > soft:
-        print(f"⚠ {size:,} > marge de sécurité {soft:,} : aucun ajout net possible sans loader (baseline {baseline:,}).")
+        print(f"⚠ {size:,} > cible {soft:,} : cliquet à {baseline:,} caractères.")
 
     if copy_to_clipboard:
         if sys.platform == "darwin":

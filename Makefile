@@ -5,7 +5,6 @@
 
 PYTHON := .venv/bin/python
 DENO  ?= deno
-NODE  ?= node
 NPM   ?= npm
 
 .PHONY: help deps lint test check check-prod test-sql test-python test-paths test-docs test-tracker test-edge test-dashboard
@@ -38,23 +37,13 @@ test-sql: $(PYTHON)
 	GITHUB_ACTIONS=1 $(PYTHON) scripts/check_migration_paris_date.py
 	$(PYTHON) scripts/check_rpcs_sql_fresh.py
 	$(PYTHON) scripts/check_schema_migrations.py
-	@test -d tests/sql/node_modules/@electric-sql/pglite || $(NPM) ci --prefix tests/sql
+	$(NPM) ci --prefix tests/sql
 	$(NPM) test --prefix tests/sql
 
 test-python: $(PYTHON)
-	$(PYTHON) -m pytest \
-		tests/test_gsc_common.py \
-		tests/test_gsc_batch.py \
-		tests/test_cooked_store.py \
-		tests/test_wix_taxonomy_sync.py \
-		tests/test_wix_forms_reconcile.py \
-		tests/test_rpcs_sql_fresh.py \
-		tests/test_migration_paris_date.py \
-		tests/test_check_prod_command.py \
-		-q
+	$(PYTHON) -m pytest
 
-test-paths: $(PYTHON)
-	$(PYTHON) -m pytest tests/test_canonical_path_contract.py -q
+test-paths:
 	@command -v $(DENO) >/dev/null || { echo "manque deno — brew install deno (CI : denoland/setup-deno@v2)"; exit 1; }
 	$(DENO) test supabase/functions/_shared/canonical_path_test.ts
 
@@ -66,8 +55,8 @@ test-tracker: $(PYTHON)
 	@if grep -nE 'COOKED_DEBUG[[:space:]]*=[[:space:]]*true' wix/*.js; then \
 		echo "COOKED_DEBUG = true dans un fichier Velo"; exit 1; \
 	fi
-	@test -d node_modules/jsdom || npm install jsdom --no-save
-	$(NODE) tests/tracker.test.js
+	$(NPM) ci --prefix tests
+	$(NPM) test --prefix tests
 
 test-edge:
 	@command -v $(DENO) >/dev/null || { echo "manque deno — brew install deno (CI : denoland/setup-deno@v2)"; exit 1; }
@@ -77,12 +66,17 @@ test-edge:
 	$(DENO) check supabase/functions/track/index.ts
 	$(DENO) test supabase/functions/_shared/form_row_test.ts
 	$(DENO) test supabase/functions/_shared/form_delivery_test.ts
+	$(DENO) check supabase/functions/form-webhook/index.ts
 	$(DENO) test supabase/functions/_shared/ingest_gate_test.ts
 	$(DENO) test supabase/functions/_shared/ingest_drops_test.ts
 
 test-dashboard:
-	@test -d dashboard/node_modules || (cd dashboard && $(NPM) ci)
-	cd dashboard && $(NPM) test
+	$(NPM) ci --prefix dashboard
+	$(NPM) run lint --prefix dashboard
+	$(NPM) test --prefix dashboard
+	NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
+	NEXT_PUBLIC_SUPABASE_ANON_KEY=synthetic-public-key \
+	DASHBOARD_ALLOWED_EMAILS=synthetic@example.invalid $(NPM) run build --prefix dashboard
 
 check-prod: $(PYTHON)
 	@set -e; url="$${DATABASE_URL_RO:-$$DATABASE_URL}"; \

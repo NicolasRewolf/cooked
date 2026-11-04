@@ -46,7 +46,7 @@ Les gardes SQL comparent le diff à sa référence Git ; une référence absente
 | `dashboard/` | Authentification et page de transition ; refonte séparée |
 | `tests/` | Régressions Python, tracker et PostgreSQL embarqué |
 | `contracts/` | Vecteurs partagés et métadonnées contrôlées |
-| `docs/` | Guides actifs et archives explicitement datées |
+| `docs/` | Guides du socle et décisions communes (ADR) |
 
 Les contrats actifs portent notamment sur les chemins canoniques (`canonical_path_vectors.json`), les candidatures (`recruitment_objet_vectors.json`), le miroir SQL (`rpc_snapshot_meta.json`) et les constantes du catalogue (`doc_constants.json`). Une suppression fonctionnelle retire aussi ses consommateurs, contrôles et dépendances devenus inutiles.
 
@@ -60,12 +60,12 @@ Les contrats actifs portent notamment sur les chemins canoniques (`canonical_pat
 | `edge-shared-helpers` / `tracker-test` | Réception et événements navigateur |
 | `dashboard-contract` | Session, allowlist, magic-link et redirections |
 | `prod-drift` / `rpcs-regenerate` | Catalogue, migrations, accès et miroir SQL |
-| `docs-check` | Versions, compteurs, objets retirés et liens d’index |
+| `docs-check` | Documents requis, versions, compteurs, liens locaux et index |
 
 Les ingestions quotidiennes GSC/Wix et le rapprochement Forms sont détaillés dans [OPERATIONS.md](docs/OPERATIONS.md). Aucun import CPI, DFS, GBP, maths ou SECIB ne fait partie du workflow actif.
 
 ## Documentation
 
-Un changement de comportement met à jour son guide actif et [CHANGELOG.md](CHANGELOG.md). Les constantes de catalogue suivent `contracts/doc_constants.json`. Les anciens audits gardent leurs dates et ne deviennent pas des preuves courantes. Le journal de sprint reste dans [docs/HISTORY-sprints.md](docs/HISTORY-sprints.md).
+Un changement de comportement met à jour son guide actif et [CHANGELOG.md](CHANGELOG.md). Les constantes de catalogue suivent `contracts/doc_constants.json`. Les guides retirés et les anciens audits restent dans [l’historique Git](https://github.com/NicolasRewolf/cooked/tree/b6aa6370b9041763814bc0b1253182ece2694772/docs). Le dépôt courant ne conserve pas de recettes pour des fonctions abandonnées.
 
-Les issues sont suivies sur GitHub ; labels dans [docs/agents/triage-labels.md](docs/agents/triage-labels.md). Aucun secret ni contenu personnel dans les commits, PR ou captures.
+Les issues et PRD sont suivis sur GitHub dans ce dépôt. Lire le ticket et ses commentaires avant de le traiter (`gh issue view <numéro> --comments`). Les modèles utilisent `needs-triage` ; ne pas inventer de labels ni ouvrir une nouvelle issue sans nécessité liée à la tâche. Pour les descriptions et commentaires multilignes, écrire un fichier puis utiliser `--body-file`. Aucun secret ni contenu personnel dans les commits, PR ou captures.

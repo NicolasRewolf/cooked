@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Arch #5 — Gate CI : une migration qui redéfinit une RPC doit régénérer rpcs.sql.
+"""Arch #5 — Toute création, modification ou suppression de RPC régénère le miroir.
 
 Règle :
-  • CREATE OR REPLACE (FUNCTION|PROCEDURE) public.<name> dans une migration modifiée
-    → supabase/rpcs.sql doit figurer dans le même diff PR/push
-    → chaque <name> doit avoir un marqueur dans rpcs.sql
+  • CREATE [OR REPLACE], ALTER ou DROP (FUNCTION|PROCEDURE) public.<name>
+    → supabase/rpcs.sql et ses métadonnées figurent dans le même diff PR/push
+    → les fonctions créées et non supprimées ont un marqueur dans rpcs.sql
 """
 from __future__ import annotations
 
@@ -18,18 +18,12 @@ ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "supabase" / "migrations"
 RPCS = ROOT / "supabase" / "rpcs.sql"
 
-RPC_DEF = re.compile(
-    r"CREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE)\s+public\.(\w+)",
+RPC_CHANGE = re.compile(
+    r"(?P<operation>CREATE|ALTER|DROP)\s+(?:OR\s+REPLACE\s+)?"
+    r"(?:FUNCTION|PROCEDURE)\s+(?:IF\s+EXISTS\s+)?public\.(?P<name>\w+)",
     re.IGNORECASE,
 )
 MARKER = re.compile(r"^-- ═══ public\.(\w+)\(", re.MULTILINE)
-
-
-def rpc_names_in_file(path: Path) -> set[str]:
-    if not path.exists():
-        return set()
-    text = path.read_text(encoding="utf-8")
-    return {m.group(1).lower() for m in RPC_DEF.finditer(text)}
 
 
 def rpc_markers_in_rpcs_sql() -> set[str]:
@@ -45,17 +39,26 @@ def main() -> int:
         print(f"Arch #5 — contrôle impossible : {exc}", file=sys.stderr)
         return 1
 
-    migrations = [p for p in paths if p.parent == MIGRATIONS]
+    migrations = sorted(p for p in paths if p.parent == MIGRATIONS)
     if not migrations:
         print("Arch #5 OK — aucune migration modifiée")
         return 0
 
     touched: set[str] = set()
+    defined: set[str] = set()
     for path in migrations:
-        touched |= rpc_names_in_file(path)
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            for match in RPC_CHANGE.finditer(text):
+                name, operation = match["name"].lower(), match["operation"].upper()
+                touched.add(name)
+                if operation == "CREATE":
+                    defined.add(name)
+                elif operation == "DROP":
+                    defined.discard(name)
 
     if not touched:
-        print(f"Arch #5 OK — {len(migrations)} migration(s), aucune RPC redéfinie")
+        print(f"Arch #5 OK — {len(migrations)} migration(s), aucune RPC modifiée")
         return 0
 
     pr_files = {p.relative_to(ROOT).as_posix() for p in paths}
@@ -66,13 +69,13 @@ def main() -> int:
     if not rpcs_changed:
         failures.append(
             "supabase/rpcs.sql doit être régénéré (python3 scripts/generate_rpcs_sql.py) "
-            f"car ces RPC sont redéfinies : {', '.join(sorted(touched))}"
+            f"car ces RPC sont modifiées : {', '.join(sorted(touched))}"
         )
     if not meta_changed:
         failures.append("contracts/rpc_snapshot_meta.json doit être mis à jour avec rpcs.sql")
 
     markers = rpc_markers_in_rpcs_sql()
-    missing = sorted(name for name in touched if name not in markers)
+    missing = sorted(defined - markers)
     if missing and rpcs_changed:
         failures.append(
             f"Marqueurs absents dans rpcs.sql : {', '.join(missing)} "
@@ -85,7 +88,7 @@ def main() -> int:
         return 1
 
     print(
-        f"Arch #5 OK — {len(touched)} RPC(s) redéfinie(s), rpcs.sql à jour "
+        f"Arch #5 OK — {len(touched)} RPC(s) modifiée(s), rpcs.sql à jour "
         f"({', '.join(sorted(touched))})"
     )
     return 0

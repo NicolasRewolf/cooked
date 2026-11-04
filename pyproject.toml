@@ -28,12 +28,12 @@ where = ["src"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-indent-width = 2
+indent-width = 4
 src = ["src", "scripts", "tests"]
 extend-exclude = ["dashboard", "wix", "supabase"]
 
 [tool.ruff.lint]
-select = ["E9", "F63", "F7", "F82"]
+select = ["E9", "F401", "F63", "F7", "F82", "F841"]
 
 [tool.ruff.format]
 indent-style = "space"

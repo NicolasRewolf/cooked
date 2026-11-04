@@ -1,0 +1,9 @@
+# Identifiant local ; les commandes de livraison précisent --project-ref.
+project_id = "cooked"
+
+# Ces deux réceptions vérifient leur propre secret dans le handler.
+[functions.track]
+verify_jwt = false
+
+[functions.form-webhook]
+verify_jwt = false

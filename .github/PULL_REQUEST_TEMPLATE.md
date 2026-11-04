@@ -13,7 +13,7 @@
 - [ ] `latest_rpc_health()` + advisors vérifiés après migration
 - [ ] Si RPC modifiée : `supabase/rpcs.sql` + `contracts/rpc_snapshot_meta.json` régénérés
 - [ ] Si tracker : `python3 scripts/minify-tracker.py` OK (< 15 000 car.)
-- [ ] [CHANGELOG.md](CHANGELOG.md) mis à jour si changement notable
+- [ ] [CHANGELOG.md](../CHANGELOG.md) mis à jour si changement notable
 - [ ] Pas de secret / credential dans le diff
 
 ## Test plan

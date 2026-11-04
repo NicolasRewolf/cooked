@@ -98,7 +98,7 @@ Le workflow `wix-forms-reconcile` compare les nombres de soumissions Wix confirm
 | `gsc-daily-ingest` | Quotidien 06:00 + manuel | Deux grains GSC et lot commun |
 | `wix-forms-reconcile` | Quotidien 07:10 + manuel | Écarts de comptes Wix/Cooked |
 | `prod-drift` | Quotidien 06:20 + CI/manuellement selon workflow | Cohérence dépôt/production |
-| `backup-weekly` | Manuel uniquement | Export partiel des tables sources |
+| `backup-manual` | Manuel uniquement | Export partiel des tables sources |
 
 Les horaires GitHub ne garantissent pas le début effectif du run. Ne pas exécuter plusieurs reconstructions ou lectures lourdes en parallèle. Un `statement_timeout` doit être posé avant le statement concerné, pas seulement dans le corps d’une fonction déjà lancée.
 
@@ -129,13 +129,13 @@ Après livraison SQL : régénérer les miroirs et leurs métadonnées, vérifie
 Pour les Edge, conserver les secrets déjà configurés et les modules `_shared` :
 
 ```bash
-supabase functions deploy track --no-verify-jwt
-supabase functions deploy form-webhook --no-verify-jwt
+supabase functions deploy track --project-ref mxycmjkeotrycyneacje
+supabase functions deploy form-webhook --project-ref mxycmjkeotrycyneacje
 ```
 
-Le CLI doit viser le projet Cooked. Déploiements de référence : **track v32 / Supabase 42** le 04/11/2026 ; **form-webhook v17 / Supabase 26** le 04/11/2026. Comparer le bundle distant au code livré. Une réponse 401 ou 405 vérifie une garde HTTP, pas la réception complète d’un formulaire. Aucun faux contact de production pour tester.
+Le projet distant est explicite dans ces commandes. [supabase/config.toml](../supabase/config.toml) conserve `verify_jwt=false` pour ces deux réceptions, qui vérifient leurs clés dédiées. Livraison du **04/11/2026 à 11:05 Paris** : **track v32 / Supabase 43** et **form-webhook v17 / Supabase 27**. Les douze fichiers des deux bundles distants sont identiques aux sources. Les gardes GET répondent 405 ; vingt événements réels sprint43 ont été reçus après cette livraison. Comparer le bundle distant au code livré. Une réponse 401 ou 405 vérifie une garde HTTP, pas la réception complète d’un formulaire. Aucun faux contact de production pour tester.
 
-Le tracker source est **sprint43**, déployé et reçu le 20/10/2026. Avant collage Wix :
+Le tracker **sprint44** a été livré dans le Custom Code Wix, révision 35, le **04/11/2026 à 11:06 Paris**, avec les mêmes paramètres. Le HTML public sans cache contient exactement le minifié de 14 480 caractères. À 11:07, l’URL racine servait encore sprint43 depuis son cache ; la propagation était en cours. La réception est confirmée : 37 événements réels sprint44 entre 11:06:55 et 11:08:52 Paris. Pour préparer le code Wix :
 
 ```bash
 python3 scripts/minify-tracker.py --copy
@@ -149,12 +149,12 @@ Le dashboard conserve Supabase Auth, l’allowlist et une page de transition. Il
 
 La simplification ne change pas les durées de rétention des sources : purge mensuelle des événements de plus de 13 mois, purge du bruit de plus de 28 jours et nettoyage des entrées noise de plus de 90 jours. Une durée serveur n’expire pas automatiquement l’identifiant du navigateur.
 
-Le workflow `backup-weekly` est manuel. Il exporte `events`, les deux tables GSC, `page_taxonomy` et `alerts` vers des fichiers CSV compressés, avec artifact GitHub de 90 jours. Il ne sauvegarde ni tout le schéma, ni les rôles, ni l’authentification, ni les secrets ; ce n’est pas une restauration complète. Son existence ne prouve pas qu’un export récent a réussi. Le backup externe a été décliné le 02/07/2026 ; ne pas le réactiver ou le reproposer hors décision de Nicolas.
+Le workflow `backup-manual` est manuel. Il exporte `events`, les deux tables GSC, `page_taxonomy` et `alerts` vers des fichiers CSV compressés, avec artifact GitHub de 90 jours. Il ne sauvegarde ni tout le schéma, ni les rôles, ni l’authentification, ni les secrets ; ce n’est pas une restauration complète. Son existence ne prouve pas qu’un export récent a réussi. Le backup externe a été décliné le 02/07/2026 ; ne pas le réactiver ou le reproposer hors décision de Nicolas.
 
-Les secrets restent hors dépôt et ne doivent jamais apparaître dans les commandes partagées, URLs copiées ou logs. Le retrait CRM n’efface pas les contraintes de confidentialité des anciennes sauvegardes ou archives privées. Les règles de [SECURITY.md](../SECURITY.md) restent applicables ; ses inventaires historiques doivent être lus avec leur date.
+Les secrets restent hors dépôt et ne doivent jamais apparaître dans les commandes partagées, URLs copiées ou logs. Le retrait CRM n’efface pas les contraintes de confidentialité des anciennes sauvegardes ou archives privées. Les règles de [SECURITY.md](../SECURITY.md) restent applicables ; la suppression d’une intégration ne prouve pas la révocation de ses anciens accès.
 
 ## En cas d’écart
 
 Localiser la source et la période avant de recalculer : réception, filtre, couture, lot GSC ou inventaire Wix. Comparer les comptes agrégés et les dates ; éviter d’extraire des identités ou du contenu de formulaire. Une absence de données reste inconnue tant que sa cause n’est pas établie.
 
-Les archives [RELIABILITY.md](RELIABILITY.md), [HISTORY-sprints.md](HISTORY-sprints.md) et les [audits](README.md) expliquent les incidents antérieurs. Elles ne prescrivent plus de relancer un calcul CPI, CRM ou snapshot retiré.
+Les [guides maintenus](README.md) décrivent le socle courant. Les anciens audits et recettes restent dans [l’historique Git](https://github.com/NicolasRewolf/cooked/tree/b6aa6370b9041763814bc0b1253182ece2694772/docs) ; leurs commandes ne décrivent pas le fonctionnement actuel.

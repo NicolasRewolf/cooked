@@ -13,8 +13,12 @@ trim_trailing_whitespace = false
 [*.{json,yml,yaml}]
 indent_size = 2
 
-[*.{js,ts,tsx,py,sql}]
+[*.{js,ts,tsx,sql}]
 indent_size = 2
+indent_style = space
+
+[*.py]
+indent_size = 4
 indent_style = space
 
 [Makefile]

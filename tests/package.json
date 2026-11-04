@@ -1,0 +1,10 @@
+{
+  "name": "cooked-tracker-tests",
+  "private": true,
+  "scripts": {
+    "test": "node tracker.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "29.1.1"
+  }
+}

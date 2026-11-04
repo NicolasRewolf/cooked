@@ -1,20 +1,26 @@
 .DS_Store
-**/.DS_Store
 
-# IDE / agents locaux
+# Réglages et espaces de travail locaux des outils
 .cursor/
 .claude/
 .agents/
 skills-lock.json
+.vercel/
 supabase/.temp/
+supabase/.branches/
+.tmp/
 
-.claude/settings.local.json
+# Environnement et secrets : seuls les modèles sont versionnés
 .env
-.env.local
-.env.*.local
+.env.*
 !.env.example
 !**/.env*.example
-scripts/.env.dfs
+*credentials*.json
+service-account*.json
+*.pem
+*.key
+
+# Dépendances, caches et sorties de compilation
 node_modules/
 *.log
 __pycache__/
@@ -23,38 +29,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.egg-info/
-.deploy-*.json
-.full-deploy.json
-.mcp-deploy-args.json
-.mcp-deploy-body.json
-.deploy-out-oneline.json
-track_content_only.txt
-supabase/functions/track/.deploy-content.ts
 
-# Build artifact — tracker.min.html is regenerated from tracker.html
-# at each Wix deploy. Source of truth = tracker.html.
+# Artefact régénéré depuis wix/tracker.html avant chaque livraison
 wix/tracker.min.html
-
-# Safety net : aucun fichier de credentials Google / Supabase / Wix
-# ne doit JAMAIS atterrir dans ce repo. Les credentials Service
-# Account GSC vivent dans ~/.claude/gsc-credentials.json (hors repo).
-# Les secrets Supabase sont en env vars (cf scripts/gsc_ingest_*.py).
-*credentials*.json
-*-credentials.json
-service-account*.json
-*.pem
-*.key
-.vercel
-
-# Artefacts de tests locaux (jsdom)
-package.json
-package-lock.json
-node_modules/
-
-# Sous-app dashboard (Next.js isolée) : son manifeste DOIT être suivi
-# (les règles ci-dessus, pour le setup jsdom racine, le masqueraient sinon).
-# node_modules/ et .env.local restent ignorés.
-!dashboard/package.json
-!dashboard/package-lock.json
-!tests/sql/package.json
-!tests/sql/package-lock.json

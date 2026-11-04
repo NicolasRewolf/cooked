@@ -19,7 +19,7 @@ C6c — BORNES D'HORLOGE : interdit `current_date` et `now() - make_interval(...
       produit les défauts d-02/d-06 de la mission du 02/09/2026 : une fenêtre
       « 28 j » qui change avec l'heure de la question et un `current_date` UTC
       qui décale la borne Paris. Fenêtres closes = cooked_period_bounds() /
-      cooked_snapshot_window() / paris_today(). Les littéraux entre apostrophes
+      paris_today(). Les littéraux entre apostrophes
       (regex d'un contract-test) et les commentaires sont ignorés ; échappement
       explicite : `-- c6c:allow` sur la ligne.
 """

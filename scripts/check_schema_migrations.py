@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "supabase" / "migrations"
 
-VERSION_RE = re.compile(r"^(\d{14})_")
+VERSION_RE = re.compile(r"^(\d{14})_.+\.sql$")
 
 
 def local_versions() -> list[str]:
@@ -21,17 +20,20 @@ def local_versions() -> list[str]:
     for path in sorted(MIGRATIONS.glob("*.sql")):
         m = VERSION_RE.match(path.name)
         if not m:
-            print(f"WARN: migration sans timestamp 14 chiffres: {path.name}")
-            continue
+            raise ValueError(f"nom de migration invalide : {path.name} (14 chiffres_nom.sql requis)")
         versions.append(m.group(1))
     return versions
 
 
 def main() -> int:
-    versions = local_versions()
+    try:
+        versions = local_versions()
+    except ValueError as error:
+        print(f"Arch #10 FAIL — {error}")
+        return 1
     if not versions:
-        print("Arch #10 WARN — aucune migration locale")
-        return 0
+        print("Arch #10 FAIL — aucune migration locale")
+        return 1
 
     dupes = sorted({v for v in versions if versions.count(v) > 1})
     if dupes:
@@ -46,8 +48,8 @@ def main() -> int:
     try:
         import psycopg2  # type: ignore
     except ImportError:
-        print("Arch #10 OK local — psycopg2 absent, skip prod diff")
-        return 0
+        print("Arch #10 FAIL — psycopg2 requis pour le contrôle DATABASE_URL demandé")
+        return 1
 
     with psycopg2.connect(db_url) as conn:
         with conn.cursor() as cur:

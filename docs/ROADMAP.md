@@ -19,6 +19,4 @@ Maintenir les sources conservées et leurs contrôles : réception des événeme
 
 La qualification du traitement pseudonyme, les informations publiées et les durées restent des sujets distincts de la suppression des fonctions. Lire [SECURITY.md](../SECURITY.md) sans déduire une conformité de la seule réussite des tests.
 
-## Historique
-
-Les travaux antérieurs restent dans [HISTORY-sprints.md](HISTORY-sprints.md), [RELIABILITY.md](RELIABILITY.md), [ROADMAP-sprint38-handoff.md](ROADMAP-sprint38-handoff.md) et la [passation de septembre](mission-2026-09-02/03-passation.md). Leurs échéances passées ne prouvent pas une livraison et leurs modules abandonnés ne doivent pas être réintroduits automatiquement.
+Les changements livrés sont consignés dans [CHANGELOG.md](../CHANGELOG.md).

@@ -25,9 +25,9 @@ const supabase = createClient(SUPABASE_URL, SECRET_KEY, {
 
 Deno.serve(createFormWebhookHandler({
   secret: WEBHOOK_SECRET,
-  insertEvent: async (row) => await supabase.from("events").insert(row),
-  raiseAlert: async (detail) =>
-    await supabase.rpc("raise_cooked_alert", {
+  insertEvent: (row) => supabase.from("events").insert(row),
+  raiseAlert: (detail) =>
+    supabase.rpc("raise_cooked_alert", {
       p_kind: "form_submit_dropped",
       p_sev: "critical",
       p_detail: detail,

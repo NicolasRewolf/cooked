@@ -43,7 +43,7 @@
   "freshness_sources": 5,
   "cron_jobs_count": 6,
   "versions": {
-    "tracker": "sprint43",
+    "tracker": "sprint44",
     "edge_track": 32,
     "edge_form_webhook": 17
   },
@@ -61,18 +61,12 @@
       "docs/PLAYBOOK-analyse-seo.md",
       "dashboard/README.md",
       "dashboard/CLAUDE.md",
-      "docs/agents/domain.md",
       "docs/SIMPLIFICATION.md"
     ],
     "index_docs": [
       "docs/README.md",
       "AGENTS.md",
       "CLAUDE.md"
-    ],
-    "orphan_check_exclude_prefixes": [
-      "docs/mission-2026-09-02/annexes/",
-      "docs/mission-2026-09-02/journal",
-      "docs/adr/"
     ],
     "forbidden_in_living_docs": [
       "dashboard_check_stale",
@@ -91,9 +85,9 @@
     ]
   },
   "tracker": {
-    "min_chars_baseline": 14460,
+    "min_chars_baseline": 14480,
     "soft_limit_chars": 14500,
-    "note": "sprint43 : 14 460 caractères, sous la cible 14 500 ; limite Wix 15 000. Cliquet conservé."
+    "note": "sprint44 : 14 480 caractères, sous la cible 14 500 ; limite Wix 15 000. Cliquet conservé."
   },
   "tables": 13
 }

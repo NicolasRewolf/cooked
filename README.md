@@ -19,7 +19,7 @@ Le futur tableau devra montrer toutes les pages publiées, y compris celles sans
 
 Les données conservées passent par les mêmes filtres bots/bruit et la même définition de visite. Le catalogue cible comprend **13 tables, trois vues et 60 routines** publiques, dont 56 Cooked et quatre fonctions de l’extension `unaccent`. Les compteurs de référence sont dans [contracts/doc_constants.json](contracts/doc_constants.json).
 
-Le CPI, les copies de l’ancien dashboard, les modèles mathématiques, DataForSEO, Google Business Profile et le pont CRM/SECIB sortent du produit. Leurs guides restent consultables comme archives ; ils ne sont plus des recettes d’exploitation.
+Le CPI, les copies de l’ancien dashboard, les modèles mathématiques, DataForSEO, Google Business Profile et le pont CRM/SECIB sortent du produit. Leurs anciens guides restent dans [l’historique Git](https://github.com/NicolasRewolf/cooked/tree/b6aa6370b9041763814bc0b1253182ece2694772/docs) ; le dépôt courant décrit uniquement le socle maintenu.
 
 ## Ce que les chiffres signifient
 
@@ -38,4 +38,4 @@ Lire [AGENTS.md](AGENTS.md), puis [CLAUDE.md](CLAUDE.md), [CONTRIBUTING.md](CONT
 
 Les événements restent pseudonymes. Aucun secret, contenu de formulaire ou identité ne doit entrer dans le dépôt, les rapports ou les logs. Le webhook v17 n’écrit plus dans un CRM ; cette simplification ne démontre pas l’anonymat des autres données.
 
-[État de la simplification](docs/SIMPLIFICATION.md) · [Documentation](docs/README.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md) · [Historique](docs/HISTORY-sprints.md)
+[État de la simplification](docs/SIMPLIFICATION.md) · [Documentation](docs/README.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md)

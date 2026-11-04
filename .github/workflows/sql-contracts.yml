@@ -2,7 +2,7 @@ name: SQL contracts
 
 # C6 — bloque les casts Paris bruts dans les nouvelles migrations.
 # C6c — bloque current_date / now() - make_interval (bornes d'horloge) dans les migrations ≥ T-09 (03/09/2026).
-# Arch #5 — rpcs.sql régénéré si une RPC change dans les migrations.
+# Arch #5 — rpcs.sql régénéré si une RPC est créée, modifiée ou supprimée.
 
 on:
   pull_request:
@@ -11,6 +11,8 @@ on:
       - 'supabase/rpcs.sql'
       - 'contracts/rpc_snapshot_meta.json'
       - 'tests/sql/**'
+      - 'contracts/canonical_path_vectors.json'
+      - 'contracts/recruitment_objet_vectors.json'
       - 'scripts/check_migration_paris_date.py'
       - 'scripts/check_rpcs_sql_fresh.py'
       - 'scripts/git_changes.py'
@@ -21,9 +23,15 @@ on:
     paths:
       - 'supabase/migrations/**'
       - 'supabase/rpcs.sql'
+      - 'contracts/rpc_snapshot_meta.json'
+      - 'tests/sql/**'
+      - 'contracts/canonical_path_vectors.json'
+      - 'contracts/recruitment_objet_vectors.json'
       - 'scripts/check_migration_paris_date.py'
       - 'scripts/check_rpcs_sql_fresh.py'
       - 'scripts/git_changes.py'
+      - 'scripts/check_schema_migrations.py'
+      - '.github/workflows/sql-contracts.yml'
 
 jobs:
   postgres-behavior:

@@ -12,6 +12,7 @@ on:
       - 'Makefile'
       - 'tests/test_*.py'
       - 'tests/fixtures/**'
+      - 'contracts/canonical_path_vectors.json'
       - '.github/workflows/python-ingest-contract.yml'
   push:
     branches: [main]
@@ -21,6 +22,9 @@ on:
       - 'pyproject.toml'
       - 'Makefile'
       - 'tests/test_*.py'
+      - 'tests/fixtures/**'
+      - 'contracts/canonical_path_vectors.json'
+      - '.github/workflows/python-ingest-contract.yml'
 
 jobs:
   python-ingest-contract:
@@ -34,15 +38,7 @@ jobs:
           cache-dependency-path: pyproject.toml
       - name: Install test deps
         run: pip install ".[dev]"
+      - name: Ruff — erreurs et code inutilisé
+        run: python3 -m ruff check src scripts tests
       - name: Ingestion et gardes CI — tests locaux
-        run: |
-          python3 -m pytest \
-            tests/test_gsc_common.py \
-            tests/test_gsc_batch.py \
-            tests/test_cooked_store.py \
-            tests/test_wix_taxonomy_sync.py \
-            tests/test_wix_forms_reconcile.py \
-            tests/test_rpcs_sql_fresh.py \
-            tests/test_migration_paris_date.py \
-            tests/test_check_prod_command.py \
-            -q
+        run: python3 -m pytest

@@ -1,4 +1,4 @@
-name: Backup Weekly
+name: Export manuel des tables sources
 
 # Sauvegarde externe déclinée le 02/07/2026 : déclenchement manuel uniquement.
 # Le workflow exporte les tables sources conservées en CSV gzip vers un artifact
@@ -11,7 +11,7 @@ on:
 
 # Empêche 2 backups simultanés (dump lourd sur `events`)
 concurrency:
-  group: backup-weekly
+  group: backup-manual
   cancel-in-progress: false
 
 permissions:
@@ -80,7 +80,7 @@ jobs:
       - name: Upload backup as artifact (rétention 90j — PIS-ALLER)
         uses: actions/upload-artifact@v4
         with:
-          name: cooked-backup-weekly
+          name: cooked-backup-manual
           path: backup/
           retention-days: 90
           if-no-files-found: error

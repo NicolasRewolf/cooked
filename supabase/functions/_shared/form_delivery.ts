@@ -51,18 +51,17 @@ export function createFormWebhookHandler(deps: FormDeliveryDependencies) {
   }
 
   async function write(
-    stage: string,
-    insert: () => PromiseLike<WriteResult>,
+    row: CookedEventRow,
   ): Promise<{ ok: boolean; duplicate: boolean }> {
     try {
-      const { error } = await insert();
+      const { error } = await deps.insertEvent(row);
       if (!error) return { ok: true, duplicate: false };
       if (error.code === "23505") return { ok: true, duplicate: true };
-      await report(stage, safeCode(error));
+      await report("events", safeCode(error));
     } catch {
       // A network exception can mean the write succeeded but its response
       // was lost. Do not claim failure or success: ask for an idempotent retry.
-      await report(stage, "unknown");
+      await report("events", "unknown");
     }
     return { ok: false, duplicate: false };
   }
@@ -102,7 +101,7 @@ export function createFormWebhookHandler(deps: FormDeliveryDependencies) {
       return json(400, { ok: false, error: "invalid_payload" });
     }
 
-    const event = await write("events", () => deps.insertEvent(build.row));
+    const event = await write(build.row);
     if (!event.ok) {
       return json(503, { ok: false, error: "delivery_incomplete" });
     }

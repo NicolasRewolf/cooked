@@ -54,6 +54,6 @@ Référence du **04/11/2026**. Le produit mesure l’audience et les contacts ob
 
 Toute recommandation s’appuie sur des chiffres contre-vérifiés et leurs limites. Les faibles volumes rendent les taux instables. Une corrélation, une baisse de clics ou une position moyenne ne suffisent pas à expliquer seuls la performance éditoriale.
 
-Les événements de lecture et Web Vitals restent dans la collecte. Leur sémantique historique demeure : profondeur issue de `page_exit.max_scroll`, Web Vitals au grain document avec révisions dédupliquées. Ils n’alimentent plus un score CPI.
+Les événements de lecture et Web Vitals restent dans la collecte. La profondeur vient de `page_exit.max_scroll`. Les Web Vitals sont au grain document : les révisions d’un même document et d’une même métrique ne sont pas des mesures indépendantes. Aucun agrégat Web Vitals n’est actif ; ces événements n’alimentent plus un score CPI.
 
 [Guide d’analyse](docs/PLAYBOOK-analyse-seo.md) · [Exploitation](docs/OPERATIONS.md) · [Règles agent](CLAUDE.md) · [Archives](docs/README.md)
