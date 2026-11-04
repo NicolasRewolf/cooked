@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-11-04] — Filtres locaux et lecture des vues accélérée
+
+- Les catégories filtrent les lignes déjà chargées ; URL partageable et historique conservés. Seul un changement de période relance la lecture serveur.
+- Regroupement des chemins avant normalisation et index couvrant partiel sur les pages vues, construit sans bloquer les écritures. Mêmes sources, filtres, dates, zéros et comptages ; aucune table, aucun cache ni traitement planifié ajouté.
+- Migrations `20261104105910_page_views_covering_index.sql` et `20261104105928_page_view_counts_group_paths.sql` ; comparaison des réponses complètes avant/après sur les trois périodes et tests d’interaction des filtres.
+
 ## [2026-11-04] — Délai REST du tableau
 
 - Le calcul 90 jours dépassait le délai REST par défaut de 8 secondes, malgré des tests SQL réussis. `page_view_counts` dispose désormais de 30 secondes, avec rechargement du schéma PostgREST ; aucun délai global, droit d’accès ou calcul modifié.

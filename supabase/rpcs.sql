@@ -1415,17 +1415,19 @@ BEGIN
   v_start := v_today - p_days;
 
   WITH pageviews AS MATERIALIZED (
-    SELECT CASE WHEN nullif(e.path, '') IS NOT NULL
-             THEN public.canonical_path(e.path) END AS path,
-           public.paris_date(e.occurred_at) AS day
+    SELECT e.path, public.paris_date(e.occurred_at) AS day
     FROM public.events_human e
     WHERE e.name = 'pageview'
       AND e.occurred_at >= public.cooked_paris_ts_start(v_start)
       AND e.occurred_at < public.cooked_paris_ts_start(v_today)
-  ), counts AS (
+  ), raw_counts AS (
     SELECT p.path, count(*) AS views
-    FROM pageviews p WHERE p.path IS NOT NULL
+    FROM pageviews p WHERE nullif(p.path, '') IS NOT NULL
     GROUP BY p.path
+  ), counts AS (
+    SELECT public.canonical_path(r.path) AS path, sum(r.views)::bigint AS views
+    FROM raw_counts r
+    GROUP BY public.canonical_path(r.path)
   )
   SELECT jsonb_build_object(
     'period_start', v_start,

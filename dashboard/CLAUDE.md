@@ -12,6 +12,9 @@
 3. La seule lecture métier appelle `page_view_counts(p_days)` depuis un module
    `server-only`, après validation de session et allowlist. La clé serveur n’est
    jamais transmise au navigateur. Pas d’API intermédiaire ni cache ajouté.
+   Le tableau client filtre les types localement et synchronise l’URL par l’API
+   History native ; seul un changement de période déclenche une nouvelle lecture.
+   Conserver les liens de période sans prefetch et l’historique précédent/suivant.
 4. Conserver magic-link, logout, allowlist fermée par défaut, validation serveur
    de la session et garde contre les redirections externes. Les anciennes routes
    continuent de rediriger vers `/`.
