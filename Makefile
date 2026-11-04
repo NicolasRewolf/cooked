@@ -73,6 +73,8 @@ test-edge:
 	@command -v $(DENO) >/dev/null || { echo "manque deno — brew install deno (CI : denoland/setup-deno@v2)"; exit 1; }
 	$(DENO) test supabase/functions/_shared/events_row_test.ts
 	$(DENO) test supabase/functions/_shared/track_row_test.ts
+	$(DENO) test supabase/functions/_shared/track_delivery_test.ts
+	$(DENO) check supabase/functions/track/index.ts
 	$(DENO) test supabase/functions/_shared/form_row_test.ts
 	$(DENO) test supabase/functions/_shared/form_delivery_test.ts
 	$(DENO) test supabase/functions/_shared/ingest_gate_test.ts

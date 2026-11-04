@@ -46,7 +46,7 @@ Le socle compte **60 routines** publiques : 56 Cooked et quatre `unaccent`. Les 
 | Composant | Version source | Dernier déploiement vérifié |
 |---|---|---|
 | Tracker | `sprint43` | Custom Code du 20/10/2026, réception sprint43 vérifiée le même jour |
-| Edge `track` | v31 | Supabase 41, 20/10/2026 |
+| Edge `track` | v32 | Supabase 42, 04/11/2026 ; réception regroupée et testée |
 | Edge `form-webhook` | `v17` | Supabase 26, 04/11/2026 ; événement uniquement, réponse idempotente |
 
 Un fichier modifié ne prouve jamais son déploiement. Vérifier le bundle Edge, le HTML public du tracker et, lorsque pertinent, les versions reçues dans les événements. Ne pas afficher de secrets ni injecter de faux contacts dans la production pour vérifier une livraison.

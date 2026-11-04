@@ -22,6 +22,8 @@ Python 3.12 en CI, Node 22 et Deno 2. `make deps` installe le paquet avec ses ou
 Les tests couvrent les imports GSC à deux grains, l’inventaire Wix, le rapprochement agrégé des formulaires, le stockage, les scénarios SQL PGlite, le tracker, les helpers Edge et l’authentification du dashboard de transition. Les anciens lecteurs RPC/dashboard et leurs contrats ont été retirés.
 
 ```bash
+# Réception tracker : HTTP, lots, filtrage, horodatage et résultat de l’écriture.
+deno test supabase/functions/_shared/track_delivery_test.ts
 # Réception formulaire : insertion, doublon, erreur, reprise et validation HTTP.
 deno test supabase/functions/_shared/form_delivery_test.ts
 # Écart dépôt/production, avec le rôle de lecture seule déjà configuré.

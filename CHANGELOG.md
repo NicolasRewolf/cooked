@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026-11-04] — Réception tracker regroupée
+
+- `track/index.ts` se limite au branchement de l’environnement et de Supabase ; `_shared/track_delivery.ts` rassemble le traitement HTTP jusqu’au résultat de l’écriture.
+- Règles de collecte et comptages inchangés : mêmes événements, identifiants, dates, filtrage, rejets agrégés et réponses. Suppression du branchement CORS redondant.
+- 17 tests de requêtes complètes, intégrés à `make check` et à la CI ; vérification des types du point d’entrée.
+- Edge v32 déployée en version Supabase 42 le 04/11/2026 ; bundle distant conforme aux sept fichiers locaux.
+
 ## [2026-11-04] — Simplification du socle éditorial
 
 - Comptage commun des visites, entrées et actions, avec rattachements inconnus conservés.

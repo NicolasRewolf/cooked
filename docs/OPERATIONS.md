@@ -23,6 +23,8 @@ Google Search Console → gsc_path_daily + gsc_query_page_daily
 
 Le proxy injecte les secrets côté serveur ; ils ne doivent pas être imprimés. Les deux Edge Functions conservent leur authentification existante avec `verify_jwt=false`. Cela ne signifie pas qu’elles acceptent un appel sans leur secret. Le webhook v17 ne réalise plus d’extraction ni d’écriture CRM.
 
+La réception tracker est regroupée dans `_shared/track_delivery.ts` : validation HTTP, traitement du lot, filtrage et attente de l’écriture avant réponse. `track/index.ts` branche uniquement l’environnement et Supabase. Les constructeurs d’événements, règles de comptage et rejets agrégés restent les mêmes ; `track_delivery_test.ts` vérifie cette chaîne sur des requêtes complètes sans base réelle.
+
 ## Données conservées
 
 Le catalogue comprend **13 tables, trois vues et 60 routines** publiques (56 Cooked et quatre `unaccent`). Les valeurs contrôlées sont dans [doc_constants.json](../contracts/doc_constants.json) ; les corps exacts dans [rpcs.sql](../supabase/rpcs.sql).
@@ -125,7 +127,7 @@ supabase functions deploy track --no-verify-jwt
 supabase functions deploy form-webhook --no-verify-jwt
 ```
 
-Le CLI doit viser le projet Cooked. Déploiements de référence : **track v31 / Supabase 41** le 20/10/2026 ; **form-webhook v17 / Supabase 26** le 04/11/2026. Comparer le bundle distant au code livré. Une réponse 401 ou 405 vérifie une garde HTTP, pas la réception complète d’un formulaire. Aucun faux contact de production pour tester.
+Le CLI doit viser le projet Cooked. Déploiements de référence : **track v32 / Supabase 42** le 04/11/2026 ; **form-webhook v17 / Supabase 26** le 04/11/2026. Comparer le bundle distant au code livré. Une réponse 401 ou 405 vérifie une garde HTTP, pas la réception complète d’un formulaire. Aucun faux contact de production pour tester.
 
 Le tracker source est **sprint43**, déployé et reçu le 20/10/2026. Avant collage Wix :
 
