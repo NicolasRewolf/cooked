@@ -10,7 +10,11 @@ contact et leur taux ; chaque mesure garde la valeur de la période précédente
   deux périodes consécutives sont affichées.
 - Toutes les pages ; expertises (hubs et pages d’expertise) ; articles hors ressources ;
   articles « Ressources et notions juridiques ». Articles et ressources sont disjoints.
-- Vues décroissantes puis chemin pour départager les égalités.
+- Tri local par vues décroissantes par défaut. Cliquer sur Vues, Entrées,
+  Visites avec contact ou Taux de contact trie les valeurs courantes, puis inverse
+  l’ordre au clic suivant. Les taux inconnus restent en fin de liste dans les deux
+  sens ; le chemin départage les égalités. Le tri est conservé entre catégories,
+  puis revient aux vues décroissantes au chargement d’une nouvelle période.
 - Une vue est un affichage après filtrage des bots, pas une visite unique. Les entrées
   sont les visites commencées sur la page pendant la période. Les contacts et le taux
   portent sur ces entrées, avec les actions observées avant la clôture de la période.

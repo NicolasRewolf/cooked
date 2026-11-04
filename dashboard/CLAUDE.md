@@ -9,7 +9,9 @@
 2. Les périodes sont 30, 60 ou 90 jours clos Paris, 90 par défaut. Filtres :
    toutes les pages ; expertises (hubs compris) ; articles hors ressources ;
    articles catégorisés « Ressources et notions juridiques ». Les deux derniers
-   ensembles sont disjoints. Aucun score, graphique ou classement supplémentaire.
+   ensembles sont disjoints. Tri local ascendant/descendant sur les quatre mesures
+   courantes, vues décroissantes par défaut ; taux inconnus en dernier. Aucun score
+   ni graphique supplémentaire.
 3. Le tableau lit `page_view_counts(p_days)` depuis un module `server-only`, après
    validation de session et allowlist. La clé serveur reste privée, sans cache.
    Les types filtrent localement et synchronisent l’URL par l’API History native ;
