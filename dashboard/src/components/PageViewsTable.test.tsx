@@ -176,6 +176,80 @@ describe("filtres locaux du tableau", () => {
 });
 
 
+function sortButton(label: string): HTMLButtonElement {
+  const found = [...container.querySelectorAll<HTMLButtonElement>("thead button")]
+    .find((node) => node.getAttribute("aria-label")?.startsWith(`${label} :`));
+  if (!found) throw new Error(`Tri absent : ${label}`);
+  return found;
+}
+
+const sortableData = {
+  ...data,
+  pages: data.pages.map((page, index) => ({ ...page,
+    entries: [6, 9, 0, 8, 10][index],
+    phone_visits: [3, 2, 0, 1, 0][index],
+    contact_visits: [3, 2, 0, 1, 0][index],
+    contact_rate_pct: [50, 22.22, null, 12.5, 0][index],
+  })),
+};
+
+describe("tri local par colonne", () => {
+  it.each([
+    { label: "Vues", desc: ["/", "/droit-penal", "/post/proces", "/post/ressource", "/expertises"], asc: ["/expertises", "/post/ressource", "/post/proces", "/droit-penal", "/"] },
+    { label: "Entrées", desc: ["/", "/post/proces", "/droit-penal", "/post/ressource", "/expertises"], asc: ["/expertises", "/post/ressource", "/droit-penal", "/post/proces", "/"] },
+    { label: "Visites avec contact", desc: ["/post/ressource", "/post/proces", "/droit-penal", "/", "/expertises"], asc: ["/", "/expertises", "/droit-penal", "/post/proces", "/post/ressource"] },
+    { label: "Taux de contact", desc: ["/post/ressource", "/post/proces", "/droit-penal", "/", "/expertises"], asc: ["/", "/droit-penal", "/post/proces", "/post/ressource", "/expertises"] },
+  ])("bascule $label et annonce le sens sans requête ni navigation", async ({ label, desc, asc }) => {
+    await act(() => root.render(<PageViewsTable data={sortableData} />));
+    if (label !== "Vues") await act(() => sortButton(label).click());
+    expect(displayedPaths()).toEqual(desc);
+    expect(sortButton(label).closest("th")?.getAttribute("aria-sort")).toBe("descending");
+    expect(sortButton(label).getAttribute("aria-label")).toBe(`${label} : trier par ordre croissant`);
+    const region = container.querySelector<HTMLDivElement>('[aria-label="Tableau des pages"]')!;
+    region.scrollTop = 300;
+    region.scrollLeft = 120;
+    await act(() => sortButton(label).click());
+    expect(region.scrollTop).toBe(0);
+    expect(region.scrollLeft).toBe(120);
+    expect(displayedPaths()).toEqual(asc);
+    expect(sortButton(label).closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+    expect(sortButton(label).getAttribute("aria-label")).toBe(`${label} : trier par ordre décroissant`);
+    expect(container.querySelectorAll("th[aria-sort]")).toHaveLength(1);
+    expect(window.location.search).toBe("?days=90&type=all");
+    expect(navigation.push).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("garde le tri choisi quand la catégorie change", async () => {
+    await act(() => root.render(<PageViewsTable data={sortableData} />));
+    await act(() => sortButton("Taux de contact").click());
+    await act(() => sortButton("Taux de contact").click());
+    await act(() => button("Expertises").click());
+    expect(displayedPaths()).toEqual(["/droit-penal", "/expertises"]);
+    await act(() => button("Toutes les pages").click());
+    expect(displayedPaths()).toEqual(["/", "/droit-penal", "/post/proces", "/post/ressource", "/expertises"]);
+    expect(sortButton("Taux de contact").closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+    expect(navigation.push).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("déplace le détail Google avec sa page sans relancer sa lecture", async () => {
+    fetchSpy.mockResolvedValue(Response.json(queryResult("requête de la ressource")));
+    await act(() => root.render(<PageViewsTable data={sortableData} />));
+    await act(() => googleButton("/post/ressource").click());
+    const detail = container.querySelector('section[aria-label="Requêtes Google de /post/ressource"]')!;
+    await act(() => sortButton("Visites avec contact").click());
+    expect(displayedPaths()[0]).toBe("/post/ressource");
+    expect(detail.isConnected).toBe(true);
+    expect(detail.closest("tr")?.previousElementSibling?.querySelector("a")?.getAttribute("href")).toBe("https://www.jplouton-avocat.fr/post/ressource");
+    const target = googleButton("/post/ressource").getAttribute("aria-controls");
+    expect(detail.closest("tr")?.id).toBe(target);
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy.mock.calls[0][1].signal.aborted).toBe(false);
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+});
+
 describe("lecture des mesures éditoriales", () => {
   it("affiche les zéros, le taux inconnu, les comparaisons et le détail des contacts", async () => {
     await act(() => root.render(<PageViewsTable data={data} />));

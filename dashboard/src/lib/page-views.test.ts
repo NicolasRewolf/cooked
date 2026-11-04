@@ -81,6 +81,28 @@ describe("filtres du tableau", () => {
   });
 });
 
+describe("tri des mesures du tableau", () => {
+  const sortable: PageViews["pages"] = [
+    { path: "/b", views: 90, entries: 80, contact_visits: 20, contact_rate_pct: 25 },
+    { path: "/zero", views: 10, entries: 2, contact_visits: 0, contact_rate_pct: 0 },
+    { path: "/a", views: 100, entries: 40, contact_visits: 10, contact_rate_pct: 25 },
+    { path: "/unknown", views: 0, entries: 0, contact_visits: 0, contact_rate_pct: null },
+    { path: "/c", views: 9, entries: 8, contact_visits: 1, contact_rate_pct: 12.5 },
+  ].map((page) => ({ ...rows[0], ...page, phone_visits: page.contact_visits, form_visits: 0 }));
+
+  it.each([
+    { column: "views", asc: ["/unknown", "/c", "/zero", "/b", "/a"], desc: ["/a", "/b", "/zero", "/c", "/unknown"] },
+    { column: "entries", asc: ["/unknown", "/zero", "/c", "/a", "/b"], desc: ["/b", "/a", "/c", "/zero", "/unknown"] },
+    { column: "contact_visits", asc: ["/unknown", "/zero", "/c", "/a", "/b"], desc: ["/b", "/a", "/c", "/unknown", "/zero"] },
+    { column: "contact_rate_pct", asc: ["/zero", "/c", "/a", "/b", "/unknown"], desc: ["/a", "/b", "/c", "/zero", "/unknown"] },
+  ] as const)("trie $column numériquement dans les deux sens, sans changer les mesures", ({ column, asc, desc }) => {
+    const original = structuredClone(sortable);
+    expect(filterPages(sortable, "all", { column, direction: "asc" }).map((row) => row.path)).toEqual(asc);
+    expect(filterPages(sortable, "all", { column, direction: "desc" }).map((row) => row.path)).toEqual(desc);
+    expect(sortable).toEqual(original);
+  });
+});
+
 describe("lecture serveur des vues", () => {
   it("vérifie l’accès avant la RPC, avec uniquement la période demandée", async () => {
     expect(await getPageViews(30)).toEqual({ ...valid, inventoryStale: false });

@@ -9,6 +9,10 @@ export const pageTypes = [
   { value: "resources", label: "Ressources et notions juridiques" },
 ] as const;
 export type PageTypeFilter = (typeof pageTypes)[number]["value"];
+export type PageSort = {
+  column: "views" | "entries" | "contact_visits" | "contact_rate_pct";
+  direction: "asc" | "desc";
+};
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -18,13 +22,22 @@ export function parseFilters(params: SearchParams): { days: Period; type: PageTy
   return { days, type };
 }
 
-export function filterPages(pages: PageViews["pages"], type: PageTypeFilter) {
+export function filterPages(pages: PageViews["pages"], type: PageTypeFilter, sort: PageSort = { column: "views", direction: "desc" }) {
   return pages.filter((page) => {
     if (type === "expertises") return page.page_type === "expertise" || page.page_type === "hub";
     if (type === "articles") return page.page_type === "post" && page.category !== "ressource";
     if (type === "resources") return page.page_type === "post" && page.category === "ressource";
     return true;
-  }).sort((a, b) => b.views - a.views || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  }).sort((a, b) => {
+    const left = a[sort.column];
+    const right = b[sort.column];
+    // Un taux inconnu reste après les valeurs mesurées, dans les deux sens.
+    if (left === null && right !== null) return 1;
+    if (right === null && left !== null) return -1;
+    const difference = left === null || right === null ? 0 : left - right;
+    return (sort.direction === "asc" ? difference : -difference)
+      || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+  });
 }
 
 export function pageUrl(path: string): string {

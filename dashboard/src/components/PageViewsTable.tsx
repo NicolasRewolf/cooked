@@ -4,11 +4,17 @@ import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { PageQueries } from "./PageQueries";
 import { useRouter, useSearchParams } from "next/navigation";
-import { filterPages, pageTypes, pageUrl, parseFilters, periods, type PageTypeFilter } from "@/lib/page-view-filters";
+import { filterPages, pageTypes, pageUrl, parseFilters, periods, type PageSort, type PageTypeFilter } from "@/lib/page-view-filters";
 import type { PageViews } from "@/lib/page-views";
 
 const dateFormat = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris" });
 const numberFormat = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
+const sortableColumns = [
+  { column: "views", label: "Vues", width: "w-[15%]" },
+  { column: "entries", label: "Entrées", width: "w-[15%]" },
+  { column: "contact_visits", label: "Visites avec contact", width: "w-[18%]" },
+  { column: "contact_rate_pct", label: "Taux de contact", width: "w-[16%]" },
+] as const;
 
 function Metric({ value, previous, compare, rate = false }: { value: number | null; previous: number | null; compare: boolean; rate?: boolean }) {
   const format = (number: number | null) => number === null ? "—" : `${numberFormat.format(number)}${rate ? " %" : ""}`;
@@ -30,7 +36,9 @@ export function PageViewsTable({ data }: { data: PageViews & { inventoryStale: b
   const searchParams = useSearchParams();
   const requestedTypes = searchParams.getAll("type");
   const type = parseFilters({ type: requestedTypes.length === 1 ? requestedTypes[0] : undefined }).type;
-  const pages = filterPages(data.pages, type);
+  const [sort, setSort] = useState<PageSort>({ column: "views", direction: "desc" });
+  const tableRegion = useRef<HTMLDivElement>(null);
+  const pages = filterPages(data.pages, type, sort);
   const [queryPage, setQueryPage] = useState<{ path: string; days: number; end: string } | null>(null);
   const openPath = queryPage?.days === data.expected_days && queryPage.end === data.period_end ? queryPage.path : null;
 
@@ -109,18 +117,28 @@ export function PageViewsTable({ data }: { data: PageViews & { inventoryStale: b
       <div className="overflow-hidden rounded-xl border border-line bg-panel shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-4 text-xs text-muted">
         <p className="flex items-center gap-2"><span className="font-medium text-ink">{numberFormat.format(pages.length)} {pages.length === 1 ? "page publiée" : "pages publiées"}</span><span className="text-line-strong" aria-hidden="true">/</span><span>y compris sans vue</span></p>
-        <p>Triées par vues décroissantes</p>
+        <p aria-live="polite">Tri : {sortableColumns.find((item) => item.column === sort.column)!.label} · {sort.direction === "desc" ? "décroissant" : "croissant"}</p>
       </div>
-      <div className="max-h-[70vh] overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink" role="region" aria-label="Tableau des pages" tabIndex={0}>
+      <div ref={tableRegion} className="max-h-[70vh] overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink" role="region" aria-label="Tableau des pages" tabIndex={0}>
       <table className="w-full min-w-[1080px] table-fixed border-collapse text-sm">
         <caption className="sr-only">URL publiées et mesures du {day(data.period_start)} au {day(data.period_end)}, comparées à la période précédente</caption>
         <thead className="sticky top-0 z-10 border-b border-line bg-paper text-left text-xs text-muted">
           <tr>
             <th scope="col" className="w-[36%] px-5 py-3.5 font-medium">Page</th>
-            <th scope="col" className="w-[15%] px-4 py-3.5 text-right font-medium" aria-sort="descending">Vues <span aria-hidden="true">↓</span></th>
-            <th scope="col" className="w-[15%] px-4 py-3.5 text-right font-medium">Entrées</th>
-            <th scope="col" className="w-[18%] px-4 py-3.5 text-right font-medium">Visites avec contact</th>
-            <th scope="col" className="w-[16%] px-5 py-3.5 text-right font-medium">Taux de contact</th>
+            {sortableColumns.map(({ column, label, width }) => (
+              <th key={column} scope="col" className={`${width} px-4 py-1 text-right font-medium`}
+                aria-sort={sort.column === column ? (sort.direction === "desc" ? "descending" : "ascending") : undefined}>
+                <button type="button"
+                  aria-label={`${label} : trier par ordre ${sort.column === column && sort.direction === "desc" ? "croissant" : "décroissant"}`}
+                  onClick={() => {
+                    setSort((current) => ({ column, direction: current.column === column && current.direction === "desc" ? "asc" : "desc" }));
+                    if (tableRegion.current) tableRegion.current.scrollTop = 0;
+                  }}
+                  className={`inline-flex min-h-9 items-center justify-end gap-1.5 rounded px-1 transition-colors duration-150 hover:text-ink ${sort.column === column ? "text-ink" : "text-muted"}`}>
+                  {label}<span aria-hidden="true">{sort.column === column ? (sort.direction === "desc" ? "↓" : "↑") : "↕"}</span>
+                </button>
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>

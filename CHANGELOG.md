@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-11-04] — Tri local des colonnes
+
+- Les en-têtes Vues, Entrées, Visites avec contact et Taux de contact trient immédiatement les lignes déjà chargées ; un nouveau clic inverse le sens. Flèche et indication accessible du tri actif.
+- Tri numérique sur la période courante, taux inconnus toujours en dernier, égalités départagées par le chemin. Le filtre de catégorie conserve le tri ; aucune requête supplémentaire ni règle de comptage modifiée.
+
 ## [2026-11-04] — Lisibilité du dashboard
 
 - Présentation inspirée des dashboards Shadcn : palette neutre, accents rewolf, surfaces bordées et arrondis discrets. Filtres compacts, périodes segmentées, chemins sans répétition du domaine et comparaisons hiérarchisées.
