@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-11-04] — Lisibilité du dashboard
+
+- Présentation inspirée des dashboards Shadcn : palette neutre, accents rewolf, surfaces bordées et arrondis discrets. Filtres compacts, périodes segmentées, chemins sans répétition du domaine et comparaisons hiérarchisées.
+- Tableau à défilement avec en-têtes visibles, détails contacts et Google harmonisés, états de chargement et erreur soignés, focus clavier visible et mouvement réduit.
+- Mêmes lecteurs, métriques, règles, filtres locaux et chargement Google à la demande ; aucune dépendance ajoutée.
+
 ## [2026-11-04] — Annulation du chargement du tableau
 
 - Incident confirmé : annulations SQL `57014` de `page_view_counts` à la limite de 30 secondes ; le calcul de 20–28 secondes laissait trop peu de marge lors de requêtes rapprochées.
