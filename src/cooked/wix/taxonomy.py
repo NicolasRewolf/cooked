@@ -4,8 +4,8 @@
 Une lecture complète réunit routes publiées, articles et catégories, puis confronte
 ces URLs au sitemap. Les pages hors sitemap sont vérifiées sur le site publié.
 Une seule RPC applique l'inventaire complet. Aucun état de publication ne change
-si une lecture ou sa validation échoue. Les fixtures historiques de blog restent
-acceptées et ne modifient que les catégories (mode legacy de la même RPC).
+si une lecture ou sa validation échoue. Le même inventaire JSON complet peut
+être fourni avec --from-file.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 
 import requests
@@ -69,30 +69,6 @@ def page_path(url: str) -> str:
     if parsed.query or parsed.fragment:
         raise ValueError("URL d'inventaire avec paramètres")
     return canonical_path(parsed.path)
-
-
-def post_to_row(post: dict) -> dict | None:
-    """Historical blog fixture format, retained for category-only synchronisations."""
-    slug = (post.get("slug") or "").strip()
-    if not slug:
-        return None
-    return {
-        "slug": slug,
-        "category": "ressource" if RESSOURCE_CATEGORY_ID in (post.get("categoryIds") or []) else "classique",
-        "published": (post.get("firstPublishedDate") or "")[:10] or None,
-    }
-
-
-def parse_fixture(text: str) -> list[dict]:
-    rows = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        slug, flag, *rest = line.split("|")
-        rows.append({"slug": slug, "category": "ressource" if flag == "r" else "classique",
-                     "published": rest[0] if rest and rest[0] else None})
-    return rows
 
 
 def get(session, url, **kwargs):
@@ -202,13 +178,13 @@ def fetch_inventory() -> dict:
 
     rows = [{"path": path, "category": None} for path in static]
     for post in posts:
-        legacy = post_to_row(post)
-        if legacy is None:
+        if not (post.get("slug") or "").strip():
             raise ValueError("Article publié sans slug")
         path = page_path(post["url"]["base"] + post["url"]["path"])
         if path != canonical_path("/post/" + post["slug"]):
             raise ValueError("URL Wix Blog inattendue")
-        rows.append({"path": path, "category": legacy["category"]})
+        rows.append({"path": path, "category":
+                     "ressource" if RESSOURCE_CATEGORY_ID in (post.get("categoryIds") or []) else "classique"})
     for category in categories:
         path = page_path(category["url"]["base"] + category["url"]["path"])
         if not path.startswith("/blog/categories/"):
@@ -225,7 +201,7 @@ def fetch_inventory() -> dict:
             "counts": {"posts": len(posts), "categories": len(categories), "static": len(static)}}
 
 
-def call_sync_rpc(inventory: dict | list[dict], dry_run: bool) -> dict:
+def call_sync_rpc(inventory: dict, dry_run: bool) -> dict:
     url = os.environ.get("SUPABASE_URL", "https://mxycmjkeotrycyneacje.supabase.co").rstrip("/")
     key = os.environ["SUPABASE_SECRET_KEY"]
     response = requests.post(
@@ -240,19 +216,20 @@ def call_sync_rpc(inventory: dict | list[dict], dry_run: bool) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--from-file", help="inventaire JSON complet ou fixture blog historique")
+    parser.add_argument("--from-file", help="inventaire JSON complet (pages, observed_at, counts)")
     parser.add_argument("--dry-run", action="store_true", help="valide et compare sans écriture")
     args = parser.parse_args(argv)
     phase = "lecture-inventaire"
     try:
         if args.from_file:
-            source = Path(args.from_file).read_text(encoding="utf-8")
-            inventory = json.loads(source) if source.lstrip().startswith(("{", "[")) else parse_fixture(source)
+            inventory = json.loads(Path(args.from_file).read_text(encoding="utf-8"))
+            if not isinstance(inventory, dict):
+                raise ValueError("Un inventaire JSON complet est requis")
         else:
             inventory = fetch_inventory()
         phase = "synchronisation-supabase"
         result = call_sync_rpc(inventory, args.dry_run)
-        print(json.dumps({"dry_run": args.dry_run, "complete_inventory": isinstance(inventory, dict),
+        print(json.dumps({"dry_run": args.dry_run, "complete_inventory": True,
                           "inserted": result["inserted"], "categories_updated": result["updated"],
                           "absent": result["unpublished"]}, ensure_ascii=False))
         return 0

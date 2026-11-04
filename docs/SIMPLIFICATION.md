@@ -18,7 +18,9 @@ Les dates sont des jours Paris clos. Pour comparer 90 jours aux 90 précédents,
 
 `page_taxonomy` reste le seul référentiel. Le statut de publication et sa date de vérification proviennent d’un inventaire Wix complet, indépendant du trafic. Une ancienne URL reste conservée mais est identifiée comme absente de la publication courante. Les pages statiques et catégories sont incluses.
 
-L’inventaire complet est validé avant un appel transactionnel. Une source inaccessible ou incomplète fait échouer la synchronisation sans dépublier les lignes précédemment connues. Le mode historique de mise à jour des catégories n’est pas une preuve de publication.
+L’inventaire complet est validé avant un appel transactionnel. Une source inaccessible ou incomplète fait échouer la synchronisation sans dépublier les lignes précédemment connues. Le mode historique de mise à jour des catégories est retiré : Python et SQL acceptent uniquement l’inventaire complet, avec observation datée, pages et comptes des sources.
+
+Depuis le 04/11/2026, l’import est quotidien et rapproche le sitemap, les articles, les catégories et les routes publiées. Il était auparavant hebdomadaire et limité au blog. La publication d’un article n’entraîne pas une mise à jour immédiate ; le même workflow permet une synchronisation manuelle.
 
 ## Retraits
 

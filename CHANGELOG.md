@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026-11-04] — Inventaire Wix complet uniquement
+
+- Retrait du format historique de catégories, de ses deux convertisseurs Python et de sa fixture. `--from-file` et la RPC existante conservent uniquement l’objet complet `{pages, observed_at, counts}`.
+- Contrôles de complétude, transactions, conservation des anciennes pages, dry-run et rejeu sans réécriture conservés. Tests d’arrivée d’un article sans trafic, pagination au-delà de 100 articles et lecture des sous-sitemaps.
+- Rapprochement réel à 10:43 Paris : 491 pages publiées dans Cooked concordent avec Wix (445 articles, 19 catégories, 27 pages statiques) ; les 489 URL du sitemap et les cinq articles les plus récents sont présents. Deux pages hors sitemap sont vérifiées sur le site.
+- L’import quotidien avec sitemap remplace depuis ce matin l’ancien passage hebdomadaire limité au blog ; aucune nouvelle planification n’est ajoutée ici.
+- Migration `20261104094735_complete_wix_inventory_only` appliquée ; données du référentiel, autres routines et droits inchangés par cette migration. Miroir régénéré depuis la production.
+
 ## [2026-11-04] — Règles de fraîcheur réutilisées
 
 - Le résumé du pipeline lit les seuils Google dans `freshness_contract` et réutilise la règle de lot GSC incomplet ; les valeurs et règles de comptage sont conservées.

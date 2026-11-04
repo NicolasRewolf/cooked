@@ -1,42 +1,11 @@
-"""T-15 — parse de la liste publiée Wix → lignes pour page_taxonomy_sync_wix."""
-from pathlib import Path
-
-from cooked.wix.taxonomy import RESSOURCE_CATEGORY_ID, parse_fixture, post_to_row
-
-FIXTURE = Path(__file__).parent / "fixtures" / "wix_blog_posts_2026-09-03.txt"
-
-
-def test_fixture_is_the_published_list_of_2026_09_03():
-    rows = parse_fixture(FIXTURE.read_text(encoding="utf-8"))
-    assert len(rows) == 434
-    assert sum(r["category"] == "ressource" for r in rows) == 62
-    assert rows[0]["slug"] == "pression-assureurs-gironde-analyse-juridique-cabinet-plouton"
-    assert rows[0]["published"] == "2026-08-26"
-    assert len({r["slug"] for r in rows}) == 434  # pas de doublon
-
-
-def test_post_to_row_reads_category_and_date():
-    row = post_to_row({"slug": "abandon-de-poste-quels-risques", "categoryIds": ["x", RESSOURCE_CATEGORY_ID],
-                       "firstPublishedDate": "2025-01-13T08:00:00.000Z"})
-    assert row == {"slug": "abandon-de-poste-quels-risques", "category": "ressource", "published": "2025-01-13"}
-    assert post_to_row({"slug": "", "categoryIds": []}) is None
-    assert post_to_row({"slug": "x"})["category"] == "classique"
-
-
-def test_article_published_after_last_manual_sync_is_in_the_list():
-    # e-06 : histoire-artan (publié 18/08) manquait de page_taxonomy le 02/09 — la liste publiée le porte.
-    slugs = {r["slug"] for r in parse_fixture(FIXTURE.read_text(encoding="utf-8"))}
-    assert "histoire-artan-engagement-grands-traumatises" in slugs
-
-
-# Completeness is the publication contract: a missing supplier page must never
-# become evidence of unpublication. These fixtures exercise the normal CLI path.
+"""Inventaire publié complet Wix : sources, pagination et livraison atomique."""
 import json
 from types import SimpleNamespace
 
 import pytest
 
 from cooked.wix import taxonomy
+from cooked.wix.taxonomy import RESSOURCE_CATEGORY_ID
 
 
 class Response:
@@ -70,6 +39,37 @@ def test_pagination_requires_a_stable_total_and_distinct_ids():
         run([{'posts': []}])
 
 
+def test_pagination_includes_articles_beyond_the_first_hundred():
+    posts = [{'id': str(i)} for i in range(205)]
+    offsets = []
+    def get_page(url, **kwargs):
+        offset, limit = kwargs['params']['paging.offset'], kwargs['params']['paging.limit']
+        offsets.append(offset)
+        page = posts[offset:offset + limit]
+        return Response({'posts': page, 'metaData': {'count': len(page), 'offset': offset, 'total': len(posts)}})
+    assert taxonomy.collection(SimpleNamespace(get=get_page), taxonomy.WIX_POSTS_URL, 'ephemeral', 'posts') == posts
+    assert offsets == [0, 100, 200]
+
+
+def test_sitemap_reads_every_child_and_rejects_an_incomplete_child():
+    base = taxonomy.SITE_URL
+    documents = {
+        base + '/sitemap.xml': f'<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f'<sitemap><loc>{base}/pages-sitemap.xml</loc></sitemap>'
+        f'<sitemap><loc>{base}/blog-posts-sitemap.xml</loc></sitemap></sitemapindex>',
+        base + '/pages-sitemap.xml': f'<urlset><url><loc>{base}/</loc></url></urlset>',
+        base + '/blog-posts-sitemap.xml': f'<urlset><url><loc>{base}/post/nouvel-article</loc></url></urlset>',
+    }
+    class SitemapResponse(Response):
+        def __init__(self, url):
+            self.content = documents[url].encode()
+    session = SimpleNamespace(get=lambda url, **kwargs: SitemapResponse(url))
+    assert taxonomy.published_sitemap(session) == {'/', '/post/nouvel-article'}
+    documents[base + '/blog-posts-sitemap.xml'] = '<urlset/>'
+    with pytest.raises(ValueError):
+        taxonomy.published_sitemap(session)
+
+
 def test_inventory_checks_hidden_pages_and_preserves_zero_traffic(monkeypatch):
     router = {
         'mainPageId': 'home', 'customNotFoundPage': {'pageId': '404'},
@@ -87,7 +87,9 @@ def test_inventory_checks_hidden_pages_and_preserves_zero_traffic(monkeypatch):
     monkeypatch.setattr(taxonomy, 'get', lambda session, url, **kw:
                         SimpleNamespace(text=text) if url == taxonomy.SITE_URL else Response(credentials))
     entities = {'posts': [{'slug': 'nouvel-article', 'categoryIds': [RESSOURCE_CATEGORY_ID],
-                           'url': {'base': taxonomy.SITE_URL, 'path': '/post/nouvel-article'}}],
+                           'url': {'base': taxonomy.SITE_URL, 'path': '/post/nouvel-article'}},
+                          {'slug': 'article-hors-sitemap',
+                           'url': {'base': taxonomy.SITE_URL, 'path': '/post/article-hors-sitemap'}}],
                 'categories': [{'url': {'base': taxonomy.SITE_URL, 'path': '/blog/categories/penal'}}]}
     monkeypatch.setattr(taxonomy, 'collection', lambda session, url, token, name: entities[name])
     sitemap = {'/', '/post/nouvel-article', '/blog/categories/penal'}
@@ -95,9 +97,12 @@ def test_inventory_checks_hidden_pages_and_preserves_zero_traffic(monkeypatch):
     verified = []
     monkeypatch.setattr(taxonomy, 'verify_unlisted', verified.append)
     result = taxonomy.fetch_inventory()
-    assert result['counts'] == {'posts': 1, 'categories': 1, 'static': 2}
-    assert len(result['pages']) == 4
-    assert verified == ['/suivi-de-dossier']
+    assert result['counts'] == {'posts': 2, 'categories': 1, 'static': 2}
+    assert len(result['pages']) == 5
+    assert sorted(verified) == ['/post/article-hors-sitemap', '/suivi-de-dossier']
+    assert {row['path']: row['category'] for row in result['pages'] if row['path'].startswith('/post/')} == {
+        '/post/nouvel-article': 'ressource', '/post/article-hors-sitemap': 'classique',
+    }
     assert result['pages'][-1] == {'path': '/suivi-de-dossier', 'category': None}
 
     called = []
@@ -132,6 +137,29 @@ def test_cli_dry_run_passes_full_inventory_without_hiding_failure(monkeypatch):
     monkeypatch.setattr(taxonomy, 'fetch_inventory', lambda: (_ for _ in ()).throw(TimeoutError()))
     assert taxonomy.main([]) == 1
     assert len(calls) == 1
+
+
+def test_from_file_accepts_only_a_complete_inventory_object(tmp_path, monkeypatch):
+    inventory = {
+        'observed_at': '2026-11-04T06:00:00Z',
+        'counts': {'posts': 1, 'categories': 1, 'static': 1},
+        'pages': [{'path': '/', 'category': None},
+                  {'path': '/blog/categories/penal', 'category': None},
+                  {'path': '/post/nouvel-article', 'category': 'classique'}],
+    }
+    source = tmp_path / 'inventory.json'
+    source.write_text(json.dumps(inventory), encoding='utf-8')
+    calls = []
+    def rpc(payload, dry):
+        calls.append((payload, dry))
+        return {'inserted': 0, 'updated': 0, 'unpublished': 0}
+    monkeypatch.setattr(taxonomy, 'call_sync_rpc', rpc)
+    assert taxonomy.main(['--from-file', str(source), '--dry-run']) == 0
+    assert calls == [(inventory, True)]
+    for legacy in [json.dumps([{'slug': 'article', 'category': 'classique'}]), 'article|r|2026-11-04', 'null']:
+        source.write_text(legacy, encoding='utf-8')
+        assert taxonomy.main(['--from-file', str(source)]) == 1
+    assert calls == [(inventory, True)], 'legacy input is rejected before any RPC'
 
 
 @pytest.mark.parametrize('url,source,status,rpc_failure', [

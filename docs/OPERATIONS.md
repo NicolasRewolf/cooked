@@ -69,6 +69,10 @@ Les dates `day` sont celles de GSC, pas des timestamps convertis en Paris. Conse
 
 Le workflow `wix-taxonomy-sync` valide un inventaire public complet avant une synchronisation transactionnelle de `page_taxonomy`. Il inclut articles, pages statiques et catégories. Une source inaccessible ou incomplète fait échouer le run sans déclarer disparues les pages précédemment connues. `publication_checked_at` date ce contrôle ; l’ancien `updated_at` seul ne prouve pas la publication.
 
+À chaque passage, tous les articles sont paginés puis rapprochés des sous-sitemaps et des routes publiées. Les pages hors sitemap sont vérifiées sur le site. Un nouvel article entre même sans visite. L’import quotidien peut être lancé manuellement via le même workflow ; la publication Wix ne déclenche pas de synchronisation immédiate.
+
+Un seul format est accepté : l’objet complet `{pages, observed_at, counts}`, également utilisable avec `--from-file`. Les anciens tableaux de catégories et fichiers texte sont refusés. Les pages disparues restent dans la base avec `is_published=false` ; leur historique n’est pas supprimé.
+
 Le webhook v17 exige un identifiant stable de soumission. Il construit l’événement canonique existant, puis répond HTTP 200 après insertion ou doublon `23505`. Une erreur DB ou une réponse réseau incertaine produit HTTP 503 avec `Retry-After: 60`. Les logs et alertes contiennent des libellés fixes et codes bornés, pas le payload ni le message DB brut. L’idempotence permet une reprise ; elle ne garantit pas que Wix la déclenche.
 
 L’attribution Forms utilise les champs cachés `page_source`, `cooked_aid` et `cooked_sid`, alimentés via [masterpage-cooked.js](../wix/masterpage-cooked.js). La collecte conserve les formulaires sans attribution ; ne pas inventer leur entrée.
