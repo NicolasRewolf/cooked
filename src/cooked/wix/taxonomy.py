@@ -243,17 +243,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--from-file", help="inventaire JSON complet ou fixture blog historique")
     parser.add_argument("--dry-run", action="store_true", help="valide et compare sans écriture")
     args = parser.parse_args(argv)
+    phase = "lecture-inventaire"
     try:
         if args.from_file:
             source = Path(args.from_file).read_text(encoding="utf-8")
             inventory = json.loads(source) if source.lstrip().startswith(("{", "[")) else parse_fixture(source)
         else:
             inventory = fetch_inventory()
+        phase = "synchronisation-supabase"
         result = call_sync_rpc(inventory, args.dry_run)
         print(json.dumps({"dry_run": args.dry_run, "complete_inventory": isinstance(inventory, dict),
                           "inserted": result["inserted"], "categories_updated": result["updated"],
                           "absent": result["unpublished"]}, ensure_ascii=False))
         return 0
+    except requests.HTTPError as error:
+        response = error.response
+        host = urlsplit(response.url or "").hostname if response is not None else None
+        source = {
+            urlsplit(SITE_URL).hostname: "site-public-wix",
+            urlsplit(WIX_POSTS_URL).hostname: "api-blog-wix",
+            urlsplit(os.environ.get("SUPABASE_URL", "https://mxycmjkeotrycyneacje.supabase.co")).hostname: "rpc-supabase",
+        }.get(host, "source-inconnue")
+        status = response.status_code if response is not None else "inconnu"
+        # Fixed source labels and numeric HTTP status only: never emit the
+        # exception, response body, request URL, credentials or headers.
+        print(f"Inventaire Wix non appliqué (HTTPError; phase={phase}; source={source}; HTTP={status}).",
+              file=sys.stderr)
+        return 1
     except Exception as error:
         # HTTP exception bodies can contain tokens or user data. Emit only type.
         print(f"Inventaire Wix non appliqué ({type(error).__name__}).", file=sys.stderr)
