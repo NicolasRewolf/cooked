@@ -3,7 +3,7 @@
 ## [2026-11-04] — Simplification du socle éditorial
 
 - Comptage commun des visites, entrées et actions, avec rattachements inconnus conservés.
-- Inventaire des pages publiées indépendant du trafic dans le référentiel existant.
+- Inventaire des pages publiées indépendant du trafic dans le référentiel existant. Écriture vérifiée via l’API et GitHub ; seules les observations modifiées sont réécrites.
 - Arrêt des recalculs automatiques des anciens indicateurs et retrait de leurs procédures inutilisées.
 - Contrôles du socle et rapport avant/après. Détails et sémantique dans [SIMPLIFICATION.md](docs/SIMPLIFICATION.md).
 

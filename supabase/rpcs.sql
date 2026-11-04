@@ -3112,7 +3112,10 @@ BEGIN
     IF v_complete THEN
       UPDATE public.page_taxonomy t SET
         is_published=EXISTS (SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE w.path=t.path),
-        publication_checked_at=v_observed_at;
+        publication_checked_at=v_observed_at
+      WHERE t.publication_checked_at IS DISTINCT FROM v_observed_at
+        OR t.is_published IS DISTINCT FROM EXISTS (
+          SELECT 1 FROM jsonb_to_recordset(v_pages) w(path text) WHERE w.path=t.path);
     END IF;
   END IF;
   RETURN NEXT;
