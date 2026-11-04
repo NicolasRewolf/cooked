@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 
 // Next 16 : "Proxy" remplace "Middleware" (même fonction). Gate d'accès optimiste :
 // vérifie la session Supabase + l'appartenance à l'allowlist d'emails, redirige sinon.
-// La page de transition ne lit aucune donnée métier.
+// La lecture des vues vérifie aussi cet accès côté serveur.
 
 const PUBLIC_PREFIXES = ["/login", "/auth/"];
 

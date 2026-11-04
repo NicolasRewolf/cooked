@@ -1,6 +1,6 @@
 # Cooked — exploitation du socle
 
-Référence du **04/11/2026**. Le produit conserve les événements du site, deux grains Google Search Console et l’inventaire des pages publiées. Les anciens écrans et calculs CPI, SEO, maths, DFS, GBP et CRM/SECIB sont retirés. La future interface est un chantier distinct. Voir [SIMPLIFICATION.md](SIMPLIFICATION.md) et [CONTEXT.md](../CONTEXT.md).
+Référence du **04/11/2026**. Le produit conserve les événements du site, deux grains Google Search Console et l’inventaire des pages publiées. Les anciens écrans et calculs CPI, SEO, maths, DFS, GBP et CRM/SECIB sont retirés. Le dashboard se limite aux URL publiées et à leurs vues. Voir [SIMPLIFICATION.md](SIMPLIFICATION.md) et [CONTEXT.md](../CONTEXT.md).
 
 ## Flux conservés
 
@@ -17,6 +17,7 @@ Automatisation Forms Wix → Edge form-webhook ─────────┤
                                                 page_visits
 
 Inventaire Wix complet → page_taxonomy
+events_human + page_taxonomy → page_view_counts → tableau privé URL / vues
 Google Search Console → gsc_path_daily + gsc_query_page_daily
                         suivi commun : gsc_ingest_batches
 ```
@@ -27,7 +28,7 @@ La réception tracker est regroupée dans `_shared/track_delivery.ts` : validati
 
 ## Données conservées
 
-Le catalogue comprend **13 tables, trois vues et 60 routines** publiques (56 Cooked et quatre `unaccent`). Les valeurs contrôlées sont dans [doc_constants.json](../contracts/doc_constants.json) ; les corps exacts dans [rpcs.sql](../supabase/rpcs.sql).
+Le catalogue comprend **13 tables, trois vues et 61 routines** publiques (57 Cooked et quatre `unaccent`). Les valeurs contrôlées sont dans [doc_constants.json](../contracts/doc_constants.json) ; les corps exacts dans [rpcs.sql](../supabase/rpcs.sql).
 
 | Tables | Rôle |
 |---|---|
@@ -39,6 +40,14 @@ Le catalogue comprend **13 tables, trois vues et 60 routines** publiques (56 Coo
 | `alerts`, `rpc_health`, `freshness_contract`, `cooked_config` | Incidents, contrôles, fraîcheur et paramètres |
 
 Les trois vues sont `events_main`, `events_no_bots` et `events_human`. Elles isolent le site principal puis appliquent les filtres communs. Pour une analyse métier, utiliser `events_human` ou les fonctions de visite, pas les événements bruts.
+
+## Tableau des URL et vues
+
+`page_view_counts(p_days)` est l’unique lecteur du tableau. Il accepte 30, 60 ou 90 jours Paris clos, avec 90 par défaut, et renvoie un objet JSON : bornes de période, jours attendus/observés, date de vérification de l’inventaire et pages publiées avec leur type, catégorie et nombre de vues. Chaque `pageview` humain compte une vue ; la jointure avec `page_taxonomy` conserve les pages à zéro. Le calcul lit directement les sources, sans nouvelle table, cache, snapshot ou planification.
+
+Expertises regroupe les types `hub` et `expertise`. Articles contient les `post` hors catégorie `ressource` ; Ressources et notions juridiques contient les `post` de cette catégorie. Les deux ensembles sont disjoints. Toutes conserve aussi les autres types de pages. La catégorie provient de l’inventaire Wix existant, sans liste d’articles dupliquée dans le dashboard.
+
+Le serveur vérifie la session et l’allowlist avec `requireUser` avant tout appel. Le module `server-only` utilise `SUPABASE_SECRET_KEY` pour obtenir les comptes agrégés ; cette clé n’est pas transmise au navigateur. Une erreur de lecture reste une erreur et une couverture partielle est signalée. Les visites, contacts et données Google ci-dessous restent disponibles pour les analyses du socle, sans être ajoutés à cet écran.
 
 ## Visites et contacts
 
@@ -143,7 +152,7 @@ python3 scripts/minify-tracker.py --copy
 
 Le script impose la limite Wix de 15 000 caractères. Le minifié est un artefact, `wix/tracker.html` reste la source. Après mise à jour du Custom Code, comparer le HTML public au minifié et vérifier la réception de la version sur trafic réel. D’anciens onglets peuvent continuer à émettre l’ancienne version. Ne pas publier des brouillons Wix sans rapport avec le tracker.
 
-Le dashboard conserve Supabase Auth, l’allowlist et une page de transition. Il n’utilise plus de clé service pour lire des métriques. Configuration et build : [dashboard/README.md](../dashboard/README.md).
+Le dashboard conserve Supabase Auth et l’allowlist. Son lecteur serveur réutilise `SUPABASE_SECRET_KEY`, déjà configurée dans Vercel pour production et preview. La présence de cette clé ou un build local ne prouve pas la livraison du tableau. Configuration et vérification : [dashboard/README.md](../dashboard/README.md).
 
 ## Conservation et sauvegarde
 

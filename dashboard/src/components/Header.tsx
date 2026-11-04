@@ -8,7 +8,7 @@ export function Header() {
 
   return (
     <header className="border-b border-line bg-panel">
-      <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-6 py-4 sm:px-8">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
         <span className="text-sm font-semibold tracking-tight">Cooked</span>
         <form action="/auth/signout" method="post">
           <button type="submit" className="text-sm text-muted transition-colors hover:text-ink">

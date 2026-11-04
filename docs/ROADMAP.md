@@ -2,16 +2,15 @@
 
 Référence du **04/11/2026**. Le périmètre retenu est décrit dans [SIMPLIFICATION.md](SIMPLIFICATION.md). Les anciens tickets CPI, CRM/SECIB, DataForSEO, GBP, maths et dashboard ne constituent plus une liste de fonctionnalités à relancer.
 
-## Prochaine étape produit, séparée de la simplification
+## Étape produit retenue
 
-Construire une interface limitée à deux lectures :
+Une seule page privée liste toutes les URL publiées avec leur nombre de vues, y compris zéro. Une vue est un événement humain `pageview` ; les affichages répétés comptent plusieurs fois. La période est de 30, 60 ou 90 jours Paris clos, avec 90 jours par défaut.
 
-1. Toutes les pages publiées, visites ayant consulté, entrées, puis nombres et taux de ces entrées avec téléphone, formulaire et union. Zéros, périodes partielles et contacts non attribués doivent être explicites.
-2. Pour une page, les requêtes Google révélées, leurs clics gagnés/perdus et l’évolution de leur position pondérée.
+Les filtres sont Toutes, Expertises (pages et hubs d’expertise), Articles (hors ressources) et Ressources et notions juridiques. Articles et Ressources sont disjoints ; les autres pages restent dans Toutes. Une période incomplète reste signalée.
 
-La comparaison initiale sera de 90 jours aux 90 précédents, avec période modifiable. L’intérêt d’un sujet pour le cabinet reste jugé par Nicolas. Pas de score CPI, de classement automatique, de CRM ou de nouvelle intégration dans cette étape.
+L’intérêt d’un sujet pour le cabinet reste jugé par Nicolas. Le tableau lit les sources existantes sans nouveau stockage ni recalcul planifié.
 
-Le dashboard actuel est une page de transition authentifiée. Ce document ne vaut ni réalisation de cette interface ni autorisation de l’élargir.
+Les idées de visites, d’entrées, de conversions, de comparaison et de détail Google restent hors de cette étape. Leur ajout dépend d’une nouvelle demande de Nicolas. Les anciens scores et intégrations retirés ne font pas partie de la suite implicite.
 
 ## Exploitation courante
 

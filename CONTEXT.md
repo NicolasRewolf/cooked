@@ -6,11 +6,15 @@ Référence du **04/11/2026**. Le produit mesure l’audience et les contacts ob
 
 **Page publiée** : URL présente dans le dernier inventaire Wix complet. `page_taxonomy.is_published` porte ce statut ; `publication_checked_at` date sa vérification, pas sa publication initiale. Le référentiel inclut les articles, pages statiques et catégories, indépendamment du trafic. Une URL absente de l’inventaire reste connue avec un statut non publié.
 
+**Filtres du tableau** : Toutes conserve l’ensemble des URL publiées ; Expertises rassemble les types `hub` et `expertise` ; Articles contient les `post` hors catégorie `ressource` ; Ressources et notions juridiques contient les `post` de catégorie `ressource`. Les deux ensembles d’articles sont disjoints. Les autres pages restent accessibles dans Toutes.
+
 **Chemin canonique** : chemin partagé entre Wix, GSC et Cooked, décodé, normalisé Unicode NFC et sans slash final sauf `/`. Un changement de cette règle doit rester identique en SQL, Edge et Python.
 
 **Événement observable** : action reçue par Cooked. L’absence d’événement ne prouve pas l’absence d’activité réelle. `events_human` applique les filtres communs du site principal ; `events` brut sert au diagnostic explicite du système.
 
-## Visites et entrées
+## Vues, visites et entrées
+
+**Vue observée** : événement humain `pageview` sur une page pendant la période. Chaque affichage compte : trois vues de la même page dans une visite donnent trois vues. `page_view_counts(p_days)` renvoie ce comptage pour toutes les pages publiées, y compris celles sans vue mesurée. C’est la métrique du tableau courant ; elle ne compte pas des visites ou des personnes uniques.
 
 **Visite observée** : activité d’un même navigateur rapprochée par `identity_stitch`, coupée lorsqu’un écart dépasse 30 minutes. `web_vitals` ne prolonge pas cette activité. La couture est reconstruite sur l’historique conservé, jusqu’à convergence, sans utiliser les identifiants serveur de repli 32-hex pour rapprocher des navigateurs. Une identité technique ne prouve pas une personne unique.
 
@@ -36,11 +40,11 @@ Référence du **04/11/2026**. Le produit mesure l’audience et les contacts ob
 
 ## Périodes, zéros et Google
 
-**Période Cooked** : jours Paris clos, bornes inclusives dans les fonctions à dates. La comparaison envisagée est de 90 jours aux 90 précédents, modifiable. Une période partielle doit être affichée comme telle ; pas de delta de performance présenté comme complet.
+**Période Cooked** : jours Paris clos, bornes inclusives dans les fonctions à dates. Le tableau propose les 30, 60 ou 90 derniers jours clos jusqu’à hier, avec 90 jours par défaut, sans comparaison. Une période partielle doit être affichée comme telle ; pas de delta de performance présenté comme complet.
 
-**Couverture** : disponibilité des données nécessaires au calcul. La ligne `coverage` de `page_visits` donne les jours avec au moins une page vue et les événements téléphone/formulaire non attribués. Elle ne prouve pas la disponibilité à chaque minute. La couverture des identifiants de formulaires a évolué dans l’historique.
+**Couverture** : disponibilité des données nécessaires au calcul. `page_view_counts` renvoie les jours attendus et les jours avec au moins une page vue humaine sur le site pendant la fenêtre ; la date de vérification de l’inventaire accompagne le résultat. La ligne `coverage` de `page_visits` donne aussi les événements téléphone/formulaire non attribués. Un jour observé ne prouve pas la disponibilité à chaque minute. La couverture des identifiants de formulaires a évolué dans l’historique.
 
-**Zéro visite** : absence de visite mesurée pour une page publiée dans une fenêtre dont la couverture a été examinée. Une panne, un import incomplet ou une absence de source donnent un résultat inconnu ou partiel, pas un zéro certain.
+**Zéro mesuré** : absence de vue, ou de visite selon la métrique, pour une page publiée dans la fenêtre. Le tableau conserve ce zéro observé et signale les périodes partielles. Une panne, un import incomplet ou une absence de source ne prouvent pas une absence d’activité réelle ; une erreur de lecture n’est jamais transformée en zéro.
 
 **Total Google par page** : `gsc_path_daily`, incluant les clics dont la requête est masquée. **Requêtes révélées d’une page** : `gsc_query_page_daily`. Ces grains ne sont pas interchangeables. Les dates GSC restent celles de Google ; le dernier jour disponible peut différer de celui du tracker.
 

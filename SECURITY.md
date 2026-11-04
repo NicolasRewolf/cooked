@@ -13,7 +13,7 @@ Contacter Nicolas Rewolf par le canal habituel Rewolf Studio / cabinet. Ne pas o
 | Événements et couture | Identifiants pseudonymes persistants et activité du site ; les champs d’identité et le texte libre de formulaire ne doivent pas être copiés dans l’événement | RLS, rôles techniques autorisés et filtres communs |
 | GSC et inventaire Wix | Mesures agrégées par page/requête et contenu publié | Rôles techniques autorisés |
 | Alertes et contrôles | Comptes, codes et états techniques ; pas de payload personnel ni message DB brut | Rôles techniques autorisés |
-| Dashboard | Session et allowlist ; page de transition sans lecture de métriques métier | Supabase Auth, utilisateur autorisé |
+| Dashboard | URL publiées et vues agrégées ; session et allowlist | Supabase Auth, puis lecture serveur pour l’utilisateur autorisé |
 
 Un identifiant aléatoire ou une IP hachée ne démontre pas l’anonymat. `localStorage._ckd_aid` n’a pas d’expiration propre ; la rétention serveur ne l’expire pas. L’absence de cookies ne suffit pas à établir une exemption de consentement. Les finalités, informations publiées, accès et durées doivent être évalués ensemble ; voir les [conditions CNIL](https://www.cnil.fr/fr/cookies-solutions-pour-les-outils-de-mesure-daudience).
 
@@ -27,7 +27,7 @@ En cas de fuite : révoquer ou régénérer le secret auprès du service concern
 
 | Nom | Usage conservé | Emplacement attendu |
 |---|---|---|
-| `SUPABASE_SECRET_KEY` | Écritures/lectures techniques serveur | Edge, GitHub Actions, environnement local privé ; plus nécessaire à la page de transition |
+| `SUPABASE_SECRET_KEY` | Écritures/lectures techniques et lecture agrégée du dashboard | Serveurs uniquement : Edge, GitHub Actions, Vercel et environnement local privé |
 | `COOKED_INGEST_KEY` | Gate `x-cooked-key` de `track` | Secrets Edge et Wix Velo |
 | `ANON_SALT` | Repli de hachage IP + UA | Secrets Edge `track` |
 | `ALLOWED_ORIGIN` | Garde d’origine du proxy | Secrets Edge |
@@ -48,7 +48,7 @@ Modèles sans valeurs réelles : [.env.example](.env.example), [dashboard/.env.l
 - **Formulaires.** Secret dans l’URL, identifiant stable obligatoire et constructeur d’événement filtré. v17 répond 200 après insertion ou doublon `23505`, 503 sur erreur DB/réseau. Aucun nom, email, téléphone, texte libre ou message DB brut dans les logs/alertes. L’idempotence permet la reprise sans prouver que Wix l’exécutera.
 - **Rapprochement Wix.** Comptes confirmés agrégés par jour Paris, sans contenu personnel dans les sorties. Écart ou API inaccessible déclenche un échec ; aucune réimportation automatique.
 - **Postgres.** RLS sur les tables métier, vues `security_invoker`, fonctions métier avec `REVOKE` pour `PUBLIC`, `anon`, `authenticated`, puis droits explicites nécessaires. `alert_rule_exposure()` et `check_prod_drift.py` contrôlent l’exposition. `REVOKE FROM PUBLIC` seul ne couvre pas les droits explicites hérités des anciens déploiements.
-- **Dashboard.** Magic-link avec `shouldCreateUser: false`, allowlist et validation des destinations de callback. Les anciens lecteurs RPC et la clé service côté dashboard ont été retirés. L’authentification ne donne pas accès aux tables métier.
+- **Dashboard.** Magic-link avec `shouldCreateUser: false`, allowlist et validation des destinations de callback. Après `requireUser`, le lecteur `server-only` appelle `page_view_counts` avec `SUPABASE_SECRET_KEY`. Cette clé reste côté serveur ; le navigateur reçoit les URL et comptes agrégés. La fonction est réservée à `service_role` : l’authentification ne donne pas d’accès direct aux tables métier ni à cette RPC.
 - **CI.** `cooked_ci_ro` reste un rôle de lecture technique ; il n’a pas vocation à lire les payloads d’événements ni à écrire. Les privilèges sont vérifiés avec le catalogue, pas déduits de son nom.
 
 ## Règles de contribution
@@ -57,4 +57,4 @@ Aucune donnée personnelle dans les réponses, journaux, issues, commits, PR ou 
 
 Chaque nouvelle fonction métier porte ses droits dans sa migration ; une nouvelle table doit garder la protection RLS attendue. Les secrets ne figurent jamais dans les migrations. Après un changement de privilèges, vérifier l’exposition réelle. Les advisors Supabase complètent ce contrôle sans remplacer la lecture des droits.
 
-Documenter un nouveau secret seulement si une fonctionnalité autorisée en a besoin. Ce ménage ne crée ni nouvelle authentification ni nouvelle procédure de collecte. [OPERATIONS.md](docs/OPERATIONS.md) décrit la rétention et les limites du backup manuel.
+Documenter un nouveau secret seulement si une fonctionnalité autorisée en a besoin. Le tableau réutilise la clé serveur existante et ne change ni l’authentification ni la collecte. [OPERATIONS.md](docs/OPERATIONS.md) décrit la rétention et les limites du backup manuel.

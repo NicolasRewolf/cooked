@@ -1,6 +1,6 @@
 name: Dashboard access
 
-# Session, allowlist, magic-link et redirections de la page de transition.
+# Session, allowlist, magic-link, lecture des vues et filtres du tableau.
 
 on:
   pull_request:

@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026-11-04] — Tableau minimal des URL et vues
+
+- Une page privée affiche toutes les URL publiées et leurs vues humaines, y compris zéro, sur 30, 60 ou 90 jours Paris clos ; 90 jours par défaut.
+- Filtres Toutes, Expertises, Articles et Ressources et notions juridiques. Articles exclut explicitement les ressources ; aucune conversion, comparaison ou vue Google ajoutée.
+- Lecteur unique `page_view_counts`, sans table, cache ou cron supplémentaire. Chaque `pageview` humain compte une vue ; les règles de visite, de contact et de filtrage restent inchangées. Lecture serveur après contrôle de l’accès avec la clé existante, sans secret dans le navigateur.
+- Migration `20261104103203_page_view_counts.sql` et régressions SQL des vues, zéros, filtres d’événements et jours Paris ; contrôles du lecteur et des filtres du dashboard.
+
 ## [2026-11-04] — Hygiène du dépôt
 
 - Retrait des 65 archives de documentation et de trois guides agents redondants ; leur contenu reste disponible dans l’historique Git. Index, décisions communes et guides du socle actualisés.

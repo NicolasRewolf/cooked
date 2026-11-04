@@ -1,6 +1,6 @@
 # Analyser les pages et les requêtes
 
-Référence du **04/11/2026**. Cooked fournit les observations ; Nicolas décide de l’intérêt du sujet et de l’action éditoriale. Lire [CONTEXT.md](../CONTEXT.md) pour les grains et [SIMPLIFICATION.md](SIMPLIFICATION.md) pour le périmètre.
+Référence du **04/11/2026**. Cooked fournit les observations ; Nicolas décide de l’intérêt du sujet et de l’action éditoriale. Lire [CONTEXT.md](../CONTEXT.md) pour les grains et [SIMPLIFICATION.md](SIMPLIFICATION.md) pour le périmètre. Ce guide couvre les analyses du socle ; le dashboard courant affiche uniquement les URL et leurs vues.
 
 ## Vérifier la période disponible
 
@@ -12,6 +12,10 @@ SELECT gsc_last_data_day();
 ```
 
 Lire les dates et l’état du dernier lot `gsc_ingest_batches`. Une alerte ancienne ne prouve pas une panne actuelle. Une santé correcte aujourd’hui ne démontre pas la couverture des mois précédents. Un trou de collecte signifie une mesure partielle, pas zéro visite.
+
+## Vues du tableau
+
+`SELECT page_view_counts(90);` renvoie toutes les URL publiées et leur nombre de `pageview` humains sur les 90 derniers jours Paris clos. Les seules durées acceptées sont 30, 60 et 90. Plusieurs affichages dans une même visite comptent plusieurs vues. Examiner les bornes, les jours observés et la date de l’inventaire renvoyés avec les pages ; un zéro mesuré n’exclut pas une collecte partielle.
 
 ## Pages publiées, visites et contacts
 

@@ -18,7 +18,7 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Cooked",
-  description: "Espace privé Cooked — interface en transition.",
+  description: "Espace privé Cooked — pages publiées et vues du site.",
   robots: { index: false, follow: false },
 };
 
